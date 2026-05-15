@@ -1,0 +1,582 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<Item class="Folder" referent="RBX0200">
+		<Properties>
+			<string name="Name">FlameSlashSkill_Installer</string>
+		</Properties>
+		<Item class="Script" referent="RBX0201">
+			<Properties>
+				<string name="Name">_Installer</string>
+				<ProtectedString name="Source"><![CDATA[-- Auto-installer for Flame Slash Skill
+-- Drop this model into Workspace, press Play, and it installs the skill package.
+
+local function getStarterPlayerScripts()
+	local sp = game:GetService("StarterPlayer")
+	return sp:WaitForChild("StarterPlayerScripts")
+end
+
+local CONTAINERS = {
+	["_ReplicatedStorage"] = game:GetService("ReplicatedStorage"),
+	["_ServerScriptService"] = game:GetService("ServerScriptService"),
+	["_ServerStorage"] = game:GetService("ServerStorage"),
+	["_StarterPlayerScripts"] = getStarterPlayerScripts(),
+	["_StarterGui"] = game:GetService("StarterGui"),
+	["_StarterPack"] = game:GetService("StarterPack"),
+	["_Workspace"] = workspace,
+	["_Lighting"] = game:GetService("Lighting"),
+}
+
+local root = script.Parent
+if not root then
+	warn("[FlameSlash Installer] No parent folder found, aborting")
+	return
+end
+
+local moved = {}
+local installed = 0
+for folderName, target in pairs(CONTAINERS) do
+	local folder = root:FindFirstChild(folderName)
+	if folder then
+		for _, child in ipairs(folder:GetChildren()) do
+			child.Parent = target
+			table.insert(moved, child)
+			installed += 1
+		end
+		folder:Destroy()
+	end
+end
+
+for _, child in ipairs(moved) do
+	if child:IsA("BaseScript") then
+		child.Disabled = false
+	end
+end
+
+print(string.format("[FlameSlash Installer] Installed %d object(s). Removing installer wrapper.", installed))
+root:Destroy()]]></ProtectedString>
+				<bool name="Disabled">false</bool>
+				<token name="RunContext">1</token>
+			</Properties>
+		</Item>
+		<Item class="Folder" referent="RBX0202">
+			<Properties>
+				<string name="Name">_ReplicatedStorage</string>
+			</Properties>
+			<Item class="ModuleScript" referent="RBX0203">
+				<Properties>
+					<string name="Name">FlameSlashConfig</string>
+					<ProtectedString name="Source"><![CDATA[local Config = {}
+
+Config.SkillName = "Flame Slash"
+Config.ToolName = "Flame Slash [Q]"
+Config.RemoteName = "FlameSlashRemote"
+
+Config.Cooldown = 3.5
+Config.Damage = 35
+Config.CritChance = 0.12
+Config.CritMultiplier = 1.8
+Config.Range = 13
+Config.Width = 8
+Config.Height = 7
+Config.Knockback = 48
+
+Config.PrimaryColor = Color3.fromRGB(255, 80, 20)
+Config.AccentColor = Color3.fromRGB(255, 190, 60)
+Config.GlowColor = Color3.fromRGB(255, 245, 180)
+
+Config.CreateStudioDummy = true
+Config.DummyName = "FlameSlashTrainingDummy"
+Config.DummyHealth = 220
+
+return Config]]></ProtectedString>
+					<bool name="Disabled">false</bool>
+				</Properties>
+			</Item>
+		</Item>
+		<Item class="Folder" referent="RBX0204">
+			<Properties>
+				<string name="Name">_ServerStorage</string>
+			</Properties>
+			<Item class="Tool" referent="RBX0205">
+				<Properties>
+					<string name="Name">Flame Slash [Q]</string>
+					<string name="ToolTip">Press Q or click to cast Flame Slash</string>
+					<bool name="RequiresHandle">false</bool>
+					<bool name="CanBeDropped">false</bool>
+					<bool name="Enabled">true</bool>
+				</Properties>
+				<Item class="LocalScript" referent="RBX0206">
+					<Properties>
+						<string name="Name">FlameSlashClient</string>
+						<ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local Config = require(ReplicatedStorage:WaitForChild("FlameSlashConfig"))
+local Remote = ReplicatedStorage:WaitForChild(Config.RemoteName)
+local Player = Players.LocalPlayer
+local Tool = script.Parent
+
+local localCooldownUntil = 0
+local hudGui
+local statusLabel
+local equipped = false
+
+local function getPlayerGui()
+	return Player:FindFirstChildOfClass("PlayerGui") or Player:WaitForChild("PlayerGui")
+end
+
+local function ensureHud()
+	if hudGui and hudGui.Parent then
+		return
+	end
+
+	hudGui = Instance.new("ScreenGui")
+	hudGui.Name = "FlameSlashHud"
+	hudGui.ResetOnSpawn = false
+	hudGui.IgnoreGuiInset = true
+	hudGui.Parent = getPlayerGui()
+
+	statusLabel = Instance.new("TextLabel")
+	statusLabel.Name = "Status"
+	statusLabel.AnchorPoint = Vector2.new(0.5, 1)
+	statusLabel.Position = UDim2.fromScale(0.5, 0.94)
+	statusLabel.Size = UDim2.fromOffset(360, 44)
+	statusLabel.BackgroundColor3 = Color3.fromRGB(20, 10, 6)
+	statusLabel.BackgroundTransparency = 0.15
+	statusLabel.BorderSizePixel = 0
+	statusLabel.TextColor3 = Config.GlowColor
+	statusLabel.Font = Enum.Font.GothamBold
+	statusLabel.TextScaled = true
+	statusLabel.Text = "Flame Slash ready - press Q or equip/click"
+	statusLabel.Parent = hudGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = statusLabel
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Config.PrimaryColor
+	stroke.Thickness = 2
+	stroke.Parent = statusLabel
+end
+
+local function setStatus(text, color)
+	ensureHud()
+	statusLabel.Text = text
+	statusLabel.TextColor3 = color or Config.GlowColor
+end
+
+local function screenFlash()
+	ensureHud()
+	local flash = Instance.new("Frame")
+	flash.Name = "FlameSlashFlash"
+	flash.BackgroundColor3 = Config.PrimaryColor
+	flash.BackgroundTransparency = 0.55
+	flash.Size = UDim2.fromScale(1, 1)
+	flash.Parent = hudGui
+	TweenService:Create(flash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 1,
+	}):Play()
+	task.delay(0.3, function()
+		if flash then
+			flash:Destroy()
+		end
+	end)
+end
+
+local function cameraPunch()
+	local camera = workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	local start = os.clock()
+	local original = camera.CFrame
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local elapsed = os.clock() - start
+		if elapsed > 0.22 then
+			connection:Disconnect()
+			return
+		end
+		local strength = (1 - elapsed / 0.22) * 0.28
+		camera.CFrame = original * CFrame.new(
+			(math.random() - 0.5) * strength,
+			(math.random() - 0.5) * strength,
+			0
+		)
+	end)
+end
+
+local function requestCast()
+	local now = os.clock()
+	if now < localCooldownUntil then
+		setStatus(string.format("Flame Slash cooldown %.1fs", localCooldownUntil - now), Config.AccentColor)
+		return
+	end
+	localCooldownUntil = now + Config.Cooldown
+	setStatus("Flame Slash!", Config.PrimaryColor)
+	screenFlash()
+	Remote:FireServer("Cast")
+end
+
+Tool.Activated:Connect(requestCast)
+Tool.Equipped:Connect(function()
+	equipped = true
+	setStatus("Flame Slash equipped - click or press Q", Config.GlowColor)
+end)
+Tool.Unequipped:Connect(function()
+	equipped = false
+	setStatus("Flame Slash ready - press Q or equip/click", Config.GlowColor)
+end)
+
+local function handleAction(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		requestCast()
+	end
+	return Enum.ContextActionResult.Sink
+end
+
+ContextActionService:BindAction("FlameSlashCast", handleAction, true, Enum.KeyCode.Q)
+pcall(function()
+	ContextActionService:SetTitle("FlameSlashCast", "Flame Slash")
+	ContextActionService:SetPosition("FlameSlashCast", UDim2.fromScale(0.72, 0.74))
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.Q then
+		requestCast()
+	end
+end)
+
+Remote.OnClientEvent:Connect(function(action, a, b)
+	if action == "CastConfirmed" then
+		localCooldownUntil = os.clock() + (a or Config.Cooldown)
+		cameraPunch()
+	elseif action == "Cooldown" then
+		localCooldownUntil = os.clock() + (a or 0)
+		setStatus(string.format("Flame Slash cooldown %.1fs", a or 0), Config.AccentColor)
+	elseif action == "Impact" then
+		local casterUserId = a
+		local hitCount = b or 0
+		if casterUserId == Player.UserId then
+			cameraPunch()
+			if hitCount > 0 then
+				setStatus("Flame Slash hit " .. tostring(hitCount) .. " target(s)", Config.GlowColor)
+			else
+				setStatus("Flame Slash cast - no target in arc", Config.AccentColor)
+			end
+		end
+	end
+end)
+
+ensureHud()
+print("[FlameSlashClient] Ready. Press Q or equip the tool and click.")]]></ProtectedString>
+						<bool name="Disabled">false</bool>
+					</Properties>
+				</Item>
+			</Item>
+		</Item>
+		<Item class="Folder" referent="RBX0207">
+			<Properties>
+				<string name="Name">_ServerScriptService</string>
+			</Properties>
+			<Item class="Script" referent="RBX0208">
+				<Properties>
+					<string name="Name">FlameSlashServer</string>
+					<ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local Config = require(ReplicatedStorage:WaitForChild("FlameSlashConfig"))
+
+local Remote = ReplicatedStorage:FindFirstChild(Config.RemoteName)
+if not Remote then
+	Remote = Instance.new("RemoteEvent")
+	Remote.Name = Config.RemoteName
+	Remote.Parent = ReplicatedStorage
+end
+
+local ToolTemplate = ServerStorage:WaitForChild(Config.ToolName)
+local cooldowns = {}
+
+local function playerHasActiveTool(player)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if backpack and backpack:FindFirstChild(Config.ToolName) then
+		return true
+	end
+	if player.Character and player.Character:FindFirstChild(Config.ToolName) then
+		return true
+	end
+	return false
+end
+
+local function grantTool(player)
+	local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 10)
+	if backpack and not playerHasActiveTool(player) then
+		ToolTemplate:Clone().Parent = backpack
+	end
+
+	local starterGear = player:FindFirstChild("StarterGear")
+	if starterGear and not starterGear:FindFirstChild(Config.ToolName) then
+		ToolTemplate:Clone().Parent = starterGear
+	end
+end
+
+local function makePart(name, size, cframe, color, parent)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Size = size
+	part.CFrame = cframe
+	part.Color = color
+	part.Material = Enum.Material.SmoothPlastic
+	part.Anchored = true
+	part.CanCollide = true
+	part.Parent = parent
+	return part
+end
+
+local function ensureStudioDummy(referenceCharacter)
+	if not Config.CreateStudioDummy or not RunService:IsStudio() then
+		return
+	end
+	if workspace:FindFirstChild(Config.DummyName) then
+		return
+	end
+
+	local hrp = referenceCharacter and referenceCharacter:FindFirstChild("HumanoidRootPart")
+	local baseCFrame = hrp and (hrp.CFrame * CFrame.new(0, 0, -16)) or CFrame.new(0, 4, -18)
+	local model = Instance.new("Model")
+	model.Name = Config.DummyName
+	model.Parent = workspace
+
+	local root = makePart("HumanoidRootPart", Vector3.new(2, 2, 1), baseCFrame + Vector3.new(0, 1.2, 0), Color3.fromRGB(40, 40, 45), model)
+	root.Transparency = 0.2
+	local torso = makePart("Torso", Vector3.new(3, 4, 1.5), baseCFrame + Vector3.new(0, 2.2, 0), Color3.fromRGB(90, 42, 34), model)
+	local head = makePart("Head", Vector3.new(2, 2, 2), baseCFrame + Vector3.new(0, 5.2, 0), Color3.fromRGB(120, 70, 58), model)
+	makePart("TargetRing", Vector3.new(5, 0.25, 5), baseCFrame + Vector3.new(0, -0.8, 0), Config.PrimaryColor, model).Transparency = 0.45
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.Name = "Humanoid"
+	humanoid.MaxHealth = Config.DummyHealth
+	humanoid.Health = Config.DummyHealth
+	humanoid.Parent = model
+	model.PrimaryPart = root
+
+	local marker = Instance.new("BillboardGui")
+	marker.Name = "FlameSlashTargetMarker"
+	marker.Size = UDim2.fromOffset(180, 44)
+	marker.StudsOffset = Vector3.new(0, 4, 0)
+	marker.AlwaysOnTop = true
+	marker.Parent = head
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 0.25
+	label.BackgroundColor3 = Color3.fromRGB(20, 8, 4)
+	label.TextColor3 = Config.GlowColor
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.Text = "Training Dummy"
+	label.Size = UDim2.fromScale(1, 1)
+	label.Parent = marker
+
+	humanoid.Died:Connect(function()
+		task.delay(2.5, function()
+			if model then
+				model:Destroy()
+			end
+			ensureStudioDummy(referenceCharacter)
+		end)
+	end)
+
+	print("[FlameSlashServer] Studio training dummy spawned. Press Q toward it.")
+end
+
+local function findHumanoidModel(part)
+	local model = part:FindFirstAncestorOfClass("Model")
+	while model do
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		local root = model:FindFirstChild("HumanoidRootPart")
+		if humanoid and root then
+			return model, humanoid, root
+		end
+		model = model.Parent and model.Parent:FindFirstAncestorOfClass("Model")
+	end
+	return nil, nil, nil
+end
+
+local function spawnSlashVisual(hrp)
+	local origin = hrp.CFrame * CFrame.new(0, 1.7, -5)
+
+	for i = -3, 3 do
+		local alpha = i / 3
+		local slash = Instance.new("Part")
+		slash.Name = "FlameSlashArc"
+		slash.Anchored = true
+		slash.CanCollide = false
+		slash.CanQuery = false
+		slash.Material = Enum.Material.Neon
+		slash.Color = (math.abs(i) <= 1) and Config.GlowColor or Config.PrimaryColor
+		slash.Transparency = 0.1 + math.abs(alpha) * 0.12
+		slash.Size = Vector3.new(0.28, 0.28, Config.Range * (0.82 + math.abs(alpha) * 0.08))
+		slash.CFrame = origin * CFrame.new(alpha * 2.2, math.abs(alpha) * 0.55, 0) * CFrame.Angles(0, math.rad(90), math.rad(alpha * 42))
+		slash.Parent = workspace
+		TweenService:Create(slash, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 1,
+			Size = slash.Size * 1.22,
+		}):Play()
+		Debris:AddItem(slash, 0.32)
+	end
+
+	local shock = Instance.new("Part")
+	shock.Name = "FlameSlashShockwave"
+	shock.Shape = Enum.PartType.Ball
+	shock.Anchored = true
+	shock.CanCollide = false
+	shock.CanQuery = false
+	shock.Material = Enum.Material.Neon
+	shock.Color = Config.AccentColor
+	shock.Transparency = 0.45
+	shock.Size = Vector3.new(1, 1, 1)
+	shock.CFrame = origin
+	shock.Parent = workspace
+	TweenService:Create(shock, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Transparency = 1,
+		Size = Vector3.new(Config.Width, Config.Height * 0.7, Config.Range),
+	}):Play()
+	Debris:AddItem(shock, 0.42)
+
+	for _ = 1, 18 do
+		local spark = Instance.new("Part")
+		spark.Name = "FlameSlashSpark"
+		spark.Shape = Enum.PartType.Ball
+		spark.Anchored = true
+		spark.CanCollide = false
+		spark.CanQuery = false
+		spark.Material = Enum.Material.Neon
+		spark.Color = (math.random() > 0.5) and Config.AccentColor or Config.PrimaryColor
+		spark.Size = Vector3.new(0.18, 0.18, 0.18)
+		spark.CFrame = origin * CFrame.new(math.random(-35, 35) / 10, math.random(-8, 22) / 10, math.random(-18, 18) / 10)
+		spark.Parent = workspace
+		local drift = spark.CFrame * CFrame.new(math.random(-30, 30) / 10, math.random(6, 28) / 10, math.random(-30, 30) / 10)
+		TweenService:Create(spark, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 1,
+			CFrame = drift,
+		}):Play()
+		Debris:AddItem(spark, 0.38)
+	end
+end
+
+local function applyKnockback(root, fromPosition)
+	if root.Anchored then
+		return
+	end
+	local direction = root.Position - fromPosition
+	if direction.Magnitude < 0.1 then
+		direction = Vector3.new(0, 0, -1)
+	end
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "FlameSlashKnockbackAttachment"
+	attachment.Parent = root
+	local velocity = Instance.new("LinearVelocity")
+	velocity.Name = "FlameSlashKnockback"
+	velocity.Attachment0 = attachment
+	velocity.MaxForce = 60000
+	velocity.VectorVelocity = direction.Unit * Config.Knockback + Vector3.new(0, 16, 0)
+	velocity.Parent = root
+	Debris:AddItem(velocity, 0.16)
+	Debris:AddItem(attachment, 0.16)
+end
+
+local function cast(player)
+	local now = os.clock()
+	local last = cooldowns[player.UserId] or 0
+	if now - last < Config.Cooldown then
+		Remote:FireClient(player, "Cooldown", Config.Cooldown - (now - last))
+		return
+	end
+	cooldowns[player.UserId] = now
+
+	local character = player.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not hrp or not humanoid or humanoid.Health <= 0 then
+		return
+	end
+
+	ensureStudioDummy(character)
+	spawnSlashVisual(hrp)
+
+	local params = OverlapParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+
+	local look = hrp.CFrame.LookVector
+	local center = hrp.Position + look * (Config.Range * 0.5)
+	local boxCFrame = CFrame.lookAt(center, center + look)
+	local parts = workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(Config.Width, Config.Height, Config.Range), params)
+
+	local hitModels = {}
+	local hitCount = 0
+	for _, part in ipairs(parts) do
+		local model, targetHumanoid, targetRoot = findHumanoidModel(part)
+		if model and targetHumanoid and targetRoot and model ~= character and not hitModels[model] and targetHumanoid.Health > 0 then
+			local targetPlayer = Players:GetPlayerFromCharacter(model)
+			if not (targetPlayer and player.Team ~= nil and targetPlayer.Team == player.Team) then
+				hitModels[model] = true
+				hitCount += 1
+				local crit = math.random() < Config.CritChance
+				local damage = math.floor(Config.Damage * (crit and Config.CritMultiplier or 1) + 0.5)
+				pcall(function()
+					targetHumanoid:TakeDamage(damage)
+				end)
+				applyKnockback(targetRoot, hrp.Position)
+			end
+		end
+	end
+
+	Remote:FireClient(player, "CastConfirmed", Config.Cooldown)
+	Remote:FireAllClients("Impact", player.UserId, hitCount)
+	print(string.format("[FlameSlashServer] %s cast Flame Slash, hits=%d", player.Name, hitCount))
+end
+
+Remote.OnServerEvent:Connect(function(player, action)
+	if action == "Cast" then
+		cast(player)
+	end
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(character)
+		task.wait(0.35)
+		grantTool(player)
+		ensureStudioDummy(character)
+	end)
+	task.defer(grantTool, player)
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	task.defer(function()
+		grantTool(player)
+		if player.Character then
+			ensureStudioDummy(player.Character)
+		end
+	end)
+end
+
+print("[FlameSlashServer] Ready. Players get Flame Slash [Q] automatically.")]]></ProtectedString>
+					<bool name="Disabled">true</bool>
+					<token name="RunContext">1</token>
+				</Properties>
+			</Item>
+		</Item>
+	</Item>
+</roblox>

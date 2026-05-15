@@ -1,0 +1,45 @@
+# OS
+.DS_Store
+
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Build / derived
+.derivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local tools (Google Cloud SDK etc.)
+.local-tools/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+GoogleService-Info.plist
+
+# Не коммитьте agent-transcripts/ в публичный репозиторий (там может быть личное).
+agent-transcripts/
+
+# Локальные change-логи CLAUDE.md workflow и сервисные каталоги агентов
+cursor/
+.agent/
+.cursor/
+.claude/
+
+# Build output
+apps/*/dist/
+apps/worker-service/.worker-tmp/
+
+# iOS local dependency/export artifacts
+apps/ios/vendor/
+apps/ios/AIGoldRoblox/Resources/Models/StreetViewExplorer 2026-03-23 14-30-56/
+
+# Локальные тест-дампы
+_test_*.json

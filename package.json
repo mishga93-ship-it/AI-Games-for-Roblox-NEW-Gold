@@ -1,0 +1,30 @@
+{
+  "name": "ai-roblox-gold",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Voice to Games & Mods for Roblox",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "backend": "npm run dev --workspace=apps/backend",
+    "dev": "npm run backend",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "build:functions": "npm run build --workspace=packages/shared && npm run build --workspace=apps/functions",
+    "build:worker": "npm run build --workspace=apps/worker-service",
+    "worker:start": "LUNE_BIN=\"/Users/test/Downloads/AI Games for Roblox NEW Gold/.local-tools/lune/lune\" npm run start --workspace=apps/worker-service",
+    "functions:emulators": "firebase emulators:start --only functions,firestore,storage",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:worker": "bash ./scripts/deploy-worker.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "is-typedarray": "^1.0.0"
+  }
+}
