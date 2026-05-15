@@ -3147,6 +3147,7 @@ function buildFurnitureModelManifest(
   }
 
   const materialValues: Record<string, number> = {
+    Plastic: 256,
     Wood: 512,
     WoodPlanks: 528,
     Metal: 1088,
@@ -3154,7 +3155,81 @@ function buildFurnitureModelManifest(
     Fabric: 1312,
     Grass: 1280,
     Glass: 1568,
+    Marble: 880,
+    Slate: 800,
+    Concrete: 816,
+    Brick: 848,
+    Neon: 288,
   };
+
+  // Session 346 — when the blocky pipeline produced an LLM scene, emit those Parts
+  // directly. The deterministic fallback below is skipped because the LLM scene already
+  // describes every Part with explicit role/position/size/color/material.
+  type LLMScenePartShape = { name: string; kind: 'Part' | 'Seat'; role?: string; shape?: 'Block' | 'Cylinder' | 'Ball';
+    position: [number, number, number]; size: [number, number, number]; color: string;
+    material: string; transparency?: number; canCollide?: boolean };
+  const llmSceneRaw = typeof metadata.furnitureLLMScene === 'string' ? metadata.furnitureLLMScene : '';
+  let llmSceneParts: LLMScenePartShape[] = [];
+  if (llmSceneRaw) {
+    try {
+      const parsed = JSON.parse(llmSceneRaw) as { parts?: LLMScenePartShape[] };
+      if (parsed && Array.isArray(parsed.parts)) llmSceneParts = parsed.parts;
+    } catch {
+      llmSceneParts = [];
+    }
+  }
+  const shapeNumByName: Record<string, number> = { Ball: 0, Block: 1, Cylinder: 2 };
+  if (llmSceneParts.length > 0) {
+    for (const p of llmSceneParts) {
+      const matKey = Object.prototype.hasOwnProperty.call(materialValues, p.material) ? p.material : 'SmoothPlastic';
+      const shapeName: 'Block' | 'Ball' | 'Cylinder' = p.shape === 'Cylinder' || p.shape === 'Ball' ? p.shape : 'Block';
+      const partRgb = hexToColor3(p.color) ?? defaults.primary;
+      scene.push({
+        id: uuidv4(),
+        className: p.kind === 'Seat' ? 'Seat' : 'Part',
+        name: (p.name || `LLMPart${scene.length}`).slice(0, 40),
+        properties: {
+          Size: vector3(Math.max(0.1, p.size[0]) * scaleFactor, Math.max(0.1, p.size[1]) * scaleFactor, Math.max(0.1, p.size[2]) * scaleFactor),
+          Position: vector3(p.position[0] * scaleFactor, p.position[1] * scaleFactor, p.position[2] * scaleFactor),
+          Anchored: true,
+          CanCollide: p.canCollide ?? true,
+          Locked: false,
+          Transparency: typeof p.transparency === 'number' ? Math.max(0, Math.min(1, p.transparency)) : 0,
+          Color: color3(partRgb.r, partRgb.g, partRgb.b),
+          Material: enumValue('Material', matKey, materialValues[matKey]),
+          Shape: enumValue('PartType', shapeName, shapeNumByName[shapeName]),
+          ...(p.kind === 'Seat' ? { Disabled: false } : {}),
+        },
+      });
+    }
+    // Skip deterministic fallback below by returning the manifest now.
+    // Same return shape as the canonical end-of-function below — scripts are minimal
+    // (just the starter script if provided; no AI mesh loader since there's no mesh).
+    const llmScripts: RobloxBuildScript[] = [];
+    if (args.starterScript && args.starterScript.trim()) {
+      llmScripts.push({
+        id: 'furniture-starter',
+        name: `${normalizedName}Starter`,
+        scriptType: 'Script' as const,
+        container: 'ServerScriptService' as const,
+        source: args.starterScript,
+      });
+    }
+    return {
+      id: uuidv4(),
+      title: shortTitle,
+      summary: args.summary,
+      target: args.target,
+      rootClassName: 'Model',
+      rootProperties: {
+        PrimaryPart: { __type: 'Ref', id: handleId },
+      },
+      formatPreference: 'binary' as RobloxArtifactFormat,
+      scene,
+      scripts: llmScripts,
+      assets: [],
+    };
+  }
   const shapeValues: Record<'Block' | 'Ball' | 'Cylinder', number> = { Ball: 0, Block: 1, Cylinder: 2 };
   const pushFallbackPart = (
     suffix: string,

@@ -245,6 +245,8 @@ export type GenerationStageId =
   | 'generate_building_scene'
   | 'generate_building_scripts'
   | 'generate_building_preview'
+  | 'generate_furniture_scene'
+  | 'generate_furniture_preview'
   | 'generate_map_scene'
   | 'generate_map_preview'
   | 'generate_character_scripts'

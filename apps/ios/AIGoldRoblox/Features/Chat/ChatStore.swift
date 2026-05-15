@@ -43,6 +43,10 @@ final class ChatStore: ObservableObject {
     /// pipeline to clear status. UI shows DecalApprovalSheet when non-empty.
     @Published var pendingDecalCandidates: [AIWorkspaceAPI.DecalCandidate] = []
     @Published var isSubmittingDecalApproval = false
+    /// Session 001 (Track 1) — set when user taps "Publish to Marketplace" on a
+    /// completed classic clothing generation. ChatView observes this and presents
+    /// MarketplaceHandoffView as a sheet.
+    @Published var marketplaceHandoffContext: MarketplaceHandoffContext?
     @Published var voiceStatusText: String?
     @Published var voicePhase: VoicePhase = .idle
     @Published var voiceErrorAlert: String?
@@ -829,6 +833,15 @@ final class ChatStore: ObservableObject {
     }
 
     func replaceWelcome(context: String, isVoice: Bool) {
+        // Session 001 (Track 1) — clothing subcategory delegates to welcomeMessage()
+        // which emits the compliance banner + T-Shirt/Classic Shirt/Classic Pants/
+        // Full Outfit picker. Without this, the generic "Let's build a Content >
+        // Clothing & Outfits…" welcome with Hoodie/Jacket/Dress quick-replies fires
+        // on first entry and confuses the user.
+        if contentSubcategory == "clothing" {
+            messages = [welcomeMessage()]
+            return
+        }
         let content: String
         if contentSubcategory == "audio" {
             let modeHint = isVoice
@@ -862,6 +875,42 @@ final class ChatStore: ObservableObject {
         draft.weaponGlowColor = glow
         let summary = "Colors locked in — primary \(primary.uppercased()), accent \(accent.uppercased()), glow \(glow.uppercased())."
         send(summary, quickReply: nil, inputMode: "text", attachmentKind: nil)
+    }
+
+    // Session 001 (Track 1): builds the Marketplace handoff context from the most
+    // recent completed clothing job. Sets @Published `marketplaceHandoffContext`
+    // — ChatView's `.sheet(item:)` reacts and presents MarketplaceHandoffView.
+    func openMarketplaceHandoff() {
+        let clothingType = draft.clothingType ?? {
+            if let job = lastFailedGenerationJob, job.metadata?.isTShirt == true { return "t_shirt" }
+            return "classic_shirt"
+        }()
+        let suggestedTags: [String] = {
+            switch clothingType {
+            case "t_shirt": return ["tshirt", "graphic", "ai", "ugc"]
+            case "classic_shirt": return ["shirt", "fashion", "ai", "ugc"]
+            case "classic_pants": return ["pants", "fashion", "ai", "ugc"]
+            case "classic_outfit": return ["outfit", "shirt", "pants", "ai", "ugc"]
+            default: return ["ai", "ugc"]
+            }
+        }()
+        let description = "AI-designed Roblox \(clothingType.replacingOccurrences(of: "_", with: " ")) — generated with the Roblox Gold app. Pure original artwork, no IP."
+        let recentJob = (currentThread?.id).flatMap { _ in lastFailedGenerationJob }
+        let robloxAssetId: Int64? = recentJob?.metadata.flatMap { md in
+            md.tshirtRobloxAssetId ?? md.shirtRobloxAssetId ?? md.pantsRobloxAssetId
+        }
+        let textureURL: URL? = recentJob?.artifacts
+            .first(where: { $0.metadata?.isTShirtGraphic == true || $0.metadata?.isShirtTexture == true || $0.metadata?.isPantsTexture == true })
+            .flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+        marketplaceHandoffContext = MarketplaceHandoffContext(
+            clothingType: clothingType,
+            title: draft.title,
+            suggestedDescription: description,
+            suggestedTags: suggestedTags,
+            suggestedPriceRobux: clothingType == "t_shirt" ? 5 : 10,
+            robloxAssetId: robloxAssetId,
+            textureDownloadURL: textureURL
+        )
     }
 
     func sendQuickReply(_ option: String) {
@@ -935,6 +984,9 @@ final class ChatStore: ObservableObject {
         if handleNpcVisualPipelineChoice(normalized) {
             return
         }
+        if handleFurniturePathChoice(normalized) {
+            return
+        }
         if normalized == "generate!" || normalized == "generate now"
             || normalized == "генерируй!" || normalized == "генерировать"
             || normalized == "всё супер, генерируй!" || normalized == "go" || normalized == "create it" {
@@ -981,6 +1033,46 @@ final class ChatStore: ObservableObject {
             case "boss":             draft.npcRole = "boss"; draft.npcBehaviorMode = "chase_attack"
             default: break
             }
+        }
+        // Session 001 (Track 1): clothing-type picker. Maps welcome-message tap
+        // → draft.clothingType so generationMetadata sends `clothingType` upstream
+        // and backend routes to the correct manifest (T-Shirt vs Shirt vs Pants vs Outfit).
+        // Also intercepts the LLM clothing_interview picker ("2D Classic (fast)" /
+        // "3D Layered (premium)" / "Decide for me" from promptCatalog.ts) so a user who
+        // answers the LLM still gets a proper clothingType routed to backend — otherwise
+        // pipeline falls back to the 9-stage character_3d default with a full-character
+        // concept image instead of a 2-3 stage clothing texture flow.
+        if contentSubcategory == "clothing" {
+            switch normalized {
+            case "t-shirt", "tshirt":
+                draft.clothingType = "t_shirt"
+            case "classic shirt", "shirt":
+                draft.clothingType = "classic_shirt"
+            case "classic pants", "pants":
+                draft.clothingType = "classic_pants"
+            case "full outfit", "outfit", "full outfit (shirt + pants)":
+                draft.clothingType = "classic_outfit"
+            case "2d classic (fast)", "2d classic", "2д классик":
+                if draft.clothingType == nil { draft.clothingType = "classic_outfit" }
+                draft.clothingMode = "classic_2d"
+            case "3d layered (premium)", "3d layered":
+                draft.clothingMode = "layered_3d"
+            case "decide for me":
+                if draft.clothingType == nil { draft.clothingType = "classic_shirt" }
+                draft.clothingMode = "classic_2d"
+            case "got it":
+                // Compliance banner dismiss — persist so future clothing chats don't repeat it
+                UserDefaults.standard.set(true, forKey: "clothing.compliance.dismissed")
+                appendAssistantMessage("Got it. Pick a type to continue.")
+                return
+            default: break
+            }
+        }
+        // Session 001 (Track 1) — completed clothing generation surfaces a
+        // "📦 Publish to Marketplace" quick reply. Tap opens the handoff sheet.
+        if normalized == "📦 publish to marketplace" || normalized == "publish to marketplace" {
+            openMarketplaceHandoff()
+            return
         }
         // Killer Feature #2: Smart NPC Roast & Chat — quickReply maps a personality preset
         // into draft.roastPersonality. The 6-turn smart-interview still asks role/look/etc;
@@ -1108,6 +1200,92 @@ final class ChatStore: ObservableObject {
             appendAssistantMessage(preferredResponseLanguageCode() == "ru"
                 ? "Зафиксировал: статичный 3D Mesh NPC. Сделаю упор на стабильную детальную визуальную оболочку, которая не отделяется от скрытого rig, с лёгким idle-движением, чтобы модель не казалась замороженной."
                 : "Locked: Static 3D Mesh NPC. I will prioritize a stable detailed visual shell that will not split from the hidden rig (with subtle idle bobble so it does not feel frozen).")
+            generateFromCurrentPlan()
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: Furniture path-selector (post-Generate gate)
+    //
+    // After the Furniture chat hits "Generate!" (either via Smart Interview action=generating
+    // or via Quick Generate / direct chip), we don't dispatch the job immediately — instead
+    // the assistant posts a two-button bubble asking whether to build the prop from primitive
+    // Roblox Parts (blocky, with LLM verify+retry) or via the AI mesh provider (2D concept
+    // approval → mesh provider). The user's tap is routed through `handleFurniturePathChoice`,
+    // which sets the explicit build mode and resumes generation.
+
+    private var needsFurniturePathChoice: Bool {
+        contentSubcategory == "furniture" && (draft.furnitureBuildMode == nil || draft.furnitureBuildMode?.isEmpty == true)
+    }
+
+    private func furniturePathChoiceReplies() -> [String] {
+        ["Blocky Parts (fast preview)", "AI 3D Mesh (detailed)"]
+    }
+
+    private func appendFurniturePathChoiceMessage() {
+        let isRu = preferredResponseLanguageCode() == "ru"
+        messages.append(
+            ChatMessage(
+                id: UUID().uuidString,
+                role: .assistant,
+                content: isRu
+                    ? "Выберите путь сборки. Blocky Parts собирает .rbxm из примитивов Roblox: LLM сверяет результат с брифом и пересобирает при несоответствии, плюс ты получишь блочное превью один-в-один с тем, что увидишь в Studio. AI 3D Mesh идёт через 2D-апрув концепта и mesh-провайдера — медленнее, зато детальный меш с текстурами."
+                    : "Choose the build path. Blocky Parts assembles the .rbxm from primitive Roblox Parts: the LLM verifies the result against your brief and re-runs on mismatch, plus you get a blocky preview that's one-to-one with what you'll see in Studio. AI 3D Mesh goes through a 2D concept approval and a mesh provider — slower, but a detailed textured mesh.",
+                quickReplies: furniturePathChoiceReplies(),
+                gddRows: nil,
+                createdAt: Date()
+            )
+        )
+    }
+
+    private func clearFurniturePathChoiceQuickReplies() {
+        let choiceReplies = Set(furniturePathChoiceReplies().map { $0.lowercased() })
+        messages = messages.map { message in
+            guard
+                message.role == .assistant,
+                let quickReplies = message.quickReplies,
+                !quickReplies.isEmpty,
+                quickReplies.allSatisfy({ choiceReplies.contains($0.lowercased()) })
+            else {
+                return message
+            }
+            return ChatMessage(
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                quickReplies: nil,
+                gddRows: message.gddRowTuples,
+                createdAt: message.createdAt,
+                audioURL: message.audioURL,
+                imageURL: message.imageURL,
+                localImageKey: message.localImageKey,
+                weaponColors: message.weaponColors
+            )
+        }
+    }
+
+    private func handleFurniturePathChoice(_ normalized: String) -> Bool {
+        guard contentSubcategory == "furniture" else { return false }
+        guard draft.furnitureBuildMode == nil || draft.furnitureBuildMode?.isEmpty == true else { return false }
+        switch normalized {
+        case "blocky parts (fast preview)", "blocky parts", "blocky", "blocks", "fast parts", "parts", "fast roblox parts",
+             "блочный", "блоки", "блочные части", "кубики", "блочный путь":
+            draft.furnitureBuildMode = "parts"
+            clearFurniturePathChoiceQuickReplies()
+            appendAssistantMessage(preferredResponseLanguageCode() == "ru"
+                ? "Зафиксировал: Blocky Parts. Сейчас LLM соберёт сцену из примитивов Roblox, сверит её с твоим брифом и при несоответствии перегенерирует, потом покажет блочное превью."
+                : "Locked: Blocky Parts. The LLM will assemble the scene from primitive Roblox Parts, verify it against your brief, re-run on mismatch, and show a blocky preview.")
+            generateFromCurrentPlan()
+            return true
+        case "ai 3d mesh (detailed)", "ai 3d mesh", "ai mesh", "3d mesh", "mesh", "mesh path", "detailed mesh",
+             "детальный меш", "3д меш", "меш", "детальный", "3d путь":
+            draft.furnitureBuildMode = "mesh"
+            clearFurniturePathChoiceQuickReplies()
+            appendAssistantMessage(preferredResponseLanguageCode() == "ru"
+                ? "Зафиксировал: AI 3D Mesh. Сначала сгенерирую 2D-концепт на твой апрув, потом отдам в mesh-провайдер и соберу .rbxm с настоящим мешем."
+                : "Locked: AI 3D Mesh. First I'll generate a 2D concept for your approval, then send it to the mesh provider and assemble a real-mesh .rbxm.")
             generateFromCurrentPlan()
             return true
         default:
@@ -2547,6 +2725,11 @@ final class ChatStore: ObservableObject {
             return
         }
 
+        if needsFurniturePathChoice {
+            appendFurniturePathChoiceMessage()
+            return
+        }
+
         // Warn user if generating game passes without Universe ID
         if contentSubcategory == "passes" {
             let hasUniverseId = !(RobloxAuthService.shared.universeId ?? "").isEmpty
@@ -2724,11 +2907,18 @@ final class ChatStore: ObservableObject {
 	                                ? "Пакет результата готов. Проверьте превью, файлы и шаги экспорта."
 	                                : "Your result package is ready. Review the preview, files and export steps."
 	                        }
-                        let completionReplies = inlineAudioURL != nil
-                            ? ["Open preview", "Export brief", "Start another"]
-                            : isGameResult
-                                ? ["Open preview", "Regenerate with changes", "Make it closer to prompt", "Start another"]
-                                : ["Open preview", "Export brief", "Start another"]
+                        let isClothingResult = contentSubcategory == "clothing"
+                            && (job.metadata?.isClothingTexture == true || job.metadata?.isTShirt == true)
+                        let completionReplies: [String]
+                        if inlineAudioURL != nil {
+                            completionReplies = ["Open preview", "Export brief", "Start another"]
+                        } else if isClothingResult {
+                            completionReplies = ["Open preview", "📦 Publish to Marketplace", "Start another"]
+                        } else if isGameResult {
+                            completionReplies = ["Open preview", "Regenerate with changes", "Make it closer to prompt", "Start another"]
+                        } else {
+                            completionReplies = ["Open preview", "Export brief", "Start another"]
+                        }
                         messages.append(
                             ChatMessage(
                                 id: UUID().uuidString,
@@ -3533,6 +3723,10 @@ final class ChatStore: ObservableObject {
                     appendNpcVisualPipelineChoiceMessage()
                     return
                 }
+                if needsFurniturePathChoice {
+                    appendFurniturePathChoiceMessage()
+                    return
+                }
                 generateFromCurrentPlan()
             }
         }
@@ -3979,6 +4173,14 @@ final class ChatStore: ObservableObject {
                 ]
             }
             if looksLikeTextureClothing {
+                // T-Shirt skips the concept_image stage — Flux generates the 512x512
+                // graphic directly from the prompt with no avatar concept reference.
+                if draft.clothingType == "t_shirt" {
+                    return [
+                        GenerationStage(id: "clothing_texture", title: "T-Shirt graphic", status: "pending"),
+                        GenerationStage(id: "export_rbxm", title: "Export RBXM", status: "pending")
+                    ]
+                }
                 return [
                     GenerationStage(id: "concept_image", title: "Concept image", status: "pending"),
                     GenerationStage(id: "clothing_texture", title: "Clothing texture", status: "pending"),
@@ -5571,6 +5773,26 @@ final class ChatStore: ObservableObject {
             return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
         }
 
+        // Session 001 (Track 1): clothing subcategory opens with a clothing-type
+        // picker. User picks T-Shirt / Shirt / Pants / Outfit BEFORE describing
+        // the design — that routes the backend to the right pipeline (T-Shirt =
+        // 512² ShirtGraphic; Shirt/Pants = 585×559 wrap-template). Quick-reply
+        // tap is parsed in sendQuickReply and stashed on draft.clothingType.
+        if contentSubcategory == "clothing" {
+            // First-time-per-device compliance banner is prepended to the welcome
+            // text. UserDefaults flag persists the dismiss so we don't repeat it.
+            let dismissedKey = "clothing.compliance.dismissed"
+            let alreadyDismissed = UserDefaults.standard.bool(forKey: dismissedKey)
+            let banner = alreadyDismissed
+                ? ""
+                : "📌 Before you sell on Marketplace:\n• Roblox Premium 1000 or 2200 required (from Mar 19, 2026)\n• ID-verified account\n• 20 R$ in fees per item (10 upload + 10 on-sale)\nYou can generate & test without any of this. Tap “Got it” to hide.\n\n"
+            content = "\(banner)What classic clothing do we make? Pick a type first — that locks the template (T-Shirt = front-only 512×512 graphic, Shirt/Pants = 585×559 wrap). Layered 3D (jackets, sweaters, dresses) is coming next."
+            replies = alreadyDismissed
+                ? ["T-Shirt", "Classic Shirt", "Classic Pants", "Full Outfit"]
+                : ["T-Shirt", "Classic Shirt", "Classic Pants", "Full Outfit", "Got it"]
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+
         switch preferredFlow {
         case .quickGenerate:
             switch projectKind {
@@ -5707,7 +5929,7 @@ final class ChatStore: ObservableObject {
         case "buildings":
             return "Describe the building or structure — scale, architectural style, and how players will use it."
         case "furniture":
-            return "Describe the furniture or prop — style, era, and where it belongs in your world. You can choose Auto, Fast Parts, or AI Mesh."
+            return "Describe the furniture or prop — type, style, era, material, and where it fits in your world. After you tap Generate I'll ask which build path to use: Blocky Parts or AI 3D Mesh."
         case "maps":
             return "Describe the map or environment — biome, mood, scale, and key landmarks or gameplay flow."
         case "items":
@@ -5756,7 +5978,7 @@ final class ChatStore: ObservableObject {
         case "buildings":
             return ["Example: Modular suburban house", "Example: Castle gate tower", "Example: Neon city shop", "Switch to Interview"]
         case "furniture":
-            return ["Example: Fast Parts velvet sofa", "Example: AI Mesh neon floor lamp", "Example: Auto wooden shelf prop", "Switch to Interview"]
+            return ["Example: Velvet tavern armchair", "Example: Neon cyberpunk floor lamp", "Example: Rustic oak farmhouse table", "Switch to Interview"]
         case "maps":
             return ["Example: Forest river valley", "Example: Cyberpunk city block", "Example: Desert ruins arena", "Switch to Interview"]
         case "items":
@@ -5791,7 +6013,10 @@ final class ChatStore: ObservableObject {
         case "roast_npc":
             return ["Sigma Chad", "Skibidi", "Gen-Alpha", "Gym Bro", "Mom Friend", "Custom personality...", "Roast pet", "Roast enemy", "Roast observer", "Try chatting: walk up + press T", "Decide for me", "Start over"]
         case "clothing":
-            return ["T-shirt", "Hoodie", "Jacket / coat", "Pants / jeans", "Dress / full outfit", "Decide for me", "Start over"]
+            // Session 001 (Track 1) — classic-2D-first picker: T-Shirt (ShirtGraphic
+            // 512x512 front-only), Classic Shirt/Pants (585x559 wrap), Full Outfit
+            // (Shirt+Pants combo). Layered 3D (Hoodie/Jacket/Dress) is Track 2.
+            return ["T-Shirt", "Classic Shirt", "Classic Pants", "Full Outfit", "Decide for me", "Start over"]
         case "accessories":
             return ["Hat / crown", "Wings / backpack", "Glasses / mask", "Decide for me", "Start over"]
         case "bodies":
@@ -5805,7 +6030,7 @@ final class ChatStore: ObservableObject {
         case "buildings":
             return ["House modular", "Tower / castle", "Shop front", "Decide for me", "Start over"]
         case "furniture":
-            return ["Chair", "Table", "Lamp", "Shelf", "Rug", "Plant", "Sign", "Decor", "Fast Parts", "AI Mesh", "Auto mode", "Decide for me", "Start over"]
+            return ["Chair", "Table", "Lamp", "Shelf", "Rug", "Plant", "Sign", "Decor", "Decide for me", "Start over"]
         case "maps":
             return ["Forest biome", "City block", "Arena layout", "Decide for me", "Start over"]
 	        case "items":
@@ -6043,6 +6268,15 @@ final class ChatStore: ObservableObject {
                 }
             }
         }
+        // Session 001 (Track 1) — surface clothing picks in chat metadata so the
+        // backend clothing_interview LLM (promptCatalog.smartInterviewClothing)
+        // can skip the redundant 2D/3D Turn 1 when iOS welcome already locked it in.
+        if let ct = draft.clothingType {
+            metadata["clothingType"] = ct
+        }
+        if let cm = draft.clothingMode {
+            metadata["clothingMode"] = cm
+        }
         if let memory = threadProjectMemory {
             metadata["hasExistingProject"] = "true"
             if let latestJobId = memory.latestJobId {
@@ -6140,6 +6374,15 @@ final class ChatStore: ObservableObject {
                 }
             }
         }
+        // Session 001 (Track 1) — surface clothing picks in chat metadata so the
+        // backend clothing_interview LLM (promptCatalog.smartInterviewClothing)
+        // can skip the redundant 2D/3D Turn 1 when iOS welcome already locked it in.
+        if let ct = draft.clothingType {
+            metadata["clothingType"] = ct
+        }
+        if let cm = draft.clothingMode {
+            metadata["clothingMode"] = cm
+        }
         if let memory = threadProjectMemory {
             metadata["hasExistingProject"] = "true"
             if let latestJobId = memory.latestJobId {
@@ -6160,6 +6403,9 @@ final class ChatStore: ObservableObject {
         if let clothingMode = draft.clothingMode {
             metadata["clothingMode"] = clothingMode
         }
+        if let clothingType = draft.clothingType {
+            metadata["clothingType"] = clothingType
+        }
         if let uid = RobloxAuthService.shared.universeId, !uid.isEmpty {
             metadata["universeId"] = uid
         }
@@ -6167,6 +6413,10 @@ final class ChatStore: ObservableObject {
     }
 
     private func inferredFurnitureBuildMode() -> String {
+        // Explicit user choice from the post-Generate path-selector wins over keyword inference.
+        if let explicit = draft.furnitureBuildMode, !explicit.isEmpty {
+            return explicit
+        }
         let recent = messages
             .filter { $0.role == .user }
             .suffix(6)
@@ -6559,6 +6809,12 @@ private struct ProjectDraft {
     var style: String
     var monetization: String
     var clothingMode: String?
+    // Session 001 (Track 1): user-picked classic clothing type for UGC clothing flow.
+    // Values: "t_shirt" | "classic_shirt" | "classic_pants" | "classic_outfit".
+    // Used to route the backend pipeline explicitly instead of regex-guessing
+    // the type from the prompt. Layered 3D variants (Jacket/Sweater/Dress/etc.)
+    // stay on `clothingMode = layered_3d` until Track 2.
+    var clothingType: String?
     // Session #095: user-picked weapon colors (hex #RRGGBB). Set by WeaponColorPickerBubble.
     var weaponPrimaryColor: String?
     var weaponAccentColor: String?
@@ -6583,6 +6839,11 @@ private struct ProjectDraft {
     var npcSystems: [String]?
     var npcVisualPipeline: String?
     var npcMeshMotionMode: String?
+    /// Furniture build mode chosen by the user via the post-Generate path-selector bubble
+    /// (`parts` = blocky Roblox Parts model with LLM verify+retry; `mesh` = 2D concept
+    /// approval → AI mesh provider). nil means the user hasn't picked yet and the
+    /// path-selector still needs to be shown.
+    var furnitureBuildMode: String?
     // Killer Feature #2: Smart NPC Roast & Chat — preset key (sigma_chad / skibidi /
     // gen_alpha / gym_bro / mom_friend / custom). When set, ChatStore sends `npcMode=roast`
     // alongside, and backend emits a Config.Roast block in NpcConfig.lua wired to the
@@ -6600,6 +6861,7 @@ private struct ProjectDraft {
             style: "Bright trending style",
             monetization: "VIP + boosts + daily rewards",
             clothingMode: nil,
+            clothingType: nil,
 	            weaponPrimaryColor: nil,
 	            weaponAccentColor: nil,
 	            weaponGlowColor: nil,
@@ -6621,6 +6883,7 @@ private struct ProjectDraft {
             npcSystems: nil,
             npcVisualPipeline: nil,
             npcMeshMotionMode: nil,
+            furnitureBuildMode: nil,
             roastPersonality: nil,
             kind: kind
         )
@@ -6665,6 +6928,9 @@ private struct ProjectDraft {
         }
         if let motionMode = npcMeshMotionMode {
             dict["npcMeshMotionMode"] = motionMode
+        }
+        if let furnitureMode = furnitureBuildMode {
+            dict["furnitureBuildMode"] = furnitureMode
         }
         if let theme = npcTheme, !theme.isEmpty {
             dict["npcTheme"] = theme

@@ -1638,6 +1638,14 @@ struct ChatView: View {
         .sheet(isPresented: $isShowingProviderSheet) {
             providerSelectionSheet
         }
+        // Session 001 (Track 1) — Marketplace handoff sheet for completed classic
+        // clothing generations. Triggered by ChatStore.openMarketplaceHandoff()
+        // (called from the "📦 Publish to Marketplace" quick reply).
+        .sheet(item: $chatStore.marketplaceHandoffContext) { ctx in
+            MarketplaceHandoffView(context: ctx) {
+                chatStore.marketplaceHandoffContext = nil
+            }
+        }
     }
 
     private var providerSelectionSheet: some View {

@@ -425,6 +425,12 @@ enum AIWorkspaceAPI {
         let isClothingTexture: Bool?
         let shirtTextureUrl: String?
         let pantsTextureUrl: String?
+        // Session 001 (Track 1) — T-Shirt branch
+        let isTShirt: Bool?
+        let tshirtGraphicUrl: String?
+        let tshirtRobloxAssetId: Int64?
+        let shirtRobloxAssetId: Int64?
+        let pantsRobloxAssetId: Int64?
         let installCommand: String?
         let heroConcepts: [HeroConcept]?
         let pipelinePhase: String?
@@ -472,6 +478,11 @@ enum AIWorkspaceAPI {
             isClothingTexture = try? container.decode(Bool.self, forKey: .init("isClothingTexture"))
             shirtTextureUrl = try? container.decode(String.self, forKey: .init("shirtTextureUrl"))
             pantsTextureUrl = try? container.decode(String.self, forKey: .init("pantsTextureUrl"))
+            isTShirt = try? container.decode(Bool.self, forKey: .init("isTShirt"))
+            tshirtGraphicUrl = try? container.decode(String.self, forKey: .init("tshirtGraphicUrl"))
+            tshirtRobloxAssetId = try? container.decode(Int64.self, forKey: .init("tshirtRobloxAssetId"))
+            shirtRobloxAssetId = try? container.decode(Int64.self, forKey: .init("shirtRobloxAssetId"))
+            pantsRobloxAssetId = try? container.decode(Int64.self, forKey: .init("pantsRobloxAssetId"))
             installCommand = try? container.decode(String.self, forKey: .init("installCommand"))
             heroConcepts = try? container.decode([HeroConcept].self, forKey: .init("heroConcepts"))
             pipelinePhase = try? container.decode(String.self, forKey: .init("pipelinePhase"))
@@ -543,6 +554,7 @@ enum AIWorkspaceAPI {
         let isClothingPreview: Bool?
         let isShirtTexture: Bool?
         let isPantsTexture: Bool?
+        let isTShirtGraphic: Bool?
         let shirtTextureUrl: String?
         let pantsTextureUrl: String?
         let role: String?
@@ -560,6 +572,7 @@ enum AIWorkspaceAPI {
             isClothingPreview = try? container.decode(Bool.self, forKey: .isClothingPreview)
             isShirtTexture = try? container.decode(Bool.self, forKey: .isShirtTexture)
             isPantsTexture = try? container.decode(Bool.self, forKey: .isPantsTexture)
+            isTShirtGraphic = try? container.decode(Bool.self, forKey: .isTShirtGraphic)
             shirtTextureUrl = try? container.decode(String.self, forKey: .shirtTextureUrl)
             pantsTextureUrl = try? container.decode(String.self, forKey: .pantsTextureUrl)
             role = try? container.decode(String.self, forKey: .role)
@@ -572,7 +585,7 @@ enum AIWorkspaceAPI {
 
         private enum CodingKeys: String, CodingKey {
             case isPreviewTexture, is3DModel, moderationStatus
-            case isClothingPreview, isShirtTexture, isPantsTexture
+            case isClothingPreview, isShirtTexture, isPantsTexture, isTShirtGraphic
             case shirtTextureUrl, pantsTextureUrl
             case role, animationName, rig, animationType, looped, keyframeCount
         }

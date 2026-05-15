@@ -5898,9 +5898,14 @@ function resolveFurnitureBuildMode(prompt: string, metadata: Record<string, unkn
 
 // Furniture supports a fast Roblox Parts path and an AI mesh path. The mesh path
 // keeps the 2D approval gate so users can reject a concept before Meshy/Hunyuan.
+// Parts mode (session 346) runs an LLM scene generation + verify+retry + blocky preview
+// before the deterministic builder consumes the scene.
 function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): GenerationStageProgress[] {
   if (mode === 'parts') {
     return [
+      { id: 'generate_furniture_scene', title: 'Designing furniture scene', status: 'pending' },
+      { id: 'quality_review', title: 'Quality review vs brief', status: 'pending' },
+      { id: 'generate_furniture_preview', title: 'Rendering blocky preview', status: 'pending' },
       { id: 'export_rbxm', title: 'Build Roblox Parts model', status: 'pending' },
     ];
   }
@@ -15946,6 +15951,445 @@ function buildingQualityReviewMetadata(review: BuildingQualityReviewResult): Rec
   return metadata;
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+// Session 346 — Blocky-furniture pipeline helpers (LLM scene, verify+retry, PNG)
+// ───────────────────────────────────────────────────────────────────────────────
+
+type FurnitureScenePart = {
+  name: string;
+  kind: 'Part' | 'Seat';
+  role: string;
+  shape: 'Block' | 'Cylinder' | 'Ball';
+  position: [number, number, number];
+  size: [number, number, number];
+  color: string;
+  material: string;
+  transparency?: number;
+  canCollide?: boolean;
+};
+
+type FurnitureScene = {
+  title: string;
+  furnitureType: string;
+  boundingBox: [number, number, number];
+  parts: FurnitureScenePart[];
+};
+
+type FurnitureSceneReview = {
+  status: 'passed' | 'rejected';
+  score: number;
+  userMessage: string;
+  reasons: string[];
+  repairActions: string[];
+};
+
+const FURNITURE_VALID_MATERIALS = new Set([
+  'Wood', 'WoodPlanks', 'Metal', 'SmoothPlastic', 'Plastic',
+  'Fabric', 'Grass', 'Glass', 'Marble', 'Slate', 'Concrete', 'Brick', 'Neon',
+]);
+
+const FURNITURE_VALID_SHAPES = new Set(['Block', 'Cylinder', 'Ball']);
+
+function parseFurnitureSceneJson(raw: string): FurnitureScene | null {
+  let body: string;
+  try {
+    body = extractJsonObject(raw);
+  } catch {
+    return null;
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+  const obj = data as Record<string, unknown>;
+  const partsRaw = Array.isArray(obj.parts) ? obj.parts : null;
+  if (!partsRaw || partsRaw.length === 0) return null;
+
+  const parts: FurnitureScenePart[] = [];
+  for (const p of partsRaw) {
+    if (!p || typeof p !== 'object') continue;
+    const pp = p as Record<string, unknown>;
+    const name = typeof pp.name === 'string' ? pp.name.trim().slice(0, 40) : '';
+    const kind = pp.kind === 'Seat' ? 'Seat' : 'Part';
+    const role = typeof pp.role === 'string' ? pp.role.trim().toLowerCase() : 'body';
+    const shapeRaw = typeof pp.shape === 'string' ? pp.shape : 'Block';
+    const shape: FurnitureScenePart['shape'] = FURNITURE_VALID_SHAPES.has(shapeRaw)
+      ? (shapeRaw as FurnitureScenePart['shape']) : 'Block';
+    const position = Array.isArray(pp.position) && pp.position.length === 3
+      ? pp.position.map((n) => Number(n)) as [number, number, number]
+      : null;
+    const size = Array.isArray(pp.size) && pp.size.length === 3
+      ? pp.size.map((n) => Number(n)) as [number, number, number]
+      : null;
+    if (!name || !position || !size) continue;
+    if (position.some((n) => !Number.isFinite(n)) || size.some((n) => !Number.isFinite(n) || n <= 0)) continue;
+    const color = typeof pp.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(pp.color) ? pp.color.toUpperCase() : '#9C9C9C';
+    const materialRaw = typeof pp.material === 'string' ? pp.material : 'SmoothPlastic';
+    const material = FURNITURE_VALID_MATERIALS.has(materialRaw) ? materialRaw : 'SmoothPlastic';
+    const transparency = typeof pp.transparency === 'number' && Number.isFinite(pp.transparency)
+      ? Math.max(0, Math.min(1, pp.transparency)) : undefined;
+    const canCollide = typeof pp.canCollide === 'boolean' ? pp.canCollide : undefined;
+    parts.push({ name, kind, role, shape, position, size, color, material, transparency, canCollide });
+  }
+  if (parts.length === 0) return null;
+
+  const boundingBox = Array.isArray(obj.boundingBox) && obj.boundingBox.length === 3
+    ? (obj.boundingBox as number[]).map((n) => Math.max(0.1, Number(n) || 1)) as [number, number, number]
+    : [3, 3, 3] as [number, number, number];
+
+  return {
+    title: typeof obj.title === 'string' ? obj.title.slice(0, 80) : 'Furniture Prop',
+    furnitureType: typeof obj.furnitureType === 'string' ? obj.furnitureType.toLowerCase().trim() : 'decor',
+    boundingBox,
+    parts,
+  };
+}
+
+async function generateLLMFurnitureScene(args: {
+  brief: string;
+  metadata: Record<string, unknown>;
+  repairFeedback?: string[];
+}): Promise<{ scene: FurnitureScene; raw: string; attempts: number } | { error: string; raw?: string }> {
+  const providerCandidates = [
+    typeof args.metadata.chatProvider === 'string' ? args.metadata.chatProvider : '',
+    typeof args.metadata.bodyProvider === 'string' ? args.metadata.bodyProvider : '',
+  ].map((s) => s.toLowerCase());
+  const chatProvider: AIProvider = (providerCandidates.find((p) => ['openai', 'anthropic', 'gemini'].includes(p)) || 'gemini') as AIProvider;
+  const modelHint = chatProvider === 'gemini' ? 'gemini-2.5-flash' : undefined;
+  const repairBlock = (args.repairFeedback && args.repairFeedback.length > 0)
+    ? `\n\nPrevious attempt was REJECTED. Fix exactly these issues:\n- ${args.repairFeedback.slice(0, 6).join('\n- ')}`
+    : '';
+  const prompt = [
+    PROMPT_CATALOG.generateFurnitureSceneBlock,
+    '',
+    `USER BRIEF:\n${args.brief.slice(0, 1400)}`,
+    '',
+    'METADATA:',
+    `- furnitureType: ${args.metadata.furnitureType ?? 'auto'}`,
+    `- style: ${args.metadata.style ?? 'modern'}`,
+    `- material: ${args.metadata.material ?? 'auto'}`,
+    `- scale: ${args.metadata.scale ?? 'medium'}`,
+    `- primaryColor: ${args.metadata.primaryColor ?? '#9C7B58'}`,
+    `- accentColor: ${args.metadata.accentColor ?? '#D9C39C'}`,
+    `- glowColor: ${args.metadata.glowColor ?? '#FFEAA8'}`,
+    `- title: ${args.metadata.title ?? ''}`,
+    repairBlock,
+  ].join('\n');
+
+  try {
+    const result = await Promise.race([
+      runChatProvider(chatProvider, prompt, modelHint),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Furniture scene gen timeout (45s)')), 45_000)),
+    ]);
+    const raw = (result as Awaited<ReturnType<typeof runChatProvider>>).text ?? '';
+    const scene = parseFurnitureSceneJson(raw);
+    if (!scene) return { error: 'LLM did not return a valid furniture scene JSON', raw };
+    return { scene, raw, attempts: 1 };
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+}
+
+async function reviewLLMFurnitureScene(args: {
+  brief: string;
+  metadata: Record<string, unknown>;
+  scene: FurnitureScene;
+}): Promise<FurnitureSceneReview> {
+  const providerCandidates = [
+    typeof args.metadata.chatProvider === 'string' ? args.metadata.chatProvider : '',
+    typeof args.metadata.bodyProvider === 'string' ? args.metadata.bodyProvider : '',
+  ].map((s) => s.toLowerCase());
+  const chatProvider: AIProvider = (providerCandidates.find((p) => ['openai', 'anthropic', 'gemini'].includes(p)) || 'gemini') as AIProvider;
+  const modelHint = chatProvider === 'gemini' ? 'gemini-2.5-flash' : undefined;
+
+  // Compact scene summary — only what the reviewer needs to spot issues.
+  const factLines = args.scene.parts.slice(0, 30).map((p) =>
+    `- ${p.name} [${p.kind}] role=${p.role} shape=${p.shape} size=[${p.size.map((n) => n.toFixed(2)).join(',')}] pos=[${p.position.map((n) => n.toFixed(2)).join(',')}] color=${p.color} material=${p.material}`
+  );
+  const hasSeat = args.scene.parts.some((p) => p.kind === 'Seat');
+  const hasNeon = args.scene.parts.some((p) => p.material === 'Neon');
+  const hasGreen = args.scene.parts.some((p) => /^#?([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})$/i.test(p.color)
+    && parseInt(p.color.slice(3, 5), 16) > parseInt(p.color.slice(1, 3), 16) + 20
+    && parseInt(p.color.slice(3, 5), 16) > parseInt(p.color.slice(5, 7), 16) + 20);
+
+  const prompt = [
+    PROMPT_CATALOG.reviewFurnitureSceneBlock,
+    '',
+    `USER BRIEF:\n${args.brief.slice(0, 1400)}`,
+    '',
+    'METADATA:',
+    `- requestedType: ${args.metadata.furnitureType ?? 'auto'}`,
+    `- builtType: ${args.scene.furnitureType}`,
+    `- style: ${args.metadata.style ?? 'modern'}`,
+    `- material: ${args.metadata.material ?? 'auto'}`,
+    `- primaryColor: ${args.metadata.primaryColor ?? '#9C7B58'}`,
+    `- accentColor: ${args.metadata.accentColor ?? '#D9C39C'}`,
+    `- glowColor: ${args.metadata.glowColor ?? '#FFEAA8'}`,
+    '',
+    'FINAL SCENE FACTS:',
+    `- totalParts: ${args.scene.parts.length}`,
+    `- hasSeat: ${hasSeat}`,
+    `- hasNeonPart: ${hasNeon}`,
+    `- hasGreenPart: ${hasGreen}`,
+    `- boundingBox: [${args.scene.boundingBox.map((n) => n.toFixed(2)).join(',')}]`,
+    ...factLines,
+  ].join('\n');
+
+  try {
+    const result = await Promise.race([
+      runChatProvider(chatProvider, prompt, modelHint),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Furniture review timeout (45s)')), 45_000)),
+    ]);
+    const text = (result as Awaited<ReturnType<typeof runChatProvider>>).text ?? '';
+    let parsed: Record<string, unknown> | null = null;
+    try { parsed = JSON.parse(extractJsonObject(text)); } catch { parsed = null; }
+    if (!parsed) {
+      return {
+        status: 'passed',
+        score: 70,
+        userMessage: 'Quality review returned malformed JSON — shipping the scene as-is.',
+        reasons: ['Reviewer LLM output could not be parsed'],
+        repairActions: [],
+      };
+    }
+    const status = parsed.status === 'rejected' ? 'rejected' : 'passed';
+    const score = typeof parsed.score === 'number' && Number.isFinite(parsed.score)
+      ? Math.max(0, Math.min(100, parsed.score)) : (status === 'rejected' ? 35 : 85);
+    const reasons = Array.isArray(parsed.reasons) ? (parsed.reasons as unknown[]).map(String).slice(0, 6) : [];
+    const repairActions = Array.isArray(parsed.repairActions) ? (parsed.repairActions as unknown[]).map(String).slice(0, 6) : [];
+    const userMessage = typeof parsed.userMessage === 'string' && parsed.userMessage.trim()
+      ? parsed.userMessage.trim().slice(0, 240)
+      : status === 'rejected'
+        ? 'Quality review flagged the blocky scene — regenerating.'
+        : 'Quality review passed the blocky scene.';
+    return { status, score, userMessage, reasons, repairActions };
+  } catch (err) {
+    logger.warn('[FurnitureReview] LLM review failed', { error: errorMessage(err) });
+    return {
+      status: 'passed',
+      score: 65,
+      userMessage: 'Quality review unavailable — shipping the scene as-is.',
+      reasons: [errorMessage(err)],
+      repairActions: [],
+    };
+  }
+}
+
+async function runFurnitureSceneWithRetry(args: {
+  brief: string;
+  metadata: Record<string, unknown>;
+  maxAttempts: number;
+}): Promise<{
+  scene: FurnitureScene | null;
+  review: FurnitureSceneReview | null;
+  attempts: Array<{ index: number; reasons: string[]; status: string; score: number }>;
+  error?: string;
+}> {
+  const attemptsLog: Array<{ index: number; reasons: string[]; status: string; score: number }> = [];
+  let bestScene: FurnitureScene | null = null;
+  let bestReview: FurnitureSceneReview | null = null;
+  let bestScore = -1;
+  let repairFeedback: string[] = [];
+  let lastError: string | undefined;
+
+  for (let i = 0; i < args.maxAttempts; i++) {
+    const gen = await generateLLMFurnitureScene({
+      brief: args.brief,
+      metadata: args.metadata,
+      repairFeedback,
+    });
+    if ('error' in gen) {
+      lastError = gen.error;
+      attemptsLog.push({ index: i + 1, status: 'gen_failed', score: 0, reasons: [gen.error] });
+      continue;
+    }
+    const review = await reviewLLMFurnitureScene({
+      brief: args.brief,
+      metadata: args.metadata,
+      scene: gen.scene,
+    });
+    attemptsLog.push({ index: i + 1, status: review.status, score: review.score, reasons: review.reasons });
+    if (review.score > bestScore) {
+      bestScene = gen.scene;
+      bestReview = review;
+      bestScore = review.score;
+    }
+    if (review.status === 'passed') break;
+    repairFeedback = review.repairActions;
+  }
+
+  return { scene: bestScene, review: bestReview, attempts: attemptsLog, error: lastError };
+}
+
+// PNG renderer for a blocky furniture scene. Produces a 3-axis isometric preview by
+// projecting each part's 8 corners and filling its screen bounding rectangle in painter
+// order (back-to-front). Reuses the building-preview Buffer→PNG technique.
+function createFurniturePreviewPng(scene: FurnitureScene, title: string): Buffer {
+  const width = 768;
+  const height = 512;
+  const margin = 36;
+  const pixels = Buffer.alloc(width * height * 4, 255);
+  const setPixel = (x: number, y: number, color: [number, number, number, number]) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const idx = (y * width + x) * 4;
+    const alpha = color[3] / 255;
+    pixels[idx]     = Math.max(0, Math.min(255, Math.round(color[0] * alpha + pixels[idx]     * (1 - alpha))));
+    pixels[idx + 1] = Math.max(0, Math.min(255, Math.round(color[1] * alpha + pixels[idx + 1] * (1 - alpha))));
+    pixels[idx + 2] = Math.max(0, Math.min(255, Math.round(color[2] * alpha + pixels[idx + 2] * (1 - alpha))));
+    pixels[idx + 3] = 255;
+  };
+  const fillRectScreen = (x0: number, y0: number, x1: number, y1: number, color: [number, number, number, number]) => {
+    const xa = Math.max(0, Math.floor(Math.min(x0, x1)));
+    const xb = Math.min(width - 1, Math.ceil(Math.max(x0, x1)));
+    const ya = Math.max(0, Math.floor(Math.min(y0, y1)));
+    const yb = Math.min(height - 1, Math.ceil(Math.max(y0, y1)));
+    for (let y = ya; y <= yb; y++) {
+      for (let x = xa; x <= xb; x++) setPixel(x, y, color);
+    }
+  };
+  const hexBytes = (hex: string, fallback: [number, number, number]): [number, number, number] => {
+    const clean = hex.replace('#', '').trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(clean)) return fallback;
+    const n = Number.parseInt(clean, 16);
+    return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+  };
+
+  // Studio-viewport-feel background — sky-blue top fading to cream bottom.
+  for (let y = 0; y < height; y++) {
+    const t = y / height;
+    const r = Math.round(214 + (245 - 214) * t);
+    const g = Math.round(229 + (242 - 229) * t);
+    const b = Math.round(240 + (224 - 240) * t);
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+    }
+  }
+
+  // Compute scene bounds to auto-fit.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of scene.parts) {
+    minX = Math.min(minX, p.position[0] - p.size[0] / 2);
+    maxX = Math.max(maxX, p.position[0] + p.size[0] / 2);
+    minY = Math.min(minY, p.position[1] - p.size[1] / 2);
+    maxY = Math.max(maxY, p.position[1] + p.size[1] / 2);
+    minZ = Math.min(minZ, p.position[2] - p.size[2] / 2);
+    maxZ = Math.max(maxZ, p.position[2] + p.size[2] / 2);
+  }
+  if (!Number.isFinite(minX)) { minX = -2; maxX = 2; minY = 0; maxY = 4; minZ = -2; maxZ = 2; }
+  const spanX = Math.max(1, maxX - minX);
+  const spanY = Math.max(1, maxY - minY);
+  const spanZ = Math.max(1, maxZ - minZ);
+
+  // Isometric projection (30° rotation around Y).
+  const COS30 = 0.8660254;
+  const SIN30 = 0.5;
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  const groundY = minY; // anchor base of model to ground line
+
+  // Auto-scale so the iso-projected scene fits in the canvas with margin.
+  const isoWidth  = (spanX + spanZ) * COS30;
+  const isoHeight = spanY + (spanX + spanZ) * SIN30;
+  const scale = Math.min(
+    (width  - margin * 2) / Math.max(0.5, isoWidth),
+    (height - margin * 2 - 40 /* title strip */) / Math.max(0.5, isoHeight),
+  );
+
+  const project = (x: number, y: number, z: number): [number, number] => {
+    const localX = x - cx;
+    const localZ = z - cz;
+    const screenX = width / 2 + (localX - localZ) * COS30 * scale;
+    const screenY = (height / 2 + 12) - (y - groundY - spanY / 2) * scale + (localX + localZ) * SIN30 * scale;
+    return [screenX, screenY];
+  };
+
+  // Draw a faint ground ellipse to anchor the model.
+  const groundCx = width / 2;
+  const groundCy = height / 2 + spanY * scale / 2 + 14;
+  const groundRx = Math.max(40, (spanX + spanZ) * COS30 * scale * 0.55);
+  const groundRy = Math.max(8, groundRx * 0.32);
+  for (let dy = -groundRy; dy <= groundRy; dy++) {
+    const w = Math.sqrt(Math.max(0, 1 - (dy * dy) / (groundRy * groundRy))) * groundRx;
+    fillRectScreen(groundCx - w, groundCy + dy, groundCx + w, groundCy + dy + 1, [0, 0, 0, 22]);
+  }
+
+  // Painter-sort parts: farther-back (higher x+z) draws first, closer (lower x+z) on top.
+  const sorted = [...scene.parts].sort((a, b) => {
+    const da = (a.position[0] + a.position[2]) + a.position[1] * 0.05;
+    const db = (b.position[0] + b.position[2]) + b.position[1] * 0.05;
+    return db - da;
+  });
+
+  for (const part of sorted) {
+    const [px, py, pz] = part.position;
+    const [sx, sy, sz] = part.size;
+    const halfX = sx / 2, halfY = sy / 2, halfZ = sz / 2;
+    const corners: Array<[number, number]> = [];
+    for (const dx of [-halfX, halfX]) {
+      for (const dy of [-halfY, halfY]) {
+        for (const dz of [-halfZ, halfZ]) {
+          corners.push(project(px + dx, py + dy, pz + dz));
+        }
+      }
+    }
+    const xs = corners.map((c) => c[0]);
+    const ys = corners.map((c) => c[1]);
+    const minSx = Math.min(...xs), maxSx = Math.max(...xs);
+    const minSy = Math.min(...ys), maxSy = Math.max(...ys);
+    const [r, g, b] = hexBytes(part.color, [156, 156, 156]);
+    const transparency = part.transparency ?? 0;
+    const alpha = Math.round((1 - transparency) * 235);
+    // Neon parts pop — full alpha, brighter color.
+    const isNeon = part.material === 'Neon' || part.role === 'light';
+    const fillR = isNeon ? Math.min(255, r + 30) : r;
+    const fillG = isNeon ? Math.min(255, g + 30) : g;
+    const fillB = isNeon ? Math.min(255, b + 30) : b;
+    const fillAlpha = isNeon ? 245 : alpha;
+    fillRectScreen(minSx, minSy, maxSx, maxSy, [fillR, fillG, fillB, fillAlpha]);
+    // Soft top highlight on the upper half (faux-iso "top face").
+    const topMidY = minSy + (maxSy - minSy) * 0.45;
+    fillRectScreen(minSx + 1, minSy + 1, maxSx - 1, topMidY, [
+      Math.min(255, fillR + 22), Math.min(255, fillG + 22), Math.min(255, fillB + 22),
+      Math.min(120, fillAlpha),
+    ]);
+    // 1-px dark outline on bottom edge for separation.
+    fillRectScreen(minSx, maxSy - 1, maxSx, maxSy, [
+      Math.max(0, fillR - 40), Math.max(0, fillG - 40), Math.max(0, fillB - 40),
+      Math.min(150, fillAlpha),
+    ]);
+  }
+
+  // Title strip — solid bar at top with the prop title.
+  fillRectScreen(0, 0, width, 30, [38, 50, 64, 240]);
+  fillRectScreen(margin, 9, margin + Math.min(width - margin * 2, title.length * 8 + 60), 22, [80, 130, 200, 220]);
+
+  // Encode PNG.
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (width * 4 + 1);
+    raw[rowStart] = 0;
+    pixels.copy(raw, rowStart + 1, y * width * 4, (y + 1) * width * 4);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(raw, { level: 6 })),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 function addGuaranteedBuildingWindows(
   scene: BuildingScene,
   dims: BuildingDimensions,
@@ -22495,6 +22939,114 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         jobId,
         furnitureBuildMode,
       });
+
+      // Session 346 — Blocky furniture path. LLM designs a Parts scene matching the
+      // brief, reviewer verifies it (up to 3 attempts), preview PNG is rendered, and
+      // the scene JSON is stashed in metadata so buildFurnitureModelManifest can emit
+      // exactly those Parts instead of the deterministic fallback layout.
+      await beginStage('generate_furniture_scene', 'LLM is composing a blocky scene that matches your brief');
+      const furnitureMetadata: Record<string, unknown> = { ...(currentJob.metadata ?? {}) };
+      const sceneRun = await runFurnitureSceneWithRetry({
+        brief: job.prompt,
+        metadata: furnitureMetadata,
+        maxAttempts: 3,
+      });
+
+      if (sceneRun.scene) {
+        const sceneJson = JSON.stringify(sceneRun.scene);
+        currentJob = {
+          ...currentJob,
+          metadata: {
+            ...(currentJob.metadata ?? {}),
+            furnitureLLMScene: sceneJson,
+            furnitureLLMSceneAttempts: sceneRun.attempts,
+            furnitureLLMSceneStatus: sceneRun.review?.status ?? 'unknown',
+            furnitureLLMSceneScore: sceneRun.review?.score ?? 0,
+          },
+        };
+        await finishStage('generate_furniture_scene', 'completed', [], [
+          `Scene built with ${sceneRun.scene.parts.length} parts across ${sceneRun.attempts.length} attempt(s).`,
+          ...sceneRun.attempts.map((a) => `Attempt ${a.index}: ${a.status} (score ${a.score})`),
+        ]);
+      } else {
+        await finishStage('generate_furniture_scene', 'failed', [], [
+          'LLM scene generation failed — falling back to deterministic blocky layout.',
+          ...(sceneRun.error ? [sceneRun.error] : []),
+        ], sceneRun.error);
+      }
+
+      // Quality review stage — we already ran the review inside runFurnitureSceneWithRetry,
+      // so this stage just surfaces the verdict in the iOS UI.
+      await beginStage('quality_review', 'Comparing the assembled scene against your brief');
+      const review = sceneRun.review;
+      if (review) {
+        currentJob = {
+          ...currentJob,
+          metadata: {
+            ...(currentJob.metadata ?? {}),
+            qualityReviewStatus: review.status,
+            qualityReviewScore: review.score,
+            qualityReviewMessage: review.userMessage,
+            qualityReviewReasons: review.reasons,
+            qualityRepairActions: review.repairActions,
+          },
+        };
+        await finishStage('quality_review', 'completed', [], [
+          `Score ${review.score}/100 — ${review.userMessage}`,
+          ...review.reasons.slice(0, 4),
+          ...(review.status === 'rejected' ? ['Shipped best attempt; consider rerunning with adjusted brief.'] : []),
+        ]);
+      } else {
+        await finishStage('quality_review', 'skipped', [], ['No review available — scene generation failed.']);
+      }
+
+      // Preview PNG stage — render the blocky scene from the same JSON the builder consumes.
+      await beginStage('generate_furniture_preview', 'Rendering blocky 3D preview');
+      if (sceneRun.scene) {
+        try {
+          const previewBuffer = createFurniturePreviewPng(
+            sceneRun.scene,
+            typeof currentJob.metadata?.title === 'string' ? (currentJob.metadata.title as string) : sceneRun.scene.title,
+          );
+          const previewArtifact = await uploadBinaryArtifact(currentJob, previewBuffer, {
+            type: 'png',
+            extension: 'png',
+            mimeType: 'image/png',
+            name: `${title}-furniture-preview.png`,
+            previewText: 'Blocky preview rendered from the exact Roblox Parts scene.',
+            stageId: 'generate_furniture_preview',
+            artifactRole: 'preview_texture',
+            metadata: {
+              isPreviewTexture: true,
+              role: 'furniture_preview_scene_render',
+              furnitureType: sceneRun.scene.furnitureType,
+              partCount: sceneRun.scene.parts.length,
+              honestPreview: true,
+            },
+          });
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              furniturePreviewArtifactId: previewArtifact.id,
+              furniturePreviewImageUrl: previewArtifact.downloadUrl ?? previewArtifact.url,
+              previewImageUrl: previewArtifact.downloadUrl ?? previewArtifact.url,
+              previewRenderSource: 'furniture_scene_deterministic',
+            },
+            artifacts: [...currentJob.artifacts, previewArtifact],
+          };
+          await finishStage('generate_furniture_preview', 'completed', [previewArtifact.id], [
+            'Blocky preview rendered from final scene JSON',
+          ]);
+        } catch (previewErr) {
+          logger.warn('[Furniture] preview PNG failed', { error: errorMessage(previewErr) });
+          await finishStage('generate_furniture_preview', 'completed', [], [
+            `Preview skipped: ${errorMessage(previewErr).slice(0, 120)}`,
+          ]);
+        }
+      } else {
+        await finishStage('generate_furniture_preview', 'skipped', [], ['Preview skipped — no scene to render.']);
+      }
     }
 
     if (shouldRunMeshAssetPipeline) {

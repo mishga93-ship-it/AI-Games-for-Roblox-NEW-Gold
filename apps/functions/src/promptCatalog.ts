@@ -447,7 +447,11 @@ CONVERSATION STYLE:
 INTERVIEW FLOW (ALWAYS follow — NEVER skip even if the user names the item):
 
 Turn 1 — TYPE & MODE:
-Acknowledge the idea. Ask about the clothing creation mode.
+**SKIP this turn entirely if metadata.clothingType is already set** (the iOS welcome picker
+already locked in the type — values: "t_shirt", "classic_shirt", "classic_pants", "classic_outfit"
+mean 2D Classic mode is pre-picked; "layered_*" means 3D Layered). In that case go straight to Turn 2.
+
+Otherwise: acknowledge the idea. Ask about the clothing creation mode.
 Example for "red t-shirt": "Cool, a red t-shirt! First — do you want 2D Classic (flat texture, quick, works everywhere) or 3D Layered (real 3D mesh like in the Avatar Shop, premium quality but takes longer)?"
 quickReplies: ["2D Classic (fast)", "3D Layered (premium)", "Decide for me"]
 IMPORTANT: Store the user's choice in the GDD field "clothingMode" as either "classic_2d" or "layered_3d". If user says "Decide for me", default to "classic_2d".
@@ -1641,19 +1645,14 @@ Emit a "colorPicker" field so iOS can show SwiftUI ColorPickers:
 }
 quickReplies: ["Small", "Medium (recommended)", "Large", "Decide for me"]
 
-Turn 4 — BUILD MODE:
-Ask how to build the asset:
-- "Auto (recommended)": backend decides; simple blocky props become Roblox Parts, ornate/organic props use AI Mesh with a visible Parts fallback.
-- "Fast Roblox Parts": guaranteed visible .rbxm made from primitive Parts; faster and more Studio-editable.
-- "AI 3D Mesh": detailed mesh provider path; slower, can need Roblox asset access, always keeps typed fallback Parts.
-quickReplies: ["Auto (recommended)", "Fast Roblox Parts", "AI 3D Mesh", "Generate!", "Change something"]
-
-After turn 4 — FURNITURE BRIEF:
+After turn 3 — FURNITURE BRIEF:
 Write a VIVID 2-3 sentence visual description (era, material, distinctive features, lighting feel).
 Show the GDD card with all details filled in.
 quickReplies: ["Generate!", "Change something", "Start over"]
 
 Only set action to "generating" when the user confirms.
+
+DO NOT ask the user about build mode (Blocky Parts vs 3D Mesh). The iOS app shows a dedicated path-selector bubble AFTER the user taps "Generate!", so any build-mode question here would duplicate that gate.
 
 When confirming, populate the GDD fields:
 - title: descriptive prop name with visual cue ("Carved Oak Tavern Chair", "Brass Art-Deco Floor Lamp")
@@ -1662,11 +1661,12 @@ When confirming, populate the GDD fields:
 - style: short label ("modern", "victorian", "cyberpunk", ...)
 - material: free-text material name ("carved mahogany", "brushed steel + glass shade")
 - scale: "small" | "medium" | "large"
-- furnitureBuildMode: "auto" | "parts" | "mesh"
 - primaryColor / accentColor / glowColor: "#RRGGBB"
 - requestedKind: "furniture_3d"   // tells the build pipeline to use buildFurnitureModelManifest
 
-CRITICAL: The title must be VISUALLY DESCRIPTIVE. If furnitureBuildMode is "mesh" or "auto", append "low-poly game asset, clean topology, PBR" to the visual brief sent to the mesh provider so the result respects Roblox's 20K-tri MeshPart cap. If furnitureBuildMode is "parts", keep the brief focused on shape/material/color cues the Parts builder can represent.
+The build mode (parts vs mesh) is chosen by the user in the iOS path-selector AFTER this brief — do NOT set furnitureBuildMode here.
+
+CRITICAL: The title must be VISUALLY DESCRIPTIVE. The build pipeline appends "low-poly game asset, clean topology, PBR" automatically for the mesh path and a Parts-builder-friendly shape/material/color summary for the blocky path — keep the visual brief mode-agnostic so it works for both.
 `.trim(),
 
   generateFurnitureScripts: `
@@ -1688,6 +1688,80 @@ If a behavior is requested, generate the minimum needed code, parented to the Fu
 - Wrap mutations in pcall.
 
 Keep the code under 50 lines. No hard-coded asset IDs.
+`.trim(),
+
+  // Session 346 — Blocky furniture path. LLM produces a JSON scene of Roblox Parts that
+  // the deterministic builder turns into a Model. Keep the schema strict so the parser
+  // never has to guess. The reviewer (reviewFurnitureSceneBlock) compares this scene
+  // against the user's brief and decides whether to ship or retry.
+  generateFurnitureSceneBlock: `
+You are a Roblox Parts builder for a single static furniture prop. Output ONE JSON object only — no markdown, no code fences, no commentary.
+
+You will receive the user's brief plus typed metadata (furnitureType, style, material, scale, primaryColor, accentColor, glowColor).
+Your job: design a single prop made of 6-22 primitive Roblox Parts that visibly matches the brief. Every shape, color, and material must be chosen so a human glancing at the resulting blocks would say "yes, that's a <type> in <style> with <material>".
+
+OUTPUT SCHEMA (strict — keep the keys exactly as written):
+{
+  "title": "string — descriptive prop name, e.g. 'Carved Oak Tavern Chair'",
+  "furnitureType": "chair | table | lamp | shelf | rug | plant | sign | decor",
+  "boundingBox": [W, H, D],  // overall studs the prop should fit in, before scale multiplier
+  "parts": [
+    {
+      "name": "PascalCase part name, e.g. ChairSeat",
+      "kind": "Part" | "Seat",                     // Seat ONLY for the sit-on plane of a chair
+      "role": "seat" | "back" | "leg" | "top" | "body" | "shade" | "post" | "support" | "trim" | "leaves" | "trunk" | "panel" | "detail" | "decor" | "light",
+      "shape": "Block" | "Cylinder" | "Ball",
+      "position": [x, y, z],                        // studs, local to model PrimaryPart at origin; y=0 is floor
+      "size": [w, h, d],                            // studs
+      "color": "#RRGGBB",                           // hex; use brief's primary/accent/glow when relevant
+      "material": "Wood" | "WoodPlanks" | "Metal" | "SmoothPlastic" | "Plastic" | "Fabric" | "Grass" | "Glass" | "Marble" | "Slate" | "Concrete" | "Brick" | "Neon",
+      "transparency": 0,                            // optional, 0..1
+      "canCollide": true                            // optional; rugs should be false
+    }
+  ]
+}
+
+CONSTRAINTS:
+- 6-22 parts total. Lamps/signs/rugs trend small; thrones/shelves/sofas trend larger.
+- Bounding box must be plausible per type: chair ~2.5x3x2.5, table ~4x2.6x2.5, lamp ~1.4x4.5x1.4, shelf ~3x4x0.6, rug ~6x0.12x4, plant ~1.5x2.5x1.5, sign ~3x2x0.2, decor ~1.5x1.5x1.5 (multiply by scale 'small'=0.7 / 'medium'=1.0 / 'large'=1.4 — emit raw box, the builder applies scale).
+- Use Roblox's official Material enum names exactly (capital-cased above). No "OakWood", no "VelvetFabric".
+- Use the user's primaryColor for the dominant surface, accentColor for trim/cushion/top, glowColor for any light-emitting part.
+- Chairs MUST include exactly one part with kind="Seat" and role="seat" so players can sit on them.
+- Lamps MUST include at least one role="light" Part with Material="Neon" and color near glowColor.
+- Signs SHOULD include one role="light" part if the user implied glow ("neon sign", "led sign"); keep regular signs without it.
+- Plants MUST have at least one role="leaves" green-tinted part.
+- Rugs MUST have canCollide=false on the body and lay flat (h <= 0.15).
+- Parts must not float without support — legs reach the ground, table top sits on legs, shelf boards span between sides, lamp shade sits on top of post.
+- Distinctive features from the brief MUST appear as Parts (carvings → extra trim Parts; neon stripe → a Neon Part; gold legs → accent-color cylinder Parts; cushion → a Fabric Part on the seat).
+
+REPAIR MODE: If the input says "previous attempt was rejected because: ..." then fix exactly those issues in the next pass — don't redo the whole design, only adjust the parts called out in the rejection reasons.
+`.trim(),
+
+  // Session 346 — Verify the LLM-built scene against the user's brief. Output is consumed
+  // by the retry loop: status=rejected triggers a regenerate with repairActions appended.
+  reviewFurnitureSceneBlock: `
+You are a strict QA reviewer for a single Roblox furniture prop built from primitive Parts. Compare the USER BRIEF against the FINAL SCENE FACTS. Output ONE JSON object — no markdown, no commentary.
+
+OUTPUT SCHEMA:
+{
+  "status": "passed" | "rejected",
+  "score": 0-100,
+  "userMessage": "1-2 sentence verdict shown to the user",
+  "reasons": ["short fact-grounded explanations, max 6"],
+  "repairActions": ["actionable instructions for the next regeneration pass, max 6"]
+}
+
+REJECT IF:
+- The wrong furniture TYPE was built (user asked chair, got a table) → reasons mention the mismatch; repairActions tell the generator to rebuild as the correct type.
+- Chair has no Seat part, lamp has no Neon light part, plant has no green leaves part, rug is vertical / has thickness > 0.5 studs, sign labeled neon has no Neon part.
+- Primary, accent, or glow color from the brief was completely ignored (none of those hexes appear within ~50 units in any Part color).
+- The total part count is < 5 OR > 25.
+- Parts visibly float (legs don't reach the ground, shade floats above post, etc.) — only mark this if positions clearly violate it.
+- A distinctive feature the user explicitly named ("carved", "neon strip", "gold legs", "leather cushion", "pointed back") is fully missing from the parts list.
+
+OTHERWISE pass with score 75-95 based on how richly the scene reflects the brief details. Passed scenes can still suggest small improvements via repairActions (the build will ship the current scene regardless).
+
+KEEP repairActions specific and constructive ("add a Neon Part above the shade with color #FFB347", not "make it more lamp-like").
 `.trim(),
 
   generateItemScripts: `
@@ -4485,8 +4559,18 @@ function buildInterviewStateInstruction(
   kind: InterviewStateKind,
   metadata?: PromptContextMetadata,
 ): string {
+  // Session 001 (Track 1): when iOS welcome-picker has already locked the clothing
+  // type, expose it to the LLM so it skips Turn 1 ("2D vs 3D" picker) and goes
+  // straight to design questions. Without this the LLM asks redundantly and the
+  // pipeline falls back to 9-stage character_3d with full-character concept.
+  const clothingTypeFromMeta = typeof (metadata as Record<string, unknown> | undefined)?.clothingType === 'string'
+    ? String((metadata as Record<string, unknown>).clothingType)
+    : '';
+  const clothingHint = (kind === 'clothing' && clothingTypeFromMeta)
+    ? ` USER PRE-PICKED clothingType="${clothingTypeFromMeta}" via the iOS welcome picker — SKIP the 2D/3D mode question (Turn 1) entirely. ${clothingTypeFromMeta === 't_shirt' ? 'Type is a Classic T-Shirt (front-only 512x512 graphic).' : clothingTypeFromMeta === 'classic_shirt' ? 'Type is a Classic Shirt (585x559 wrap template).' : clothingTypeFromMeta === 'classic_pants' ? 'Type is Classic Pants (585x559 wrap template).' : clothingTypeFromMeta === 'classic_outfit' ? 'Type is a full Classic Outfit (Shirt + Pants 585x559 wrap templates).' : ''} Go straight to asking about the DESIGN: print, colors, vibe.`
+    : '';
   if (turn === 0) {
-    return `INTERVIEW STATE: This is the FIRST turn (turn 0). Greet enthusiastically, acknowledge the idea, and ask exactly ONE first question about ${interviewFirstQuestionFocus(kind, metadata)}. ${interviewTurnFocus(kind, turn)} If quickReplies help, include at most 3 and make one "Decide for me".`;
+    return `INTERVIEW STATE: This is the FIRST turn (turn 0). Greet enthusiastically, acknowledge the idea, and ask exactly ONE first question about ${interviewFirstQuestionFocus(kind, metadata)}. ${interviewTurnFocus(kind, turn)} If quickReplies help, include at most 3 and make one "Decide for me".${clothingHint}`;
   }
   if (turn >= maxTurns) {
     return `INTERVIEW STATE: You have completed ${turn} turns of interview. You MUST now present the complete GDD summary and set action to "interview" with quickReplies including "Generate!" and "Change something" and "Start over". Do NOT ask more questions — summarize everything and offer to generate. For game interviews, include the full GDD table fields.`;

@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [Verified Commit Policy] Commit/push только после успешной проверки (2026-05-15, сессия 349)
+- **Задача**: добавить правило, чтобы изменения не улетали в GitHub после каждой мелкой правки, а коммитились только после успешной проверки.
+- **Решение**: в `AGENTS.md` добавлен раздел `Шаг 6: Git commit / push только после успешной проверки`: commit после релевантного build/lint/diff-check, push только после успешного commit, stage только файлов текущей задачи.
+- **Файлы**: `AGENTS.md`, `cursor/changelog-349.md`, `docs/PROGRESS.md`.
+- **Проверка**: docs/config-only change — `git diff --check` по изменённым workflow-файлам.
+- **Эффект**: будущие сессии должны держать промежуточные правки локально и отправлять в GitHub только проверенные checkpoint-состояния.
+
 ### ✅ [T-Shirt Backend Pipeline Finish] Незавершённая T-Shirt ветка доведена до сборки (2026-05-15, сессия 348)
 - **Задача**: доделать незакоммиченный `apps/functions/src/index.ts`, который добавлял T-Shirt pipeline и ломал backend build.
 - **Решение**: добавлен `generateTShirtGraphic()` в `providers.ts`, расширен `uploadClassicClothing` под `TShirt`, а `robloxWorker.ts` получил `clothing_tshirt` manifest с `ShirtGraphic` и `AutoEquipTShirt`. Manual PNG fallback сохранён, автозагрузка в Roblox остаётся best-effort через existing service-cookie path.
