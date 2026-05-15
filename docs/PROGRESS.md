@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [Marketplace Handoff Xcode Membership] `MarketplaceHandoffView.swift` подключён к iOS target (2026-05-15, сессия 347)
+- **Задача**: выяснить, почему `apps/ios/AIGoldRoblox/Features/Generation/MarketplaceHandoffView.swift` не виден в Xcode/GitHub.
+- **Решение**: файл был на диске, но не был добавлен в `apps/ios/AIGoldRoblox.xcodeproj/project.pbxproj` и оставался untracked в git. Добавлены PBXFileReference/PBXBuildFile, entry в группе `Generation` и entry в `Sources` build phase.
+- **Файлы**: `apps/ios/AIGoldRoblox/Features/Generation/MarketplaceHandoffView.swift`, `apps/ios/AIGoldRoblox.xcodeproj/project.pbxproj`, `cursor/changelog-347.md`, `docs/PROGRESS.md`.
+- **Проверка**: iOS Debug `xcodebuild ... /private/tmp/aigold-marketplace-handoff-347 ... build` → **BUILD SUCCEEDED**; compile log содержит `MarketplaceHandoffView.swift`.
+- **Эффект**: Xcode теперь видит и компилирует Marketplace handoff sheet; файл попадёт в GitHub после commit/push.
+
 ### ✅ [GitHub Bootstrap] Проект подготовлен к первому GitHub-коммиту (2026-05-15, сессия 344)
 - **Задача**: загрузить проект в GitHub `mishga93-ship-it/AI-Games-for-Roblox-NEW-Gold` и дальше сохранять изменения через commits.
 - **Решение**: проект подготовлен как единый монорепозиторий; вложенный `apps/ios/.git` сохранён в backup `/private/tmp/aigold-ios-git-backup-344/apps-ios.git`, а iOS-файлы добавлены в основной git index как обычные файлы. `.env*`, `.claude/`, `GoogleService-Info.plist`, Xcode `xcuserdata/`, `apps/ios/vendor/` и локальный export folder исключены через `.gitignore`.
