@@ -235,6 +235,7 @@ export type GenerationStageId =
   | 'mesh_optimized'
   | 'rig_r15'
   | 'generate_cages'
+  | 'validate_layered'
   | 'package_accessory'
   | 'export_model'
   | 'export_rbxm'

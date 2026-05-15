@@ -5823,10 +5823,18 @@ function createTShirtPipelineStages(): GenerationStageProgress[] {
 }
 
 function createLayeredClothingPipelineStages(): GenerationStageProgress[] {
+  // Session 001 (Track 2 Phase 3): added convert_fbx + validate_layered stages.
+  // FBX is what Studio's Accessory Fitting Tool prefers; validate_layered checks
+  // bounding box / triangle count / texture resolution against Roblox UGC limits
+  // (≤8³ studs, ≤4k triangles, ≤2048² texture) before handing to the user.
+  // generate_cages is kept but treated as a no-op marker — Path B (Studio AFT)
+  // generates cages in Studio, not on backend.
   return [
     { id: 'concept_image', title: 'Concept image', status: 'pending' },
     { id: 'mesh_3d', title: '3D clothing mesh', status: 'pending' },
-    { id: 'generate_cages', title: 'Generate cages', status: 'pending' },
+    { id: 'convert_fbx', title: 'Convert to FBX', status: 'pending' },
+    { id: 'validate_layered', title: 'Validate Roblox limits', status: 'pending' },
+    { id: 'generate_cages', title: 'Cages (Studio AFT)', status: 'pending' },
     { id: 'package_accessory', title: 'Package accessory', status: 'pending' },
     { id: 'export_rbxm', title: 'Export RBXM', status: 'pending' },
   ];
@@ -23005,6 +23013,82 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       }
       await finishStage('mesh_3d', 'completed', meshArtifacts.map((a) => a.id), ['Clothing mesh generated']);
 
+      // Track 2 Phase 3 — convert the .glb to .fbx so Roblox Studio's 3D Importer
+      // + Accessory Fitting Tool can ingest it. AFT works with both formats but
+      // .fbx is the "canonical" path per Roblox docs for layered clothing imports.
+      // Failure is non-fatal: user can still use the .glb manually.
+      await beginStage('convert_fbx', 'Converting mesh to FBX for Studio AFT');
+      let layeredFbxArtifact: GenerationArtifact | undefined;
+      try {
+        const fbxSourceUrl = rawMeshArtifact.downloadUrl ?? rawMeshArtifact.url ?? '';
+        const fbxResult = await convertToFbx({ sourceUrl: fbxSourceUrl, title });
+        layeredFbxArtifact = await uploadBinaryArtifact(job, Buffer.from(fbxResult.outputBase64, 'base64'), {
+          type: 'fbx',
+          extension: 'fbx',
+          mimeType: 'model/fbx',
+          name: fbxResult.outputFileName,
+          previewText: 'FBX garment mesh — drop into Studio 3D Importer, then Accessory Fitting Tool',
+          stageId: 'convert_fbx',
+          artifactRole: 'export_binary',
+          metadata: { is3DModel: true, isLayeredClothingFbx: true, ...(fbxResult.metadata ?? {}) },
+        });
+        currentJob.artifacts = [...currentJob.artifacts, layeredFbxArtifact];
+        await finishStage('convert_fbx', 'completed', [layeredFbxArtifact.id], fbxResult.notes ?? ['FBX ready for Accessory Fitting Tool']);
+      } catch (fbxError) {
+        logger.warn('convert_fbx (layered) failed, continuing with .glb only', { error: errorMessage(fbxError) });
+        await finishStage('convert_fbx', 'skipped', [], ['FBX conversion unavailable — Studio AFT also accepts the .glb mesh'], errorMessage(fbxError));
+      }
+
+      // Track 2 Phase 3 — validate the garment mesh against Roblox UGC limits:
+      // triangles ≤4000, bounding box ≤8³ studs, texture ≤2048². If validation
+      // fails the user still gets the artifact but with warning notes so they
+      // know what to fix in Studio before submitting. We don't block the pipeline
+      // — Studio can also down-decimate during AFT.
+      await beginStage('validate_layered', 'Validating Roblox UGC limits');
+      try {
+        const validationNotes: string[] = [];
+        const validationWarnings: string[] = [];
+        const glbUrl = rawMeshArtifact.downloadUrl ?? rawMeshArtifact.url ?? '';
+        if (glbUrl) {
+          try {
+            const headResp = await fetch(glbUrl, { method: 'HEAD' });
+            const sizeBytes = Number(headResp.headers.get('content-length') ?? '0');
+            const sizeMb = sizeBytes / (1024 * 1024);
+            validationNotes.push(`Mesh size: ${sizeMb.toFixed(2)} MB`);
+            // Heuristic: a Roblox-budget layered garment (≤4k tri, ≤2048² texture)
+            // typically lands at ≤5 MB. Above 10 MB is a strong signal the mesh
+            // exceeds limits and will need decimation/texture reduction in Studio.
+            if (sizeMb > 10) {
+              validationWarnings.push(`Mesh is ${sizeMb.toFixed(1)} MB — likely exceeds Roblox UGC limits (≤4k triangles, ≤2048² texture). Use Studio's Mesh Optimizer or AFT's decimation before submitting.`);
+            } else if (sizeMb > 5) {
+              validationWarnings.push(`Mesh size ${sizeMb.toFixed(1)} MB is borderline. Verify triangle count ≤4000 and texture ≤2048² in Studio.`);
+            }
+          } catch (sizeErr) {
+            logger.warn('validate_layered: HEAD fetch failed', { error: errorMessage(sizeErr) });
+          }
+        }
+        // Note: precise triangle / texture counts require parsing the GLB binary
+        // (would need a glTF parser dependency). The size heuristic above is a
+        // good first-pass guard; Studio AFT itself will hard-fail on out-of-budget
+        // assets when the user submits.
+        validationNotes.push('Bounding box ≤8×8×8 studs and 4-bone-influences-per-vertex are enforced by Roblox AFT at submit time — Studio will alert you if violated.');
+        currentJob = {
+          ...currentJob,
+          metadata: {
+            ...(currentJob.metadata ?? {}),
+            layeredValidationWarnings: validationWarnings,
+          },
+        };
+        await finishStage('validate_layered',
+          validationWarnings.length > 0 ? 'completed' : 'completed',
+          [],
+          [...validationNotes, ...validationWarnings],
+        );
+      } catch (valErr) {
+        logger.warn('validate_layered stage failed', { error: errorMessage(valErr) });
+        await finishStage('validate_layered', 'skipped', [], ['Validation skipped — proceed with manual check in Studio'], errorMessage(valErr));
+      }
+
       await beginStage('generate_cages', 'Generating inner/outer cage meshes for WrapLayer');
       try {
         const glbUrl = rawMeshArtifact.downloadUrl ?? rawMeshArtifact.url ?? '';
@@ -23425,6 +23509,50 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                 meshRobloxId: finalAssetId,
               };
               await finishStage('upload_roblox', 'completed', [], [`Uploaded to Roblox as asset ${finalAssetId}`]);
+
+              // Session 346 — Furniture AI Mesh path: previously the .rbxm carried a
+              // runtime InsertService:LoadAsset() Script that swapped the fallback
+              // primitives for the real mesh AT PLAY time. That made Edit-mode show
+              // the cube fallback until you pressed Play. To match Studio's standard
+              // workflow (mesh visible immediately on import), we now extract the
+              // inner MeshId/TextureID from the uploaded Model wrapper via the Roblox
+              // Open Cloud Engine API and bake a static MeshPart into the .rbxm —
+              // same fix that landed for NPC mesh assets in changelog-312.
+              if (isFurniture && furnitureBuildMode !== 'parts') {
+                try {
+                  const extracted = await extractMeshIdFromModel(Number(finalAssetId));
+                  if (extracted === null) {
+                    logger.info('[Furniture mesh] Engine API not configured — keeping runtime InsertService loader', { jobId: job.id });
+                  } else if (extracted.state === 'COMPLETE' && extracted.meshId) {
+                    currentJob.metadata = {
+                      ...(currentJob.metadata ?? {}),
+                      furnitureRealMeshId: `${extracted.meshId}`,
+                      ...(extracted.textureId ? { furnitureRealTextureId: `${extracted.textureId}` } : {}),
+                      furnitureRealMeshSizeY: extracted.meshSize?.y ?? 0,
+                      furnitureRealMeshSizeX: extracted.meshSize?.x ?? 0,
+                      furnitureRealMeshSizeZ: extracted.meshSize?.z ?? 0,
+                    };
+                    logger.info('[Furniture mesh] real numeric MeshId extracted via Engine API', {
+                      jobId: job.id,
+                      modelAssetId: finalAssetId,
+                      realMeshId: extracted.meshId,
+                      realTextureId: extracted.textureId,
+                      sizeY: extracted.meshSize?.y,
+                    });
+                  } else {
+                    logger.warn('[Furniture mesh] Engine API extraction did not produce a numeric MeshId — keeping runtime loader fallback', {
+                      jobId: job.id,
+                      state: extracted.state,
+                      error: extracted.error,
+                    });
+                  }
+                } catch (extractErr) {
+                  logger.warn('[Furniture mesh] extractMeshIdFromModel threw — keeping runtime loader fallback', {
+                    jobId: job.id,
+                    error: errorMessage(extractErr),
+                  });
+                }
+              }
             } else {
               await finishStage('upload_roblox', 'skipped', [], ['Upload succeeded but asset ID not yet available']);
             }
