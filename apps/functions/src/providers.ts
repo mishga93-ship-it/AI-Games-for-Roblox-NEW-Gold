@@ -2114,6 +2114,71 @@ async function generateOrbitViewsForMesh(
   return { side, back };
 }
 
+/**
+ * Session 001 (Track 2 Phase 2) — garment-only orbit views.
+ * Unlike generateOrbitViewsForMesh which preserves character identity (outfit,
+ * hair, accessories), this rotates around the GARMENT itself, explicitly
+ * suppressing any human body / mannequin / hanger to keep Meshy v6 focused on
+ * the wearable mesh. Studio's Accessory Fitting Tool will later wrap the mesh
+ * with inner/outer cages — so the orbit views need to show clean garment
+ * silhouette from all sides, not a clothed figure.
+ */
+async function generateGarmentOrbitViewsForMesh(
+  frontImageUrl: string,
+  garmentTitle: string,
+  apiKey: string,
+): Promise<{ side?: string; back?: string }> {
+  const titleHint = garmentTitle.trim() ? ` Garment: "${garmentTitle.trim()}".` : '';
+  const sharedSuffix = ' Just the garment, floating in empty space, plain white background. ABSOLUTELY NO human body, NO person, NO mannequin, NO hanger, NO stand, NO display rack. Exact same fabric, color, pattern, cut, stitching, trim, and details as the front view. Clean 3D render reference, bright colors.';
+  const sidePrompt = `Same garment viewed from the side, side profile view of the wearable item.${sharedSuffix}${titleHint}`;
+  const backPrompt = `Same garment viewed from the back, back view of the wearable item.${sharedSuffix}${titleHint}`;
+
+  const generateView = async (label: 'side' | 'back', viewPrompt: string): Promise<string | undefined> => {
+    try {
+      const submitResp = await fetchJson('https://queue.fal.run/fal-ai/flux-pro/kontext', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Key ${apiKey}` },
+        body: JSON.stringify({
+          prompt: viewPrompt,
+          image_url: frontImageUrl,
+          guidance_scale: 3.5,
+          num_images: 1,
+          output_format: 'png',
+        }),
+      });
+      const requestId = submitResp.request_id as string | undefined;
+      if (!requestId) {
+        logger.warn(`[garmentOrbit:${label}] Flux Kontext queue rejected`, {
+          response: JSON.stringify(submitResp).slice(0, 200),
+        });
+        return undefined;
+      }
+      const statusUrl = submitResp.status_url as string | undefined;
+      const responseUrl = submitResp.response_url as string | undefined;
+      const raw = await pollFalRequest(apiKey, 'fal-ai/flux-pro/kontext', requestId, statusUrl, responseUrl);
+      const images = Array.isArray(raw.images) ? raw.images as JsonRecord[] : [];
+      const imageUrl = images[0]?.url as string | undefined;
+      if (!imageUrl) {
+        logger.warn(`[garmentOrbit:${label}] Flux Kontext completed without image URL`, {
+          rawKeys: Object.keys(raw).slice(0, 8),
+        });
+        return undefined;
+      }
+      return imageUrl;
+    } catch (err) {
+      logger.warn(`[garmentOrbit:${label}] generation failed`, { error: (err as Error).message });
+      return undefined;
+    }
+  };
+
+  const [side, back] = await Promise.all([
+    generateView('side', sidePrompt),
+    generateView('back', backPrompt),
+  ]);
+
+  return { side, back };
+}
+
 async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResult> {
   const apiKey = requireValue(FAL_API_KEY.value(), 'FAL_API_KEY');
   const rawCleanPrompt = build3DPrompt(prompt, input);
@@ -2160,7 +2225,14 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
   // back + side views from the front concept via Flux Kontext (~$0.04 each, +$0.08 per mesh),
   // then submit [front, side, back] to multi-image-to-3d. Non-character content (props,
   // weapons, furniture) stays on single-image path — extra views rarely help for those.
-  const wantsMultiView = useImageTo3d && (isCharacterContent || isNpcContent);
+  // Session 001 (Track 2 Phase 2): layered 3D clothing also benefits massively from
+  // multi-view because Roblox UGC validator + AFT need clean side/back geometry to
+  // generate correct cages. Single front-view input produces "blurry back faces" that
+  // fail UGC moderation.
+  const isLayered3DClothing = isClothingItem
+    && (input.clothingMode === 'layered_3d'
+      || (typeof input.clothingType === 'string' && (input.clothingType as string).startsWith('layered_')));
+  const wantsMultiView = useImageTo3d && (isCharacterContent || isNpcContent || isLayered3DClothing);
   const endpoint = useImageTo3d
     ? 'fal-ai/meshy/v6/multi-image-to-3d'
     : 'fal-ai/meshy/v6/text-to-3d';
@@ -2172,7 +2244,11 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
   if (wantsMultiView) {
     try {
       const viewPromptBase = (typeof input.title === 'string' ? input.title : '').slice(0, 60);
-      const orbitViews = await generateOrbitViewsForMesh(conceptImageUrl!, viewPromptBase, apiKey);
+      // Session 001 (Track 2 Phase 2): garment orbit views use garment-only prompts
+      // (no person/mannequin), unlike character views which preserve "outfit/hair/etc.".
+      const orbitViews = isLayered3DClothing
+        ? await generateGarmentOrbitViewsForMesh(conceptImageUrl!, viewPromptBase, apiKey)
+        : await generateOrbitViewsForMesh(conceptImageUrl!, viewPromptBase, apiKey);
       if (orbitViews.side) imageUrls.push(orbitViews.side);
       if (orbitViews.back) imageUrls.push(orbitViews.back);
       logger.info('Meshy multi-view inputs prepared', {
@@ -2180,6 +2256,7 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
         side: !!orbitViews.side,
         back: !!orbitViews.back,
         totalViews: imageUrls.length,
+        garmentMode: isLayered3DClothing,
       });
     } catch (orbitErr) {
       logger.warn('Meshy orbit view generation threw, falling back to single-image input', {
