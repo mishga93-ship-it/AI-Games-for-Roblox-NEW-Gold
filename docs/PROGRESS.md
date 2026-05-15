@@ -24,6 +24,7 @@
 - **Файлы**: `.gitignore`, `apps/ios/*`, staged snapshot проекта, `cursor/changelog-344.md`, `docs/PROGRESS.md`.
 - **Проверка**: staged file-name scan подтвердил, что `.env`, `.claude`, `GoogleService-Info.plist`, `cursor`, `xcuserdata`, `vendor/gems`, `.local-tools` не попадают в commit; `git diff --cached --check` чистый для source/docs при исключении импортированных `.obj` model data.
 - **Эффект**: первый локальный commit можно безопасно отправлять в GitHub; дальше изменения будут сохраняться отдельными commits перед рискованными правками.
+- **Внешний блокер**: `git push -u origin main` не прошёл, потому что на машине нет сохранённой GitHub HTTPS авторизации (`could not read Username for 'https://github.com': Device not configured`) и нет SSH-ключа. Нужен GitHub token через системный Terminal или настройка SSH key в GitHub.
 
 ### ✅ [Release 2 New Content Generation Block] Добавлен блок нового контента в release map (2026-05-15, сессия 343)
 - **Задача**: добавить в `ROBLOX_VS_RELEASES_1_2.md` отдельное описание генерации нового контента второго релиза: Weapons, NPCs с AI-поведением, Buildings & Structures, Maps & Environments, Items & Tools.
