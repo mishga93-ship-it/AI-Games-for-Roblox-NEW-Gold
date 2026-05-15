@@ -1611,6 +1611,21 @@ function buildTShirtManifest(
   };
 }
 
+// Session 001 (Track 2): map iOS clothingType → Roblox AccessoryType enum value.
+// Roblox enum values per https://create.roblox.com/docs/reference/engine/enums/AccessoryType.
+function resolveAccessoryType(clothingType: string | undefined): string {
+  switch (clothingType) {
+    case 'layered_tshirt': return 'TShirt';
+    case 'layered_shirt': return 'Shirt';
+    case 'layered_sweater': return 'Sweater';
+    case 'layered_jacket': return 'Jacket';
+    case 'layered_pants': return 'Pants';
+    case 'layered_shorts': return 'Shorts';
+    case 'layered_dress': return 'DressSkirt';
+    default: return 'Jacket'; // sensible default — first UGC layered type Roblox shipped (2022)
+  }
+}
+
 function buildLayeredClothingManifest(
   args: {
     title: string;
@@ -1625,6 +1640,8 @@ function buildLayeredClothingManifest(
   const clothingGlbUrl = typeof metadata.clothingGlbUrl === 'string' ? metadata.clothingGlbUrl : undefined;
   const innerCageUrl = typeof metadata.innerCageUrl === 'string' ? metadata.innerCageUrl : undefined;
   const outerCageUrl = typeof metadata.outerCageUrl === 'string' ? metadata.outerCageUrl : undefined;
+  const clothingTypeRaw = typeof metadata.clothingType === 'string' ? metadata.clothingType : undefined;
+  const accessoryTypeEnum = resolveAccessoryType(clothingTypeRaw);
 
   const accessoryId = uuidv4();
   const handleId = uuidv4();
@@ -1634,10 +1651,10 @@ function buildLayeredClothingManifest(
     {
       id: accessoryId,
       className: 'Accessory',
-      name: `${args.title}-LayeredClothing`,
+      name: `${args.title}-${accessoryTypeEnum}`,
       parentId: 'WorkspaceRoot',
       properties: {
-        AccessoryType: { __type: 'EnumItem', enum: 'AccessoryType', value: 'Jacket' },
+        AccessoryType: { __type: 'EnumItem', enum: 'AccessoryType', value: accessoryTypeEnum },
       },
     },
     {
@@ -3146,20 +3163,29 @@ function buildFurnitureModelManifest(
     });
   }
 
+  // Roblox Enum.Material integer values. Verified against the Roblox Creator Docs.
   const materialValues: Record<string, number> = {
     Plastic: 256,
+    SmoothPlastic: 272,
+    Neon: 288,
     Wood: 512,
     WoodPlanks: 528,
-    Metal: 1088,
-    SmoothPlastic: 272,
-    Fabric: 1312,
-    Grass: 1280,
-    Glass: 1568,
-    Marble: 880,
+    Marble: 784,
     Slate: 800,
     Concrete: 816,
+    Granite: 832,
     Brick: 848,
-    Neon: 288,
+    Pebble: 864,
+    Cobblestone: 880,
+    Metal: 1088,
+    CorrodedMetal: 1040,
+    DiamondPlate: 1056,
+    Foil: 1072,
+    Grass: 1280,
+    Sand: 1296,
+    Fabric: 1312,
+    Ice: 1536,
+    Glass: 1568,
   };
 
   // Session 346 — when the blocky pipeline produced an LLM scene, emit those Parts
@@ -3184,13 +3210,22 @@ function buildFurnitureModelManifest(
       const matKey = Object.prototype.hasOwnProperty.call(materialValues, p.material) ? p.material : 'SmoothPlastic';
       const shapeName: 'Block' | 'Ball' | 'Cylinder' = p.shape === 'Cylinder' || p.shape === 'Ball' ? p.shape : 'Block';
       const partRgb = hexToColor3(p.color) ?? defaults.primary;
+      // BUG FIX (session 346): rbx-dom does not write the BasePart.Position property —
+      // it's derived from CFrame. Using Position silently drops to (0,0,0) for every
+      // part, which is what made every furniture prop collapse into the model origin
+      // and look like "board + post". Emit CFrame so the binary builder actually
+      // records the part's location.
       scene.push({
         id: uuidv4(),
         className: p.kind === 'Seat' ? 'Seat' : 'Part',
         name: (p.name || `LLMPart${scene.length}`).slice(0, 40),
         properties: {
           Size: vector3(Math.max(0.1, p.size[0]) * scaleFactor, Math.max(0.1, p.size[1]) * scaleFactor, Math.max(0.1, p.size[2]) * scaleFactor),
-          Position: vector3(p.position[0] * scaleFactor, p.position[1] * scaleFactor, p.position[2] * scaleFactor),
+          CFrame: {
+            __type: 'CFrame',
+            position: { x: p.position[0] * scaleFactor, y: p.position[1] * scaleFactor, z: p.position[2] * scaleFactor },
+            rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+          },
           Anchored: true,
           CanCollide: p.canCollide ?? true,
           Locked: false,

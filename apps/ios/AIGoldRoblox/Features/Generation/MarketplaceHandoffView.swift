@@ -26,12 +26,31 @@ struct MarketplaceHandoffContext: Identifiable, Equatable {
         case "t_shirt": return "TShirt"
         case "classic_pants": return "Pants"
         case "classic_outfit": return "Shirt"  // user uploads shirt first, then pants separately
+        case "layered_jacket": return "Jacket"
+        case "layered_sweater": return "Sweater"
+        case "layered_dress": return "DressSkirt"
+        case "layered_shirt": return "Shirt"
+        case "layered_pants": return "Pants"
+        case "layered_shorts": return "Shorts"
+        case "layered_tshirt": return "TShirt"
         default: return "Shirt"
         }
     }
 
+    // Track 2 — layered clothing can't be uploaded via the web Marketplace UI.
+    // User must open the .fbx in Studio's Accessory Fitting Tool to add cages,
+    // then submit through Avatar Items in the dashboard.
+    var isLayered: Bool {
+        clothingType.hasPrefix("layered_")
+    }
+
     var uploadURL: URL {
-        URL(string: "https://create.roblox.com/dashboard/creations/upload?assetType=\(assetTypeQueryParam)")!
+        if isLayered {
+            // For layered: send user to Avatar Items page where they can submit
+            // the AFT-prepared accessory.
+            return URL(string: "https://create.roblox.com/dashboard/creations/catalog")!
+        }
+        return URL(string: "https://create.roblox.com/dashboard/creations/upload?assetType=\(assetTypeQueryParam)")!
     }
 
     var creationsURL: URL {
@@ -66,7 +85,9 @@ struct MarketplaceHandoffView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     headerBlock
-                    if let assetId = context.robloxAssetId {
+                    if context.isLayered {
+                        layeredStudioBlock
+                    } else if let assetId = context.robloxAssetId {
                         uploadedBlock(assetId: assetId)
                     } else if context.textureDownloadURL != nil {
                         manualUploadBlock
@@ -91,7 +112,9 @@ struct MarketplaceHandoffView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(displayTitle(for: context.clothingType))
                 .font(.title3.bold())
-            Text("Roblox doesn't allow listing items from outside the Creator Dashboard. We'll open create.roblox.com with the right asset type, then you paste the prepared title/description/tags.")
+            Text(context.isLayered
+                ? "Layered 3D needs cages (inner/outer) — Roblox Studio's Accessory Fitting Tool generates them automatically. Follow the 5 steps below to finish in Studio, then submit via Creations dashboard."
+                : "Roblox doesn't allow listing items from outside the Creator Dashboard. We'll open create.roblox.com with the right asset type, then you paste the prepared title/description/tags.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -109,6 +132,42 @@ struct MarketplaceHandoffView: View {
         }
         .padding()
         .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    // Track 2 — Studio Accessory Fitting Tool handoff. For layered 3D items,
+    // Roblox requires inner/outer cage meshes. Rather than auto-generating cages
+    // (Path A, unreliable), we hand the user a .fbx mesh and instructions to use
+    // Studio's built-in AFT — which generates cages perfectly via UI.
+    private var layeredStudioBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Finish in Roblox Studio", systemImage: "wand.and.stars")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.purple)
+            stepRow(num: "1", text: "Download the **.fbx / .glb** mesh from the chat below.")
+            stepRow(num: "2", text: "Open Roblox Studio → **Avatar tab → 3D Importer** → drag in the .fbx.")
+            stepRow(num: "3", text: "With the mesh selected → **Accessory Fitting Tool** → choose **\(context.assetTypeQueryParam)** as accessory type. Studio generates the inner/outer cages for you.")
+            stepRow(num: "4", text: "Fit/preview on the avatar → **Save to Roblox** in the AFT panel.")
+            stepRow(num: "5", text: "Submit via **Creations dashboard → Avatar Items**.")
+            Link("Open Avatar Items dashboard", destination: context.uploadURL)
+                .buttonStyle(.borderedProminent)
+            Text("⚠️ Layered 3D requires Roblox UGC Program approval. Without it, the AFT submit step is blocked.")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+        }
+        .padding()
+        .background(.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func stepRow(num: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(num)
+                .font(.caption.bold().monospaced())
+                .foregroundStyle(.purple)
+                .frame(width: 18, alignment: .center)
+                .padding(.top, 2)
+            Text(.init(text))
+                .font(.footnote)
+        }
     }
 
     private var manualUploadBlock: some View {
@@ -219,6 +278,13 @@ struct MarketplaceHandoffView: View {
         case "classic_shirt": return "Classic Shirt"
         case "classic_pants": return "Classic Pants"
         case "classic_outfit": return "Shirt + Pants outfit"
+        case "layered_jacket": return "🧥 3D Jacket"
+        case "layered_sweater": return "🧶 3D Sweater"
+        case "layered_dress": return "👗 3D Dress"
+        case "layered_shirt": return "3D Shirt"
+        case "layered_pants": return "3D Pants"
+        case "layered_shorts": return "3D Shorts"
+        case "layered_tshirt": return "3D T-Shirt"
         default: return "Clothing"
         }
     }

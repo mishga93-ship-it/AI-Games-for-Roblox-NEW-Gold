@@ -1052,6 +1052,17 @@ final class ChatStore: ObservableObject {
                 draft.clothingType = "classic_pants"
             case "full outfit", "outfit", "full outfit (shirt + pants)":
                 draft.clothingType = "classic_outfit"
+            // Track 2 — Layered 3D picks. Set both clothingType (for AccessoryType
+            // routing) and clothingMode="layered_3d" (so backend enters mesh pipeline).
+            case "🧥 3d jacket", "3d jacket", "jacket":
+                draft.clothingType = "layered_jacket"
+                draft.clothingMode = "layered_3d"
+            case "🧶 3d sweater", "3d sweater", "sweater":
+                draft.clothingType = "layered_sweater"
+                draft.clothingMode = "layered_3d"
+            case "👗 3d dress", "3d dress", "dress":
+                draft.clothingType = "layered_dress"
+                draft.clothingMode = "layered_3d"
             case "2d classic (fast)", "2d classic", "2д классик":
                 if draft.clothingType == nil { draft.clothingType = "classic_outfit" }
                 draft.clothingMode = "classic_2d"
@@ -5825,10 +5836,15 @@ final class ChatStore: ObservableObject {
             let banner = alreadyDismissed
                 ? ""
                 : "📌 Before you sell on Marketplace:\n• Roblox Premium 1000 or 2200 required (from Mar 19, 2026)\n• ID-verified account\n• 20 R$ in fees per item (10 upload + 10 on-sale)\nYou can generate & test without any of this. Tap “Got it” to hide.\n\n"
-            content = "\(banner)What classic clothing do we make? Pick a type first — that locks the template (T-Shirt = front-only 512×512 graphic, Shirt/Pants = 585×559 wrap). Layered 3D (jackets, sweaters, dresses) is coming next."
+            // Track 1: Classic 2D (T-Shirt 512x512 / Shirt+Pants 585x559 wrap).
+            // Track 2: Layered 3D — Meshy v6 mesh + Studio Accessory Fitting Tool
+            // for cages (handoff in MarketplaceHandoffView, not auto-WrapLayer).
+            content = "\(banner)What do we make?\n\n**Classic 2D** (works today on web):\n• T-Shirt — front-only 512×512 graphic\n• Shirt / Pants — 585×559 wrap template\n\n**Layered 3D** (UGC Program needed):\n• Jacket / Sweater / Dress — real 3D mesh, finished in Studio's Accessory Fitting Tool"
+            let classicReplies = ["T-Shirt", "Classic Shirt", "Classic Pants", "Full Outfit"]
+            let layeredReplies = ["🧥 3D Jacket", "🧶 3D Sweater", "👗 3D Dress"]
             replies = alreadyDismissed
-                ? ["T-Shirt", "Classic Shirt", "Classic Pants", "Full Outfit"]
-                : ["T-Shirt", "Classic Shirt", "Classic Pants", "Full Outfit", "Got it"]
+                ? classicReplies + layeredReplies
+                : classicReplies + layeredReplies + ["Got it"]
             return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
         }
 
