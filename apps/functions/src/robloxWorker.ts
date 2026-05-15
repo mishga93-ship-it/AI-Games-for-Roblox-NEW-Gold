@@ -379,6 +379,10 @@ export function buildRobloxManifest(args: {
     return buildClothingOnlyManifest(args, metadata);
   }
 
+  if (requestedKind === 'clothing_tshirt' && args.target === 'model') {
+    return buildTShirtManifest(args, metadata);
+  }
+
   if (requestedKind === 'clothing_3d' && args.target === 'model') {
     return buildLayeredClothingManifest(args, metadata);
   }
@@ -1540,6 +1544,68 @@ function buildClothingOnlyManifest(
       isClothing: true,
       hasShirtTemplate: !!shirtTextureUrl,
       hasPantsTemplate: !!pantsTextureUrl,
+      ...metadata,
+    },
+  };
+}
+
+function buildTShirtManifest(
+  args: {
+    title: string;
+    summary: string;
+    target: RobloxBuildTarget;
+    prompt: string;
+    starterScript: string;
+    metadata?: Record<string, unknown>;
+  },
+  metadata: Record<string, unknown>,
+): RobloxBuildManifest {
+  const tshirtGraphicUrl = typeof metadata.tshirtGraphicUrl === 'string'
+    ? toRobloxTemplateUrl(metadata.tshirtGraphicUrl)
+    : undefined;
+  const scene: RobloxBuildSceneNode[] = [];
+
+  if (tshirtGraphicUrl) {
+    scene.push({
+      id: uuidv4(),
+      className: 'ShirtGraphic',
+      name: 'TShirtGraphic',
+      properties: { Graphic: tshirtGraphicUrl },
+    });
+  } else {
+    scene.push({
+      id: uuidv4(),
+      className: 'StringValue',
+      name: 'ManualUploadRequired',
+      properties: {
+        Value: 'Upload the generated PNG to Roblox as a Classic T-Shirt, then set ShirtGraphic.Graphic to that asset id.',
+      },
+    });
+  }
+
+  return {
+    id: uuidv4(),
+    title: args.title,
+    summary: args.summary,
+    target: 'model',
+    formatPreference: 'binary',
+    scene,
+    scripts: [
+      {
+        id: uuidv4(),
+        name: 'AutoEquipTShirt',
+        scriptType: 'Script',
+        container: 'ServerScriptService',
+        source: buildTShirtAutoEquipScript(tshirtGraphicUrl),
+      },
+    ],
+    ui: [],
+    metadata: {
+      prompt: args.prompt,
+      generatedBy: 'roblox-worker clothing-tshirt pipeline',
+      isClothing: true,
+      isTShirt: true,
+      hasTShirtGraphic: !!tshirtGraphicUrl,
       ...metadata,
     },
   };
@@ -11691,6 +11757,57 @@ function buildClothingAutoEquipScript(
   ].join('\n');
 }
 
+function buildTShirtAutoEquipScript(
+  graphicUrl?: string,
+): string {
+  const normalizeTemplate = (value?: string): string => {
+    if (typeof value !== 'string') return '';
+    const raw = value.trim();
+    if (!raw) return '';
+    if (raw.startsWith('rbxassetid://') || raw.startsWith('rbxasset://')) return raw;
+    const idMatch = raw.match(/id=(\d+)/) ?? raw.match(/^(\d+)$/);
+    if (idMatch && idMatch[1]) {
+      return `rbxassetid://${idMatch[1]}`;
+    }
+    return '';
+  };
+  const safeGraphic = normalizeTemplate(graphicUrl);
+  return [
+    '-- AutoEquipTShirt',
+    'local Players = game:GetService("Players")',
+    '',
+    `local TSHIRT_GRAPHIC = ${JSON.stringify(safeGraphic)}`,
+    '',
+    'print("[AITShirt] Started, graphic =", TSHIRT_GRAPHIC)',
+    '',
+    'local function applyTShirt(character)',
+    '    task.wait(1)',
+    '    if TSHIRT_GRAPHIC == "" then',
+    '        warn("[AITShirt] No Roblox asset id available. Upload the generated PNG as a Classic T-Shirt first.")',
+    '        return',
+    '    end',
+    '    for _, v in pairs(character:GetChildren()) do',
+    '        if v:IsA("ShirtGraphic") then v:Destroy() end',
+    '    end',
+    '    local tshirt = Instance.new("ShirtGraphic")',
+    '    tshirt.Graphic = TSHIRT_GRAPHIC',
+    '    tshirt.Parent = character',
+    '    print("[AITShirt] ShirtGraphic applied:", TSHIRT_GRAPHIC)',
+    'end',
+    '',
+    'Players.PlayerAdded:Connect(function(player)',
+    '    player.CharacterAdded:Connect(applyTShirt)',
+    'end)',
+    '',
+    'for _, player in pairs(Players:GetPlayers()) do',
+    '    player.CharacterAdded:Connect(applyTShirt)',
+    '    if player.Character then',
+    '        applyTShirt(player.Character)',
+    '    end',
+    'end',
+  ].join('\n');
+}
+
 function buildMeshLoaderScript(modelName: string, modelUrl?: string): string {
   const safeTitle = modelName.replace(/"/g, '\\"');
   const safeUrl = (modelUrl ?? '').replace(/"/g, '\\"');
@@ -13015,7 +13132,7 @@ export async function uploadClassicClothing(args: {
   name: string;
   description?: string;
   imageBuffer: Buffer;
-  assetType: 'Shirt' | 'Pants';
+  assetType: 'TShirt' | 'Shirt' | 'Pants';
   groupId: string;
   roblosecurity: string;
 }): Promise<{ assetId: number } | null> {

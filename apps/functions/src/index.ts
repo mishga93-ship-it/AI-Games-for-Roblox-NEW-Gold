@@ -129,6 +129,7 @@ import {
   extractBodyColorsFromImage,
   generateShirtTexture,
   generatePantsTexture,
+  generateTShirtGraphic,
   runFalAudio,
 } from './providers.js';
 import { normalizeGlbScale } from './glbNormalize.js';
@@ -1386,6 +1387,11 @@ ${viralStyleInjection.promptBlock}`, 8000);
         if (effectiveMetadata.contentCategory === 'item_tool') return createItemPipelineStages();
         if (effectiveMetadata.contentCategory === 'furniture_prop') return createFurniturePipelineStages(resolveFurnitureBuildMode(generationPrompt, effectiveMetadata));
         if (effectiveMetadata.contentCategory === 'npc_ai') return createNpcPipelineStages(resolveNpcVisualPipelineMode(effectiveMetadata));
+        // Session 001 (Track 1) — T-Shirt has its own 2-stage pipeline (graphic + RBXM),
+        // no concept_image because Flux generates the 512x512 directly from the prompt.
+        // Checked BEFORE isTextureClothing(): the latter early-returns false for
+        // clothingType === 't_shirt' (the routing guard) so we'd otherwise miss this branch.
+        if (effectiveMetadata.clothingType === 't_shirt') return createTShirtPipelineStages();
         const isTex = isTextureClothing(generationPrompt, effectiveMetadata);
         return isTex ? createClothingPipelineStages() : createCharacterPipelineStages();
       })(),
@@ -5785,6 +5791,15 @@ function createClothingPipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'concept_image', title: 'Concept image', status: 'pending' },
     { id: 'clothing_texture', title: 'Clothing texture', status: 'pending' },
+    { id: 'export_rbxm', title: 'Export RBXM', status: 'pending' },
+  ];
+}
+
+// Session 001 (Track 1): T-Shirt skips the concept_image stage — Flux generates
+// the 512x512 graphic directly from the prompt, no character concept needed.
+function createTShirtPipelineStages(): GenerationStageProgress[] {
+  return [
+    { id: 'clothing_texture', title: 'T-Shirt graphic', status: 'pending' },
     { id: 'export_rbxm', title: 'Export RBXM', status: 'pending' },
   ];
 }
@@ -21470,7 +21485,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
   const isFurniture = job.metadata?.contentCategory === 'furniture_prop';
   const isLayeredClothing = job.kind === 'clothing_3d'
     || (typeof job.metadata?.clothingMode === 'string' && job.metadata.clothingMode === 'layered_3d');
-  const isClothingTexture = !isWeapon && !isItem && !isFurniture && !isLayeredClothing && isTextureClothing(job.prompt, job.metadata ?? {});
+  const explicitClothingType = typeof job.metadata?.clothingType === 'string'
+    ? job.metadata.clothingType
+    : undefined;
+  const isTShirt = !isWeapon && !isItem && !isFurniture && !isLayeredClothing
+    && explicitClothingType === 't_shirt';
+  const isClothingTexture = !isWeapon && !isItem && !isFurniture && !isLayeredClothing && !isTShirt
+    && isTextureClothing(job.prompt, job.metadata ?? {});
   const isNpc = !isWeapon && !isItem && !isFurniture && !isLayeredClothing && !isClothingTexture && isNpcCharacter(job.prompt, job.metadata ?? {});
   let npcRole: NpcRole = isNpc ? detectNpcRole(job.prompt, job.metadata ?? {}) : 'quest_giver';
 
@@ -21674,7 +21695,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     }
   }
   const npcNeedsConceptApproval = isNpc && npcVisualPipeline === 'mesh_asset_v1';
+  // Session 001 (Track 1) — T-Shirt has no concept_image stage. Flux generates
+  // the 512x512 graphic directly from the prompt with no avatar reference. Without
+  // this guard Phase 1 still ran generatePreviewTexture and emitted a full-character
+  // concept (then the actual T-Shirt graphic ran inside the isTShirt branch).
   const needsConceptGate = !resumePhase2
+    && !isTShirt
     && (!isFurniture || furnitureUsesExternalMesh)
     && (!isNpc || npcNeedsConceptApproval);
   const title = typeof job.metadata?.title === 'string' && job.metadata.title.trim()
@@ -21814,7 +21840,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     // with a user-friendly errorMessage instead of pausing for approval with
     // no image to approve — otherwise the user is stuck on a frozen pipeline
     // without any UI feedback (Approve buttons require a concept artifact).
-    if (!isClothingTexture && needsConceptGate && !conceptPreviewUrl) {
+    if (!isClothingTexture && !isTShirt && needsConceptGate && !conceptPreviewUrl) {
       const conceptStage = currentJob.stages?.find((s) => s.id === 'concept_image');
       const stageError = conceptStage?.errorMessage ?? '';
       const isAuthIssue = /\b(401|403)\b/.test(stageError)
@@ -21841,7 +21867,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       await persistJobSnapshot(jobId, currentJob);
       return currentJob;
     }
-    if (!isClothingTexture && needsConceptGate) {
+    if (!isClothingTexture && !isTShirt && needsConceptGate) {
       await beginStage('concept_approval', 'Waiting for your approval');
       currentJob = {
         ...currentJob,
@@ -22011,6 +22037,160 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           await finishStage('clothing_texture', 'skipped', [], ['Clothing texture generation failed'], errorMessage(textureErr));
         }
       }
+    }
+
+    if (isTShirt) {
+      await beginStage('clothing_texture', 'Generating T-Shirt graphic (512x512)');
+      let tshirtResult: ClothingTextureUploadResult | undefined;
+      let tshirtRobloxAssetId: number | undefined;
+      try {
+        tshirtResult = await generateTShirtGraphic(job.prompt);
+        const tshirtFallbackPng = tshirtResult?.fallbackPngUrl;
+        if (tshirtFallbackPng) {
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              tshirtFallbackPng,
+              tshirtGraphicPng: tshirtFallbackPng,
+              tshirtGraphicUrl: tshirtFallbackPng,
+            },
+            artifacts: [
+              ...currentJob.artifacts,
+              {
+                id: `tshirt-graphic-${Date.now()}`,
+                type: 'png',
+                url: tshirtFallbackPng,
+                downloadUrl: tshirtFallbackPng,
+                name: `${title}-tshirt-graphic.png`,
+                mimeType: 'image/png',
+                previewText: 'T-Shirt graphic PNG -- upload to Roblox as a TShirt',
+                metadata: { isTShirtGraphic: true },
+              },
+            ],
+          };
+        }
+        const roblosecurity = process.env.ROBLOX_SERVICE_COOKIE ?? '';
+        const groupId = process.env.ROBLOX_GROUP_ID ?? '';
+        const uploadBuf = tshirtResult?.textureBuffer
+          ?? (tshirtFallbackPng ? Buffer.from(await (await fetch(tshirtFallbackPng)).arrayBuffer()) : undefined);
+        if (uploadBuf && roblosecurity && groupId) {
+          const upRes = await uploadClassicClothing({
+            name: `${title}-tshirt`.slice(0, 50),
+            imageBuffer: uploadBuf,
+            assetType: 'TShirt',
+            groupId,
+            roblosecurity,
+          });
+          if (upRes) {
+            tshirtRobloxAssetId = upRes.assetId;
+            currentJob = {
+              ...currentJob,
+              metadata: {
+                ...(currentJob.metadata ?? {}),
+                tshirtGraphicUrl: `rbxassetid://${upRes.assetId}`,
+                tshirtRobloxAssetId: upRes.assetId,
+              },
+            };
+          }
+        } else if (!roblosecurity || !groupId) {
+          logger.warn('No ROBLOX_SERVICE_COOKIE or ROBLOX_GROUP_ID — skipping T-Shirt upload');
+        }
+        await finishStage('clothing_texture',
+          tshirtFallbackPng ? 'completed' : 'failed',
+          [],
+          tshirtRobloxAssetId
+            ? [`T-Shirt uploaded to Roblox (asset ${tshirtRobloxAssetId})`]
+            : tshirtFallbackPng
+              ? ['T-Shirt graphic PNG ready (upload to Roblox skipped)']
+              : ['T-Shirt graphic generation failed'],
+        );
+      } catch (graphicErr) {
+        logger.warn('T-Shirt graphic generation failed', { error: errorMessage(graphicErr) });
+        await finishStage('clothing_texture', 'failed', [], ['T-Shirt graphic generation failed'], errorMessage(graphicErr));
+      }
+
+      await beginStage('export_rbxm', 'Building T-Shirt RBXM (ShirtGraphic + AutoEquip)');
+      try {
+        const exportSummary = `Roblox T-Shirt for ${title}.`;
+        const { starterScript } = resolveStarterScript(buildStarterLuau(job, exportSummary));
+        const manifestMetadata = {
+          ...(currentJob.metadata ?? {}),
+          requestedKind: 'clothing_tshirt' as const,
+          tshirtGraphicUrl: tshirtRobloxAssetId ? `rbxassetid://${tshirtRobloxAssetId}` : '',
+        };
+        const manifest = buildRobloxManifest({
+          title,
+          summary: exportSummary,
+          target: 'model',
+          prompt: job.prompt,
+          starterScript,
+          metadata: manifestMetadata,
+        });
+        const nativeBuild = await maybeBuildRobloxBinary(manifest);
+        const exportArtifacts: GenerationArtifact[] = [];
+        if (nativeBuild?.bufferBase64) {
+          exportArtifacts.push(await uploadBinaryArtifact(job, Buffer.from(nativeBuild.bufferBase64, 'base64'), {
+            type: nativeBuild.artifactType,
+            extension: nativeBuild.artifactType,
+            mimeType: 'application/octet-stream',
+            name: nativeBuild.fileName,
+            previewText: nativeBuild.summary,
+            stageId: 'export_rbxm',
+            artifactRole: 'export_binary',
+            metadata: {
+              format: nativeBuild.format,
+              validationIssues: nativeBuild.validationIssues,
+              notes: nativeBuild.notes,
+              manifestSummary: describeManifest(manifest),
+            },
+          }));
+        }
+        const bundle = buildProjectBundle(job, exportSummary, starterScript, manifest, nativeBuild);
+        exportArtifacts.push(await uploadTextArtifact(job, JSON.stringify(bundle, null, 2), {
+          type: 'project_bundle',
+          extension: 'json',
+          mimeType: 'application/json',
+          name: `${title}-tshirt-bundle.json`,
+          previewText: typeof bundle.summary === 'string' ? bundle.summary : exportSummary,
+          stageId: 'export_rbxm',
+          artifactRole: 'bundle',
+          metadata: {
+            nativeFormat: preferredArtifactFormat(nativeBuild),
+            files: Array.isArray(bundle.files) ? bundle.files.length : 0,
+          },
+        }));
+        currentJob.artifacts = [...currentJob.artifacts, ...exportArtifacts];
+        await finishStage(
+          'export_rbxm',
+          exportArtifacts.length > 0 ? 'completed' : 'failed',
+          exportArtifacts.map((a) => a.id),
+          nativeBuild?.notes ?? ['T-Shirt RBXM built'],
+        );
+      } catch (rbxmError) {
+        logger.warn('export_rbxm (tshirt) stage failed', { error: errorMessage(rbxmError) });
+        await finishStage('export_rbxm', 'failed', [], ['T-Shirt RBXM export failed'], errorMessage(rbxmError));
+      }
+
+      const hasGraphic = !!currentJob.metadata?.tshirtFallbackPng;
+      const hasExport = currentJob.artifacts.some((a) => a.type === 'rbxm' || a.type === 'project_bundle');
+      return {
+        ...currentJob,
+        status: hasGraphic && hasExport ? 'completed' : 'partial',
+        updatedAt: new Date().toISOString(),
+        resultText: tshirtRobloxAssetId
+          ? 'T-Shirt uploaded to Roblox and packaged into RBXM!'
+          : hasGraphic
+            ? 'T-Shirt graphic generated. Upload the PNG manually if Roblox account auto-upload was skipped.'
+            : 'T-Shirt pipeline completed with partial exports.',
+        metadata: {
+          ...(currentJob.metadata ?? {}),
+          previewImageUrl: typeof currentJob.metadata?.tshirtGraphicPng === 'string'
+            ? currentJob.metadata.tshirtGraphicPng
+            : conceptPreviewUrl,
+          isTShirt: true,
+        },
+      };
     }
 
     if (isClothingTexture) {

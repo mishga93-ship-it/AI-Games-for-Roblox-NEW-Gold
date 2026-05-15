@@ -1210,8 +1210,8 @@ async function isTextureSafeForRoblox(buffer: Buffer): Promise<boolean> {
           systemInstruction: { parts: [{ text:
             'You are a content safety filter for Roblox (a children\'s gaming platform). ' +
             'Analyze the image and answer with ONLY the word SAFE or UNSAFE.\n' +
-            'This image is a CLOTHING TEXTURE for a Roblox shirt or pants template. ' +
-            'It is EXPECTED to show a flat UV layout with fabric, colors, and patterns shaped like body parts (torso, arms, legs). ' +
+            'This image is a CLOTHING TEXTURE for a Roblox shirt or pants template, or a square classic T-Shirt graphic. ' +
+            'It is EXPECTED to show a flat UV layout with fabric, colors, and patterns shaped like body parts (torso, arms, legs), or a flat chest graphic. ' +
             'This is normal for Roblox clothing templates and should NOT be flagged.\n' +
             'Mark as UNSAFE ONLY if the image contains:\n' +
             '- Nudity, suggestive, or sexual content\n' +
@@ -1250,7 +1250,7 @@ const UPLOAD_RETRY_DELAY_MS = 2000;
 
 async function uploadGeneratedClothingTexture(
   buffer: Buffer,
-  folder: 'shirts' | 'pants',
+  folder: 'shirts' | 'pants' | 'tshirts',
 ): Promise<ClothingTextureUploadResult> {
   const bucket = getStorage().bucket('roblox-ai-gen-v2-artifacts');
   const fileName = `generated-clothing/${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
@@ -1418,6 +1418,73 @@ async function generateMaterialTexture(
 }
 
 const SAFETY_MAX_RETRIES = 2;
+
+async function buildTShirtDebugGraphic(): Promise<Buffer> {
+  const svg = `
+    <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="56" fill="#111827"/>
+      <circle cx="256" cy="256" r="156" fill="#22D3EE"/>
+      <path d="M256 104 L292 218 L412 218 L314 288 L352 404 L256 332 L160 404 L198 288 L100 218 L220 218 Z" fill="#FACC15"/>
+      <circle cx="256" cy="256" r="70" fill="#F97316" opacity="0.92"/>
+    </svg>
+  `;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function generateTShirtGraphicImage(promptText: string): Promise<Buffer> {
+  const cleanPrompt = promptText.trim().slice(0, 1200);
+  const prompt =
+    `Square Roblox classic T-Shirt chest graphic based on: ${cleanPrompt}. ` +
+    'Design only the front graphic that appears on a classic Roblox T-Shirt torso. ' +
+    '512x512 flat PNG composition, centered bold emblem or pattern, simple clean silhouette, high contrast, game-ready. ' +
+    'No shirt mockup, no mannequin, no human body, no 3D render, no product photo. ' +
+    'No real-world brands, no copyrighted characters, no logos, no text, no letters, no profanity. ' +
+    'Roblox-friendly cartoon style, crisp edges, readable from a small avatar view.';
+  const result = await runFal('flux-pro/v1.1', {
+    endpoint: 'fal-ai/flux-pro/v1.1',
+    payload: {
+      prompt,
+      image_size: { width: 512, height: 512 },
+      num_inference_steps: 28,
+      num_images: 1,
+      guidance_scale: 5.5,
+      safety_tolerance: '5',
+    },
+  });
+
+  if (!result.outputUrl) {
+    throw new Error('Flux did not return T-Shirt graphic URL');
+  }
+  const resp = await fetch(result.outputUrl);
+  if (!resp.ok) {
+    throw new Error(`Failed to download T-Shirt graphic: ${resp.status}`);
+  }
+  const src = Buffer.from(await resp.arrayBuffer());
+  return sharp(src).resize(512, 512, { fit: 'cover' }).png().toBuffer();
+}
+
+export async function generateTShirtGraphic(
+  promptText: string,
+): Promise<ClothingTextureUploadResult | undefined> {
+  try {
+    const debugMode = process.env.CLOTHING_TEXTURE_DEBUG === '1';
+    if (debugMode) {
+      return await uploadGeneratedClothingTexture(await buildTShirtDebugGraphic(), 'tshirts');
+    }
+
+    for (let attempt = 1; attempt <= SAFETY_MAX_RETRIES; attempt++) {
+      const graphic = await generateTShirtGraphicImage(promptText);
+      const result = await uploadGeneratedClothingTexture(graphic, 'tshirts');
+      if (!result.safetyFailed) return result;
+      logger.warn(`T-Shirt graphic failed safety check, regenerating (attempt ${attempt}/${SAFETY_MAX_RETRIES})`);
+    }
+    logger.warn('T-Shirt graphic failed safety check after all retries');
+    return undefined;
+  } catch (error) {
+    logger.warn('generateTShirtGraphic failed', error);
+    return undefined;
+  }
+}
 
 export async function generateShirtTexture(
   conceptImageUrl: string,

@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [T-Shirt Backend Pipeline Finish] Незавершённая T-Shirt ветка доведена до сборки (2026-05-15, сессия 348)
+- **Задача**: доделать незакоммиченный `apps/functions/src/index.ts`, который добавлял T-Shirt pipeline и ломал backend build.
+- **Решение**: добавлен `generateTShirtGraphic()` в `providers.ts`, расширен `uploadClassicClothing` под `TShirt`, а `robloxWorker.ts` получил `clothing_tshirt` manifest с `ShirtGraphic` и `AutoEquipTShirt`. Manual PNG fallback сохранён, автозагрузка в Roblox остаётся best-effort через existing service-cookie path.
+- **Файлы**: `apps/functions/src/index.ts`, `apps/functions/src/providers.ts`, `apps/functions/src/robloxWorker.ts`, `cursor/changelog-348.md`, `docs/PROGRESS.md`.
+- **Проверка**: `npm run build --workspace apps/functions` ✅; `npm run build:functions` ✅; `git diff --check` по изменённым файлам ✅.
+- **Эффект**: backend снова компилируется; T-Shirt jobs получают 2-stage pipeline (`clothing_texture`, `export_rbxm`) вместо сломанного незавершённого diff.
+
 ### ✅ [Marketplace Handoff Xcode Membership] `MarketplaceHandoffView.swift` подключён к iOS target (2026-05-15, сессия 347)
 - **Задача**: выяснить, почему `apps/ios/AIGoldRoblox/Features/Generation/MarketplaceHandoffView.swift` не виден в Xcode/GitHub.
 - **Решение**: файл был на диске, но не был добавлен в `apps/ios/AIGoldRoblox.xcodeproj/project.pbxproj` и оставался untracked в git. Добавлены PBXFileReference/PBXBuildFile, entry в группе `Generation` и entry в `Sources` build phase.
