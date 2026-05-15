@@ -1391,6 +1391,24 @@ ${viralStyleInjection.promptBlock}`, 8000);
         // no concept_image because Flux generates the 512x512 directly from the prompt.
         // Checked BEFORE isTextureClothing(): the latter early-returns false for
         // clothingType === 't_shirt' (the routing guard) so we'd otherwise miss this branch.
+        // Session 001 (Track 1): auto-detect T-Shirt if user didn't tap the iOS
+        // welcome picker but typed "t-shirt" / "tshirt" / "футболка" directly into
+        // the prompt while in the "clothing" subcategory. Without this fallback,
+        // Quick Generate without explicit picker tap falls through to the 9-stage
+        // character_3d default (the bug user kept seeing). The fallback only
+        // activates inside the clothing subcategory, so it doesn't affect other flows.
+        const inClothingSub = effectiveMetadata.contentSubcategory === 'clothing'
+          || effectiveMetadata.contentCategory === 'ugc_clothing';
+        const promptLooksLikeTShirt = /\b(t[-_ ]?shirt|tshirt|футболка|майка|майку|футболку)\b/i.test(generationPrompt);
+        if (inClothingSub && promptLooksLikeTShirt && !effectiveMetadata.clothingType) {
+          effectiveMetadata.clothingType = 't_shirt';
+        }
+        logger.info('Pipeline stage init for character_3d kind', {
+          clothingType: effectiveMetadata.clothingType,
+          clothingMode: effectiveMetadata.clothingMode,
+          contentSubcategory: effectiveMetadata.contentSubcategory,
+          autoDetectedTShirt: inClothingSub && promptLooksLikeTShirt,
+        });
         if (effectiveMetadata.clothingType === 't_shirt') return createTShirtPipelineStages();
         const isTex = isTextureClothing(generationPrompt, effectiveMetadata);
         return isTex ? createClothingPipelineStages() : createCharacterPipelineStages();
@@ -16178,6 +16196,157 @@ async function reviewLLMFurnitureScene(args: {
   }
 }
 
+// Deterministic geometric sanity checks. The LLM reviewer can miss "everything at y≈0"
+// or "everything tiny" failures that make a prop invisible/flat in Studio. We catch
+// those BEFORE the LLM review, so a doomed scene burns a (cheaper) regenerate instead
+// of being shipped.
+function validateFurnitureSceneGeometry(
+  scene: FurnitureScene,
+  metadata: Record<string, unknown>,
+): { ok: boolean; issues: string[]; repairActions: string[] } {
+  const issues: string[] = [];
+  const repairActions: string[] = [];
+  const type = (scene.furnitureType || (typeof metadata.furnitureType === 'string' ? metadata.furnitureType : '') || 'decor').toLowerCase();
+  const flatTypes = new Set(['rug', 'sign']);
+
+  if (scene.parts.length < 4) {
+    issues.push(`Scene has only ${scene.parts.length} parts — too few to read as a ${type}.`);
+    repairActions.push(`Emit at least 6 parts so the ${type} is recognizable.`);
+  }
+
+  const belowFloor = scene.parts.filter((p) => (p.position[1] - p.size[1] / 2) < -0.1);
+  if (belowFloor.length > 0) {
+    issues.push(`${belowFloor.length} part(s) extend below y=0 (would be buried in the baseplate): ${belowFloor.slice(0, 3).map((p) => p.name).join(', ')}.`);
+    repairActions.push('Move every part so its bottom face (position.y - size.y/2) is at or above y=0.');
+  }
+
+  const tops = scene.parts.map((p) => p.position[1] + p.size[1] / 2);
+  const totalTop = tops.length ? Math.max(...tops) : 0;
+  const expectedMinHeight: Record<string, number> = {
+    chair: 2.0, table: 1.6, lamp: 3.0, shelf: 2.8, rug: 0.05,
+    plant: 1.8, sign: 1.4, decor: 0.8,
+  };
+  const minHeight = expectedMinHeight[type] ?? 1.2;
+  if (totalTop < minHeight) {
+    issues.push(`Total prop height is only ${totalTop.toFixed(2)} studs — a ${type} should reach at least ${minHeight} studs.`);
+    repairActions.push(`Re-place parts so the topmost surface (position.y + size.y/2) is ≥ ${minHeight} studs.`);
+  }
+
+  if (!flatTypes.has(type) && tops.length >= 2) {
+    const ySpread = Math.max(...tops) - Math.min(...scene.parts.map((p) => p.position[1] - p.size[1] / 2));
+    if (ySpread < 1.0) {
+      issues.push(`Vertical spread is only ${ySpread.toFixed(2)} studs — parts are stacked too flat for a ${type}.`);
+      repairActions.push('Spread parts vertically: legs near the floor, seat at mid-height, back at top (for chairs).');
+    }
+  }
+
+  const tinyParts = scene.parts.filter((p) => Math.min(...p.size) < 0.12);
+  if (tinyParts.length > 0) {
+    issues.push(`${tinyParts.length} part(s) have a dimension below 0.12 studs and may render as invisible slivers: ${tinyParts.slice(0, 3).map((p) => p.name).join(', ')}.`);
+    repairActions.push('Every size dimension must be at least 0.15 studs.');
+  }
+
+  const seenPositions = new Set<string>();
+  let duplicates = 0;
+  for (const p of scene.parts) {
+    const key = `${p.position[0].toFixed(2)},${p.position[1].toFixed(2)},${p.position[2].toFixed(2)}`;
+    if (seenPositions.has(key)) duplicates++;
+    seenPositions.add(key);
+  }
+  if (duplicates > 0) {
+    issues.push(`${duplicates} part(s) share an exact position with another part — they will z-fight.`);
+    repairActions.push('Offset overlapping parts so each occupies a unique position.');
+  }
+
+  // Helper: check that "support" parts (legs) span the X/Z extents of the prop so the
+  // model doesn't end up as a single stick. We require leg X/Z spread ≥ 60% of the
+  // bounding box on the relevant axis.
+  const checkLegDistribution = (typeLabel: string, bbox: [number, number, number]) => {
+    const legs = scene.parts.filter((p) => p.role === 'leg');
+    if (legs.length < 3) return;
+    const xs = legs.map((p) => p.position[0]);
+    const zs = legs.map((p) => p.position[2]);
+    const xSpread = Math.max(...xs) - Math.min(...xs);
+    const zSpread = Math.max(...zs) - Math.min(...zs);
+    const targetXSpread = bbox[0] * 0.6;
+    const targetZSpread = bbox[2] * 0.6;
+    if (xSpread < targetXSpread) {
+      issues.push(`${typeLabel} legs span only ${xSpread.toFixed(2)} studs along X — needs to span at least ${targetXSpread.toFixed(2)} (≥60% of bounding-box width). Right now the legs are clustered, not at the four corners.`);
+      repairActions.push(`Place legs at the four CORNERS of the seat/top: x = ±(${(bbox[0] / 2 - 0.2).toFixed(2)}) and z = ±(${(bbox[2] / 2 - 0.2).toFixed(2)}). Never at the same x,z.`);
+    }
+    if (zSpread < targetZSpread) {
+      issues.push(`${typeLabel} legs span only ${zSpread.toFixed(2)} studs along Z — needs to span at least ${targetZSpread.toFixed(2)}.`);
+      repairActions.push(`Distribute legs across Z too: front pair at z=-${(bbox[2] / 2 - 0.2).toFixed(2)}, back pair at z=+${(bbox[2] / 2 - 0.2).toFixed(2)}.`);
+    }
+    // Also: tabletop / seat must reasonably cover the area defined by the legs.
+    const topish = scene.parts.find((p) => p.role === 'seat' || p.role === 'top' || /top|seat/i.test(p.name));
+    if (topish) {
+      const topMinX = topish.position[0] - topish.size[0] / 2;
+      const topMaxX = topish.position[0] + topish.size[0] / 2;
+      const topMinZ = topish.position[2] - topish.size[2] / 2;
+      const topMaxZ = topish.position[2] + topish.size[2] / 2;
+      const legsCoveredByTop = legs.filter((leg) =>
+        leg.position[0] >= topMinX - 0.3 && leg.position[0] <= topMaxX + 0.3
+        && leg.position[2] >= topMinZ - 0.3 && leg.position[2] <= topMaxZ + 0.3
+      ).length;
+      if (legsCoveredByTop < Math.min(legs.length, 3)) {
+        issues.push(`${typeLabel} top/seat "${topish.name}" doesn't cover the leg corners — only ${legsCoveredByTop}/${legs.length} legs sit under it.`);
+        repairActions.push(`Resize/recenter the top/seat so its footprint spans the leg positions (size.x ≈ leg X-spread + 0.3, size.z ≈ leg Z-spread + 0.3, position [0, legHeight + topThickness/2, 0]).`);
+      }
+    }
+  };
+
+  if (type === 'chair') {
+    const hasSeat = scene.parts.some((p) => p.kind === 'Seat');
+    if (!hasSeat) {
+      issues.push('Chair has no part with kind="Seat" — players cannot sit on it.');
+      repairActions.push('Add a Seat-class part at the seating plane height.');
+    }
+    const legCount = scene.parts.filter((p) => p.role === 'leg').length;
+    if (legCount < 3) {
+      issues.push(`Chair has only ${legCount} leg(s); needs at least 3-4 for stability.`);
+      repairActions.push('Add legs at each corner of the seat (role="leg"), reaching from floor to seat bottom.');
+    }
+    checkLegDistribution('Chair', scene.boundingBox);
+  }
+  if (type === 'table') {
+    const legCount = scene.parts.filter((p) => p.role === 'leg').length;
+    if (legCount < 3) {
+      issues.push(`Table has only ${legCount} leg(s).`);
+      repairActions.push('Add 4 legs at each corner of the tabletop.');
+    }
+    const hasTop = scene.parts.some((p) => p.role === 'top' || /top/i.test(p.name));
+    if (!hasTop) {
+      issues.push('Table has no top surface.');
+      repairActions.push('Add a wide flat top spanning the bounding box X/Z, sitting on the legs.');
+    }
+    checkLegDistribution('Table', scene.boundingBox);
+  }
+  if (type === 'lamp') {
+    const hasLight = scene.parts.some((p) => p.material === 'Neon' || p.role === 'light');
+    if (!hasLight) {
+      issues.push('Lamp has no Neon / light-emitting part.');
+      repairActions.push('Add a Neon Part inside or atop the shade so the lamp visibly glows.');
+    }
+  }
+  if (type === 'plant') {
+    const hasLeaves = scene.parts.some((p) => p.role === 'leaves' || /leaf|leaves|foliage/i.test(p.name));
+    if (!hasLeaves) {
+      issues.push('Plant has no leaves part.');
+      repairActions.push('Add green leaves above a trunk/pot (role="leaves", green color).');
+    }
+  }
+  if (type === 'rug') {
+    const tallRug = scene.parts.find((p) => p.role !== 'trim' && p.size[1] > 0.2);
+    if (tallRug) {
+      issues.push(`Rug body part "${tallRug.name}" is ${tallRug.size[1].toFixed(2)} studs thick — rugs must be flat (≤0.15).`);
+      repairActions.push('Flatten the rug body to ≤0.15 studs thickness; trims can be slightly taller.');
+    }
+  }
+
+  return { ok: issues.length === 0, issues, repairActions };
+}
+
 async function runFurnitureSceneWithRetry(args: {
   brief: string;
   metadata: Record<string, unknown>;
@@ -16204,8 +16373,49 @@ async function runFurnitureSceneWithRetry(args: {
     if ('error' in gen) {
       lastError = gen.error;
       attemptsLog.push({ index: i + 1, status: 'gen_failed', score: 0, reasons: [gen.error] });
+      logger.warn('[FurnitureScene] LLM generation failed', { attempt: i + 1, error: gen.error });
       continue;
     }
+
+    // Log compact scene digest so we can diagnose "flat pancake" output without
+    // shipping the full prompt to logs.
+    const partSummary = gen.scene.parts.map((p) =>
+      `${p.name}(role=${p.role} pos=[${p.position.map((n) => n.toFixed(2)).join(',')}] size=[${p.size.map((n) => n.toFixed(2)).join(',')}] mat=${p.material})`
+    );
+    logger.info('[FurnitureScene] LLM output digest', {
+      attempt: i + 1,
+      title: gen.scene.title,
+      furnitureType: gen.scene.furnitureType,
+      boundingBox: gen.scene.boundingBox,
+      partCount: gen.scene.parts.length,
+      parts: partSummary.slice(0, 25),
+    });
+
+    // Cheap deterministic geometry check — catches "flat pancake" / "legs all at
+    // one point" before we spend an LLM call reviewing a doomed scene.
+    const det = validateFurnitureSceneGeometry(gen.scene, args.metadata);
+    if (!det.ok) {
+      attemptsLog.push({ index: i + 1, status: 'rejected_geometry', score: 20, reasons: det.issues });
+      logger.warn('[FurnitureScene] deterministic validator rejected scene', {
+        attempt: i + 1,
+        issues: det.issues,
+        repairActions: det.repairActions,
+      });
+      if (bestScore < 0) {
+        bestScene = gen.scene;
+        bestReview = {
+          status: 'rejected',
+          score: 20,
+          userMessage: 'Geometry sanity check rejected the scene — see reasons.',
+          reasons: det.issues,
+          repairActions: det.repairActions,
+        };
+        bestScore = 20;
+      }
+      repairFeedback = det.repairActions;
+      continue;
+    }
+
     const review = await reviewLLMFurnitureScene({
       brief: args.brief,
       metadata: args.metadata,

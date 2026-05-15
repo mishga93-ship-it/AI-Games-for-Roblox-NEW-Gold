@@ -4175,7 +4175,10 @@ final class ChatStore: ObservableObject {
             if looksLikeTextureClothing {
                 // T-Shirt skips the concept_image stage — Flux generates the 512x512
                 // graphic directly from the prompt with no avatar concept reference.
-                if draft.clothingType == "t_shirt" {
+                // Auto-detect t_shirt from title if user typed instead of tapping picker.
+                let titleLooksLikeTShirt = draft.title.range(of: #"\b(t[-_ ]?shirt|tshirt|футболка|майка)\b"#,
+                                                              options: [.regularExpression, .caseInsensitive]) != nil
+                if draft.clothingType == "t_shirt" || titleLooksLikeTShirt {
                     return [
                         GenerationStage(id: "clothing_texture", title: "T-Shirt graphic", status: "pending"),
                         GenerationStage(id: "export_rbxm", title: "Export RBXM", status: "pending")
@@ -4851,6 +4854,42 @@ final class ChatStore: ObservableObject {
                 rbxmDownloadURL: nil,
                 fbxDownloadURL: nil,
                 notes: gamePreviewNotes(exportLine: "Download the RBXL file and open in Studio.")
+            )
+        }
+
+        // Session 346 — Furniture Blocky Parts mode: when the blocky preview PNG is ready,
+        // short-circuit to a media preview so the user sees the rendered scene (matching
+        // the .rbxm they'll get in Studio) instead of just stage checkmarks. The RBXM is
+        // still exposed via rbxmDownloadURL for the "Export RBXM" button.
+        let isFurniturePartsPreview = contentSubcategory == "furniture"
+            && (job.metadata?.furnitureBuildMode == "parts" || job.metadata?.furnitureResolvedBuildMode == "parts")
+            && (job.status == "completed" || job.status == "partial")
+            && thumbnailArtifact != nil
+
+        if isFurniturePartsPreview,
+           let previewImageURL = (thumbnailArtifact?.downloadUrl ?? thumbnailArtifact?.url).flatMap(URL.init(string:)) {
+            let qualityScore = job.metadata?.qualityReviewScore
+            let qualityMessage = job.metadata?.qualityReviewMessage
+            var notes: [String] = []
+            if let msg = qualityMessage, !msg.isEmpty {
+                notes.append("Quality review: \(msg)")
+            }
+            if let score = qualityScore {
+                notes.append("Score \(score)/100")
+            }
+            notes.append("Blocky scene built from primitive Roblox Parts — what you see is what Studio gets.")
+            notes.append("Tap Export RBXM and drag the file into Workspace.")
+            return PreviewPayload(
+                title: draft.title.isEmpty ? "Furniture" : draft.title,
+                artifactType: .media(kind: "png", remoteURL: previewImageURL),
+                exportFileType: "rbxm",
+                artifactIds: artifactIds,
+                shareDescription: shareDescription,
+                downloadURL: rbxmDownloadURL ?? downloadURL,
+                glbDownloadURL: nil,
+                rbxmDownloadURL: rbxmDownloadURL,
+                fbxDownloadURL: nil,
+                notes: notes
             )
         }
 
