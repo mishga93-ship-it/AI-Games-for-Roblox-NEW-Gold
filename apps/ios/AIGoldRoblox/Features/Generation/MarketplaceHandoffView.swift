@@ -20,6 +20,11 @@ struct MarketplaceHandoffContext: Identifiable, Equatable {
     let suggestedPriceRobux: Int
     let robloxAssetId: Int64?         // set if backend auto-uploaded via service cookie
     let textureDownloadURL: URL?      // PNG fallback if user needs to upload manually
+    // Track 2 Phase 4 — layered mesh artifacts, surfaced inline in the Studio
+    // AFT block so the user doesn't have to scroll back to the chat to grab them.
+    let meshFbxURL: URL?              // .fbx for Studio AFT (canonical layered format)
+    let meshGlbURL: URL?              // .glb fallback if Studio's 3D Importer prefers it
+    let validationWarnings: [String]  // size / triangle warnings to show prominently
 
     var assetTypeQueryParam: String {
         switch clothingType {
@@ -143,7 +148,48 @@ struct MarketplaceHandoffView: View {
             Label("Finish in Roblox Studio", systemImage: "wand.and.stars")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.purple)
-            stepRow(num: "1", text: "Download the **.fbx / .glb** mesh from the chat below.")
+
+            // Track 2 Phase 4 — validation warnings shown at top so user sees them
+            // BEFORE downloading. Avoids "import → AFT rejected" loop.
+            if !context.validationWarnings.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Pre-import warnings", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    ForEach(context.validationWarnings, id: \.self) { warning in
+                        Text("• \(warning)")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .padding(8)
+                .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            stepRow(num: "1", text: "Download the **.fbx** mesh (or **.glb** fallback):")
+            if context.meshFbxURL != nil || context.meshGlbURL != nil {
+                HStack(spacing: 8) {
+                    if let fbxURL = context.meshFbxURL {
+                        Link(destination: fbxURL) {
+                            Label(".fbx", systemImage: "arrow.down.doc.fill")
+                                .font(.footnote.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                    }
+                    if let glbURL = context.meshGlbURL {
+                        Link(destination: glbURL) {
+                            Label(".glb", systemImage: "arrow.down.doc")
+                                .font(.footnote)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.purple)
+                    }
+                }
+                .padding(.leading, 26)
+            }
             stepRow(num: "2", text: "Open Roblox Studio → **Avatar tab → 3D Importer** → drag in the .fbx.")
             stepRow(num: "3", text: "With the mesh selected → **Accessory Fitting Tool** → choose **\(context.assetTypeQueryParam)** as accessory type. Studio generates the inner/outer cages for you.")
             stepRow(num: "4", text: "Fit/preview on the avatar → **Save to Roblox** in the AFT panel.")

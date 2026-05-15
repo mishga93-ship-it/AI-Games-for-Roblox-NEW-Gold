@@ -902,6 +902,18 @@ final class ChatStore: ObservableObject {
         let textureURL: URL? = recentJob?.artifacts
             .first(where: { $0.metadata?.isTShirtGraphic == true || $0.metadata?.isShirtTexture == true || $0.metadata?.isPantsTexture == true })
             .flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+        // Track 2 Phase 4 — pull layered mesh artifacts so the sheet can show
+        // direct download buttons next to each Studio AFT step.
+        let meshFbxURL: URL? = recentJob?.artifacts
+            .first(where: { $0.type == "fbx" })
+            .flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+        let meshGlbURL: URL? = recentJob?.artifacts
+            .first(where: { $0.type == "glb" || $0.type == "model/gltf-binary" })
+            .flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+        let validationWarnings = recentJob?.stages?
+            .first(where: { $0.id == "validate_layered" })?
+            .notes?.filter { $0.lowercased().contains("mb") && ($0.lowercased().contains("over") || $0.lowercased().contains("borderline") || $0.lowercased().contains("exceed")) }
+            ?? []
         marketplaceHandoffContext = MarketplaceHandoffContext(
             clothingType: clothingType,
             title: draft.title,
@@ -909,7 +921,10 @@ final class ChatStore: ObservableObject {
             suggestedTags: suggestedTags,
             suggestedPriceRobux: clothingType == "t_shirt" ? 5 : 10,
             robloxAssetId: robloxAssetId,
-            textureDownloadURL: textureURL
+            textureDownloadURL: textureURL,
+            meshFbxURL: meshFbxURL,
+            meshGlbURL: meshGlbURL,
+            validationWarnings: validationWarnings
         )
     }
 
