@@ -1300,8 +1300,9 @@ private extension ForgeView {
         [
             ProjectOption(id: "characters", title: "Characters", details: "Playable characters, rigs, avatar-style models, and presentation-ready character assets.", kind: .content, tags: ["asset", "social"]),
             ProjectOption(id: "npcs", title: "NPCs with AI Behavior", details: "Patrol guards, enemies, merchants, dialogue NPCs, companions, and quest givers with scripts.", kind: .content, tags: ["asset", "system", "ai", "social"]),
+            // Session 001 (Track 1) — restored after T-Shirt pipeline + subcategory picker landed.
+            ProjectOption(id: "clothing", title: "Clothing & Outfits", details: "Classic 2D clothing for Roblox Marketplace: T-Shirts, Shirts, Pants, full outfits — AI-generated and ready to publish.", kind: .ugc, tags: ["asset", "marketplace"]),
             // MARK: - Hidden content categories (will be restored later)
-            // ProjectOption(id: "clothing", title: "Clothing & Outfits", details: "Avatar clothing and complete outfit sets.", kind: .content),
             // ProjectOption(id: "accessories", title: "Accessories", details: "Hats, glasses, wings, backpacks, and extras.", kind: .content),
             // ProjectOption(id: "bodies", title: "Avatar Bodies & Heads", details: "Avatar body and head assets.", kind: .content),
             ProjectOption(id: "weapons", title: "Weapons", details: "Weapons with hit effects, VFX, and SFX.", kind: .content, tags: ["asset"]),
