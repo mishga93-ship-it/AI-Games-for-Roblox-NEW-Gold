@@ -18,6 +18,18 @@
 
 ## Выполненные задачи
 
+### ✅ [Track 3] 3D Pet Asset Generation в чате (2026-05-18, сессия 350)
+- **Задача**: добавить отдельный chip-flow для AI-генерации 3D Pet ассетов (.rbxm) с моделью + AI follow + leveling + rarity + visual evolution (3 mesh-стадии на pet: lvl 1 / lvl 25 / lvl 50).
+- **Pattern**: зеркалит Track 2 (layered clothing) — chat → classify → multi-view → mesh → rig → FBX convert → validate → assemble RBXM → iOS handoff.
+- **Stack**: classify через Anthropic Claude Sonnet 4.5 (regex fallback) → 3 × Flux concept + orbit views → Meshy v6 (humanoid/robot) или Tripo v2.5 (quadruped/winged/serpentine/aquatic) для mesh → Tripo `animate_rig` для скелетной анимации → пакетирование в Model с Configuration/Stages/Scripts → finalize .rbxm через существующий `build_roblox.luau`.
+- **Rigging strategy**: добавлен Tripo AI как новый провайдер — Meshy v6 Rigging API программно поддерживает только bipedal humanoid, что блокирует собак/кошек/драконов. Tripo поддерживает humanoid/quadruped/stylized/mechanical. **Внешний блокер**: пользователю нужно установить `TRIPO_API_KEY` через `firebase functions:secrets:set TRIPO_API_KEY` (без него rig stages graceful-скипаются, pet ships как static MeshPart).
+- **iOS UX**: новые species chips 🐕 Dog · 🐈 Cat · 🐉 Dragon · 🦄 Unicorn · 🤖 Robot · ✨ Custom в pets-подкатегории; `petStudioBlock` в MarketplaceHandoffView показывает per-stage FBX/GLB downloads + .rbxm template + 6-step Studio workflow (3D Importer → Animation Editor → paste asset ids → Play → test через `PetLevelingModule:GainXP(2000)`).
+- **Файлы (9)**: `apps/functions/src/{types,config,providers,robloxWorker,uiTemplates,index}.ts`, `apps/ios/AIGoldRoblox/{Core/API/AIWorkspaceAPI.swift,Features/Chat/ChatStore.swift,Features/Generation/MarketplaceHandoffView.swift}`.
+- **Проверка**: `npx tsc --noEmit` apps/functions ✅, apps/worker-service ✅. Git diff: 9 файлов, +1605/-18 LOC.
+- **Лог**: `cursor/changelog-350.md` (детальный построчный список изменений + open risks).
+- **Cost per pet**: ~$0.50–$2.20 (3× Flux + 3× orbit views + 3× mesh + 3× rig). Wall-clock ~6–9 мин (14 stages).
+- **Out of scope (future tickets)**: Egg .rbxm bundle, интеграция с существующим `buildPetSystemScript`, inventory/equip UI, trading/fusing pets, particle burst на Evolve(), idle FX по element.
+
 ### ✅ [Verified Commit Policy] Commit/push только после успешной проверки (2026-05-15, сессия 349)
 - **Задача**: добавить правило, чтобы изменения не улетали в GitHub после каждой мелкой правки, а коммитились только после успешной проверки.
 - **Решение**: в `AGENTS.md` добавлен раздел `Шаг 6: Git commit / push только после успешной проверки`: commit после релевантного build/lint/diff-check, push только после успешного commit, stage только файлов текущей задачи.

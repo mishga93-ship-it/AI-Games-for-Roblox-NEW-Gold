@@ -26,6 +26,7 @@ import {
   getRobloxWorkerToken,
   getRobloxWorkerUrl,
 } from './config.js';
+import { buildPetFollowScript, buildPetLevelingModule } from './uiTemplates.js';
 
 export interface RobloxAssetAnalysisResult {
   target: RobloxBuildTarget;
@@ -385,6 +386,10 @@ export function buildRobloxManifest(args: {
 
   if (requestedKind === 'clothing_3d' && args.target === 'model') {
     return buildLayeredClothingManifest(args, metadata);
+  }
+
+  if (requestedKind === 'pet_3d' && args.target === 'model') {
+    return buildPetEvolutionManifest(args, metadata);
   }
 
   if (requestedKind === 'weapon_3d' && args.target === 'model') {
@@ -1714,6 +1719,281 @@ function buildLayeredClothingManifest(
       outerCageUrl,
       ...metadata,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Track 3 (Pet 3D pipeline) — assemble an .rbxm scene for a 3-stage evolution
+// pet. Each stage is a child Model under `Stages`; Stage1 is the active
+// instance (direct child of the Pet model) and Stage2/Stage3 sit dormant
+// inside the Folder until PetLevelingModule:Evolve(N) swaps them in.
+// Pairs with apps/functions/src/uiTemplates.ts → buildPetFollowScript /
+// buildPetLevelingModule (Lua sources injected via manifest.scripts).
+// ---------------------------------------------------------------------------
+function buildPetEvolutionManifest(
+  args: {
+    title: string;
+    summary: string;
+    target: RobloxBuildTarget;
+    prompt: string;
+    starterScript: string;
+    metadata?: Record<string, unknown>;
+  },
+  metadata: Record<string, unknown>,
+): RobloxBuildManifest {
+  const baseName = sanitizeIdentifier(typeof metadata.petBaseName === 'string' ? metadata.petBaseName : args.title || 'Pet');
+  const speciesType = typeof metadata.petSpeciesType === 'string' ? metadata.petSpeciesType : 'fantasy';
+  const skeletonType = typeof metadata.petSkeletonType === 'string' ? metadata.petSkeletonType : 'quadruped';
+  const rarity = typeof metadata.petRarity === 'string' ? metadata.petRarity : 'Rare';
+  const element = typeof metadata.petElement === 'string' ? metadata.petElement : 'Neutral';
+  const isFlying = !!metadata.petIsFlying;
+  const stageMeshes = (metadata.petStageMeshes as Array<{ meshUrl?: string; fbxFileName?: string; idleAnimUrl?: string; walkAnimUrl?: string; flyAnimUrl?: string }> | undefined) ?? [];
+  const coinBonusBase = rarityCoinBonus(rarity);
+
+  const petModelId = uuidv4();
+  const configId = uuidv4();
+  const stagesFolderId = uuidv4();
+
+  const scene: RobloxBuildSceneNode[] = [
+    {
+      id: petModelId,
+      className: 'Model',
+      name: `Pet_${baseName}`,
+      parentId: 'WorkspaceRoot',
+    },
+    {
+      id: configId,
+      className: 'Configuration',
+      name: 'PetConfig',
+      parentId: petModelId,
+    },
+    childStringValue(configId, 'SpeciesType', speciesType),
+    childStringValue(configId, 'SkeletonType', skeletonType),
+    childStringValue(configId, 'Rarity', rarity),
+    childStringValue(configId, 'Element', element),
+    childBoolValue(configId, 'IsFlying', isFlying),
+    childIntValue(configId, 'Level', 1),
+    childIntValue(configId, 'XP', 0),
+    childIntValue(configId, 'EvolutionStage', 1),
+    childNumberValue(configId, 'CoinBonusBase', coinBonusBase),
+    {
+      id: stagesFolderId,
+      className: 'Folder',
+      name: 'Stages',
+      parentId: petModelId,
+    },
+  ];
+
+  for (let i = 1; i <= 3; i += 1) {
+    const stageData = stageMeshes[i - 1] ?? {};
+    const stageModelId = uuidv4();
+    const hrpId = uuidv4();
+    const bodyId = uuidv4();
+    const acId = uuidv4();
+    const anchorAttachId = uuidv4();
+    const alignPosId = uuidv4();
+    const alignRotId = uuidv4();
+    // Stage 1 is the active stage — direct child of the Pet model. Later
+    // stages sit inside the Stages folder until PetLevelingModule:Evolve()
+    // moves them to be direct children of the Pet model.
+    const stageParentId = i === 1 ? petModelId : stagesFolderId;
+    scene.push(
+      {
+        id: stageModelId,
+        className: 'Model',
+        name: `Stage${i}`,
+        parentId: stageParentId,
+      },
+      {
+        id: hrpId,
+        className: 'Part',
+        name: 'HumanoidRootPart',
+        parentId: stageModelId,
+        properties: {
+          Transparency: 1,
+          Anchored: false,
+          CanCollide: false,
+          Massless: true,
+          Size: { __type: 'Vector3', x: 2, y: 2, z: 2 },
+        },
+      },
+      {
+        id: bodyId,
+        className: 'MeshPart',
+        name: 'Body',
+        parentId: stageModelId,
+        properties: {
+          MeshId: stageData.meshUrl ?? 'rbxassetid://0',
+          Size: { __type: 'Vector3', x: 3, y: 3, z: 3 },
+          CanCollide: false,
+          Anchored: false,
+          Massless: true,
+        },
+      },
+      // Pending-upload sentinel for PetFollowScript to warn on.
+      {
+        id: uuidv4(),
+        className: 'StringValue',
+        name: 'PendingMeshUpload',
+        parentId: bodyId,
+        properties: { Value: stageData.fbxFileName ?? `stage${i}.fbx` },
+      },
+      {
+        id: acId,
+        className: 'AnimationController',
+        name: 'AnimationController',
+        parentId: stageModelId,
+      },
+      {
+        id: uuidv4(),
+        className: 'Animation',
+        name: 'Idle',
+        parentId: acId,
+        properties: { AnimationId: stageData.idleAnimUrl ?? '' },
+      },
+      {
+        id: uuidv4(),
+        className: 'Animation',
+        name: 'Walk',
+        parentId: acId,
+        properties: { AnimationId: stageData.walkAnimUrl ?? '' },
+      },
+    );
+    if (isFlying) {
+      scene.push({
+        id: uuidv4(),
+        className: 'Animation',
+        name: 'Fly',
+        parentId: acId,
+        properties: { AnimationId: stageData.flyAnimUrl ?? '' },
+      });
+    }
+    scene.push(
+      {
+        id: anchorAttachId,
+        className: 'Attachment',
+        name: 'FollowAnchor',
+        parentId: hrpId,
+      },
+      {
+        id: alignPosId,
+        className: 'AlignPosition',
+        name: 'FollowPos',
+        parentId: stageModelId,
+        properties: {
+          Attachment0: { __type: 'InstanceRef', refId: anchorAttachId },
+          RigidityEnabled: false,
+          MaxForce: 10000,
+          Responsiveness: 50,
+        },
+      },
+      {
+        id: alignRotId,
+        className: 'AlignOrientation',
+        name: 'FollowRot',
+        parentId: stageModelId,
+        properties: {
+          Attachment0: { __type: 'InstanceRef', refId: anchorAttachId },
+          Responsiveness: 30,
+        },
+      },
+    );
+  }
+
+  return {
+    id: uuidv4(),
+    title: args.title,
+    summary: args.summary,
+    target: 'model',
+    formatPreference: 'binary',
+    scene,
+    scripts: [
+      {
+        id: uuidv4(),
+        name: 'PetFollowScript',
+        scriptType: 'Script',
+        container: petModelId,
+        source: buildPetFollowScript(),
+      },
+      {
+        id: uuidv4(),
+        name: 'PetLevelingModule',
+        scriptType: 'ModuleScript',
+        container: petModelId,
+        source: buildPetLevelingModule(),
+      },
+    ],
+    ui: [],
+    metadata: {
+      prompt: args.prompt,
+      generatedBy: 'roblox-worker pet-evolution pipeline',
+      isPetEvolution: true,
+      petBaseName: baseName,
+      petSpeciesType: speciesType,
+      petSkeletonType: skeletonType,
+      petRarity: rarity,
+      petElement: element,
+      petIsFlying: isFlying,
+      ...metadata,
+    },
+  };
+}
+
+function sanitizeIdentifier(raw: string): string {
+  const cleaned = raw.replace(/[^A-Za-z0-9_]/g, '');
+  return cleaned.length > 0 ? cleaned.slice(0, 40) : 'Pet';
+}
+
+function rarityCoinBonus(rarity: string): number {
+  switch (rarity) {
+    case 'Mythic': return 3.0;
+    case 'Legendary': return 2.2;
+    case 'Epic': return 1.6;
+    case 'Rare': return 1.3;
+    case 'Uncommon': return 1.15;
+    case 'Common':
+    default:
+      return 1.05;
+  }
+}
+
+function childStringValue(parentId: string, name: string, value: string): RobloxBuildSceneNode {
+  return {
+    id: uuidv4(),
+    className: 'StringValue',
+    name,
+    parentId,
+    properties: { Value: value },
+  };
+}
+
+function childBoolValue(parentId: string, name: string, value: boolean): RobloxBuildSceneNode {
+  return {
+    id: uuidv4(),
+    className: 'BoolValue',
+    name,
+    parentId,
+    properties: { Value: value },
+  };
+}
+
+function childIntValue(parentId: string, name: string, value: number): RobloxBuildSceneNode {
+  return {
+    id: uuidv4(),
+    className: 'IntValue',
+    name,
+    parentId,
+    properties: { Value: value },
+  };
+}
+
+function childNumberValue(parentId: string, name: string, value: number): RobloxBuildSceneNode {
+  return {
+    id: uuidv4(),
+    className: 'NumberValue',
+    name,
+    parentId,
+    properties: { Value: value },
   };
 }
 
