@@ -3032,6 +3032,18 @@ function buildFurnitureModelManifest(
   },
   metadata: Record<string, unknown>,
 ): RobloxBuildManifest {
+  // Session 346 diag — confirm which mesh-related fields reached the builder.
+  logger.info('[buildFurnitureModelManifest] entry', {
+    title: args.title,
+    furnitureBuildMode: metadata.furnitureBuildMode,
+    furnitureResolvedBuildMode: metadata.furnitureResolvedBuildMode,
+    meshAssetIdType: typeof metadata.meshAssetId,
+    meshAssetId: metadata.meshAssetId,
+    furnitureRealMeshIdType: typeof metadata.furnitureRealMeshId,
+    furnitureRealMeshId: metadata.furnitureRealMeshId,
+    furnitureRealTextureId: metadata.furnitureRealTextureId,
+    hasLLMScene: typeof metadata.furnitureLLMScene === 'string' && (metadata.furnitureLLMScene as string).length > 0,
+  });
   const handleId = uuidv4();
   const shortTitle = (() => {
     const raw = (args.title || 'Generated Furniture').trim();
@@ -3122,6 +3134,16 @@ function buildFurnitureModelManifest(
   const isValidMeshId = extractedMeshId && extractedMeshId.length >= 5 && extractedMeshId.length <= 16;
   const numericMeshModelId = isValidMeshId ? Number(extractedMeshId) : 0;
 
+  // Session 346 — inner MeshId/TextureID extracted from the Model wrapper via
+  // Roblox Open Cloud Engine API. When present we bake a first-class MeshPart
+  // straight into the .rbxm so Studio displays the real mesh immediately on
+  // import, no Play required.
+  const rawFurnitureRealMeshId = typeof metadata.furnitureRealMeshId === 'string' ? metadata.furnitureRealMeshId.trim() : '';
+  const realMeshIdNum = rawFurnitureRealMeshId ? Number.parseInt(rawFurnitureRealMeshId, 10) : 0;
+  const hasBakedFurnitureMesh = Number.isFinite(realMeshIdNum) && realMeshIdNum > 0;
+  const rawFurnitureRealTextureId = typeof metadata.furnitureRealTextureId === 'string' ? metadata.furnitureRealTextureId.trim() : '';
+  const realTextureIdNum = rawFurnitureRealTextureId ? Number.parseInt(rawFurnitureRealTextureId, 10) : 0;
+
   // Anchored Model — furniture sits in the world, not held as a Tool.
   // PrimaryPart = invisible Handle so users can move the whole prop with PivotTo.
   const scene: RobloxBuildSceneNode[] = [
@@ -3160,6 +3182,40 @@ function buildFurnitureModelManifest(
       className: 'StringValue',
       name: 'AIMeshModelAssetId',
       properties: { Value: String(numericMeshModelId) },
+    });
+  }
+
+  // Session 346 — bake a static MeshPart with the real numeric MeshId/TextureID.
+  // This lets Studio render the AI mesh the moment the user opens the .rbxm in
+  // Edit mode — no need to press Play. The fallback Parts below stay anchored
+  // and visible too, but we hide them when a real mesh is baked so they don't
+  // overlap the proper geometry.
+  if (hasBakedFurnitureMesh) {
+    const meshSizeY = typeof metadata.furnitureRealMeshSizeY === 'number' && metadata.furnitureRealMeshSizeY > 0.1
+      ? Number(metadata.furnitureRealMeshSizeY) : handleSize[1];
+    const meshSizeX = typeof metadata.furnitureRealMeshSizeX === 'number' && metadata.furnitureRealMeshSizeX > 0.1
+      ? Number(metadata.furnitureRealMeshSizeX) : handleSize[0];
+    const meshSizeZ = typeof metadata.furnitureRealMeshSizeZ === 'number' && metadata.furnitureRealMeshSizeZ > 0.1
+      ? Number(metadata.furnitureRealMeshSizeZ) : handleSize[2];
+    const meshProperties: Record<string, unknown> = {
+      Size: vector3(meshSizeX, meshSizeY, meshSizeZ),
+      CFrame: cframe(0, meshSizeY / 2, 0),
+      Anchored: true,
+      CanCollide: true,
+      Locked: false,
+      Transparency: 0,
+      Color: primaryColor3,
+      Material: enumValue('Material', material.enumName, material.value),
+      MeshId: `rbxassetid://${realMeshIdNum}`,
+    };
+    if (realTextureIdNum > 0) {
+      meshProperties.TextureID = `rbxassetid://${realTextureIdNum}`;
+    }
+    scene.push({
+      id: uuidv4(),
+      className: 'MeshPart',
+      name: 'AIMeshBody',
+      properties: meshProperties,
     });
   }
 
@@ -3206,6 +3262,53 @@ function buildFurnitureModelManifest(
   }
   const shapeNumByName: Record<string, number> = { Ball: 0, Block: 1, Cylinder: 2 };
   if (llmSceneParts.length > 0) {
+    // Session 346 — auto-widen guard. LLMs keep producing realistic-but-invisible
+    // 0.08-0.25 stud structural posts/stems/trunks AND thin neon "LED strip" lights
+    // even after explicit prompt rules and validator rejects. From gameplay distance
+    // these read as nothing, so the top/shade/leaves "float". Force their narrow
+    // dims up here — last line of defense before the rbxm is written, regardless
+    // of whether the validator passed or shipped a best-of-N rejected scene.
+    const structuralRolesAutoWiden = new Set(['post', 'stem', 'trunk', 'support', 'light']);
+    const MIN_STRUCTURAL_NARROW = 0.32;
+    let widenedCount = 0;
+    for (const p of llmSceneParts) {
+      if (!p.role || !structuralRolesAutoWiden.has(p.role)) continue;
+      // Identify the "narrow" dims as the two smallest (the third is the "long" axis).
+      const dims: Array<{ idx: 0 | 1 | 2; v: number }> = [
+        { idx: 0, v: p.size[0] }, { idx: 1, v: p.size[1] }, { idx: 2, v: p.size[2] },
+      ].sort((a, b) => a.v - b.v) as Array<{ idx: 0 | 1 | 2; v: number }>;
+      // Pad the two smallest dims if they're below the min.
+      let widenedThis = false;
+      for (let i = 0; i < 2; i++) {
+        if (dims[i].v < MIN_STRUCTURAL_NARROW) {
+          p.size[dims[i].idx] = MIN_STRUCTURAL_NARROW;
+          widenedThis = true;
+        }
+      }
+      if (widenedThis) widenedCount++;
+    }
+    if (widenedCount > 0) {
+      logger.info('[buildFurnitureModelManifest] auto-widened structural parts', { widenedCount, min: MIN_STRUCTURAL_NARROW });
+    }
+
+    // Session 346 — universal size floor. Any dimension below 0.15 gets bumped to
+    // 0.15. Catches sub-min slivers (Neon strips, trim, antennas) that snuck past
+    // the validator after best-of-N retries. 0.15 matches the validator's tinyParts
+    // threshold — nothing visibly thinner ever reaches Studio.
+    const MIN_ANY_DIM = 0.15;
+    let flooredCount = 0;
+    for (const p of llmSceneParts) {
+      for (let i = 0; i < 3; i++) {
+        if (p.size[i] < MIN_ANY_DIM) {
+          p.size[i] = MIN_ANY_DIM;
+          flooredCount++;
+        }
+      }
+    }
+    if (flooredCount > 0) {
+      logger.info('[buildFurnitureModelManifest] floored sub-min dimensions', { flooredCount, min: MIN_ANY_DIM });
+    }
+
     for (const p of llmSceneParts) {
       const matKey = Object.prototype.hasOwnProperty.call(materialValues, p.material) ? p.material : 'SmoothPlastic';
       const shapeName: 'Block' | 'Ball' | 'Cylinder' = p.shape === 'Cylinder' || p.shape === 'Ball' ? p.shape : 'Block';
@@ -3282,17 +3385,21 @@ function buildFurnitureModelManifest(
   ): string => {
     const id = uuidv4();
     const shapeName = options.shape ?? 'Block';
+    // Session 346 — when a baked AI MeshPart is present in the scene, the fallback
+    // primitives would overlap the real mesh in Edit mode. Hide them by default
+    // (transparency=1, no collision) so only the proper mesh shows.
+    const hideForBakedMesh = hasBakedFurnitureMesh;
     scene.push({
       id,
       className: options.className ?? 'Part',
       name: `Fallback${suffix}`,
       properties: {
         Size: vector3(size[0], size[1], size[2]),
-        Position: vector3(position[0], position[1], position[2]),
+        CFrame: cframe(position[0], position[1], position[2]),
         Anchored: true,
-        CanCollide: options.canCollide ?? true,
+        CanCollide: hideForBakedMesh ? false : (options.canCollide ?? true),
         Locked: false,
-        Transparency: options.transparency ?? 0,
+        Transparency: hideForBakedMesh ? 1 : (options.transparency ?? 0),
         Color: color,
         Material: enumValue('Material', materialName, materialValues[materialName]),
         Shape: enumValue('PartType', shapeName, shapeValues[shapeName]),
@@ -3389,7 +3496,11 @@ function buildFurnitureModelManifest(
   const furnitureScripts = Array.isArray(metadata.furnitureScripts) ? metadata.furnitureScripts : [];
   const scripts: RobloxBuildScript[] = [];
 
-  if (numericMeshModelId > 0) {
+  // Session 346 — only emit the runtime InsertService loader when we don't already
+  // have a baked MeshPart. With a baked AIMeshBody MeshPart in the scene the mesh
+  // is visible in Edit mode immediately; the runtime loader would be redundant and
+  // might hide our baked MeshPart.
+  if (numericMeshModelId > 0 && !hasBakedFurnitureMesh) {
     scripts.push({
       id: 'furniture-ai-mesh-loader',
       name: `${normalizedName}MeshLoader`,

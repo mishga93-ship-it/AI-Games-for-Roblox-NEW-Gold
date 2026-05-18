@@ -16254,6 +16254,43 @@ function validateFurnitureSceneGeometry(
     repairActions.push('Every size dimension must be at least 0.15 studs.');
   }
 
+  // Session 346 — Structural posts/stems/trunks/supports that visibly connect
+  // separated chunks of the prop. Below ~0.3 studs in narrow dims they read as
+  // an invisible wire from gameplay distance, making the shade/leaves/top look
+  // like they float with nothing holding them up. (See the "lamp with floating
+  // shade" report — center post was 0.22 stud thick, lamp was 1.4 stud wide.)
+  const structuralRoles = new Set(['post', 'stem', 'trunk', 'support']);
+  const thinStructural = scene.parts.filter((p) => {
+    if (!structuralRoles.has(p.role)) return false;
+    // For a vertical post: the narrow dims are X and Z (the tall dim is Y).
+    const narrowDims = [p.size[0], p.size[2]];
+    return Math.min(...narrowDims) < 0.3;
+  });
+  if (thinStructural.length > 0) {
+    issues.push(`${thinStructural.length} structural part(s) too thin — they'll read as an invisible wire: ${thinStructural.slice(0, 3).map((p) => `${p.name}(${Math.min(p.size[0], p.size[2]).toFixed(2)} stud)`).join(', ')}.`);
+    repairActions.push('Structural posts/stems/trunks/supports must be at least 0.3 studs in both X and Z dimensions to read visually from gameplay distance.');
+  }
+
+  // Session 346 — Vertical gaps between stacked structural elements. A 0.5+ stud
+  // gap between e.g. the BasePlate and the CenterPost makes the lamp look broken
+  // even when the geometry technically reaches its full height.
+  const verticalRanges = flatTypes.has(type) ? [] : scene.parts
+    .map((p) => ({ name: p.name, role: p.role, top: p.position[1] + p.size[1] / 2, bottom: p.position[1] - p.size[1] / 2, x: p.position[0], z: p.position[2] }))
+    .sort((a, b) => a.bottom - b.bottom);
+  // Center-axis structural stack: parts within ~0.5 studs of the prop's vertical
+  // centerline. These should chain top-to-bottom without big air gaps.
+  const centerStackParts = verticalRanges.filter((p) => Math.abs(p.x) < 0.5 && Math.abs(p.z) < 0.5);
+  for (let i = 1; i < centerStackParts.length; i++) {
+    const prev = centerStackParts[i - 1];
+    const curr = centerStackParts[i];
+    const gap = curr.bottom - prev.top;
+    if (gap > 0.5) {
+      issues.push(`Vertical gap of ${gap.toFixed(2)} studs between ${prev.name} (top y=${prev.top.toFixed(2)}) and ${curr.name} (bottom y=${curr.bottom.toFixed(2)}) — the prop will look broken.`);
+      repairActions.push(`Close the gap: add a connecting part, or move ${curr.name} down so it touches ${prev.name}.`);
+      break;
+    }
+  }
+
   const seenPositions = new Set<string>();
   let duplicates = 0;
   for (const p of scene.parts) {

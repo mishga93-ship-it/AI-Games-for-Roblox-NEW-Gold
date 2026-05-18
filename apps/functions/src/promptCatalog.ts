@@ -1723,16 +1723,78 @@ OUTPUT SCHEMA (strict — keep the keys exactly as written):
 
 CONSTRAINTS:
 - 6-22 parts total. Lamps/signs/rugs trend small; thrones/shelves/sofas trend larger.
-- Bounding box must be plausible per type: chair ~2.5x3x2.5, table ~4x2.6x2.5, lamp ~1.4x4.5x1.4, shelf ~3x4x0.6, rug ~6x0.12x4, plant ~1.5x2.5x1.5, sign ~3x2x0.2, decor ~1.5x1.5x1.5 (multiply by scale 'small'=0.7 / 'medium'=1.0 / 'large'=1.4 — emit raw box, the builder applies scale).
+
+COORDINATE SYSTEM (read carefully — this is where most mistakes happen):
+- Roblox uses studs. The Model is anchored with PrimaryPart at world origin; you emit each part's CENTER position relative to that origin.
+- Y axis is UP. y = 0.5 means a part's CENTER sits half a stud above the floor.
+- A part's bottom face is at \`y_center - h/2\`. A part's top face is at \`y_center + h/2\`.
+- So a 0.3-stud-thick rug lies on the floor with y_center = 0.15 (bottom at 0, top at 0.3).
+- A 0.8-stud-tall leg whose bottom touches the floor has y_center = 0.4. Its top is at y = 0.8.
+- A seat that sits on top of 0.8-tall legs and is 0.3 thick: y_center = 0.8 + 0.15 = 0.95. Top at 1.1.
+- A chair back attached behind the seat, 1.2 tall, rising from seat top: y_center = 1.1 + 0.6 = 1.7. Top at 2.3.
+- DO NOT put any part below y = 0 (those parts would be inside the floor and invisible).
+- DO NOT cluster every part at y ≈ 0 — that produces the "flat pancake" mistake. A chair must reach roughly 2.5-3 studs tall total.
+
+SIZE RULES (avoid invisible parts):
+- Minimum side length: 0.15 studs for ANY dimension. Anything thinner won't render reliably.
+- STRUCTURAL POSTS / STEMS / TRUNKS (role="post", "stem", "trunk", "support"): minimum 0.3 studs thick in BOTH narrow dimensions. Roblox blocky aesthetic — a 0.22-stud post looks like an invisible wire from gameplay distance, leaving the shade/top/leaves floating in the air with nothing visibly holding them up. Lamp center posts, plant trunks, sign posts: ≥0.3 wide.
+- Legs are typically 0.20-0.35 wide × 0.6-1.2 tall × 0.20-0.35 deep.
+- A chair seat is typically 1.6-2.4 wide × 0.2-0.4 tall × 1.6-2.4 deep.
+- A chair back is typically 1.6-2.4 wide × 1.0-1.6 tall × 0.15-0.25 deep.
+- Bounding box must be plausible per type: chair ~2.5x3x2.5, table ~4x2.6x2.5, lamp ~1.4x4.5x1.4, shelf ~3x4x0.6, rug ~6x0.12x4, plant ~1.5x2.5x1.5, sign ~3x2x0.2, decor ~1.5x1.5x1.5 (multiply by scale 'small'=0.7 / 'medium'=1.0 / 'large'=1.4 — emit raw, the builder applies scale).
+- After you emit all parts, the MAX y-coordinate (top of tallest part) must be at least 60% of the bounding box H — that's how we know the prop reaches the expected height instead of being squashed.
+- After you emit all parts, the part centers must span at least 50% of the bounding box on each of the X and Z axes that the type uses (legs at corners, back behind seat, etc.).
+- VERTICAL CONTINUITY: when one part is meant to rest on another (shade on post, top on legs, trim on base), their CFrame ranges (y_center ± size_y/2) MUST overlap or touch by at least 0.05 studs. NEVER leave a vertical gap — Roblox does not auto-connect floating parts, and from a few studs away a 0.5-stud gap reads as "broken floating geometry".
+
+MATERIALS:
 - Use Roblox's official Material enum names exactly (capital-cased above). No "OakWood", no "VelvetFabric".
+- Wood, WoodPlanks, Marble, Brick, Slate, Concrete, Metal, SmoothPlastic, Plastic, Fabric, Grass, Glass, Neon. Anything else will be silently downgraded.
+
+COLORS:
 - Use the user's primaryColor for the dominant surface, accentColor for trim/cushion/top, glowColor for any light-emitting part.
-- Chairs MUST include exactly one part with kind="Seat" and role="seat" so players can sit on them.
-- Lamps MUST include at least one role="light" Part with Material="Neon" and color near glowColor.
-- Signs SHOULD include one role="light" part if the user implied glow ("neon sign", "led sign"); keep regular signs without it.
-- Plants MUST have at least one role="leaves" green-tinted part.
+
+PER-TYPE REQUIREMENTS:
+- Chairs MUST include exactly one part with kind="Seat" and role="seat" so players can sit on them. Plus a back, plus 4 legs reaching from the seat down to y_center ≈ leg_height/2.
+- Tables MUST have a top spanning the bounding box X/Z and 4 supporting legs.
+- Lamps MUST include at least one role="light" Part with Material="Neon" and color near glowColor, positioned on top of the post/inside the shade.
+- Shelves MUST have at least 3 horizontal shelf boards stacked vertically inside the frame.
+- Plants MUST have at least one role="leaves" green-tinted part above a role="trunk" or pot.
 - Rugs MUST have canCollide=false on the body and lay flat (h <= 0.15).
-- Parts must not float without support — legs reach the ground, table top sits on legs, shelf boards span between sides, lamp shade sits on top of post.
-- Distinctive features from the brief MUST appear as Parts (carvings → extra trim Parts; neon stripe → a Neon Part; gold legs → accent-color cylinder Parts; cushion → a Fabric Part on the seat).
+- Signs SHOULD include one role="light" part if the user implied glow ("neon sign", "led sign"); keep regular signs without it.
+
+DON'T:
+- Don't make every part the same size — that hides them as a single cube.
+- Don't put a part at y_center = 0 with h = 3 — that buries half of it.
+- Don't omit legs/supports — a floating seat looks broken.
+- Don't repeat the exact same position twice (parts at identical positions z-fight in Studio).
+- Don't cluster 4 "legs" at the same x,z point — they must sit at the FOUR CORNERS of the seat/top: e.g. (+W/2 - legW/2, ±D/2 - legD/2) and (-W/2 + legW/2, ±D/2 - legD/2). Otherwise the table/chair looks like a single stick.
+
+Distinctive features from the brief MUST appear as Parts (carvings → extra trim Parts; neon stripe → a Neon Part; gold legs → accent-color cylinder Parts; cushion → a Fabric Part on the seat).
+
+CONCRETE EXAMPLE — copy this STRUCTURE for a chair (only change colors/materials/style; keep the same coordinate logic). This shows correctly-distributed legs, supported seat, back rising up:
+{
+  "title": "Carved Oak Tavern Chair",
+  "furnitureType": "chair",
+  "boundingBox": [2.5, 3.0, 2.5],
+  "parts": [
+    { "name": "LegFrontLeft",  "kind": "Part", "role": "leg",  "shape": "Block", "position": [-1.0, 0.4,  -1.0], "size": [0.22, 0.8, 0.22], "color": "#6B4423", "material": "Wood" },
+    { "name": "LegFrontRight", "kind": "Part", "role": "leg",  "shape": "Block", "position": [ 1.0, 0.4,  -1.0], "size": [0.22, 0.8, 0.22], "color": "#6B4423", "material": "Wood" },
+    { "name": "LegBackLeft",   "kind": "Part", "role": "leg",  "shape": "Block", "position": [-1.0, 0.4,   1.0], "size": [0.22, 0.8, 0.22], "color": "#6B4423", "material": "Wood" },
+    { "name": "LegBackRight",  "kind": "Part", "role": "leg",  "shape": "Block", "position": [ 1.0, 0.4,   1.0], "size": [0.22, 0.8, 0.22], "color": "#6B4423", "material": "Wood" },
+    { "name": "Seat",          "kind": "Seat", "role": "seat", "shape": "Block", "position": [ 0.0, 0.95,  0.0], "size": [2.2, 0.3, 2.2], "color": "#8B5A2B", "material": "Wood" },
+    { "name": "BackRest",      "kind": "Part", "role": "back", "shape": "Block", "position": [ 0.0, 1.95,  1.05], "size": [2.0, 1.6, 0.2], "color": "#6B4423", "material": "Wood" },
+    { "name": "BackTopTrim",   "kind": "Part", "role": "trim", "shape": "Block", "position": [ 0.0, 2.85,  1.05], "size": [2.1, 0.15, 0.22], "color": "#4A2E15", "material": "Wood" },
+    { "name": "Stretcher",     "kind": "Part", "role": "support", "shape": "Block", "position": [ 0.0, 0.25, 0.0], "size": [2.0, 0.18, 0.18], "color": "#6B4423", "material": "Wood" }
+  ]
+}
+
+Notice in the example:
+- 4 legs at (±1, 0.4, ±1) — ONE PER CORNER, never the same x,z twice.
+- Seat at (0, 0.95, 0) — sitting ON TOP of the 0.8-tall legs.
+- BackRest at z=+1.05 (behind seat) rising to top.
+- All y-values ≥ 0; tallest top is at y≈2.93 — the chair reaches its full 3-stud bounding height.
+
+For a TABLE follow the same corner-distribution rule: 4 legs at (±(W/2 - legW), legH/2, ±(D/2 - legD)) and a TableTop at (0, legH + topH/2, 0) with size [W, topH, D].
 
 REPAIR MODE: If the input says "previous attempt was rejected because: ..." then fix exactly those issues in the next pass — don't redo the whole design, only adjust the parts called out in the rejection reasons.
 `.trim(),

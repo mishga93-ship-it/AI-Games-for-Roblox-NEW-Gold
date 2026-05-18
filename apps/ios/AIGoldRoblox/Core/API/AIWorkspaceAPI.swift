@@ -451,6 +451,10 @@ enum AIWorkspaceAPI {
         let qualityReviewReasons: [String]?
         let qualityRepairActions: [String]?
         let obbyApifyTaskSummary: [String]?
+        // Session 346 — Furniture & Props blocky path
+        let furnitureBuildMode: String?
+        let furnitureResolvedBuildMode: String?
+        let furniturePreviewImageUrl: String?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: DynamicCodingKey.self)
@@ -498,6 +502,9 @@ enum AIWorkspaceAPI {
             qualityReviewReasons = try? container.decode([String].self, forKey: .init("qualityReviewReasons"))
             qualityRepairActions = try? container.decode([String].self, forKey: .init("qualityRepairActions"))
             obbyApifyTaskSummary = try? container.decode([String].self, forKey: .init("obbyApifyTaskSummary"))
+            furnitureBuildMode = try? container.decode(String.self, forKey: .init("furnitureBuildMode"))
+            furnitureResolvedBuildMode = try? container.decode(String.self, forKey: .init("furnitureResolvedBuildMode"))
+            furniturePreviewImageUrl = try? container.decode(String.self, forKey: .init("furniturePreviewImageUrl"))
         }
 
         private struct DynamicCodingKey: CodingKey {
