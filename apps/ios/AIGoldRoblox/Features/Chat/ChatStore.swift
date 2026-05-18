@@ -880,7 +880,50 @@ final class ChatStore: ObservableObject {
     // Session 001 (Track 1): builds the Marketplace handoff context from the most
     // recent completed clothing job. Sets @Published `marketplaceHandoffContext`
     // — ChatView's `.sheet(item:)` reacts and presents MarketplaceHandoffView.
+    // Track 3: also supports pet_3d jobs — petStudioBlock takes precedence over
+    // layered/classic clothing blocks when petSpeciesType is set.
     func openMarketplaceHandoff() {
+        // Track 3 (3D Pet pipeline): if the user has petSpecies+petMode set,
+        // route to a pet-specific handoff context with per-stage download URLs.
+        if let species = draft.petSpecies, draft.petMode == "evolution_3d" {
+            let petJob = lastFailedGenerationJob
+            let warnings = petJob?.stages?
+                .first(where: { $0.id == "validate_pet" })?
+                .notes?.filter { $0.contains("MB") && ($0.lowercased().contains("exceed") || $0.lowercased().contains("decimate")) }
+                ?? []
+            let stageArtifacts = (petJob?.artifacts ?? []).filter { $0.metadata?.isPetMesh == true || $0.metadata?.isPetRiggedFbx == true }
+            func stageURL(_ idx: Int, suffix: String) -> URL? {
+                stageArtifacts
+                    .first(where: { $0.metadata?.petStageIndex == idx && ($0.type.contains(suffix)) })
+                    .flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+            }
+            let rbxmURL = petJob?.artifacts
+                .first(where: { $0.metadata?.isPetEvolution == true })
+                .flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+            let rarity = petJob?.metadata?.petRarity
+            marketplaceHandoffContext = MarketplaceHandoffContext(
+                clothingType: "pet_\(species)",
+                title: draft.title,
+                suggestedDescription: "AI-generated Roblox 3D pet (\(species)) — 3 evolution stages, follow/leveling/rarity built in.",
+                suggestedTags: ["pet", species, "ai", "ugc"],
+                suggestedPriceRobux: 0,
+                robloxAssetId: nil,
+                textureDownloadURL: nil,
+                meshFbxURL: nil,
+                meshGlbURL: nil,
+                validationWarnings: warnings,
+                petStage1FbxURL: stageURL(1, suffix: "fbx"),
+                petStage2FbxURL: stageURL(2, suffix: "fbx"),
+                petStage3FbxURL: stageURL(3, suffix: "fbx"),
+                petStage1GlbURL: stageURL(1, suffix: "glb"),
+                petStage2GlbURL: stageURL(2, suffix: "glb"),
+                petStage3GlbURL: stageURL(3, suffix: "glb"),
+                petRbxmURL: rbxmURL,
+                petSpeciesType: species,
+                petRarity: rarity
+            )
+            return
+        }
         let clothingType = draft.clothingType ?? {
             if let job = lastFailedGenerationJob, job.metadata?.isTShirt == true { return "t_shirt" }
             return "classic_shirt"
@@ -1099,6 +1142,35 @@ final class ChatStore: ObservableObject {
         if normalized == "📦 publish to marketplace" || normalized == "publish to marketplace" {
             openMarketplaceHandoff()
             return
+        }
+        // Track 3 (3D Pet pipeline): pet-species picker. Maps welcome-message tap
+        // → draft.petSpecies + draft.petMode so generationMetadata sends pet
+        // routing upstream. Backend dispatches requestedKind=pet_3d.
+        if contentSubcategory == "pets" {
+            switch normalized {
+            case "🐕 dog", "dog", "🐕":
+                draft.petSpecies = "dog"
+                draft.petMode = "evolution_3d"
+            case "🐈 cat", "cat", "🐈":
+                draft.petSpecies = "cat"
+                draft.petMode = "evolution_3d"
+            case "🐉 dragon", "dragon", "🐉":
+                draft.petSpecies = "dragon"
+                draft.petMode = "evolution_3d"
+            case "🦄 unicorn", "unicorn", "🦄":
+                draft.petSpecies = "unicorn"
+                draft.petMode = "evolution_3d"
+            case "🤖 robot", "robot", "🤖":
+                draft.petSpecies = "robot"
+                draft.petMode = "evolution_3d"
+            case "✨ custom", "custom", "fantasy creature", "cute companion":
+                draft.petSpecies = "fantasy"
+                draft.petMode = "evolution_3d"
+            case "robot pet":
+                draft.petSpecies = "robot"
+                draft.petMode = "evolution_3d"
+            default: break
+            }
         }
         // Killer Feature #2: Smart NPC Roast & Chat — quickReply maps a personality preset
         // into draft.roastPersonality. The 6-turn smart-interview still asks role/look/etc;
@@ -6054,7 +6126,11 @@ final class ChatStore: ObservableObject {
         case "items":
             return ["Example: Legendary pickup glow", "Example: Mining pickaxe tool", "Example: Healing potion consumable", "Switch to Interview"]
         case "pets":
-            return ["Example: Fluffy fox companion", "Example: Robot drone pet", "Example: Tiny dragon hatchling", "Switch to Interview"]
+            // Track 3 (3D Pet pipeline) — quick-generate path. Each example
+            // becomes the user prompt; sendQuickReply already mapped petSpecies
+            // / petMode on the welcome chip tap, so the pipeline routes to
+            // requestedKind=pet_3d with 3 evolution stages.
+            return ["🐕 Dog", "🐈 Cat", "🐉 Dragon", "🦄 Unicorn", "🤖 Robot", "Example: Fluffy fox companion", "Example: Robot drone pet", "Example: Tiny dragon hatchling", "Switch to Interview"]
         case "scripts":
             return ["Pet System", "Shop / Economy", "DataStore / Saving", "Leaderboard", "Inventory", "Combat System", "Daily Rewards", "Rebirth / Prestige", "Quest System", "Dialogue System", "Day / Night Cycle", "Teleportation", "Custom Script…", "Switch to Interview"]
         case "ui":
@@ -6106,7 +6182,11 @@ final class ChatStore: ObservableObject {
 	        case "items":
 	            return ["Key / unlock", "Potion / buff", "Coin / currency", "Medkit / heal", "Resource / material", "Other tool", "Decide for me", "Start over"]
         case "pets":
-            return ["Cute companion", "Fantasy creature", "Robot pet", "Decide for me", "Start over"]
+            // Track 3 (3D Pet pipeline) — species picker for evolution_3d mode.
+            // Each chip sets draft.petSpecies + draft.petMode="evolution_3d"
+            // (see sendQuickReply switch above). Pipeline produces a .rbxm with
+            // 3 evolution stages, follow/leveling/rarity scripts.
+            return ["🐕 Dog", "🐈 Cat", "🐉 Dragon", "🦄 Unicorn", "🤖 Robot", "✨ Custom", "Decide for me", "Start over"]
         case "scripts":
             return ["Pet System", "Daily Rewards", "Day/Night Cycle", "Teleportation", "Rebirth", "Quest System", "DataStore", "Combat System", "Decide for me", "Start over"]
         case "ui":
@@ -6347,6 +6427,18 @@ final class ChatStore: ObservableObject {
         if let cm = draft.clothingMode {
             metadata["clothingMode"] = cm
         }
+        // Track 3 (3D Pet pipeline) — surface pet picks. petMode="evolution_3d"
+        // routes backend to requestedKind=pet_3d → buildPetEvolutionManifest.
+        if let ps = draft.petSpecies {
+            metadata["petSpecies"] = ps
+        }
+        if let pm = draft.petMode {
+            metadata["petMode"] = pm
+            if pm == "evolution_3d" {
+                metadata["requestedKind"] = "pet_3d"
+                if metadata["contentCategory"] == nil { metadata["contentCategory"] = "pet" }
+            }
+        }
         if let memory = threadProjectMemory {
             metadata["hasExistingProject"] = "true"
             if let latestJobId = memory.latestJobId {
@@ -6452,6 +6544,18 @@ final class ChatStore: ObservableObject {
         }
         if let cm = draft.clothingMode {
             metadata["clothingMode"] = cm
+        }
+        // Track 3 (3D Pet pipeline) — surface pet picks. petMode="evolution_3d"
+        // routes backend to requestedKind=pet_3d → buildPetEvolutionManifest.
+        if let ps = draft.petSpecies {
+            metadata["petSpecies"] = ps
+        }
+        if let pm = draft.petMode {
+            metadata["petMode"] = pm
+            if pm == "evolution_3d" {
+                metadata["requestedKind"] = "pet_3d"
+                if metadata["contentCategory"] == nil { metadata["contentCategory"] = "pet" }
+            }
         }
         if let memory = threadProjectMemory {
             metadata["hasExistingProject"] = "true"
@@ -6885,6 +6989,11 @@ private struct ProjectDraft {
     // the type from the prompt. Layered 3D variants (Jacket/Sweater/Dress/etc.)
     // stay on `clothingMode = layered_3d` until Track 2.
     var clothingType: String?
+    // Track 3 (3D Pet pipeline): user-picked pet species + generation mode.
+    // petSpecies: "dog" | "cat" | "dragon" | "unicorn" | "robot" | "fantasy"
+    // petMode:    "evolution_3d" — triggers requestedKind=pet_3d pipeline.
+    var petSpecies: String?
+    var petMode: String?
     // Session #095: user-picked weapon colors (hex #RRGGBB). Set by WeaponColorPickerBubble.
     var weaponPrimaryColor: String?
     var weaponAccentColor: String?

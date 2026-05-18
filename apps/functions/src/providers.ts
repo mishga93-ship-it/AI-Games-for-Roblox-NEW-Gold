@@ -18,6 +18,7 @@ import {
   MODELSLAB_API_KEY,
   OPENAI_API_KEY,
   SUNO_API_KEY,
+  TRIPO_API_KEY,
   defaults,
 } from './config.js';
 import type { ProviderPromptInput } from './promptCatalog.js';
@@ -1718,6 +1719,207 @@ const FURNITURE_STYLE_HINT =
 
 const CLOTHING_KEYWORDS = /jacket|shirt|pants|dress|coat|hat|helmet|crown|cape|armor|shoe|boot|glove|hoodie|sweater|skirt|vest|scarf|mask|glasses|backpack|wing/i;
 
+// Track 3 (3D Pet pipeline) — keyword maps for fast regex fallback when LLM
+// classification is unavailable. Bilingual (EN + RU) to match the rest of the
+// prompt enrichment layer (`generationEnrichment.ts:65`).
+const PET_QUADRUPED_KEYS = /\b(dog|cat|wolf|fox|lion|tiger|bear|horse|unicorn|deer|panther|puppy|kitten|собак|кошк|волк|лис|медвед|единорог|лошад|оленен|пантер|щенок|котён)/i;
+const PET_DRAGON_KEYS    = /\b(dragon|wyvern|drake|serpent|snake|hydra|дракон|вирверн|змей|гидр)/i;
+const PET_ROBOT_KEYS     = /\b(robot|bot|mech|cyborg|droid|drone|робот|меха|киборг|дрон|андроид)/i;
+const PET_BIRD_KEYS      = /\b(bird|phoenix|eagle|hawk|owl|feather|птиц|феникс|орел|сова)/i;
+const PET_AQUATIC_KEYS   = /\b(fish|shark|whale|dolphin|octopus|рыб|акул|кит|дельфин|осьминог)/i;
+const PET_FLYING_KEYS    = /\b(fly|flying|wing|wings|airborne|hover|летающ|крыл|парящ)/i;
+const PET_PET_HINT_KEYS  = /\b(pet|companion|familiar|питом|компаньон|фамильяр)/i;
+
+// Roblox pet-economy rarity tiers — Common is the base, Mythic the cap. Same
+// scale used by Pet Simulator X-style games and the existing buildPetSystemScript.
+const PET_RARITY_HINTS: Array<{ tier: 'Common'|'Uncommon'|'Rare'|'Epic'|'Legendary'|'Mythic'; re: RegExp }> = [
+  { tier: 'Mythic',    re: /\b(mythic|mythical|divine|godly|мифическ|боже)/i },
+  { tier: 'Legendary', re: /\b(legendary|exalted|ancient|легендарн|древн)/i },
+  { tier: 'Epic',      re: /\b(epic|exotic|premium|эпическ|элит|премиум)/i },
+  { tier: 'Rare',      re: /\b(rare|advanced|special|редк|особенн|улучшен)/i },
+  { tier: 'Uncommon',  re: /\b(uncommon|enhanced|необычн)/i },
+  { tier: 'Common',    re: /\b(common|basic|starter|обычн|начальн|базов)/i },
+];
+
+const PET_ELEMENT_HINTS: Array<{ element: 'Fire'|'Ice'|'Shadow'|'Light'|'Nature'|'Tech'; re: RegExp }> = [
+  { element: 'Fire',   re: /\b(fire|flame|lava|magma|burning|inferno|огнен|пламен|лава)/i },
+  { element: 'Ice',    re: /\b(ice|frost|snow|frozen|cryo|ледян|снежн|морозн)/i },
+  { element: 'Shadow', re: /\b(shadow|dark|night|void|spectral|abyss|тенев|тёмн|мрак)/i },
+  { element: 'Light',  re: /\b(light|holy|divine|celestial|radiant|солнечн|свет|сия)/i },
+  { element: 'Nature', re: /\b(nature|forest|leaf|earth|plant|verdant|природ|лесн|расти)/i },
+  { element: 'Tech',   re: /\b(cyber|tech|robot|mech|neon|digital|cyber|техно|механ|нейросет|неон)/i },
+];
+
+export type PetSpeciesType = 'dog' | 'cat' | 'dragon' | 'unicorn' | 'robot' | 'fantasy';
+export type PetSkeletonType = 'biped' | 'mechanical_biped' | 'quadruped' | 'winged_quadruped' | 'serpentine' | 'aquatic';
+export type PetRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
+export type PetElement = 'Fire' | 'Ice' | 'Shadow' | 'Light' | 'Nature' | 'Tech' | 'Neutral';
+
+export interface PetEvolutionStagePrompt {
+  prompt: string;
+  visualNotes: string;
+}
+
+export interface PetClassification {
+  speciesType: PetSpeciesType;
+  skeletonType: PetSkeletonType;
+  rarity: PetRarity;
+  element: PetElement;
+  isFlying: boolean;
+  baseName: string;
+  evolutionArc: {
+    stage1: PetEvolutionStagePrompt;
+    stage2: PetEvolutionStagePrompt;
+    stage3: PetEvolutionStagePrompt;
+  };
+}
+
+function classifyPetByRegex(prompt: string, requestedSpecies?: string): PetClassification {
+  const isDragon = PET_DRAGON_KEYS.test(prompt);
+  const isRobot = PET_ROBOT_KEYS.test(prompt);
+  const isBird = PET_BIRD_KEYS.test(prompt);
+  const isAquatic = PET_AQUATIC_KEYS.test(prompt);
+  const isQuadruped = PET_QUADRUPED_KEYS.test(prompt);
+  const flyingHint = PET_FLYING_KEYS.test(prompt) || isDragon || isBird;
+
+  let speciesType: PetSpeciesType = 'fantasy';
+  if (requestedSpecies) {
+    const r = requestedSpecies.toLowerCase();
+    if (r === 'dog' || r === 'cat' || r === 'dragon' || r === 'unicorn' || r === 'robot') speciesType = r;
+  } else if (isRobot) speciesType = 'robot';
+  else if (isDragon) speciesType = 'dragon';
+  else if (/\bunicorn|единорог/i.test(prompt)) speciesType = 'unicorn';
+  else if (/\bcat\b|kitten|кошк|котён/i.test(prompt)) speciesType = 'cat';
+  else if (/\bdog\b|puppy|wolf|fox|собак|щенок|волк|лис/i.test(prompt)) speciesType = 'dog';
+
+  let skeletonType: PetSkeletonType = 'quadruped';
+  if (isRobot) skeletonType = /\b(drone|hover|flying|летающ|дрон)/i.test(prompt) ? 'mechanical_biped' : 'mechanical_biped';
+  else if (isAquatic) skeletonType = 'aquatic';
+  else if (isDragon || (isQuadruped && flyingHint)) skeletonType = 'winged_quadruped';
+  else if (/\b(snake|serpent|hydra|змей|гидр)/i.test(prompt)) skeletonType = 'serpentine';
+  else if (isBird && !isQuadruped) skeletonType = 'biped';
+  else if (isQuadruped) skeletonType = 'quadruped';
+  else if (/\b(humanoid|biped|двуног)/i.test(prompt)) skeletonType = 'biped';
+
+  let rarity: PetRarity = 'Rare';
+  for (const hint of PET_RARITY_HINTS) {
+    if (hint.re.test(prompt)) { rarity = hint.tier; break; }
+  }
+  let element: PetElement = 'Neutral';
+  for (const hint of PET_ELEMENT_HINTS) {
+    if (hint.re.test(prompt)) { element = hint.element; break; }
+  }
+
+  const baseName = prompt.replace(/[^A-Za-zА-Яа-я0-9\s]/g, '').trim().split(/\s+/).slice(0, 3).join(' ') || 'Companion';
+
+  const stage1Prompt = `tiny baby ${speciesType} pet, hatchling form, small and cute, friendly, ${element !== 'Neutral' ? element.toLowerCase() + ' theme, ' : ''}stylized Roblox-friendly 3D model, single creature, no human, no background, neutral pose`;
+  const stage2Prompt = `${prompt}, adult form, ${element !== 'Neutral' ? element.toLowerCase() + ' element, ' : ''}stylized Roblox-friendly 3D pet model, single creature, no human, no background, neutral pose`;
+  const stage3Prompt = `${prompt}, legendary mythical form, glowing aura, larger and majestic, ${element !== 'Neutral' ? 'powerful ' + element.toLowerCase() + ' aura, ' : ''}stylized Roblox-friendly 3D pet model, single creature, no human, no background, neutral pose`;
+
+  return {
+    speciesType,
+    skeletonType,
+    rarity,
+    element,
+    isFlying: flyingHint,
+    baseName,
+    evolutionArc: {
+      stage1: { prompt: stage1Prompt, visualNotes: 'baby/hatchling form, small and cute' },
+      stage2: { prompt: stage2Prompt, visualNotes: 'adult form, original prompt' },
+      stage3: { prompt: stage3Prompt, visualNotes: `legendary form with ${element.toLowerCase()} aura` },
+    },
+  };
+}
+
+/**
+ * Classify a Pet prompt into species/skeleton/rarity/element + a 3-stage
+ * evolution arc. Uses LLM (Anthropic structured output) when possible,
+ * falls back to deterministic regex when LLM is unavailable / non-JSON.
+ *
+ * Touched on every pet_3d job (cheap LLM call, < 1s) so degrade quietly.
+ */
+export async function classifyPet(
+  prompt: string,
+  requestedSpecies?: string,
+): Promise<PetClassification> {
+  const regexFallback = classifyPetByRegex(prompt, requestedSpecies);
+
+  const systemPrompt = [
+    'You classify Roblox pet prompts into a structured JSON for a 3D-asset pipeline.',
+    'Output ONLY a valid JSON object matching the requested schema. No prose.',
+  ].join(' ');
+
+  const userPrompt = [
+    `Pet prompt: "${prompt}"`,
+    requestedSpecies ? `Hint: user picked species "${requestedSpecies}".` : '',
+    'Return JSON with keys:',
+    '  speciesType: one of ["dog","cat","dragon","unicorn","robot","fantasy"]',
+    '  skeletonType: one of ["biped","mechanical_biped","quadruped","winged_quadruped","serpentine","aquatic"]',
+    '  rarity: one of ["Common","Uncommon","Rare","Epic","Legendary","Mythic"]',
+    '  element: one of ["Fire","Ice","Shadow","Light","Nature","Tech","Neutral"]',
+    '  isFlying: boolean (true if it flies/hovers)',
+    '  baseName: short 1-3 word name in PascalCase',
+    '  evolutionArc: { stage1: {prompt,visualNotes}, stage2: {prompt,visualNotes}, stage3: {prompt,visualNotes} }',
+    'Each evolutionArc.stageN.prompt must be a self-contained image-generation prompt for that stage',
+    '(stage1 = baby/hatchling, stage2 = adult/original form, stage3 = legendary/mythical form).',
+    'Each prompt MUST include "single creature, no human, no background, neutral pose" so Meshy/Tripo do not insert a person.',
+  ].filter(Boolean).join('\n');
+
+  try {
+    const result = await runChatProvider('anthropic', `${systemPrompt}\n\n${userPrompt}`, undefined, { timeoutMs: 20000 });
+    const text = result.text?.trim() ?? '';
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('classifyPet: no JSON object in LLM response');
+    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as Partial<PetClassification>;
+    if (!parsed.speciesType || !parsed.skeletonType || !parsed.rarity || !parsed.element || !parsed.evolutionArc) {
+      throw new Error('classifyPet: LLM response missing required fields');
+    }
+    logger.info('classifyPet: LLM classification', {
+      speciesType: parsed.speciesType,
+      skeletonType: parsed.skeletonType,
+      rarity: parsed.rarity,
+      element: parsed.element,
+      isFlying: parsed.isFlying,
+    });
+    return {
+      speciesType: parsed.speciesType,
+      skeletonType: parsed.skeletonType,
+      rarity: parsed.rarity,
+      element: parsed.element,
+      isFlying: !!parsed.isFlying,
+      baseName: parsed.baseName ?? regexFallback.baseName,
+      evolutionArc: parsed.evolutionArc as PetClassification['evolutionArc'],
+    };
+  } catch (err) {
+    logger.warn('classifyPet: LLM failed, using regex fallback', { error: (err as Error).message });
+    return regexFallback;
+  }
+}
+
+export interface PetProviderRouting {
+  mesh: 'meshy' | 'tripo';
+  rig: 'meshy' | 'tripo' | 'procedural';
+}
+
+/**
+ * Decide which mesh + rig provider to use per skeleton type. Meshy v6 Rigging
+ * API only supports bipedal humanoid; everything else routes to Tripo.
+ */
+export function selectMeshProvider(skeletonType: PetSkeletonType): PetProviderRouting {
+  switch (skeletonType) {
+    case 'biped':
+    case 'mechanical_biped':
+      return { mesh: 'meshy', rig: 'meshy' };
+    case 'quadruped':
+    case 'winged_quadruped':
+    case 'serpentine':
+    case 'aquatic':
+    default:
+      return { mesh: 'tripo', rig: 'tripo' };
+  }
+}
+
 export function buildConceptImagePrompt(rawPrompt: string, input: Record<string, unknown>): string {
   const title = typeof input.title === 'string' ? input.title.trim() : '';
   const genre = typeof input.genre === 'string' ? input.genre.trim() : '';
@@ -2200,21 +2402,29 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
     || contentCategory === 'character';
   const isWeaponItem = contentCategory === 'weapon';
   const isItemTool = contentCategory === 'item_tool';
-  const isClothingItem = !isWeaponItem && !isItemTool && !isCharacterContent && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
+  // Track 3 (Pet 3D pipeline): pets must not degrade into the "no human body"
+  // clothing branch nor pick up CLOTHING_KEYWORDS-style negative prompts. We
+  // ALSO want multi-view for pets so Meshy/Tripo have side+back angles.
+  const isPetContent = contentCategory === 'pet'
+    || input.requestedKind === 'pet_3d'
+    || input.petMode === 'evolution_3d';
+  const isClothingItem = !isWeaponItem && !isItemTool && !isCharacterContent && !isPetContent && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
     || CLOTHING_KEYWORDS.test(prompt)
     || CLOTHING_KEYWORDS.test(typeof input.title === 'string' ? input.title : ''));
   const isPropContent = contentCategory === 'furniture_prop' || contentCategory === 'prop';
   const negativePrompt = typeof input.negativePrompt === 'string' && input.negativePrompt.trim()
     ? input.negativePrompt
-    : isWeaponItem
-      ? 'human body, person, hands, character, low quality, blurry, broken geometry, floating parts'
-      : isItemTool
-        ? 'human body, person, character, hands holding, body, face, mannequin, background scene, low quality, blurry, broken geometry, floating parts'
-        : isClothingItem
-          ? 'human body, person, mannequin, hanger, stand, rack, legs, arms, head, face, low quality, blurry'
-          : isPropContent
-            ? 'human, person, character, body, face, hands, feet, mannequin, low quality, blurry, broken geometry, floating parts'
-            : 'nude, naked, shirtless, bare chest, exposed skin, nsfw, underwear, open jacket, unbuttoned shirt, open shirt, v-neck showing chest, visible torso, bare torso, low quality, blurry, broken anatomy, noisy topology, floating parts, action pose, dynamic pose, crossed arms, overlapping limbs, running, jumping, fighting';
+    : isPetContent
+      ? 'human, person, mannequin, clothing, garment, hat, weapon, hands, background scene, multiple creatures, action pose, running, jumping, fighting, low quality, blurry, broken anatomy, floating parts'
+      : isWeaponItem
+        ? 'human body, person, hands, character, low quality, blurry, broken geometry, floating parts'
+        : isItemTool
+          ? 'human body, person, character, hands holding, body, face, mannequin, background scene, low quality, blurry, broken geometry, floating parts'
+          : isClothingItem
+            ? 'human body, person, mannequin, hanger, stand, rack, legs, arms, head, face, low quality, blurry'
+            : isPropContent
+              ? 'human, person, character, body, face, hands, feet, mannequin, low quality, blurry, broken geometry, floating parts'
+              : 'nude, naked, shirtless, bare chest, exposed skin, nsfw, underwear, open jacket, unbuttoned shirt, open shirt, v-neck showing chest, visible torso, bare torso, low quality, blurry, broken anatomy, noisy topology, floating parts, action pose, dynamic pose, crossed arms, overlapping limbs, running, jumping, fighting';
 
   const conceptImageUrl = typeof input.conceptImageUrl === 'string' && input.conceptImageUrl.trim()
     ? input.conceptImageUrl.trim()
@@ -2232,7 +2442,10 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
   const isLayered3DClothing = isClothingItem
     && (input.clothingMode === 'layered_3d'
       || (typeof input.clothingType === 'string' && (input.clothingType as string).startsWith('layered_')));
-  const wantsMultiView = useImageTo3d && (isCharacterContent || isNpcContent || isLayered3DClothing);
+  // Track 3 (Pet 3D pipeline): multi-view is critical for non-humanoid creatures —
+  // back/side angles disambiguate tail/wing/leg geometry that single-image Meshy
+  // misinterprets as floating parts.
+  const wantsMultiView = useImageTo3d && (isCharacterContent || isNpcContent || isLayered3DClothing || isPetContent);
   const endpoint = useImageTo3d
     ? 'fal-ai/meshy/v6/multi-image-to-3d'
     : 'fal-ai/meshy/v6/text-to-3d';
@@ -2291,6 +2504,10 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
   //   cleans up uneven faces / asymmetric limbs that single-image inputs often produce.
   // Note: fal.ai's Meshy v6 schema does NOT expose `art_style` or `texture_richness`
   // (verified 2026-05-12). The earlier attempt to pass those returned validation errors.
+  // Track 3 (Pet 3D pipeline): legendary stage3 forms are often asymmetric
+  // (one glowing eye, scar, ragged wing), so we disable symmetry enforcement
+  // when the pet stage is marked as the legendary final form.
+  const isLegendaryStage3 = isPetContent && input.petStageIndex === 3;
   const payload: Record<string, unknown> = useImageTo3d
     ? {
         image_urls: imageUrls,
@@ -2301,7 +2518,7 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
         // being a clean topology compared to default 30k. Roblox MeshPart
         // accepts up to 60k tri so 20k is well within budget.
         target_polycount: 20_000,
-        symmetry_mode: 'auto',
+        symmetry_mode: isLegendaryStage3 ? 'off' : 'auto',
         pose_mode: '',
         should_remesh: true,
         should_texture: true,
@@ -2448,6 +2665,199 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
       provider: 'fal-meshy-v6',
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Track 3 (Pet 3D pipeline) — Tripo AI provider for quadruped/winged/serpentine
+// /aquatic creatures that Meshy v6 Rigging API does NOT support (it accepts
+// only bipedal humanoid).
+//
+// We use Tripo via fal.ai (fal-ai/tripo3d/tripo/v2.5/image-to-3d) for the
+// mesh stage — single hop, polling pattern identical to Meshy. For the rig
+// + animation step we call the Tripo platform API directly because fal.ai
+// does NOT proxy `animate_rig` yet. If TRIPO_API_KEY is unset the rig step
+// degrades gracefully: the pet ships as a static MeshPart and FollowScript
+// continues to work (no skinned animation).
+// ---------------------------------------------------------------------------
+
+const TRIPO_API_BASE = 'https://api.tripo3d.ai/v2/openapi';
+
+export interface TripoMeshResult {
+  meshUrl: string;
+  rawJson: unknown;
+}
+
+export interface TripoRigResult {
+  fbxUrl?: string;
+  glbUrl?: string;
+  rawJson?: unknown;
+  skipped?: boolean;
+  skipReason?: string;
+}
+
+/**
+ * Run Tripo v2.5 image-to-model via fal.ai. Used for non-humanoid pet meshes
+ * (quadruped/winged/serpentine/aquatic). Returns the raw GLB URL — caller is
+ * responsible for downloading + converting to FBX + uploading as Artifact.
+ *
+ * For text-only (no concept image) we fall back to Meshy v6 text-to-3d, which
+ * Tripo on fal.ai does not expose at this version.
+ */
+export async function runTripo(prompt: string, input: JsonRecord): Promise<ProviderResult> {
+  const apiKey = requireValue(FAL_API_KEY.value(), 'FAL_API_KEY');
+  const cleanPrompt = await translateForImageGen(build3DPrompt(prompt, input));
+  const conceptImageUrl = typeof input.conceptImageUrl === 'string' && input.conceptImageUrl.trim()
+    ? input.conceptImageUrl.trim()
+    : undefined;
+
+  if (!conceptImageUrl) {
+    logger.warn('runTripo: no concept image — falling back to Meshy text-to-3d (Tripo v2.5 on fal.ai requires an image)');
+    return runMeshy(prompt, input);
+  }
+
+  const endpoint = 'fal-ai/tripo3d/tripo/v2.5/image-to-3d';
+  const payload: Record<string, unknown> = {
+    image_url: conceptImageUrl,
+    // Tripo v2.5 default polycount is 30k — pet-sim style scales fine with 25k.
+    face_count: 25_000,
+    // PBR textures help Roblox MeshPart look right.
+    enable_pbr: true,
+    // Texture seed allows reproducible re-rolls of the same pet stage.
+    texture_seed: typeof input.textureSeed === 'number' ? input.textureSeed : undefined,
+  };
+
+  logger.info('Fal Tripo v2.5 image-to-3d submit', {
+    original: prompt.slice(0, 200),
+    clean: cleanPrompt,
+    petStage: input.petStageIndex,
+    keyPrefix: apiKey.slice(0, 8),
+  });
+
+  const submitResp = await fetch(`https://queue.fal.run/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Key ${apiKey}` },
+    body: JSON.stringify(payload),
+  });
+  if (!submitResp.ok) {
+    const txt = await submitResp.text().catch(() => '');
+    throw new Error(`Tripo submit failed: ${submitResp.status} ${submitResp.statusText} :: ${txt.slice(0, 200)}`);
+  }
+  const submitJson = await submitResp.json() as { request_id?: string; status_url?: string; response_url?: string };
+  const requestId = submitJson.request_id;
+  if (!requestId) throw new Error('Tripo submit did not return a request_id');
+
+  // Poll: Tripo on fal.ai uses the standard fal queue endpoints. Timeout 6 min.
+  const pollStart = Date.now();
+  const POLL_TIMEOUT_MS = 6 * 60 * 1000;
+  let resultUrl: string | undefined;
+  while (Date.now() - pollStart < POLL_TIMEOUT_MS) {
+    const statusResp = await fetch(`https://queue.fal.run/${endpoint}/requests/${requestId}/status`, {
+      headers: { Authorization: `Key ${apiKey}` },
+    });
+    if (!statusResp.ok) {
+      await new Promise((r) => setTimeout(r, 4000));
+      continue;
+    }
+    const statusJson = await statusResp.json() as { status?: string; response_url?: string };
+    if (statusJson.status === 'COMPLETED') {
+      resultUrl = statusJson.response_url ?? `https://queue.fal.run/${endpoint}/requests/${requestId}`;
+      break;
+    }
+    if (statusJson.status === 'FAILED') {
+      throw new Error('Tripo task failed');
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  if (!resultUrl) throw new Error('Tripo task timed out after 6 minutes');
+
+  const resultResp = await fetch(resultUrl, { headers: { Authorization: `Key ${apiKey}` } });
+  if (!resultResp.ok) {
+    const txt = await resultResp.text().catch(() => '');
+    throw new Error(`Tripo result fetch failed: ${resultResp.status} :: ${txt.slice(0, 200)}`);
+  }
+  const resultJson = await resultResp.json() as { model_mesh?: { url?: string }; data?: { model_mesh?: { url?: string } } };
+  const meshUrl = resultJson.model_mesh?.url ?? resultJson.data?.model_mesh?.url;
+  if (!meshUrl) throw new Error('Tripo result missing model_mesh.url');
+
+  return {
+    text: 'tripo-3d-mesh',
+    outputUrl: meshUrl,
+    mimeType: 'model/gltf-binary',
+    raw: {
+      provider: 'fal-tripo-v2.5',
+      meshUrl,
+      conceptImageUrl,
+      rawJson: resultJson as JsonRecord,
+    },
+  };
+}
+
+/**
+ * Run Tripo `animate_rig` task on a previously generated mesh. Requires the
+ * direct Tripo platform API (fal.ai does not proxy this yet). When the
+ * TRIPO_API_KEY secret is unset we skip rigging — the pet ships as a static
+ * MeshPart and PetFollowScript animates via CFrame fallback (no skinned anim).
+ */
+export async function runTripoRigging(args: {
+  meshUrl: string;
+  bodyType?: 'quadruped' | 'biped' | 'other';
+  animations?: Array<'idle' | 'walk' | 'run' | 'fly'>;
+}): Promise<TripoRigResult> {
+  const apiKey = TRIPO_API_KEY.value();
+  if (!apiKey) {
+    return { skipped: true, skipReason: 'TRIPO_API_KEY not configured — skipping rig step (pet will ship as static mesh)' };
+  }
+  const bodyType = args.bodyType ?? 'quadruped';
+  const animations = args.animations ?? ['idle', 'walk'];
+
+  try {
+    const submitResp = await fetch(`${TRIPO_API_BASE}/task`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        type: 'animate_rig',
+        model_url: args.meshUrl,
+        body_type: bodyType,
+        animations,
+      }),
+    });
+    if (!submitResp.ok) {
+      const txt = await submitResp.text().catch(() => '');
+      return { skipped: true, skipReason: `Tripo rig submit ${submitResp.status}: ${txt.slice(0, 150)}` };
+    }
+    const submitJson = await submitResp.json() as { data?: { task_id?: string } };
+    const taskId = submitJson.data?.task_id;
+    if (!taskId) return { skipped: true, skipReason: 'Tripo rig submit missing task_id' };
+
+    const start = Date.now();
+    while (Date.now() - start < 6 * 60 * 1000) {
+      const statusResp = await fetch(`${TRIPO_API_BASE}/task/${taskId}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!statusResp.ok) {
+        await new Promise((r) => setTimeout(r, 5000));
+        continue;
+      }
+      const statusJson = await statusResp.json() as {
+        data?: { status?: string; output?: { rigged_fbx?: string; rigged_glb?: string; pbr_model?: string }; result?: unknown };
+      };
+      const status = statusJson.data?.status;
+      if (status === 'success' || status === 'SUCCEEDED') {
+        return {
+          fbxUrl: statusJson.data?.output?.rigged_fbx,
+          glbUrl: statusJson.data?.output?.rigged_glb ?? statusJson.data?.output?.pbr_model,
+          rawJson: statusJson.data,
+        };
+      }
+      if (status === 'failed' || status === 'FAILED') {
+        return { skipped: true, skipReason: 'Tripo rig task failed' };
+      }
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    return { skipped: true, skipReason: 'Tripo rig timed out after 6 minutes' };
+  } catch (err) {
+    return { skipped: true, skipReason: `Tripo rig error: ${(err as Error).message}` };
+  }
 }
 
 async function runHunyuan3D(prompt: string, input: JsonRecord): Promise<ProviderResult> {

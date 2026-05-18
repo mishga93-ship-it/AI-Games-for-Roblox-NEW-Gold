@@ -455,6 +455,15 @@ enum AIWorkspaceAPI {
         let furnitureBuildMode: String?
         let furnitureResolvedBuildMode: String?
         let furniturePreviewImageUrl: String?
+        // Track 3 (3D Pet pipeline) — surfaced on completed pet_3d jobs so the
+        // iOS handoff sheet can render the right title, rarity badge, etc.
+        let petBaseName: String?
+        let petSpeciesType: String?
+        let petSkeletonType: String?
+        let petRarity: String?
+        let petElement: String?
+        let petIsFlying: Bool?
+        let isPetEvolution: Bool?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: DynamicCodingKey.self)
@@ -505,6 +514,13 @@ enum AIWorkspaceAPI {
             furnitureBuildMode = try? container.decode(String.self, forKey: .init("furnitureBuildMode"))
             furnitureResolvedBuildMode = try? container.decode(String.self, forKey: .init("furnitureResolvedBuildMode"))
             furniturePreviewImageUrl = try? container.decode(String.self, forKey: .init("furniturePreviewImageUrl"))
+            petBaseName = try? container.decode(String.self, forKey: .init("petBaseName"))
+            petSpeciesType = try? container.decode(String.self, forKey: .init("petSpeciesType"))
+            petSkeletonType = try? container.decode(String.self, forKey: .init("petSkeletonType"))
+            petRarity = try? container.decode(String.self, forKey: .init("petRarity"))
+            petElement = try? container.decode(String.self, forKey: .init("petElement"))
+            petIsFlying = try? container.decode(Bool.self, forKey: .init("petIsFlying"))
+            isPetEvolution = try? container.decode(Bool.self, forKey: .init("isPetEvolution"))
         }
 
         private struct DynamicCodingKey: CodingKey {
@@ -570,6 +586,15 @@ enum AIWorkspaceAPI {
         let animationType: String?
         let looped: Bool?
         let keyframeCount: Int?
+        // Track 3 (3D Pet pipeline) — flags surfaced by per-stage artifacts
+        // and the final .rbxm so iOS can filter and present a Studio handoff.
+        let isPetMesh: Bool?
+        let isPetRiggedFbx: Bool?
+        let isPetEvolution: Bool?
+        let isPetConcept: Bool?
+        let petStageIndex: Int?
+        let petBaseName: String?
+        let petStages: Int?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -588,6 +613,13 @@ enum AIWorkspaceAPI {
             animationType = try? container.decode(String.self, forKey: .animationType)
             looped = try? container.decode(Bool.self, forKey: .looped)
             keyframeCount = try? container.decode(Int.self, forKey: .keyframeCount)
+            isPetMesh = try? container.decode(Bool.self, forKey: .isPetMesh)
+            isPetRiggedFbx = try? container.decode(Bool.self, forKey: .isPetRiggedFbx)
+            isPetEvolution = try? container.decode(Bool.self, forKey: .isPetEvolution)
+            isPetConcept = try? container.decode(Bool.self, forKey: .isPetConcept)
+            petStageIndex = try? container.decode(Int.self, forKey: .petStageIndex)
+            petBaseName = try? container.decode(String.self, forKey: .petBaseName)
+            petStages = try? container.decode(Int.self, forKey: .petStages)
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -595,6 +627,8 @@ enum AIWorkspaceAPI {
             case isClothingPreview, isShirtTexture, isPantsTexture, isTShirtGraphic
             case shirtTextureUrl, pantsTextureUrl
             case role, animationName, rig, animationType, looped, keyframeCount
+            case isPetMesh, isPetRiggedFbx, isPetEvolution, isPetConcept
+            case petStageIndex, petBaseName, petStages
         }
     }
 

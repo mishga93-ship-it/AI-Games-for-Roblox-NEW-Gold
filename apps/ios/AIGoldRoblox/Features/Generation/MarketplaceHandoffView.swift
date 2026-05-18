@@ -25,6 +25,21 @@ struct MarketplaceHandoffContext: Identifiable, Equatable {
     let meshFbxURL: URL?              // .fbx for Studio AFT (canonical layered format)
     let meshGlbURL: URL?              // .glb fallback if Studio's 3D Importer prefers it
     let validationWarnings: [String]  // size / triangle warnings to show prominently
+    // Track 3 (3D Pet pipeline) — per-stage artifacts surfaced in petStudioBlock
+    // when clothingType begins with "pet_". Each evolution stage is a separate
+    // .fbx/.glb pair; user imports each into Studio and pastes the resulting
+    // MeshIds back into Stages.StageN.Body inside the .rbxm template.
+    var petStage1FbxURL: URL? = nil
+    var petStage2FbxURL: URL? = nil
+    var petStage3FbxURL: URL? = nil
+    var petStage1GlbURL: URL? = nil
+    var petStage2GlbURL: URL? = nil
+    var petStage3GlbURL: URL? = nil
+    var petRbxmURL: URL? = nil        // .rbxm template with placeholder MeshIds + Configuration + scripts
+    var petSpeciesType: String? = nil // "dog"|"cat"|"dragon"|"unicorn"|"robot"|"fantasy"
+    var petRarity: String? = nil      // "Common"..."Mythic"
+
+    var isPet: Bool { clothingType.hasPrefix("pet_") || petSpeciesType != nil }
 
     var assetTypeQueryParam: String {
         switch clothingType {
@@ -90,7 +105,9 @@ struct MarketplaceHandoffView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     headerBlock
-                    if context.isLayered {
+                    if context.isPet {
+                        petStudioBlock
+                    } else if context.isLayered {
                         layeredStudioBlock
                     } else if let assetId = context.robloxAssetId {
                         uploadedBlock(assetId: assetId)
@@ -202,6 +219,119 @@ struct MarketplaceHandoffView: View {
         }
         .padding()
         .background(.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    // Track 3 (3D Pet pipeline) — Studio handoff for an AI-generated pet asset
+    // with 3 visual evolution stages. The .rbxm template has placeholder
+    // MeshIds + scripts; user imports each stage .fbx in Studio's 3D Importer
+    // and pastes the resulting asset IDs back into Stages.StageN.Body.MeshId.
+    private var petStudioBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "pawprint.fill")
+                    .foregroundStyle(.purple)
+                Text("Finish 3D Pet in Roblox Studio")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.purple)
+                Spacer()
+                if let rarity = context.petRarity {
+                    Text(rarity.uppercased())
+                        .font(.caption2.monospaced().weight(.bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(rarityTint(rarity).opacity(0.20), in: Capsule())
+                        .foregroundStyle(rarityTint(rarity))
+                }
+            }
+
+            if !context.validationWarnings.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Mesh size warnings", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    ForEach(context.validationWarnings, id: \.self) { w in
+                        Text("• \(w)").font(.caption2).foregroundStyle(.orange)
+                    }
+                }
+                .padding(8)
+                .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            stepRow(num: "1", text: "Download the 3 evolution-stage meshes + the .rbxm template:")
+            HStack(spacing: 6) {
+                petStageDownload(title: "Stage 1", fbx: context.petStage1FbxURL, glb: context.petStage1GlbURL)
+                petStageDownload(title: "Stage 2", fbx: context.petStage2FbxURL, glb: context.petStage2GlbURL)
+                petStageDownload(title: "Stage 3", fbx: context.petStage3FbxURL, glb: context.petStage3GlbURL)
+            }
+            .padding(.leading, 26)
+
+            if let rbxm = context.petRbxmURL {
+                HStack {
+                    Link(destination: rbxm) {
+                        Label(".rbxm template", systemImage: "arrow.down.doc.fill")
+                            .font(.footnote.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                }
+                .padding(.leading, 26)
+            }
+
+            stepRow(num: "2", text: "In Studio → **Avatar tab → 3D Importer** → drag in **stage1.fbx**. Note the **MeshPart asset id** Studio assigns.")
+            stepRow(num: "3", text: "Repeat for **stage2.fbx** and **stage3.fbx**. Three asset ids total.")
+            stepRow(num: "4", text: "Open **Animation Editor**. Import the stage idle/walk animations from each FBX → save → copy the **Animation IDs**.")
+            stepRow(num: "5", text: "Drag the **.rbxm template** into Workspace. For each `Stages.StageN.Body` paste the matching MeshId. Set `Idle` / `Walk` Animation IDs the same way.")
+            stepRow(num: "6", text: "Press **Play**. The pet follows the player. Test evolution in the command bar: `require(workspace.Pet_\(context.petSpeciesType?.capitalized ?? "X").PetLevelingModule):GainXP(2000)` → swaps to Stage 2.")
+
+            Text("Tip: pet stats live in `PetConfig` (Configuration). Tune `CoinBonusBase`, `Level`, `EvolutionStage` directly in Studio for testing.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func petStageDownload(title: String, fbx: URL?, glb: URL?) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.purple)
+            if let fbxURL = fbx {
+                Link(destination: fbxURL) {
+                    Label(".fbx", systemImage: "arrow.down.doc.fill")
+                        .font(.caption2)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.purple)
+                .controlSize(.small)
+            } else if let glbURL = glb {
+                Link(destination: glbURL) {
+                    Label(".glb", systemImage: "arrow.down.doc")
+                        .font(.caption2)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.purple)
+                .controlSize(.small)
+            } else {
+                Text("—")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func rarityTint(_ rarity: String) -> Color {
+        switch rarity {
+        case "Mythic":    return .pink
+        case "Legendary": return .orange
+        case "Epic":      return .purple
+        case "Rare":      return .blue
+        case "Uncommon":  return .green
+        default:          return .gray
+        }
     }
 
     private func stepRow(num: String, text: String) -> some View {
@@ -319,6 +449,11 @@ struct MarketplaceHandoffView: View {
     }
 
     private func displayTitle(for type: String) -> String {
+        if context.isPet {
+            let species = context.petSpeciesType?.capitalized ?? "Pet"
+            let rarity = context.petRarity ?? ""
+            return rarity.isEmpty ? "🐾 \(species) Pet" : "🐾 \(rarity) \(species) Pet"
+        }
         switch type {
         case "t_shirt": return "T-Shirt"
         case "classic_shirt": return "Classic Shirt"
@@ -331,6 +466,12 @@ struct MarketplaceHandoffView: View {
         case "layered_pants": return "3D Pants"
         case "layered_shorts": return "3D Shorts"
         case "layered_tshirt": return "3D T-Shirt"
+        case "pet_dog": return "🐕 Pet Dog"
+        case "pet_cat": return "🐈 Pet Cat"
+        case "pet_dragon": return "🐉 Pet Dragon"
+        case "pet_unicorn": return "🦄 Pet Unicorn"
+        case "pet_robot": return "🤖 Pet Robot"
+        case "pet_fantasy": return "✨ Fantasy Pet"
         default: return "Clothing"
         }
     }

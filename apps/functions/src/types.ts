@@ -260,7 +260,22 @@ export type GenerationStageId =
   | 'plan_systems'
   | 'build_scene'
   | 'assemble_package'
-  | 'quality_review';
+  | 'quality_review'
+  // Track 3 (Pet 3D pipeline): visual-evolution pet with 3 mesh stages + rig/anim per stage.
+  | 'classify_pet'
+  | 'concept_stage1'
+  | 'mesh_stage1'
+  | 'rig_stage1'
+  | 'concept_stage2'
+  | 'mesh_stage2'
+  | 'rig_stage2'
+  | 'concept_stage3'
+  | 'mesh_stage3'
+  | 'rig_stage3'
+  | 'convert_pet_fbx'
+  | 'validate_pet'
+  | 'package_pet'
+  | 'export_pet_rbxm';
 
 export type GenerationStageStatus =
   | 'pending'
@@ -309,6 +324,7 @@ export type GenerationKind =
   | 'game_package'
   | 'character_3d'
   | 'clothing_3d'
+  | 'pet_3d'
   | 'animation'
   | 'code'
   | 'image'
@@ -353,13 +369,18 @@ export interface RobloxBuildScript {
   id: string;
   name: string;
   scriptType: 'Script' | 'LocalScript' | 'ModuleScript';
+  // Either a named Roblox service container OR an arbitrary scene-node id
+  // (UUID from RobloxBuildSceneNode.id). build_roblox.luau resolves both via
+  // instanceMap, so this widening lets pet/character pipelines parent
+  // scripts inside their own model without separate plumbing.
   container:
     | 'ServerScriptService'
     | 'ReplicatedStorage'
     | 'StarterPlayerScripts'
     | 'StarterGui'
     | 'StarterPack'
-    | 'Workspace';
+    | 'Workspace'
+    | string;
   source: string;
 }
 

@@ -15,6 +15,10 @@ export const SUNO_API_KEY = defineSecret('SUNO_API_KEY');
 export const ELEVENLABS_API_KEY = defineSecret('ELEVENLABS_API_KEY');
 export const FAL_API_KEY = defineSecret('FAL_API_KEY');
 export const DEEPGRAM_API_KEY = defineSecret('DEEPGRAM_API_KEY');
+// Track 3 (Pet 3D pipeline): Tripo AI auto-rigging API. Meshy v6 rigging supports only
+// bipedal humanoids, so quadrupeds/dragons/serpents use Tripo for image_to_model +
+// animate_rig task. Falls back to mesh-only output if the key is missing.
+export const TRIPO_API_KEY = defineSecret('TRIPO_API_KEY');
 export const ROBLOX_WORKER_TOKEN = defineSecret('ROBLOX_WORKER_TOKEN');
 export const ROBLOX_OPEN_CLOUD_API_KEY = defineSecret('ROBLOX_OPEN_CLOUD_API_KEY');
 export const ROBLOX_OAUTH_CLIENT_SECRET = defineSecret('ROBLOX_OAUTH_CLIENT_SECRET');
@@ -49,6 +53,7 @@ export const secretParams = [
   ELEVENLABS_API_KEY,
   FAL_API_KEY,
   DEEPGRAM_API_KEY,
+  TRIPO_API_KEY,
   ROBLOX_WORKER_TOKEN,
   ROBLOX_OPEN_CLOUD_API_KEY,
   ROBLOX_OAUTH_CLIENT_SECRET,

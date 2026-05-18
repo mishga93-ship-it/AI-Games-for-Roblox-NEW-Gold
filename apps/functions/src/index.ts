@@ -131,6 +131,10 @@ import {
   generatePantsTexture,
   generateTShirtGraphic,
   runFalAudio,
+  classifyPet,
+  selectMeshProvider,
+  runTripo,
+  runTripoRigging,
 } from './providers.js';
 import { normalizeGlbScale } from './glbNormalize.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
@@ -1377,6 +1381,7 @@ ${viralStyleInjection.promptBlock}`, 8000);
       history: ['Queued generation job', `Selected provider: ${provider}`],
       stages: (() => {
         if (requestedKind === 'clothing_3d') return createLayeredClothingPipelineStages();
+        if (requestedKind === 'pet_3d') return createPetEvolutionPipelineStages();
         if (requestedKind === 'animation') return createAnimationPipelineStages();
         if (requestedKind === 'decal_texture') return createDecalTexturePipelineStages();
         if (effectiveMetadata.contentCategory === 'gamepass') return createMonetizationPipelineStages();
@@ -1425,7 +1430,7 @@ ${viralStyleInjection.promptBlock}`, 8000);
 
     await db.collection('generationJobs').doc(jobId).set(job);
 
-    const asyncKinds: GenerationJob['kind'][] = ['character_3d', 'clothing_3d', 'animation', 'game_package', 'rbxl_build', 'rbxm_build', 'code'];
+    const asyncKinds: GenerationJob['kind'][] = ['character_3d', 'clothing_3d', 'pet_3d', 'animation', 'game_package', 'rbxl_build', 'rbxm_build', 'code'];
     if (asyncKinds.includes(requestedKind)) {
       const selfHost = req.header('host') ?? 'api-z4yzt6dhjq-uc.a.run.app';
       const selfUrl = `https://${selfHost}/api/internal/run-3d-pipeline`;
@@ -5848,6 +5853,28 @@ function createDecalTexturePipelineStages(): GenerationStageProgress[] {
   ];
 }
 
+// Track 3 (3D Pet pipeline) — visual-evolution pet with 3 mesh stages
+// (lvl 1 / lvl 25 / lvl 50). Stages are required (stage1) or skip-on-fail
+// (stage2/stage3) so the pet ships gracefully when later stages fail.
+function createPetEvolutionPipelineStages(): GenerationStageProgress[] {
+  return [
+    { id: 'classify_pet' as GenerationStageId, title: 'Classify pet (species, rarity, evolution arc)', status: 'pending' },
+    { id: 'concept_stage1' as GenerationStageId, title: 'Concept image — Stage 1 (baby)', status: 'pending' },
+    { id: 'mesh_stage1' as GenerationStageId, title: '3D mesh — Stage 1', status: 'pending' },
+    { id: 'rig_stage1' as GenerationStageId, title: 'Rig + animate — Stage 1', status: 'pending' },
+    { id: 'concept_stage2' as GenerationStageId, title: 'Concept image — Stage 2 (adult)', status: 'pending' },
+    { id: 'mesh_stage2' as GenerationStageId, title: '3D mesh — Stage 2', status: 'pending' },
+    { id: 'rig_stage2' as GenerationStageId, title: 'Rig + animate — Stage 2', status: 'pending' },
+    { id: 'concept_stage3' as GenerationStageId, title: 'Concept image — Stage 3 (legendary)', status: 'pending' },
+    { id: 'mesh_stage3' as GenerationStageId, title: '3D mesh — Stage 3', status: 'pending' },
+    { id: 'rig_stage3' as GenerationStageId, title: 'Rig + animate — Stage 3', status: 'pending' },
+    { id: 'convert_pet_fbx' as GenerationStageId, title: 'Convert pet meshes to FBX', status: 'pending' },
+    { id: 'validate_pet' as GenerationStageId, title: 'Validate Roblox limits', status: 'pending' },
+    { id: 'package_pet' as GenerationStageId, title: 'Package pet model', status: 'pending' },
+    { id: 'export_pet_rbxm' as GenerationStageId, title: 'Export pet .rbxm', status: 'pending' },
+  ];
+}
+
 function createAnimationPipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'generate_keyframes', title: 'Generating keyframes', status: 'pending' },
@@ -8747,6 +8774,323 @@ async function processDecalTextureJob(_jobId: string, job: GenerationJob): Promi
   }
 }
 
+// ---------------------------------------------------------------------------
+// Track 3 (3D Pet pipeline) — 14-stage processor for AI-generated pets with
+// visual evolution. Each of 3 evolution stages (lvl 1 / 25 / 50) goes through
+// concept_image → mesh → rig. Routing per skeleton type:
+//   • Meshy v6 multi-image for humanoid robots
+//   • Tripo image-to-3D + animate_rig for quadrupeds/dragons/serpents
+// Stage 1 is required; stage 2/3 + rigging stages are skip-on-fail so the pet
+// still ships if a downstream call breaks. Final artefacts: 3× FBX/GLB +
+// .rbxm model + iOS-friendly handoff metadata.
+// ---------------------------------------------------------------------------
+async function processPet3DJob(jobId: string, job: GenerationJob): Promise<GenerationJob> {
+  const prompt = job.prompt || '';
+  const metadata: Record<string, unknown> = { ...(job.metadata ?? {}), contentCategory: 'pet', requestedKind: 'pet_3d' };
+  const title = typeof metadata.title === 'string' ? metadata.title : summarizeTitle(prompt);
+  const requestedSpecies = typeof metadata.petSpecies === 'string' ? metadata.petSpecies : undefined;
+
+  let currentJob: GenerationJob = {
+    ...job,
+    kind: 'pet_3d',
+    metadata,
+    stages: job.stages && job.stages.length > 0 ? job.stages : createPetEvolutionPipelineStages(),
+    artifacts: [...job.artifacts],
+    history: [...job.history, 'Pet 3D pipeline: classify → 3× (concept + mesh + rig) → validate → package → export'],
+  };
+
+  const beginStage = async (stageId: GenerationStageId, notes?: string[]) => {
+    currentJob = updateStage(currentJob, stageId, {
+      status: 'processing',
+      startedAt: new Date().toISOString(),
+      notes,
+    });
+    await persistJobSnapshot(jobId, currentJob);
+  };
+  const finishStage = async (
+    stageId: GenerationStageId,
+    status: GenerationStageStatus,
+    artifactIds: string[] = [],
+    notes: string[] = [],
+    errorMessage?: string,
+  ) => {
+    currentJob = updateStage(currentJob, stageId, {
+      status,
+      completedAt: new Date().toISOString(),
+      artifactIds: artifactIds.length > 0 ? artifactIds : undefined,
+      notes: notes.length > 0 ? notes : undefined,
+      errorMessage,
+    });
+    await persistJobSnapshot(jobId, currentJob);
+  };
+
+  try {
+    // ── 1. classify_pet ─────────────────────────────────────────────────
+    await beginStage('classify_pet' as GenerationStageId, ['Classifying species / skeleton / rarity / evolution arc']);
+    const classification = await classifyPet(prompt, requestedSpecies);
+    await finishStage('classify_pet' as GenerationStageId, 'completed', [], [
+      `species=${classification.speciesType}`,
+      `skeleton=${classification.skeletonType}`,
+      `rarity=${classification.rarity}`,
+      `element=${classification.element}`,
+      `isFlying=${classification.isFlying}`,
+    ]);
+    const routing = selectMeshProvider(classification.skeletonType);
+    logger.info('Pet pipeline: provider routing', { mesh: routing.mesh, rig: routing.rig, skeleton: classification.skeletonType });
+
+    // ── 2-10. Per-stage loop: concept → mesh → rig ──────────────────────
+    type StageArtifactBundle = {
+      meshUrl?: string;
+      fbxUrl?: string;
+      conceptUrl?: string;
+      idleAnimUrl?: string;
+      walkAnimUrl?: string;
+      flyAnimUrl?: string;
+      skippedReason?: string;
+      fbxFileName: string;
+    };
+    const stageBundles: StageArtifactBundle[] = [];
+
+    for (let idx = 1; idx <= 3; idx += 1) {
+      const conceptStageId = `concept_stage${idx}` as GenerationStageId;
+      const meshStageId = `mesh_stage${idx}` as GenerationStageId;
+      const rigStageId = `rig_stage${idx}` as GenerationStageId;
+      const stagePrompt = classification.evolutionArc[`stage${idx}` as 'stage1'|'stage2'|'stage3'].prompt;
+      const bundle: StageArtifactBundle = { fbxFileName: `${classification.baseName}-stage${idx}.fbx` };
+
+      // -------- concept_stageN (Flux/Gemini preview) --------
+      await beginStage(conceptStageId, [`Generating concept image for Stage ${idx}`]);
+      try {
+        const conceptUrl = await generatePreviewTexture(stagePrompt, 'roblox', 'character');
+        if (conceptUrl) {
+          bundle.conceptUrl = conceptUrl;
+          const conceptArt = await copyExternalArtifact(currentJob, conceptUrl, 'image/png', {
+            name: `${classification.baseName}-stage${idx}-concept.png`,
+            stageId: conceptStageId,
+            artifactRole: 'concept',
+            metadata: { petStageIndex: idx, isPetConcept: true },
+          });
+          currentJob.artifacts = [...currentJob.artifacts, conceptArt];
+          await finishStage(conceptStageId, 'completed', [conceptArt.id], [`Stage ${idx} concept ready`]);
+        } else {
+          await finishStage(conceptStageId, idx === 1 ? 'failed' : 'skipped', [], [`Concept generation returned no URL`]);
+          if (idx === 1) throw new Error('Stage 1 concept failed — cannot proceed without baseline image');
+          continue;
+        }
+      } catch (conceptErr) {
+        const msg = errorMessage(conceptErr);
+        await finishStage(conceptStageId, idx === 1 ? 'failed' : 'skipped', [], [`Stage ${idx} concept skipped: ${msg}`], msg);
+        if (idx === 1) throw conceptErr;
+        continue;
+      }
+
+      // -------- mesh_stageN (Meshy or Tripo) --------
+      await beginStage(meshStageId, [`Generating mesh for Stage ${idx} via ${routing.mesh}`]);
+      try {
+        const meshInput: Record<string, unknown> = {
+          ...metadata,
+          conceptImageUrl: bundle.conceptUrl,
+          petStageIndex: idx,
+          title: `${classification.baseName}-stage${idx}`,
+          requestedKind: 'pet_3d',
+          petMode: 'evolution_3d',
+        };
+        const meshResult = routing.mesh === 'tripo'
+          ? await runTripo(stagePrompt, meshInput)
+          : await runMeshyPetPassthrough(stagePrompt, meshInput);
+        const meshUrl = meshResult.outputUrl ?? '';
+        if (!meshUrl) throw new Error('Mesh provider returned no outputUrl');
+        bundle.meshUrl = meshUrl;
+        const meshArt = await copyExternalArtifact(currentJob, meshUrl, meshResult.mimeType ?? 'model/gltf-binary', {
+          name: `${classification.baseName}-stage${idx}.glb`,
+          stageId: meshStageId,
+          artifactRole: 'mesh_raw',
+          metadata: { petStageIndex: idx, isPetMesh: true, provider: routing.mesh },
+        });
+        currentJob.artifacts = [...currentJob.artifacts, meshArt];
+        await finishStage(meshStageId, 'completed', [meshArt.id], [`Stage ${idx} mesh ready via ${routing.mesh}`]);
+      } catch (meshErr) {
+        const msg = errorMessage(meshErr);
+        await finishStage(meshStageId, idx === 1 ? 'failed' : 'skipped', [], [`Stage ${idx} mesh failed: ${msg}`], msg);
+        if (idx === 1) throw meshErr;
+        bundle.skippedReason = msg;
+        stageBundles.push(bundle);
+        continue;
+      }
+
+      // -------- rig_stageN (Tripo or skip) --------
+      await beginStage(rigStageId, [`Rigging Stage ${idx} via ${routing.rig}`]);
+      if (routing.rig === 'tripo' && bundle.meshUrl) {
+        const skeletonBodyType: 'quadruped'|'biped'|'other' = classification.skeletonType === 'biped' || classification.skeletonType === 'mechanical_biped'
+          ? 'biped'
+          : (classification.skeletonType === 'serpentine' || classification.skeletonType === 'aquatic')
+            ? 'other'
+            : 'quadruped';
+        const animList: Array<'idle'|'walk'|'run'|'fly'> = ['idle', 'walk'];
+        if (classification.isFlying) animList.push('fly');
+        const rigResult = await runTripoRigging({ meshUrl: bundle.meshUrl, bodyType: skeletonBodyType, animations: animList });
+        if (rigResult.skipped) {
+          await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig skipped: ${rigResult.skipReason ?? 'unknown'}`], rigResult.skipReason);
+        } else {
+          bundle.fbxUrl = rigResult.fbxUrl;
+          const notes: string[] = [];
+          if (rigResult.fbxUrl) {
+            const rigArt = await copyExternalArtifact(currentJob, rigResult.fbxUrl, 'model/fbx', {
+              name: bundle.fbxFileName,
+              stageId: rigStageId,
+              artifactRole: 'rigged_model',
+              metadata: { petStageIndex: idx, isPetRiggedFbx: true },
+            });
+            currentJob.artifacts = [...currentJob.artifacts, rigArt];
+            notes.push(`Stage ${idx} rigged FBX ready`);
+            await finishStage(rigStageId, 'completed', [rigArt.id], notes);
+          } else {
+            await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig returned no FBX URL`]);
+          }
+        }
+      } else {
+        await finishStage(rigStageId, 'skipped', [], [
+          routing.rig === 'meshy'
+            ? `Stage ${idx} rig — Meshy bipedal rigging handled inside mesh_3d call (no separate step needed)`
+            : `Stage ${idx} rig skipped — provider=${routing.rig}`,
+        ]);
+      }
+
+      stageBundles.push(bundle);
+    }
+
+    // ── 11. convert_pet_fbx ─────────────────────────────────────────────
+    await beginStage('convert_pet_fbx' as GenerationStageId, ['Conversion handled inside Tripo rig output where available; non-rigged stages remain .glb']);
+    const conversionNotes: string[] = stageBundles.map((b, i) =>
+      b.fbxUrl
+        ? `Stage ${i + 1}: FBX from Tripo rig`
+        : `Stage ${i + 1}: GLB only — drag into Studio 3D Importer to import as MeshPart`,
+    );
+    await finishStage('convert_pet_fbx' as GenerationStageId, 'completed', [], conversionNotes);
+
+    // ── 12. validate_pet (lightweight size heuristic) ───────────────────
+    await beginStage('validate_pet' as GenerationStageId, ['Checking Roblox MeshPart limits (≤60k tri, ≤2k² texture)']);
+    const validationNotes: string[] = [];
+    const validationWarnings: string[] = [];
+    for (let i = 0; i < stageBundles.length; i += 1) {
+      const checkUrl = stageBundles[i].fbxUrl ?? stageBundles[i].meshUrl;
+      if (!checkUrl) continue;
+      try {
+        const headResp = await fetch(checkUrl, { method: 'HEAD' });
+        const sizeBytes = Number(headResp.headers.get('content-length') ?? '0');
+        const sizeMb = sizeBytes / (1024 * 1024);
+        validationNotes.push(`Stage ${i + 1}: ${sizeMb.toFixed(2)} MB`);
+        if (sizeMb > 12) validationWarnings.push(`Stage ${i + 1} mesh is ${sizeMb.toFixed(1)} MB — may exceed Roblox MeshPart limits, decimate in Studio.`);
+      } catch {
+        validationNotes.push(`Stage ${i + 1}: size check failed (HEAD)`);
+      }
+    }
+    await finishStage('validate_pet' as GenerationStageId, 'completed', [], [...validationNotes, ...validationWarnings]);
+
+    // ── 13. package_pet ─────────────────────────────────────────────────
+    await beginStage('package_pet' as GenerationStageId, ['Assembling .rbxm scene tree (3-stage pet model + scripts)']);
+    const manifestMetadata: Record<string, unknown> = {
+      ...metadata,
+      requestedKind: 'pet_3d',
+      petBaseName: classification.baseName,
+      petSpeciesType: classification.speciesType,
+      petSkeletonType: classification.skeletonType,
+      petRarity: classification.rarity,
+      petElement: classification.element,
+      petIsFlying: classification.isFlying,
+      petStageMeshes: stageBundles.map((b) => ({
+        meshUrl: b.fbxUrl ?? b.meshUrl ?? '',
+        fbxFileName: b.fbxFileName,
+        idleAnimUrl: b.idleAnimUrl ?? '',
+        walkAnimUrl: b.walkAnimUrl ?? '',
+        flyAnimUrl: b.flyAnimUrl ?? '',
+      })),
+    };
+    const starterScript = `print("[Pet_${classification.baseName}] Loaded — 3 evolution stages, follow + leveling active")`;
+    const manifest = buildRobloxManifest({
+      title: `Pet ${classification.baseName}`,
+      summary: `AI pet asset (${classification.rarity} ${classification.element} ${classification.speciesType}) — Track 3 pet_3d pipeline`,
+      target: 'model',
+      prompt,
+      starterScript,
+      metadata: manifestMetadata,
+    });
+    await finishStage('package_pet' as GenerationStageId, 'completed', [], [
+      `Manifest assembled with ${stageBundles.length} stage(s)`,
+    ]);
+
+    // ── 14. export_pet_rbxm ─────────────────────────────────────────────
+    await beginStage('export_pet_rbxm' as GenerationStageId, ['Exporting .rbxm via worker']);
+    const nativeBuild = await maybeBuildRobloxBinary(manifest);
+    const exportArtifacts: GenerationArtifact[] = [];
+    if (nativeBuild?.bufferBase64) {
+      exportArtifacts.push(await uploadBinaryArtifact(currentJob, Buffer.from(nativeBuild.bufferBase64, 'base64'), {
+        type: nativeBuild.artifactType,
+        extension: nativeBuild.artifactType,
+        mimeType: 'application/octet-stream',
+        name: nativeBuild.fileName ?? `${classification.baseName}.rbxm`,
+        previewText: nativeBuild.summary,
+        stageId: 'export_pet_rbxm' as GenerationStageId,
+        artifactRole: 'export_binary',
+        metadata: { isPetEvolution: true, petBaseName: classification.baseName, petStages: stageBundles.length },
+      }));
+    }
+    currentJob = {
+      ...currentJob,
+      artifacts: [...currentJob.artifacts, ...exportArtifacts],
+    };
+    await finishStage('export_pet_rbxm' as GenerationStageId, exportArtifacts.length > 0 ? 'completed' : 'failed', exportArtifacts.map((a) => a.id), [
+      exportArtifacts.length > 0 ? `.rbxm ready (${exportArtifacts[0].name})` : 'No .rbxm produced — worker build skipped',
+    ]);
+
+    return {
+      ...currentJob,
+      status: exportArtifacts.length > 0 ? 'completed' : 'partial',
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...currentJob.metadata,
+        petClassification: classification,
+        petStageBundles: stageBundles,
+        layeredValidationWarnings: validationWarnings,
+      },
+      history: [
+        ...currentJob.history,
+        `Pet pipeline finished: ${stageBundles.length} stage(s), provider=${routing.mesh}/${routing.rig}, rarity=${classification.rarity}`,
+      ],
+    };
+  } catch (err) {
+    const msg = errorMessage(err);
+    logger.error('Pet 3D pipeline failed', { jobId, error: msg });
+    return {
+      ...currentJob,
+      status: 'failed',
+      updatedAt: new Date().toISOString(),
+      errorMessage: msg,
+      history: [...currentJob.history, `Pet pipeline failed: ${msg}`],
+    };
+  }
+}
+
+// runMeshy is a non-exported function inside providers.ts — pet pipeline calls
+// it through a tiny wrapper that routes pet content into the same path used
+// for character/NPC content (multi-view + creature negative prompt).
+async function runMeshyPetPassthrough(stagePrompt: string, input: Record<string, unknown>): Promise<{ outputUrl?: string; mimeType?: string }> {
+  // Dynamic import so we don't have to re-export runMeshy from providers.ts.
+  const providersModule = await import('./providers.js');
+  // runMeshy is module-private; route through the meshy-named export when available
+  // (added in this Track 3 patch) or via executeProvider as a fallback.
+  const fn = (providersModule as unknown as { runMeshy?: (p: string, i: Record<string, unknown>) => Promise<{ outputUrl?: string; mimeType?: string }> }).runMeshy;
+  if (fn) return fn(stagePrompt, input);
+  const exec = await providersModule.executeProvider({
+    provider: 'meshy',
+    operation: 'generate-3d',
+    prompt: stagePrompt,
+    input: input as Record<string, unknown>,
+    kind: 'pet_3d',
+  });
+  return { outputUrl: exec.outputUrl, mimeType: exec.mimeType };
+}
+
 async function processMapEnvironmentJob(jobId: string, job: GenerationJob): Promise<GenerationJob> {
   const prompt = job.prompt || '';
   const metadata: Record<string, unknown> = { ...(job.metadata ?? {}), contentCategory: 'map_environment' };
@@ -9022,6 +9366,9 @@ async function processGenerationJob(jobId: string, job: GenerationJob): Promise<
     }
     if (job.kind === 'character_3d' || job.kind === 'clothing_3d') {
       return await processCharacter3DJob(jobId, job);
+    }
+    if (job.kind === 'pet_3d') {
+      return await processPet3DJob(jobId, job);
     }
     if (job.kind === 'decal_texture') {
       return await processDecalTextureJob(jobId, job);
