@@ -2682,155 +2682,110 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
 
 const TRIPO_API_BASE = 'https://api.tripo3d.ai/v2/openapi';
 
-export interface TripoMeshResult {
-  meshUrl: string;
-  rawJson: unknown;
-}
-
-export interface TripoRigResult {
-  fbxUrl?: string;
-  glbUrl?: string;
+export interface TripoTaskResult {
+  taskId: string;
+  modelUrl?: string;
   rawJson?: unknown;
   skipped?: boolean;
   skipReason?: string;
 }
 
+export interface TripoMeshResult extends TripoTaskResult {
+  /** Convenience alias of modelUrl (mesh GLB/FBX). */
+  meshUrl?: string;
+}
+
+export interface TripoRigResult extends TripoTaskResult {
+  /** Convenience alias of modelUrl (rigged FBX or GLB, depends on out_format). */
+  fbxUrl?: string;
+  glbUrl?: string;
+}
+
+export type TripoRigType = 'BIPED' | 'QUADRUPED' | 'HEXAPOD' | 'OCTOPOD' | 'AVIAN' | 'SERPENTINE' | 'AQUATIC' | 'OTHERS';
+export type TripoAnimationPreset =
+  | 'IDLE' | 'WALK' | 'RUN' | 'DIVE' | 'CLIMB' | 'JUMP'
+  | 'SLASH' | 'SHOOT' | 'HURT' | 'FALL' | 'TURN'
+  | 'QUADRUPED_WALK' | 'HEXAPOD_WALK' | 'OCTOPOD_WALK'
+  | 'SERPENTINE_MARCH' | 'AQUATIC_MARCH';
+
 /**
- * Run Tripo v2.5 image-to-model via fal.ai. Used for non-humanoid pet meshes
- * (quadruped/winged/serpentine/aquatic). Returns the raw GLB URL — caller is
- * responsible for downloading + converting to FBX + uploading as Artifact.
- *
- * For text-only (no concept image) we fall back to Meshy v6 text-to-3d, which
- * Tripo on fal.ai does not expose at this version.
+ * Map our pipeline skeleton tags to Tripo's RigType enum (verified against
+ * VAST-AI-Research/tripo-python-sdk source).
  */
-export async function runTripo(prompt: string, input: JsonRecord): Promise<ProviderResult> {
-  const apiKey = requireValue(FAL_API_KEY.value(), 'FAL_API_KEY');
-  const cleanPrompt = await translateForImageGen(build3DPrompt(prompt, input));
-  const conceptImageUrl = typeof input.conceptImageUrl === 'string' && input.conceptImageUrl.trim()
-    ? input.conceptImageUrl.trim()
-    : undefined;
-
-  if (!conceptImageUrl) {
-    logger.warn('runTripo: no concept image — falling back to Meshy text-to-3d (Tripo v2.5 on fal.ai requires an image)');
-    return runMeshy(prompt, input);
-  }
-
-  const endpoint = 'fal-ai/tripo3d/tripo/v2.5/image-to-3d';
-  const payload: Record<string, unknown> = {
-    image_url: conceptImageUrl,
-    // Tripo v2.5 default polycount is 30k — pet-sim style scales fine with 25k.
-    face_count: 25_000,
-    // PBR textures help Roblox MeshPart look right.
-    enable_pbr: true,
-    // Texture seed allows reproducible re-rolls of the same pet stage.
-    texture_seed: typeof input.textureSeed === 'number' ? input.textureSeed : undefined,
-  };
-
-  logger.info('Fal Tripo v2.5 image-to-3d submit', {
-    original: prompt.slice(0, 200),
-    clean: cleanPrompt,
-    petStage: input.petStageIndex,
-    keyPrefix: apiKey.slice(0, 8),
-  });
-
-  const submitResp = await fetch(`https://queue.fal.run/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Key ${apiKey}` },
-    body: JSON.stringify(payload),
-  });
-  if (!submitResp.ok) {
-    const txt = await submitResp.text().catch(() => '');
-    throw new Error(`Tripo submit failed: ${submitResp.status} ${submitResp.statusText} :: ${txt.slice(0, 200)}`);
-  }
-  const submitJson = await submitResp.json() as { request_id?: string; status_url?: string; response_url?: string };
-  const requestId = submitJson.request_id;
-  if (!requestId) throw new Error('Tripo submit did not return a request_id');
-
-  // Poll: Tripo on fal.ai uses the standard fal queue endpoints. Timeout 6 min.
-  const pollStart = Date.now();
-  const POLL_TIMEOUT_MS = 6 * 60 * 1000;
-  let resultUrl: string | undefined;
-  while (Date.now() - pollStart < POLL_TIMEOUT_MS) {
-    const statusResp = await fetch(`https://queue.fal.run/${endpoint}/requests/${requestId}/status`, {
-      headers: { Authorization: `Key ${apiKey}` },
-    });
-    if (!statusResp.ok) {
-      await new Promise((r) => setTimeout(r, 4000));
-      continue;
-    }
-    const statusJson = await statusResp.json() as { status?: string; response_url?: string };
-    if (statusJson.status === 'COMPLETED') {
-      resultUrl = statusJson.response_url ?? `https://queue.fal.run/${endpoint}/requests/${requestId}`;
-      break;
-    }
-    if (statusJson.status === 'FAILED') {
-      throw new Error('Tripo task failed');
-    }
-    await new Promise((r) => setTimeout(r, 5000));
-  }
-  if (!resultUrl) throw new Error('Tripo task timed out after 6 minutes');
-
-  const resultResp = await fetch(resultUrl, { headers: { Authorization: `Key ${apiKey}` } });
-  if (!resultResp.ok) {
-    const txt = await resultResp.text().catch(() => '');
-    throw new Error(`Tripo result fetch failed: ${resultResp.status} :: ${txt.slice(0, 200)}`);
-  }
-  const resultJson = await resultResp.json() as { model_mesh?: { url?: string }; data?: { model_mesh?: { url?: string } } };
-  const meshUrl = resultJson.model_mesh?.url ?? resultJson.data?.model_mesh?.url;
-  if (!meshUrl) throw new Error('Tripo result missing model_mesh.url');
-
-  return {
-    text: 'tripo-3d-mesh',
-    outputUrl: meshUrl,
-    mimeType: 'model/gltf-binary',
-    raw: {
-      provider: 'fal-tripo-v2.5',
-      meshUrl,
-      conceptImageUrl,
-      rawJson: resultJson as JsonRecord,
-    },
-  };
+export function mapSkeletonToTripoRigType(skeleton: PetSkeletonType, isFlying: boolean): TripoRigType {
+  if (skeleton === 'biped' || skeleton === 'mechanical_biped') return 'BIPED';
+  if (skeleton === 'serpentine') return 'SERPENTINE';
+  if (skeleton === 'aquatic') return 'AQUATIC';
+  if (skeleton === 'quadruped' || skeleton === 'winged_quadruped') return 'QUADRUPED';
+  // Pure flyers with no legs would fall here — only reachable if classify
+  // generates a non-standard skeleton; default to AVIAN when isFlying so the
+  // wings drive the rig.
+  if (isFlying) return 'AVIAN';
+  return 'OTHERS';
 }
 
 /**
- * Run Tripo `animate_rig` task on a previously generated mesh. Requires the
- * direct Tripo platform API (fal.ai does not proxy this yet). When the
- * TRIPO_API_KEY secret is unset we skip rigging — the pet ships as a static
- * MeshPart and PetFollowScript animates via CFrame fallback (no skinned anim).
+ * Pick the right Tripo animation presets per rig type. Tripo offers
+ * skeleton-specific walk presets (QUADRUPED_WALK / SERPENTINE_MARCH / etc.)
+ * which produce much better motion than the generic WALK for non-humanoid
+ * skeletons.
  */
-export async function runTripoRigging(args: {
-  meshUrl: string;
-  bodyType?: 'quadruped' | 'biped' | 'other';
-  animations?: Array<'idle' | 'walk' | 'run' | 'fly'>;
-}): Promise<TripoRigResult> {
-  const apiKey = TRIPO_API_KEY.value();
-  if (!apiKey) {
-    return { skipped: true, skipReason: 'TRIPO_API_KEY not configured — skipping rig step (pet will ship as static mesh)' };
+export function mapAnimationsForRigType(rigType: TripoRigType): TripoAnimationPreset[] {
+  switch (rigType) {
+    case 'QUADRUPED':       return ['IDLE', 'QUADRUPED_WALK'];
+    case 'SERPENTINE':      return ['IDLE', 'SERPENTINE_MARCH'];
+    case 'AQUATIC':         return ['IDLE', 'AQUATIC_MARCH'];
+    case 'AVIAN':           return ['IDLE', 'WALK'];
+    case 'HEXAPOD':         return ['IDLE', 'HEXAPOD_WALK'];
+    case 'OCTOPOD':         return ['IDLE', 'OCTOPOD_WALK'];
+    case 'BIPED':
+    case 'OTHERS':
+    default:                return ['IDLE', 'WALK'];
   }
-  const bodyType = args.bodyType ?? 'quadruped';
-  const animations = args.animations ?? ['idle', 'walk'];
+}
+
+interface TripoStatusPayload {
+  data?: { task_id?: string; status?: string; output?: { model?: string; pbr_model?: string; base_model?: string } };
+}
+
+/**
+ * Submit a Tripo task and poll for completion. Returns { taskId, modelUrl } on
+ * SUCCESS or { skipped: true, skipReason } on any failure / missing key.
+ *
+ * Tripo native API:
+ *   POST  https://api.tripo3d.ai/v2/openapi/task   (body: { type, ...params })
+ *   GET   https://api.tripo3d.ai/v2/openapi/task/{taskId}
+ * Auth header is "Authorization: Bearer <TRIPO_API_KEY>".
+ * Status values: queued | running | success | failed | cancelled | banned | expired.
+ */
+async function submitAndPollTripoTask(args: {
+  body: Record<string, unknown>;
+  apiKey: string;
+  timeoutMs?: number;
+  logLabel?: string;
+}): Promise<TripoTaskResult> {
+  const { body, apiKey } = args;
+  const timeoutMs = args.timeoutMs ?? 6 * 60 * 1000;
+  const label = args.logLabel ?? body.type ?? 'tripo';
 
   try {
     const submitResp = await fetch(`${TRIPO_API_BASE}/task`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        type: 'animate_rig',
-        model_url: args.meshUrl,
-        body_type: bodyType,
-        animations,
-      }),
+      body: JSON.stringify(body),
     });
     if (!submitResp.ok) {
       const txt = await submitResp.text().catch(() => '');
-      return { skipped: true, skipReason: `Tripo rig submit ${submitResp.status}: ${txt.slice(0, 150)}` };
+      return { taskId: '', skipped: true, skipReason: `Tripo ${label} submit ${submitResp.status}: ${txt.slice(0, 200)}` };
     }
     const submitJson = await submitResp.json() as { data?: { task_id?: string } };
     const taskId = submitJson.data?.task_id;
-    if (!taskId) return { skipped: true, skipReason: 'Tripo rig submit missing task_id' };
+    if (!taskId) return { taskId: '', skipped: true, skipReason: `Tripo ${label} response missing task_id` };
+
+    logger.info('Tripo task submitted', { label, taskId, keyPrefix: apiKey.slice(0, 8) });
 
     const start = Date.now();
-    while (Date.now() - start < 6 * 60 * 1000) {
+    while (Date.now() - start < timeoutMs) {
       const statusResp = await fetch(`${TRIPO_API_BASE}/task/${taskId}`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
@@ -2838,26 +2793,191 @@ export async function runTripoRigging(args: {
         await new Promise((r) => setTimeout(r, 5000));
         continue;
       }
-      const statusJson = await statusResp.json() as {
-        data?: { status?: string; output?: { rigged_fbx?: string; rigged_glb?: string; pbr_model?: string }; result?: unknown };
-      };
-      const status = statusJson.data?.status;
-      if (status === 'success' || status === 'SUCCEEDED') {
+      const statusJson = await statusResp.json() as TripoStatusPayload;
+      const status = (statusJson.data?.status ?? '').toLowerCase();
+      if (status === 'success' || status === 'succeeded') {
+        const out = statusJson.data?.output ?? {};
         return {
-          fbxUrl: statusJson.data?.output?.rigged_fbx,
-          glbUrl: statusJson.data?.output?.rigged_glb ?? statusJson.data?.output?.pbr_model,
+          taskId,
+          modelUrl: out.model ?? out.pbr_model ?? out.base_model,
           rawJson: statusJson.data,
         };
       }
-      if (status === 'failed' || status === 'FAILED') {
-        return { skipped: true, skipReason: 'Tripo rig task failed' };
+      if (status === 'failed' || status === 'cancelled' || status === 'banned' || status === 'expired') {
+        return { taskId, skipped: true, skipReason: `Tripo ${label} task status=${status}` };
       }
       await new Promise((r) => setTimeout(r, 5000));
     }
-    return { skipped: true, skipReason: 'Tripo rig timed out after 6 minutes' };
+    return { taskId, skipped: true, skipReason: `Tripo ${label} task timed out after ${Math.round(timeoutMs / 1000)}s` };
   } catch (err) {
-    return { skipped: true, skipReason: `Tripo rig error: ${(err as Error).message}` };
+    return { taskId: '', skipped: true, skipReason: `Tripo ${label} error: ${(err as Error).message}` };
   }
+}
+
+/**
+ * Run Tripo native `image_to_model` task. Pass the concept image URL (Tripo
+ * accepts URLs directly via `file: { type: "jpg", url }`); no separate upload
+ * step needed. Returns the Tripo task id so downstream `animate_rig` and
+ * `animate_retarget` calls can chain by reference.
+ *
+ * When TRIPO_API_KEY is unset we degrade to Meshy v6 (existing pipeline) —
+ * but the caller gets `taskId === ''` which signals "no chain possible".
+ *
+ * The function ALSO returns a ProviderResult-shaped wrapper so existing call
+ * sites that treat it as a generic provider keep working.
+ */
+export async function runTripo(prompt: string, input: JsonRecord): Promise<ProviderResult & { tripoTaskId?: string }> {
+  const tripoKey = TRIPO_API_KEY.value();
+  const cleanPrompt = await translateForImageGen(build3DPrompt(prompt, input));
+  const conceptImageUrl = typeof input.conceptImageUrl === 'string' && input.conceptImageUrl.trim()
+    ? input.conceptImageUrl.trim()
+    : undefined;
+
+  if (!conceptImageUrl) {
+    logger.warn('runTripo: no concept image — falling back to Meshy text-to-3d');
+    return runMeshy(prompt, input);
+  }
+  if (!tripoKey) {
+    logger.warn('runTripo: TRIPO_API_KEY not configured — falling back to Meshy multi-image-to-3d (no skeletal rig available)');
+    return runMeshy(prompt, input);
+  }
+
+  const imageType: 'jpg' | 'png' = conceptImageUrl.toLowerCase().includes('.png') ? 'png' : 'jpg';
+  // Tripo native image_to_model task. face_count is the polycount budget; PBR
+  // texturing matches Roblox MeshPart's expected baked albedo+normal+metallic.
+  const result = await submitAndPollTripoTask({
+    body: {
+      type: 'image_to_model',
+      file: { type: imageType, url: conceptImageUrl },
+      face_count: 25_000,
+      texture: true,
+      pbr: true,
+      auto_size: true,
+    },
+    apiKey: tripoKey,
+    logLabel: `image_to_model petStage=${input.petStageIndex ?? '?'}`,
+  });
+  if (result.skipped || !result.modelUrl || !result.taskId) {
+    logger.warn('runTripo image_to_model failed, falling back to Meshy', { skipReason: result.skipReason });
+    return runMeshy(prompt, input);
+  }
+
+  logger.info('Tripo image_to_model success', {
+    taskId: result.taskId,
+    modelUrlPrefix: result.modelUrl.slice(0, 80),
+    petStage: input.petStageIndex,
+    clean: cleanPrompt.slice(0, 80),
+  });
+
+  return {
+    text: 'tripo-3d-mesh',
+    outputUrl: result.modelUrl,
+    mimeType: 'model/gltf-binary',
+    raw: {
+      provider: 'tripo-native-v2',
+      tripoTaskId: result.taskId,
+      meshUrl: result.modelUrl,
+      conceptImageUrl,
+      rawJson: result.rawJson as JsonRecord,
+    },
+    tripoTaskId: result.taskId,
+  };
+}
+
+/**
+ * Run Tripo `animate_rig` task — adds skeleton + skin weights to a mesh that
+ * was produced by an earlier Tripo task. Requires `meshTaskId` (NOT a URL —
+ * Tripo binds rigging by task reference). Returns the rigged FBX/GLB url and
+ * the new rig task id (used as input for `animate_retarget`).
+ *
+ * Without TRIPO_API_KEY this graceful-skips so the pet ships as static mesh.
+ */
+export async function runTripoRigging(args: {
+  meshTaskId: string;
+  rigType: TripoRigType;
+  outFormat?: 'glb' | 'fbx';
+  spec?: 'MIXAMO' | 'TRIPO';
+}): Promise<TripoRigResult> {
+  const apiKey = TRIPO_API_KEY.value();
+  if (!apiKey) {
+    return { taskId: '', skipped: true, skipReason: 'TRIPO_API_KEY not configured — skipping rig step (pet ships as static mesh)' };
+  }
+  if (!args.meshTaskId) {
+    return { taskId: '', skipped: true, skipReason: 'runTripoRigging requires a meshTaskId from a prior Tripo image_to_model task' };
+  }
+  const outFormat = args.outFormat ?? 'fbx';
+  const spec = args.spec ?? 'TRIPO';
+
+  const result = await submitAndPollTripoTask({
+    body: {
+      type: 'animate_rig',
+      original_model_task_id: args.meshTaskId,
+      rig_type: args.rigType,
+      spec,
+      out_format: outFormat,
+    },
+    apiKey,
+    logLabel: `animate_rig rig=${args.rigType}`,
+  });
+  if (result.skipped) return { taskId: result.taskId, skipped: true, skipReason: result.skipReason };
+  const url = result.modelUrl;
+  return {
+    taskId: result.taskId,
+    modelUrl: url,
+    fbxUrl: outFormat === 'fbx' ? url : undefined,
+    glbUrl: outFormat === 'glb' ? url : undefined,
+    rawJson: result.rawJson,
+  };
+}
+
+/**
+ * Run Tripo `animate_retarget` task — applies an animation library preset
+ * (IDLE / QUADRUPED_WALK / SERPENTINE_MARCH / ...) to a rigged model and
+ * bakes the keyframes into the output. The result is a single FBX/GLB
+ * containing the mesh + skeleton + baked animation track, ready for Roblox
+ * 3D Importer.
+ *
+ * Tripo accepts either `animation` (single preset) or `animations` (list).
+ * We always send the list form so the same FBX can carry multiple clips
+ * (idle + walk) for the pet.
+ */
+export async function runTripoAnimation(args: {
+  rigTaskId: string;
+  animations: TripoAnimationPreset[];
+  outFormat?: 'glb' | 'fbx';
+  bakeAnimation?: boolean;
+  exportWithGeometry?: boolean;
+}): Promise<TripoRigResult> {
+  const apiKey = TRIPO_API_KEY.value();
+  if (!apiKey) {
+    return { taskId: '', skipped: true, skipReason: 'TRIPO_API_KEY not configured — skipping animation step' };
+  }
+  if (!args.rigTaskId) {
+    return { taskId: '', skipped: true, skipReason: 'runTripoAnimation requires a rigTaskId from a prior animate_rig task' };
+  }
+  const outFormat = args.outFormat ?? 'fbx';
+
+  const result = await submitAndPollTripoTask({
+    body: {
+      type: 'animate_retarget',
+      original_model_task_id: args.rigTaskId,
+      animations: args.animations,
+      out_format: outFormat,
+      bake_animation: args.bakeAnimation ?? true,
+      export_with_geometry: args.exportWithGeometry ?? true,
+    },
+    apiKey,
+    logLabel: `animate_retarget anims=${args.animations.join(',')}`,
+  });
+  if (result.skipped) return { taskId: result.taskId, skipped: true, skipReason: result.skipReason };
+  const url = result.modelUrl;
+  return {
+    taskId: result.taskId,
+    modelUrl: url,
+    fbxUrl: outFormat === 'fbx' ? url : undefined,
+    glbUrl: outFormat === 'glb' ? url : undefined,
+    rawJson: result.rawJson,
+  };
 }
 
 async function runHunyuan3D(prompt: string, input: JsonRecord): Promise<ProviderResult> {

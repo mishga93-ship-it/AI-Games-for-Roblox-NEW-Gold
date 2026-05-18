@@ -135,6 +135,9 @@ import {
   selectMeshProvider,
   runTripo,
   runTripoRigging,
+  runTripoAnimation,
+  mapSkeletonToTripoRigType,
+  mapAnimationsForRigType,
 } from './providers.js';
 import { normalizeGlbScale } from './glbNormalize.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
@@ -8838,10 +8841,17 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
     const routing = selectMeshProvider(classification.skeletonType);
     logger.info('Pet pipeline: provider routing', { mesh: routing.mesh, rig: routing.rig, skeleton: classification.skeletonType });
 
-    // ── 2-10. Per-stage loop: concept → mesh → rig ──────────────────────
+    // ── 2-10. Per-stage loop: concept → mesh → rig → animate ──────────────
+    // Tripo binds rigging+animation by task reference, so we thread the task
+    // ids (meshTaskId → rigTaskId) through the bundle. The final animated FBX
+    // already contains the mesh + skeleton + baked anim track and is the
+    // artifact we hand to Studio.
     type StageArtifactBundle = {
       meshUrl?: string;
-      fbxUrl?: string;
+      meshTaskId?: string;
+      rigTaskId?: string;
+      animTaskId?: string;
+      fbxUrl?: string;       // final animated FBX (or rigged FBX if anim step skipped)
       conceptUrl?: string;
       idleAnimUrl?: string;
       walkAnimUrl?: string;
@@ -8884,7 +8894,10 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         continue;
       }
 
-      // -------- mesh_stageN (Meshy or Tripo) --------
+      // -------- mesh_stageN (Meshy or Tripo native) --------
+      // For Tripo path we use the native API directly so we can chain into
+      // animate_rig + animate_retarget via task IDs (fal.ai's Tripo proxy
+      // doesn't expose task IDs, so it can't drive rigging downstream).
       await beginStage(meshStageId, [`Generating mesh for Stage ${idx} via ${routing.mesh}`]);
       try {
         const meshInput: Record<string, unknown> = {
@@ -8901,6 +8914,9 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         const meshUrl = meshResult.outputUrl ?? '';
         if (!meshUrl) throw new Error('Mesh provider returned no outputUrl');
         bundle.meshUrl = meshUrl;
+        // tripoTaskId is only present when runTripo went through Tripo native.
+        const meshTaskId = (meshResult as { tripoTaskId?: string }).tripoTaskId;
+        if (meshTaskId) bundle.meshTaskId = meshTaskId;
         const meshArt = await copyExternalArtifact(currentJob, meshUrl, meshResult.mimeType ?? 'model/gltf-binary', {
           name: `${classification.baseName}-stage${idx}.glb`,
           stageId: meshStageId,
@@ -8908,7 +8924,10 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
           metadata: { petStageIndex: idx, isPetMesh: true, provider: routing.mesh },
         });
         currentJob.artifacts = [...currentJob.artifacts, meshArt];
-        await finishStage(meshStageId, 'completed', [meshArt.id], [`Stage ${idx} mesh ready via ${routing.mesh}`]);
+        await finishStage(meshStageId, 'completed', [meshArt.id], [
+          `Stage ${idx} mesh ready via ${routing.mesh}`,
+          meshTaskId ? `Tripo task id: ${meshTaskId}` : 'No Tripo task id — rigging will skip',
+        ]);
       } catch (meshErr) {
         const msg = errorMessage(meshErr);
         await finishStage(meshStageId, idx === 1 ? 'failed' : 'skipped', [], [`Stage ${idx} mesh failed: ${msg}`], msg);
@@ -8918,42 +8937,79 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         continue;
       }
 
-      // -------- rig_stageN (Tripo or skip) --------
+      // -------- rig_stageN (Tripo animate_rig — requires meshTaskId) --------
+      // The rig step runs only when (a) routing chose Tripo for rigging AND
+      // (b) we successfully produced a Tripo native task id in mesh step.
+      // When animate_rig succeeds we IMMEDIATELY chain animate_retarget so
+      // the final FBX has the mesh + skeleton + baked animation in one file.
       await beginStage(rigStageId, [`Rigging Stage ${idx} via ${routing.rig}`]);
-      if (routing.rig === 'tripo' && bundle.meshUrl) {
-        const skeletonBodyType: 'quadruped'|'biped'|'other' = classification.skeletonType === 'biped' || classification.skeletonType === 'mechanical_biped'
-          ? 'biped'
-          : (classification.skeletonType === 'serpentine' || classification.skeletonType === 'aquatic')
-            ? 'other'
-            : 'quadruped';
-        const animList: Array<'idle'|'walk'|'run'|'fly'> = ['idle', 'walk'];
-        if (classification.isFlying) animList.push('fly');
-        const rigResult = await runTripoRigging({ meshUrl: bundle.meshUrl, bodyType: skeletonBodyType, animations: animList });
-        if (rigResult.skipped) {
-          await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig skipped: ${rigResult.skipReason ?? 'unknown'}`], rigResult.skipReason);
+      if (routing.rig === 'tripo' && bundle.meshTaskId) {
+        const rigType = mapSkeletonToTripoRigType(classification.skeletonType, classification.isFlying);
+        const rigResult = await runTripoRigging({
+          meshTaskId: bundle.meshTaskId,
+          rigType,
+          outFormat: 'fbx',
+          spec: 'TRIPO',
+        });
+        if (rigResult.skipped || !rigResult.taskId) {
+          await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig skipped: ${rigResult.skipReason ?? 'no rig task id'}`], rigResult.skipReason);
         } else {
-          bundle.fbxUrl = rigResult.fbxUrl;
-          const notes: string[] = [];
-          if (rigResult.fbxUrl) {
-            const rigArt = await copyExternalArtifact(currentJob, rigResult.fbxUrl, 'model/fbx', {
+          bundle.rigTaskId = rigResult.taskId;
+          // Chain animate_retarget — bakes IDLE + skeleton-specific walk
+          // (QUADRUPED_WALK / SERPENTINE_MARCH / etc.) into one FBX with
+          // geometry exported, so Studio's 3D Importer treats it as the
+          // canonical animated pet asset.
+          const anims = mapAnimationsForRigType(rigType);
+          const animResult = await runTripoAnimation({
+            rigTaskId: rigResult.taskId,
+            animations: anims,
+            outFormat: 'fbx',
+            bakeAnimation: true,
+            exportWithGeometry: true,
+          });
+          if (animResult.skipped || !animResult.fbxUrl) {
+            // Fall back to the rigged-only FBX (no anim track but mesh+skeleton).
+            bundle.fbxUrl = rigResult.fbxUrl;
+            const note = animResult.skipReason
+              ? `anim_retarget skipped: ${animResult.skipReason}; using rigged-only FBX`
+              : 'anim_retarget returned no FBX; using rigged-only FBX';
+            if (rigResult.fbxUrl) {
+              const rigArt = await copyExternalArtifact(currentJob, rigResult.fbxUrl, 'model/fbx', {
+                name: bundle.fbxFileName,
+                stageId: rigStageId,
+                artifactRole: 'rigged_model',
+                metadata: { petStageIndex: idx, isPetRiggedFbx: true, rigType, animations: [] as string[] },
+              });
+              currentJob.artifacts = [...currentJob.artifacts, rigArt];
+              await finishStage(rigStageId, 'completed', [rigArt.id], [`Stage ${idx} rig (${rigType}) ready — anim step skipped`, note]);
+            } else {
+              await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig produced no FBX URL`, note]);
+            }
+          } else {
+            bundle.animTaskId = animResult.taskId;
+            bundle.fbxUrl = animResult.fbxUrl;
+            bundle.idleAnimUrl = animResult.fbxUrl; // single FBX carries all clips
+            bundle.walkAnimUrl = animResult.fbxUrl;
+            if (classification.isFlying) bundle.flyAnimUrl = animResult.fbxUrl;
+            const rigArt = await copyExternalArtifact(currentJob, animResult.fbxUrl, 'model/fbx', {
               name: bundle.fbxFileName,
               stageId: rigStageId,
               artifactRole: 'rigged_model',
-              metadata: { petStageIndex: idx, isPetRiggedFbx: true },
+              metadata: { petStageIndex: idx, isPetRiggedFbx: true, rigType, animations: anims },
             });
             currentJob.artifacts = [...currentJob.artifacts, rigArt];
-            notes.push(`Stage ${idx} rigged FBX ready`);
-            await finishStage(rigStageId, 'completed', [rigArt.id], notes);
-          } else {
-            await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig returned no FBX URL`]);
+            await finishStage(rigStageId, 'completed', [rigArt.id], [
+              `Stage ${idx} rig (${rigType}) + animations ${anims.join(', ')} baked into ${bundle.fbxFileName}`,
+            ]);
           }
         }
       } else {
-        await finishStage(rigStageId, 'skipped', [], [
-          routing.rig === 'meshy'
-            ? `Stage ${idx} rig — Meshy bipedal rigging handled inside mesh_3d call (no separate step needed)`
-            : `Stage ${idx} rig skipped — provider=${routing.rig}`,
-        ]);
+        const reason = routing.rig === 'meshy'
+          ? `Stage ${idx} rig — Meshy bipedal rigging handled inside mesh_3d call (no separate step needed)`
+          : !bundle.meshTaskId
+            ? `Stage ${idx} rig skipped — no Tripo task id from mesh step (Meshy was used, or fallback fired)`
+            : `Stage ${idx} rig skipped — provider=${routing.rig}`;
+        await finishStage(rigStageId, 'skipped', [], [reason]);
       }
 
       stageBundles.push(bundle);
