@@ -6525,6 +6525,10 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "buildings" { return "character_3d" }
         if contentSubcategory == "furniture" { return "character_3d" }
         if contentSubcategory == "maps" { return "rbxl_build" }
+        // Track 3 — pets route to dedicated pet_3d kind. Backend
+        // processGenerationJob dispatches to processBlockyPetJob (when
+        // metadata.petMode==='blocky') or processPet3DJob (evolution_3d).
+        if contentSubcategory == "pets" { return "pet_3d" }
         switch projectKind {
         case .content, .ugc:
             if looksLikeTextureClothing {
