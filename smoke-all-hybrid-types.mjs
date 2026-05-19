@@ -133,8 +133,8 @@ for (const c of cases) {
   if (!bv) {
     console.log(`  FAIL: BuilderVersion StringValue missing`);
     failures++;
-  } else if (!String(bv.value).includes('v2')) {
-    console.log(`  FAIL: BuilderVersion "${bv.value}" doesn't include "v2"`);
+  } else if (!String(bv.value).startsWith('hybrid-skeleton-v')) {
+    console.log(`  FAIL: BuilderVersion "${bv.value}" doesn't match "hybrid-skeleton-v*"`);
     failures++;
   } else {
     console.log(`  PASS: BuilderVersion = "${bv.value}"`);

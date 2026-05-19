@@ -15122,9 +15122,13 @@ export async function uploadClassicClothing(args: {
   const useGroup = !!(groupId && groupId.trim());
 
   // Step 1: Get CSRF token
+  // 2026-05-19: Roblox deprecated auth.roblox.com/ as CSRF source (returns 404 now).
+  // Use accountsettings.roblox.com/v1/email — verified to return 403 + x-csrf-token
+  // header. The endpoint has no relation to upload; we just need any protected POST
+  // that responds with the token.
   let csrfToken = '';
   try {
-    const csrfResp = await fetch('https://auth.roblox.com/', {
+    const csrfResp = await fetch('https://accountsettings.roblox.com/v1/email', {
       method: 'POST',
       headers: { Cookie: `.ROBLOSECURITY=${roblosecurity}` },
     });
