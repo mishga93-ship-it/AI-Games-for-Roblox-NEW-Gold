@@ -18,6 +18,44 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Open Cockpit Hotfix] Убрана визуальная красная плита, кузов стал сегментированным (2026-05-19, сессия 362)
+- **Проблема**: после сессии 361 свежий `content-prect-vehicle.rbxm` технически уже содержал hidden `ChassisRoot`, `StableGroundCollider`, non-collide wheels и новый controller, но в Studio всё ещё выглядел как красная плоская платформа.
+- **Root cause**: видимой плоскостью теперь была не `ChassisRoot`, а сама `CarLowerBody`: большой красный блок `6.4 x 1.04 x 7.1` с верхней гранью почти на уровне hidden `DriveSeat`.
+- **Решение**: `apps/functions/src/robloxWorker.ts` — `CarLowerBody` превращена в низкую тёмную underbody; кузов машины пересобран из отдельных side body panels, nose/trunk/hood/rear deck, cockpit walls, rear bulkhead, dashboard cowl, roll bar posts, roof. Hidden `DriveSeat` для car опущен и сдвинут ближе к cockpit center. Салон усилен instrument cluster, gear lever, larger steering wheel и более высокими seat backs/headrests.
+- **Проверка**: `npm run build:functions` ✅; local Lune build `/private/tmp/vehicle-open-cockpit.rbxm` ✅; инспекция подтвердила `CarLowerBody` `4.99 x 0.35 x 5.57`/dark metal, наличие `CarLeftSideBody`/`CarRightSideBody`, `Cockpit*`, `RollBar*`, `CarCabinRoof`, `DriveSeat` y=2.07, `ChassisRoot.Transparency=1`, `StableGroundCollider.CanCollide=true`.
+- **Известные ограничения**: старые скачанные `.rbxm` не меняются; после deploy нужен fresh Vehicles export.
+
+### ✅ [Vehicles Regression Hotfix] Плоская машина и самозакручивание исправлены в live export (2026-05-19, сессия 361)
+- **Проблема**: пользователь прислал свежий `content-project-vehicle.rbxm` и скрин Studio: машина всё ещё выглядела как красная плоская платформа, детализация/салон не читались, при езде машину тянуло по кругу.
+- **Root cause**: инспекция RBXM показала, что детали кузова/салон уже присутствовали, но большой видимый `ChassisRoot` перекрывал визуал. Для `land_wheels` колёса были collidable, а HingeConstraint `Servo`/`Motor` продолжали физически бороться с direct controller, что могло давать self-steering.
+- **Решение**:
+  - `apps/functions/src/robloxWorker.ts` — `ChassisRoot` теперь невидимый и не collidable для land/tracked транспорта; добавлен отдельный невидимый нижний `StableGroundCollider`.
+  - Колёса land/tracked стали визуальными (`CanCollide=false`, `Massless=true`), физические `VehicleSeat`/`Seat` скрыты (`Transparency=1`), а визуальные кресла остаются в салоне.
+  - Машина получила более заметные blocky-детали: front nose, trunk block, roof scoop, widebody flares, крупнее wheel arches, отдельные headlights/tail lights и rear license plate.
+  - `VehicleController` добавил deadzone для `ThrottleFloat`/`SteerFloat`, отключает wheel torque/servo для `land_wheels`, разрешает yaw только при реальном ходе и быстро гасит angular velocity при нулевом руле.
+- **Проверка**: `npm run build:functions` ✅; локальный Lune build собрал `/private/tmp/vehicle-test.rbxm` ✅; инспекция RBXM подтвердила `ChassisRoot.Transparency=1`, `StableGroundCollider.CanCollide=true`, `Wheel1..4.CanCollide=false`, `DriveSeat/PassengerSeat.Transparency=1`, controller `DIRECT_WHEEL_MODE`/deadzone ✅; `git diff --check -- apps/functions/src/robloxWorker.ts` ✅; `/api/health` ✅.
+- **Deploy**: production `api` выведен на `api-00910-vib`, `traffic=100%`, `Ready=True`.
+- **Известные ограничения**: уже скачанный/старый `.rbxm` не меняется. Нужно сделать fresh Vehicles generation/export после этого deploy.
+
+### ✅ [Vehicles Quality Pass] Детализированная машина, салон, стабильная физика и blocky preview (2026-05-19, сессия 359)
+- **Проблема**: свежий Vehicles RBXM был слишком простым: плоский кузов без салона/деталей, водитель сидел “на платформе”, машину тянуло в сторону и она почти не разгонялась. iOS handoff отличался от остальных chat-инструкций: показывал только RBXM-карточку без 3D preview и с generic R15 copy.
+- **Решение**:
+  - `apps/functions/src/robloxWorker.ts` — car/bus manifest расширен реальными Roblox Parts: hood/rear deck/cabin/roof/windows, dashboard, steering wheel, visual seats/headrests, mirrors, door panels/handles, grille, splitter, wheel arches, side skirts, spoiler, lights. DriveSeat/PassengerSeat уменьшены, смещены в салон, Torque поднят.
+  - `VehicleController` теперь назначает network ownership всем `BasePart` assembly, раскладывает velocity на forward/lateral, гасит боковую скорость, ускоряет по `ACCEL * dt`, clamp-ит top speed и не крутит yaw на месте без хода.
+  - `apps/functions/src/index.ts` — vehicle export генерирует PNG preview из того же RBXM manifest (`metadata.isPreviewTexture=true`, `role=vehicle_preview_scene_render`, `vehiclePreviewImageUrl`), используя общий blocky renderer.
+  - `apps/ios/.../ChatStore.swift` + `GenerationPreviewView.swift` — Vehicles с RBXM+preview теперь показываются как media preview (`vehicle_preview`) с кнопкой `Export Vehicle RBXM`, без текста про pre-rigged R15.
+- **Проверка**: `npm run build:functions` ✅; `xcrun swiftc -parse ...AIWorkspaceAPI.swift ...ChatStore.swift ...GenerationPreviewView.swift` ✅; manifest smoke: `parts=57`, `VehicleSeat=1`, `Seat=3`, `HingeConstraint=4`, все ключевые салон/деталь parts присутствуют ✅; local worker smoke собрал binary `.rbxm` `11745` bytes без validation errors ✅; `git diff --check` ✅; `/api/health` ✅.
+- **Deploy**: production `api` выведен на `api-00908-fil`, `traffic=100%`, `Ready=True`, `Active=True`. Для обхода `ContainerImageImportFailed` в старом `gcf-artifacts` создан новый Artifact Registry repo `gcf-artifacts-live`; локальный `ROBLOX_SERVICE_COOKIE` очищен из plain env, failed revisions `api-00897-sux`/`api-00901-tot` удалены.
+- **Известные ограничения**: старые Vehicles jobs/RBXM не пересобираются автоматически — нужна fresh generation после deploy. iOS media-preview UI требует свежую Xcode/TestFlight-сборку; backend уже создаёт preview artifact в новых jobs.
+
+### ✅ [Vehicles Production Routing Fix] Fresh Vehicles больше не должны попадать на старый API без `.rbxm` (2026-05-19, сессия 358)
+- **Проблема**: после фиксов Vehicles пользователь всё равно видел `Preview Not Ready`: backend job завершался без финального Roblox `.rbxm` artifact.
+- **Root cause**: Cloud Run `api` реально обслуживал старую ревизию `api-00850-cox` от 2026-05-18, хотя новые deploy'и уже создавали более свежие ревизии. Попытка перевести traffic на latest зацепила битую `api-00873-fun` (`ContainerImageImportFailed`), поэтому Cloud Functions updates продолжали падать и live traffic оставался старым.
+- **Решение**: проверен production `roblox-worker-service` с текущим `ROBLOX_WORKER_TOKEN` — vehicle manifest успешно собирается в `.rbxm` (`target=model`, `outputBase64Length=11816`). Затем создана готовая ревизия `api-00878-kaj` и Cloud Run traffic переключён напрямую на неё: `traffic=100% api-00878-kaj`, `latestReadyRevisionName=api-00878-kaj`, service Ready/RoutesReady True.
+- **Файлы**: `cursor/changelog-358.md`, `docs/PROGRESS.md`; код не менялся, исправление было production routing/deploy-state.
+- **Проверка**: `npm run build --workspace apps/functions` ✅; `/api/health` ✅; authenticated worker `/build-roblox` smoke ✅; `gcloud run services describe api` подтвердил `api-00878-kaj` live.
+- **Ограничения**: уже созданные `Preview Not Ready` jobs не пересобираются автоматически. Нужна fresh Vehicles generation после 2026-05-19 15:48 Bangkok time.
+
 ### ✅ [Furniture Hybrid Skeleton] Lamp/Plant/Sign — детерминистский каркас + LLM как декоратор (2026-05-19, сессия 357)
 - **Проблема**: пользователь сгенерировал лампу третий раз подряд (post sessions 353 stage 1 + hotfix 2) и опять увидел горизонтальный «таблетка»-post вместо столба, плафон в воздухе, disconnected parts. LLM каждый раз называет вертикальную опору по-разному (Post / MainPost / LowerSupportArm) и иногда ставит role=`body` / `decor` — мой Cylinder-only role override это не ловил. Block-shape post со стороной 2.8 тоже не нормализовался.
 - **Root cause**: pipeline полагался на LLM-эмиссию корректной структуры. LLM непредсказуем — невозможно гарантировать правильный role/shape/size.
@@ -39,10 +77,11 @@
 ### ✅ [Vehicles Smart Stub Bypass] Confirm & Generate больше не должен отвечать заглушкой "Huge ambition..." (2026-05-19, сессия 355)
 - **Проблема**: пользователь показал Vehicles flow, где после `Confirm & Generate` backend вернул Smart Stub: "Huge ambition! These mechanics are being compiled..." вместо запуска generation.
 - **Root cause**: Smart Stubs запускался до vehicle promotion, а allowlist поддержанных content flows не включал `vehicle` / `vehicles`. Vehicle GDD мог содержать `Data Store` / `Daily rewards`, из-за чего classifier считал запрос unsupported global mechanics.
-- **Решение**: `apps/functions/src/index.ts` теперь повышает vehicle-запрос до `vehicle_3d` до Smart Stubs, а `runSmartStubsClassification()` явно bypass-ит `vehicle`, `vehicles` и vehicle metadata.
+- **Решение**: `apps/functions/src/index.ts` теперь повышает vehicle-запрос до `vehicle_3d` до Smart Stubs, а `runSmartStubsClassification()` явно bypass-ит `vehicle`, `vehicles`, `kind="vehicle_3d"`, vehicle metadata и content/UGC prompts с vehicle keywords.
 - **Файлы**: `apps/functions/src/index.ts`, `cursor/changelog-355.md`, `docs/PROGRESS.md`.
-- **Проверка**: `npm run build:functions` ✅; compiled-output smoke подтвердил `promotionBeforeSmartStubs=true`, `smartStubVehicleBypass=true` ✅; `git diff --check` ✅.
-- **Известные ограничения**: для реального приложения нужен fresh deploy Firebase Functions; уже полученная stub-реплика в старом чате не исчезнет сама, нужно снова нажать Generate после деплоя.
+- **Проверка**: `npm run build:functions` ✅; compiled-output smoke подтвердил `promotionBeforeSmartStubs=true`, `smartStubVehicleBypass=true`, `kindPassedToStubs=true`, `explicitVehicleKind=true`, `vehicle3dBypass=true` ✅; `git diff --check` ✅.
+- **Deploy**: первый `firebase deploy --only functions:api` получил Cloud Functions HTTP 409 queue conflict; повторный deploy прошёл успешно (`functions[api(us-central1)] Successful update operation`), `/api/health` ✅.
+- **Известные ограничения**: уже полученная stub-реплика в старом чате не исчезнет сама; нужно снова нажать Generate после deploy.
 
 ### ✅ [Vehicles PNG-only Export Guard] Vehicles больше не должны уходить в PNG-only вместо `.rbxm` (2026-05-19, сессия 354)
 - **Проблема**: пользователь прислал скрин `Content Project Asset Preview`, где Vehicles result доступен только как `PNG`, без Roblox `.rbxm` файла для импорта/экспорта.
