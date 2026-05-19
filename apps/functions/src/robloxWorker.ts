@@ -14869,15 +14869,44 @@ export async function resolveDecalImageId(
  * Requires: .ROBLOSECURITY cookie from a Premium account with Robux.
  * Costs 10 Robux per upload.
  */
+// Session 001 (Track 1 + Premium activation, 2026-05-19): fetch authenticated user
+// ID from the cookie via Roblox's /v1/users/authenticated endpoint. Used when we
+// want to upload as the cookie owner (personal Premium balance) instead of via
+// a group. Eliminates the need to fund a community with Robux.
+async function fetchAuthenticatedRobloxUserId(roblosecurity: string): Promise<number | null> {
+  try {
+    const resp = await fetch('https://users.roblox.com/v1/users/authenticated', {
+      headers: { Cookie: `.ROBLOSECURITY=${roblosecurity}` },
+    });
+    if (!resp.ok) {
+      console.warn(`[fetchAuthenticatedRobloxUserId] HTTP ${resp.status}`);
+      return null;
+    }
+    const json = await resp.json() as Record<string, unknown>;
+    const id = typeof json.id === 'number' ? json.id : null;
+    if (!id) {
+      console.warn('[fetchAuthenticatedRobloxUserId] no id in response', JSON.stringify(json).slice(0, 200));
+    }
+    return id;
+  } catch (err) {
+    console.warn('[fetchAuthenticatedRobloxUserId] failed:', err);
+    return null;
+  }
+}
+
 export async function uploadClassicClothing(args: {
   name: string;
   description?: string;
   imageBuffer: Buffer;
   assetType: 'TShirt' | 'Shirt' | 'Pants';
-  groupId: string;
+  /** Optional. If provided AND non-empty, upload as the group (Robux deducted
+   *  from group funds). If empty/missing, upload as the authenticated user
+   *  (Robux deducted from the cookie owner's personal balance). */
+  groupId?: string;
   roblosecurity: string;
 }): Promise<{ assetId: number } | null> {
   const { name, description, imageBuffer, assetType, groupId, roblosecurity } = args;
+  const useGroup = !!(groupId && groupId.trim());
 
   // Step 1: Get CSRF token
   let csrfToken = '';
@@ -14897,13 +14926,30 @@ export async function uploadClassicClothing(args: {
     return null;
   }
 
-  // Step 2: Upload via user-auth API
+  // Step 2: Resolve creator — group (from env) OR authenticated user (from cookie).
+  // Session 001 (2026-05-19): when ROBLOX_GROUP_ID is unset, derive userId from
+  // the cookie via /v1/users/authenticated and upload under the user's personal
+  // Premium balance. Removes the "fund the community with Robux" friction.
+  let creator: { groupId: string } | { userId: number };
+  if (useGroup) {
+    creator = { groupId: groupId! };
+    console.log(`[uploadClassicClothing] Uploading as GROUP ${groupId}`);
+  } else {
+    const userId = await fetchAuthenticatedRobloxUserId(roblosecurity);
+    if (!userId) {
+      console.error('[uploadClassicClothing] No groupId and could not fetch authenticated user id — cookie invalid?');
+      return null;
+    }
+    creator = { userId };
+    console.log(`[uploadClassicClothing] Uploading as USER ${userId} (personal Premium balance)`);
+  }
+
   const requestJson = JSON.stringify({
     displayName: name.slice(0, 50),
     description: (description ?? 'AI-generated clothing').slice(0, 1000),
     assetType,
     creationContext: {
-      creator: { groupId },
+      creator,
       expectedPrice: 10,
     },
   });

@@ -23582,9 +23582,11 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         if (shirtFallbackPng || pantsFallbackPng) {
           const roblosecurity = process.env.ROBLOX_SERVICE_COOKIE ?? '';
           const groupId = process.env.ROBLOX_GROUP_ID ?? '';
-
-          if (roblosecurity && groupId) {
-            logger.info('Uploading clothing as Classic Shirt/Pants via service account group', { groupId });
+          // Session 001 (2026-05-19): group is now OPTIONAL. If cookie is set we
+          // can upload via the authenticated user account (Premium personal Robux).
+          // Group path stays as opt-in for when ROBLOX_GROUP_ID is provided.
+          if (roblosecurity) {
+            logger.info('Uploading clothing as Classic Shirt/Pants', { mode: groupId ? `group ${groupId}` : 'authenticated user (Premium personal balance)' });
 
             const resolveUploadBuffer = async (
               directBuffer: Buffer | undefined,
@@ -23651,7 +23653,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               }
             }
           } else {
-            logger.warn('No ROBLOX_SERVICE_COOKIE or ROBLOX_GROUP_ID — skipping Classic Clothing upload');
+            logger.warn('No ROBLOX_SERVICE_COOKIE — skipping Classic Clothing upload (set the cookie in env to enable)');
           }
         }
 
@@ -23708,12 +23710,14 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         const groupId = process.env.ROBLOX_GROUP_ID ?? '';
         const uploadBuf = tshirtResult?.textureBuffer
           ?? (tshirtFallbackPng ? Buffer.from(await (await fetch(tshirtFallbackPng)).arrayBuffer()) : undefined);
-        if (uploadBuf && roblosecurity && groupId) {
+        // Session 001 (2026-05-19): group is optional now. Cookie alone enables
+        // user-mode upload via Premium personal balance.
+        if (uploadBuf && roblosecurity) {
           const upRes = await uploadClassicClothing({
             name: `${title}-tshirt`.slice(0, 50),
             imageBuffer: uploadBuf,
             assetType: 'TShirt',
-            groupId,
+            groupId,  // optional inside uploadClassicClothing — empty → user mode
             roblosecurity,
           });
           if (upRes) {
@@ -23727,8 +23731,8 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               },
             };
           }
-        } else if (!roblosecurity || !groupId) {
-          logger.warn('No ROBLOX_SERVICE_COOKIE or ROBLOX_GROUP_ID — skipping T-Shirt upload');
+        } else if (!roblosecurity) {
+          logger.warn('No ROBLOX_SERVICE_COOKIE — skipping T-Shirt upload');
         }
         await finishStage('clothing_texture',
           tshirtFallbackPng ? 'completed' : 'failed',
