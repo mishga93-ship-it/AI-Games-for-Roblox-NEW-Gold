@@ -2567,7 +2567,8 @@ function addVehiclePhysics(args: {
   scene.push({ id: rootAttachmentId, className: 'Attachment', name: 'VehicleRootAttachment', parentId: rootId, properties: { CFrame: cf(0, 0, 0) } });
 
   if (profile.wheelCount > 0) {
-    const stableLandMode = profile.driveMode === 'land_wheels' || profile.driveMode === 'tracked';
+    const directWheelMode = profile.driveMode === 'land_wheels';
+    const stableLandMode = profile.driveMode === 'tracked';
     if (stableLandMode) {
       const colliderId = addPart(
         'StableGroundCollider',
@@ -2620,10 +2621,10 @@ function addVehiclePhysics(args: {
             properties: {
               Attachment0: ref(rootAtt),
               Attachment1: ref(wheelAtt),
-              ActuatorType: enumValue('ActuatorType', z < 0 && profile.driveMode === 'land_wheels' ? 'Servo' : 'Motor'),
+              ActuatorType: enumValue('ActuatorType', directWheelMode ? 'None' : (z < 0 && profile.driveMode === 'land_wheels' ? 'Servo' : 'Motor')),
               AngularVelocity: 0,
-              MotorMaxTorque: 52000,
-              ServoMaxTorque: 34000,
+              MotorMaxTorque: directWheelMode ? 0 : 52000,
+              ServoMaxTorque: directWheelMode ? 0 : 34000,
               AngularSpeed: 12,
               TargetAngle: 0,
               LimitsEnabled: false,
@@ -2798,11 +2799,14 @@ local function setNetworkOwnerForDriver(humanoid)
 \t\tplayer = Players:GetPlayerFromCharacter(humanoid.Parent)
 \tend
 \tcurrentDriver = player
+\tlocal keepServerOwned = DIRECT_WHEEL_MODE
 \tfor _, part in ipairs(assemblyParts) do
 \t\tpcall(function()
 \t\t\tif part:CanSetNetworkOwnership() then
-\t\t\t\tif player then
+\t\t\t\tif player and not keepServerOwned then
 \t\t\t\t\tpart:SetNetworkOwner(player)
+\t\t\t\telseif keepServerOwned then
+\t\t\t\t\tpart:SetNetworkOwner(nil)
 \t\t\t\telse
 \t\t\t\t\tpart:SetNetworkOwnershipAuto()
 \t\t\t\tend
@@ -2811,8 +2815,10 @@ local function setNetworkOwnerForDriver(humanoid)
 \tend
 \tpcall(function()
 \t\tif Root:CanSetNetworkOwnership() then
-\t\t\tif player then
+\t\t\tif player and not keepServerOwned then
 \t\t\t\tRoot:SetNetworkOwner(player)
+\t\t\telseif keepServerOwned then
+\t\t\t\tRoot:SetNetworkOwner(nil)
 \t\t\telse
 \t\t\t\tRoot:SetNetworkOwnershipAuto()
 \t\t\tend

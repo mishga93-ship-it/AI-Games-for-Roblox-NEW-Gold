@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Wheel Contact Hotfix] Машина больше не едет на невидимой плите (2026-05-19, сессия 364)
+- **Проблема**: свежий `-project-vehicle.rbxm` визуально утонул колёсами и не ехал, хотя после сессии 363 кузов/масштаб стали выше.
+- **Root cause**: сравнение с `ghbvth.rbxm` показало, что fresh export физически стоял не на колёсах, а на невидимом `StableGroundCollider` bottom=`0`/top=`0.36`. `Wheel1..4` были `CanCollide=false` и `Massless=true`, поэтому колёса были декорацией; широкая невидимая плита скользила/тёрлась о Baseplate и мешала движению. Дополнительно server-driven controller отдавал network ownership игроку, хотя сам задавал `AssemblyLinearVelocity`.
+- **Решение**: `apps/functions/src/robloxWorker.ts` — для `land_wheels` убран `StableGroundCollider`; `Wheel1..4` теперь `CanCollide=true` и `Massless=false`; wheel `HingeConstraint` в direct mode стартует с `ActuatorType=None`, `MotorMaxTorque=0`, `ServoMaxTorque=0`; `VehicleController` держит direct-wheel assembly server-owned через `SetNetworkOwner(nil)`, чтобы server heartbeat реально применял движение.
+- **Проверка**: `npm run build:functions` ✅; local Lune build `/private/tmp/vehicle-wheel-drive-fix.rbxm` ✅; inspect подтвердил `StableGroundCollider=null`, `Wheel1..4 bottom=0/top=2.7/CanCollide=true/Massless=false`, collidable bbox `7.271 x 2.7 x 10.044`, `DriveSeat` y=`3.341`, `HingeConstraint ActuatorType=None`/torque `0`, controller содержит `SetNetworkOwner(nil)`; `git diff --check -- apps/functions/src/robloxWorker.ts` ✅.
+- **Известные ограничения**: пример `ghbvth.rbxm` остаётся union/texture-heavy шаблоном; текущий Vehicles export — procedural blocky model. Старые скачанные `.rbxm` не меняются, нужен fresh export после deploy.
+
 ### ✅ [Vehicles Reference Scale Hotfix] Машина поднята, колёса исправлены, детали стали крупнее (2026-05-19, сессия 363)
 - **Проблема**: пользователь сравнил fresh `content-project-vehicle.rbxm` с примером `ghbvth.rbxm`: машина “утонула” и всё ещё выглядела бедно, несмотря на наличие многих named parts.
 - **Root cause**: бинарное сравнение показало, что проблема была в масштабе/высоте, а не в part count. Пример: visible bbox height `7.377`, wheel diameter `3`, `DriveSeat` y=`3.1`. Fresh generated: visible bbox height `4.361`, wheel diameter `1.8`, hidden `DriveSeat` y=`2.07`; к тому же cylinder wheels были повёрнуты так, что вертикальная высота колеса была только толщиной (`0.495`), а не диаметром.
