@@ -4342,6 +4342,12 @@ function permutedSizeForCylinder(
 // The visible fallback is made from typed primitive Parts (chair/table/lamp/etc.)
 // instead of the old torso.mesh placeholder. If an uploaded Roblox Model asset is
 // available, a runtime loader swaps in the AI mesh through InsertService.
+// Session 357 — bump this when the hybrid-skeleton / cylinder math changes.
+// Embedded into every furniture .rbxm as a BuilderVersion StringValue so we can
+// open a downloaded .rbxm and instantly verify which builder version produced it.
+// Used to diagnose stale Cloud Run warm instances serving old code.
+const FURNITURE_BUILDER_VERSION = 'hybrid-skeleton-v1-2026-05-19';
+
 function buildFurnitureModelManifest(
   args: {
     title: string;
@@ -4353,6 +4359,16 @@ function buildFurnitureModelManifest(
   },
   metadata: Record<string, unknown>,
 ): RobloxBuildManifest {
+  // Session 357 — higher-severity entry log (warn vs info) so Firebase logs sampling
+  // doesn't drop the single most diagnostic line. If this doesn't appear for a job,
+  // we know production is still serving stale code from a warm instance.
+  logger.warn('[buildFurnitureModelManifest] ENTRY', {
+    builderVersion: FURNITURE_BUILDER_VERSION,
+    title: args.title,
+    furnitureBuildMode: metadata.furnitureBuildMode,
+    furnitureResolvedBuildMode: metadata.furnitureResolvedBuildMode,
+    hasLLMScene: typeof metadata.furnitureLLMScene === 'string' && (metadata.furnitureLLMScene as string).length > 0,
+  });
   // Session 346 diag — confirm which mesh-related fields reached the builder.
   logger.info('[buildFurnitureModelManifest] entry', {
     title: args.title,
@@ -4520,6 +4536,16 @@ function buildFurnitureModelManifest(
       className: 'StringValue',
       name: 'FurnitureBuildMode',
       properties: { Value: buildMode },
+    },
+    {
+      // Session 357 — forensic marker. Open the .rbxm in Studio (or read the
+      // binary) and look for this StringValue: it tells you which builder
+      // version assembled the model. Mismatch with the local FURNITURE_BUILDER_VERSION
+      // constant means production is serving stale code.
+      id: uuidv4(),
+      className: 'StringValue',
+      name: 'BuilderVersion',
+      properties: { Value: FURNITURE_BUILDER_VERSION },
     },
   ];
 
@@ -4702,7 +4728,10 @@ function buildFurnitureModelManifest(
       case 'lamp': {
         pushFallbackPart('LampBase', [w * 0.85, 0.18, d * 0.85], [0, 0.09, 0], accentColor3, 'Metal', { shape: 'Cylinder' });
         pushFallbackPart('LampPole', [0.16, h * 0.70, 0.16], [0, h * 0.38, 0], accentColor3, 'Metal', { shape: 'Cylinder' });
-        skeletonLightParentId = pushFallbackPart('LampShade', [w, h * 0.22, d], [0, h * 0.78, 0], primaryColor3, 'SmoothPlastic');
+        // Session 357 — shade as Cylinder (lying flat with axis = world Y) gives a
+        // real lamp-shade look; the previous Block looked like a square box on top.
+        // pickCylinderAxis picks Y because X≈Z and Y is the thin axis.
+        skeletonLightParentId = pushFallbackPart('LampShade', [w * 0.92, h * 0.24, d * 0.92], [0, h * 0.78, 0], primaryColor3, 'SmoothPlastic', { shape: 'Cylinder' });
         break;
       }
       case 'shelf': {
