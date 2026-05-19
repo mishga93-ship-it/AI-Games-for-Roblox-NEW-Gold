@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Full Body Visual Pass] Машина получила читаемый кузов, кабину и крупный руль (2026-05-19, сессия 365)
+- **Проблема**: свежий `content--vehicle.rbxm` после фикса физики всё ещё выглядел как открытая гоночная рама: пользователь не видел полноценный кузов, руль и салон; генерация казалась моментальной заготовкой.
+- **Root cause**: fresh RBXM уже содержал named parts (`Dashboard`, `SteeringWheel`, side panels), но `SteeringWheel` был всего `0.34` stud, а основная форма строилась вокруг узкого `CarCenterTunnel` и тонких side panels. В chase-camera это читалось как шасси без кузова.
+- **Решение**: `apps/functions/src/robloxWorker.ts` — car visual shell усилен крупными body parts: `CarFullBodyTub`, door slabs, shoulder rails, front/rear clip, rear engine cover с vents, window frames, увеличенные fender blocks/arches. Салон получил larger dashboard, touchscreen/gauge pods, steering column и руль `0.86` stud с rim/spoke parts.
+- **Проверка**: `npm run build:functions` ✅; local manifest/RBXM `/private/tmp/vehicle-body-shell-v2.rbxm` ✅; inspect подтвердил `116` `Part`, новые ключевые части без missing, `SteeringWheel` `0.1 x 0.86 x 0.86`, `Wheel1..4` bottom=`0`/top=`2.7`/`CanCollide=true`/`Massless=false`, `StableGroundCollider` отсутствует; `git diff --check -- apps/functions/src/robloxWorker.ts` ✅.
+- **Известные ограничения**: это всё ещё procedural blocky `.rbxm`, не union/texture-heavy marketplace car. Уже скачанные `.rbxm` не меняются; нужен fresh Vehicles export после production deploy.
+
 ### ✅ [Vehicles Wheel Contact Hotfix] Машина больше не едет на невидимой плите (2026-05-19, сессия 364)
 - **Проблема**: свежий `-project-vehicle.rbxm` визуально утонул колёсами и не ехал, хотя после сессии 363 кузов/масштаб стали выше.
 - **Root cause**: сравнение с `ghbvth.rbxm` показало, что fresh export физически стоял не на колёсах, а на невидимом `StableGroundCollider` bottom=`0`/top=`0.36`. `Wheel1..4` были `CanCollide=false` и `Massless=true`, поэтому колёса были декорацией; широкая невидимая плита скользила/тёрлась о Baseplate и мешала движению. Дополнительно server-driven controller отдавал network ownership игроку, хотя сам задавал `AssemblyLinearVelocity`.
