@@ -23,6 +23,7 @@
 - **Root cause**: fresh RBXM уже содержал named parts (`Dashboard`, `SteeringWheel`, side panels), но `SteeringWheel` был всего `0.34` stud, а основная форма строилась вокруг узкого `CarCenterTunnel` и тонких side panels. В chase-camera это читалось как шасси без кузова.
 - **Решение**: `apps/functions/src/robloxWorker.ts` — car visual shell усилен крупными body parts: `CarFullBodyTub`, door slabs, shoulder rails, front/rear clip, rear engine cover с vents, window frames, увеличенные fender blocks/arches. Салон получил larger dashboard, touchscreen/gauge pods, steering column и руль `0.86` stud с rim/spoke parts.
 - **Проверка**: `npm run build:functions` ✅; local manifest/RBXM `/private/tmp/vehicle-body-shell-v2.rbxm` ✅; inspect подтвердил `116` `Part`, новые ключевые части без missing, `SteeringWheel` `0.1 x 0.86 x 0.86`, `Wheel1..4` bottom=`0`/top=`2.7`/`CanCollide=true`/`Massless=false`, `StableGroundCollider` отсутствует; `git diff --check -- apps/functions/src/robloxWorker.ts` ✅.
+- **Deploy**: production `api` выведен на `api-00924-nif`, `traffic=100%`, `/api/health` ✅; live source zip содержит маркеры `CarFullBodyTub`, `CarRearEngineCover`, `SteeringWheelTopRim`.
 - **Известные ограничения**: это всё ещё procedural blocky `.rbxm`, не union/texture-heavy marketplace car. Уже скачанные `.rbxm` не меняются; нужен fresh Vehicles export после production deploy.
 
 ### ✅ [Vehicles Wheel Contact Hotfix] Машина больше не едет на невидимой плите (2026-05-19, сессия 364)
