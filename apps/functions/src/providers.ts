@@ -1828,7 +1828,41 @@ function classifyPetByRegex(prompt: string, requestedSpecies?: string): PetClass
       stage2: { prompt: stage2Prompt, visualNotes: 'adult form, original prompt' },
       stage3: { prompt: stage3Prompt, visualNotes: `legendary form with ${element.toLowerCase()} aura` },
     },
-  };
+    // sentinel — never read, just satisfies the spread below
+  } as PetClassification;
+}
+
+/**
+ * Track 3 Phase 2 — Parse JSON returned by an LLM. Handles common malformations
+ * we've seen across Anthropic/Gemini/OpenAI in this codebase:
+ *   • markdown code-fence wrapping (```json ... ```)
+ *   • trailing commas before } or ]
+ *   • smart/curly quotes from LLM auto-formatting
+ *   • stray prose before/after the JSON object
+ *
+ * Returns null when even the lenient pass fails (caller decides on retry or
+ * fallback). The function never throws.
+ */
+export function parseLooseJSON(text: string): unknown | null {
+  if (!text || typeof text !== 'string') return null;
+  // Strip code-fence and surrounding whitespace.
+  let cleaned = text
+    .trim()
+    .replace(/^```(?:json|JSON)?\s*\n?/, '')
+    .replace(/\n?```\s*$/, '')
+    .trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  cleaned = cleaned.slice(start, end + 1);
+  // First try as-is.
+  try { return JSON.parse(cleaned); } catch { /* fall through to repair */ }
+  // Repair pass: convert smart quotes, then strip trailing commas.
+  const repaired = cleaned
+    .replace(/[“”″]/g, '"')
+    .replace(/[‘’′]/g, "'")
+    .replace(/,(\s*[}\]])/g, '$1');
+  try { return JSON.parse(repaired); } catch { return null; }
 }
 
 /**
@@ -1868,10 +1902,8 @@ export async function classifyPet(
   try {
     const result = await runChatProvider('anthropic', `${systemPrompt}\n\n${userPrompt}`, undefined, { timeoutMs: 20000 });
     const text = result.text?.trim() ?? '';
-    const jsonStart = text.indexOf('{');
-    const jsonEnd = text.lastIndexOf('}');
-    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('classifyPet: no JSON object in LLM response');
-    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as Partial<PetClassification>;
+    const parsed = parseLooseJSON(text) as Partial<PetClassification> | null;
+    if (!parsed) throw new Error('classifyPet: no parseable JSON object in LLM response');
     if (!parsed.speciesType || !parsed.skeletonType || !parsed.rarity || !parsed.element || !parsed.evolutionArc) {
       throw new Error('classifyPet: LLM response missing required fields');
     }
@@ -2045,10 +2077,9 @@ export async function generateBlockyPetSpec(args: {
   const attempt = async (): Promise<unknown> => {
     const result = await runChatProvider('anthropic', systemAndUser, undefined, { timeoutMs: 30000 });
     const text = result.text?.trim() ?? '';
-    const jsonStart = text.indexOf('{');
-    const jsonEnd = text.lastIndexOf('}');
-    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('Blocky spec response had no JSON object');
-    return JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+    const parsed = parseLooseJSON(text);
+    if (!parsed) throw new Error('Blocky spec response had no parseable JSON object');
+    return parsed;
   };
 
   try {
@@ -2060,12 +2091,11 @@ export async function generateBlockyPetSpec(args: {
   } catch (err) {
     logger.warn('generateBlockyPetSpec primary attempt failed, retrying with stricter retry hint', { error: (err as Error).message });
     try {
-      const retryResult = await runChatProvider('anthropic', `${systemAndUser}\n\nPREVIOUS ATTEMPT WAS INVALID. Emit ONLY the JSON object, no text before or after. MUST include parts[] (10-18 entries) AND joints[] (at least Root joint to HumanoidRootPart). Exactly ONE part has role="primary_part".`, undefined, { timeoutMs: 30000 });
+      const retryResult = await runChatProvider('anthropic', `${systemAndUser}\n\nPREVIOUS ATTEMPT WAS INVALID. Emit ONLY the JSON object, no text before or after, no markdown code fences. MUST include parts[] (10-18 entries) AND joints[] (at least Root joint to HumanoidRootPart). Exactly ONE part has role="primary_part". Use straight double quotes (") for all strings. No trailing commas.`, undefined, { timeoutMs: 30000 });
       const text = retryResult.text?.trim() ?? '';
-      const jsonStart = text.indexOf('{');
-      const jsonEnd = text.lastIndexOf('}');
-      if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        const v = validateBlockyPetSpec(JSON.parse(text.slice(jsonStart, jsonEnd + 1)));
+      const parsed = parseLooseJSON(text);
+      if (parsed) {
+        const v = validateBlockyPetSpec(parsed);
         if (!v.critical) return v.fixed;
       }
     } catch (retryErr) {
@@ -2091,48 +2121,103 @@ function fallbackBlockyPetSpec(classification: PetClassification): BlockyPetSpec
     Tech:    { primary: 'Medium stone grey', secondary: 'Cyan',       accent: 'Really black', eye: 'Bright red'    },
     Neutral: { primary: 'Medium stone grey', secondary: 'White',      accent: 'Really black', eye: 'Really black'  },
   };
-  return {
-    name: classification.baseName || 'Companion',
-    rig: classification.skeletonType === 'biped' || classification.skeletonType === 'mechanical_biped'
-      ? 'Biped'
-      : classification.skeletonType === 'serpentine'
-        ? 'Serpentine'
-        : classification.skeletonType === 'aquatic'
-          ? 'Aquatic'
-          : classification.skeletonType === 'winged_quadruped'
-            ? 'Winged'
-            : 'Quadruped',
-    colors: elementPalette[classification.element],
-    material: classification.element === 'Fire' || classification.element === 'Light' ? 'Neon' : 'SmoothPlastic',
-    height: 2.8,
-    parts: [
-      { name: 'Body',  shape: 'Block', size: [1.8, 1.3, 2.6], position: [0, 1.1, 0],     color: 'primary',   role: 'primary_part' },
-      { name: 'Head',  shape: 'Block', size: [1.2, 1.1, 1.3], position: [0, 1.6, -1.7],  color: 'primary',   role: 'head' },
-      { name: 'Snout', shape: 'Block', size: [0.7, 0.5, 0.7], position: [0, 1.45, -2.3], color: 'secondary', role: 'snout' },
-      { name: 'Nose',  shape: 'Ball',  size: [0.25, 0.25, 0.25], position: [0, 1.55, -2.55], color: 'accent', role: 'nose' },
-      { name: 'EyeL',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [-0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
-      { name: 'EyeR',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
-      { name: 'EarL',  shape: 'Wedge', size: [0.45, 0.7, 0.45], position: [-0.40, 2.25, -1.45], rotation: [0,0,-12], color: 'primary', role: 'ear' },
-      { name: 'EarR',  shape: 'Wedge', size: [0.45, 0.7, 0.45], position: [0.40, 2.25, -1.45],  rotation: [0,0, 12], color: 'primary', role: 'ear' },
-      { name: 'Tail',  shape: 'Cylinder', size: [0.4, 1.6, 0.4], position: [0, 1.4, 1.8], rotation: [35,0,0], color: 'primary', role: 'tail' },
-      { name: 'LegFL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, -1.0], color: 'primary', role: 'leg_front_left' },
-      { name: 'LegFR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, -1.0],  color: 'primary', role: 'leg_front_right' },
-      { name: 'LegBL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, 0.9],  color: 'primary', role: 'leg_back_left' },
-      { name: 'LegBR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, 0.9],   color: 'primary', role: 'leg_back_right' },
-    ],
-    joints: [
-      { name: 'Root', part0: 'HumanoidRootPart', part1: 'Body' },
-      { name: 'Neck', part0: 'Body', part1: 'Head' },
-      { name: 'SnoutJoint', part0: 'Head', part1: 'Snout' },
-      { name: 'NoseJoint',  part0: 'Snout', part1: 'Nose' },
+  const colors = elementPalette[classification.element];
+  const material: BlockyPetSpec['material'] =
+    classification.element === 'Fire' || classification.element === 'Light' ? 'Neon' : 'SmoothPlastic';
+  const baseName = classification.baseName || 'Companion';
+  const rig: BlockyPetSpec['rig'] =
+    classification.skeletonType === 'biped' || classification.skeletonType === 'mechanical_biped' ? 'Biped'
+    : classification.skeletonType === 'serpentine' ? 'Serpentine'
+    : classification.skeletonType === 'aquatic' ? 'Aquatic'
+    : classification.skeletonType === 'winged_quadruped' ? 'Winged'
+    : 'Quadruped';
+
+  const isDragon = classification.speciesType === 'dragon' || rig === 'Winged';
+  const hasWings = rig === 'Winged' || classification.isFlying;
+
+  // Base quadruped (works for dog/cat/wolf/fox/dragon/unicorn body).
+  const parts: BlockyPetSpec['parts'] = [
+    { name: 'Body',  shape: 'Block', size: [1.8, 1.3, 2.6], position: [0, 1.1, 0],     color: 'primary',   role: 'primary_part' },
+    { name: 'Head',  shape: 'Block', size: [1.2, 1.1, 1.3], position: [0, 1.6, -1.7],  color: 'primary',   role: 'head' },
+    { name: 'Snout', shape: 'Block', size: [0.7, 0.5, 0.7], position: [0, 1.45, -2.3], color: 'secondary', role: 'snout' },
+    { name: 'Nose',  shape: 'Ball',  size: [0.25, 0.25, 0.25], position: [0, 1.55, -2.55], color: 'accent', role: 'nose' },
+    { name: 'EyeL',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [-0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
+    { name: 'EyeR',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
+    { name: 'Tail',  shape: 'Cylinder', size: [0.4, 1.6, 0.4], position: [0, 1.4, 1.8], rotation: [35,0,0], color: 'primary', role: 'tail' },
+    { name: 'LegFL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, -1.0], color: 'primary', role: 'leg_front_left' },
+    { name: 'LegFR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, -1.0],  color: 'primary', role: 'leg_front_right' },
+    { name: 'LegBL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, 0.9],  color: 'primary', role: 'leg_back_left' },
+    { name: 'LegBR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, 0.9],   color: 'primary', role: 'leg_back_right' },
+  ];
+
+  const joints: BlockyPetSpec['joints'] = [
+    { name: 'Root', part0: 'HumanoidRootPart', part1: 'Body' },
+    { name: 'Neck', part0: 'Body', part1: 'Head' },
+    { name: 'SnoutJoint', part0: 'Head', part1: 'Snout' },
+    { name: 'NoseJoint',  part0: 'Snout', part1: 'Nose' },
+    { name: 'LeftEyeJoint',  part0: 'Head', part1: 'EyeL' },
+    { name: 'RightEyeJoint', part0: 'Head', part1: 'EyeR' },
+    { name: 'TailJoint', part0: 'Body', part1: 'Tail' },
+    { name: 'LeftFrontLegJoint',  part0: 'Body', part1: 'LegFL' },
+    { name: 'RightFrontLegJoint', part0: 'Body', part1: 'LegFR' },
+    { name: 'LeftBackLegJoint',   part0: 'Body', part1: 'LegBL' },
+    { name: 'RightBackLegJoint',  part0: 'Body', part1: 'LegBR' },
+  ];
+
+  // Species-specific add-ons.
+  if (isDragon) {
+    // Dragons get horns on the head (Wedges pointing up+back) and a spike row
+    // along the back. Eyes are slightly larger and meaner. No floppy ears.
+    parts.push(
+      { name: 'HornL', shape: 'Wedge', size: [0.30, 0.7, 0.30], position: [-0.35, 2.30, -1.55], rotation: [-15, 0, -8], color: 'accent', role: 'horn' },
+      { name: 'HornR', shape: 'Wedge', size: [0.30, 0.7, 0.30], position: [0.35, 2.30, -1.55],  rotation: [-15, 0,  8], color: 'accent', role: 'horn' },
+      { name: 'Spike1', shape: 'Wedge', size: [0.30, 0.45, 0.45], position: [0, 1.85, -0.6], color: 'accent', role: 'spike' },
+      { name: 'Spike2', shape: 'Wedge', size: [0.30, 0.5, 0.45], position: [0, 1.90, 0.0], color: 'accent', role: 'spike' },
+      { name: 'Spike3', shape: 'Wedge', size: [0.30, 0.45, 0.45], position: [0, 1.85, 0.6], color: 'accent', role: 'spike' },
+      { name: 'TailTip', shape: 'Wedge', size: [0.40, 0.55, 0.40], position: [0, 2.0, 2.6], rotation: [35, 0, 0], color: 'accent', role: 'spike' },
+    );
+    joints.push(
+      { name: 'LeftHornJoint',  part0: 'Head', part1: 'HornL' },
+      { name: 'RightHornJoint', part0: 'Head', part1: 'HornR' },
+      { name: 'Spike1Joint', part0: 'Body', part1: 'Spike1' },
+      { name: 'Spike2Joint', part0: 'Body', part1: 'Spike2' },
+      { name: 'Spike3Joint', part0: 'Body', part1: 'Spike3' },
+      { name: 'TailTipJoint', part0: 'Tail', part1: 'TailTip' },
+    );
+  } else {
+    // Non-dragon quadrupeds get floppy ears (visually communicates dog/cat/fox).
+    parts.push(
+      { name: 'EarL', shape: 'Wedge', size: [0.45, 0.7, 0.45], position: [-0.40, 2.25, -1.45], rotation: [0, 0, -12], color: 'primary', role: 'ear' },
+      { name: 'EarR', shape: 'Wedge', size: [0.45, 0.7, 0.45], position: [0.40, 2.25, -1.45],  rotation: [0, 0,  12], color: 'primary', role: 'ear' },
+    );
+    joints.push(
       { name: 'LeftEarJoint',  part0: 'Head', part1: 'EarL' },
       { name: 'RightEarJoint', part0: 'Head', part1: 'EarR' },
-      { name: 'TailJoint', part0: 'Body', part1: 'Tail' },
-      { name: 'LeftFrontLegJoint',  part0: 'Body', part1: 'LegFL' },
-      { name: 'RightFrontLegJoint', part0: 'Body', part1: 'LegFR' },
-      { name: 'LeftBackLegJoint',   part0: 'Body', part1: 'LegBL' },
-      { name: 'RightBackLegJoint',  part0: 'Body', part1: 'LegBR' },
-    ],
+    );
+  }
+
+  // Wings — for winged_quadruped OR explicitly flying pets. Large Wedge spans
+  // out and back from the upper body. accent color so they read against the
+  // primary body colour.
+  if (hasWings) {
+    parts.push(
+      { name: 'WingL', shape: 'Wedge', size: [1.6, 0.20, 1.4], position: [-1.10, 2.00, 0.4], rotation: [-15, 25, -35], color: 'accent', role: 'wing_left' },
+      { name: 'WingR', shape: 'Wedge', size: [1.6, 0.20, 1.4], position: [1.10, 2.00, 0.4],  rotation: [-15, -25,  35], color: 'accent', role: 'wing_right' },
+    );
+    joints.push(
+      { name: 'LeftWingJoint',  part0: 'Body', part1: 'WingL' },
+      { name: 'RightWingJoint', part0: 'Body', part1: 'WingR' },
+    );
+  }
+
+  return {
+    name: baseName,
+    rig,
+    colors,
+    material,
+    height: hasWings ? 3.2 : 2.8,
+    parts,
+    joints,
     decals: [],
   };
 }
@@ -2163,10 +2248,9 @@ export async function generateBlockyPetAnimations(args: {
   try {
     const result = await runChatProvider('anthropic', `${animPrompt}\n\n${userPrompt}`, undefined, { timeoutMs: 30000 });
     const text = result.text?.trim() ?? '';
-    const jsonStart = text.indexOf('{');
-    const jsonEnd = text.lastIndexOf('}');
-    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('Blocky anim response had no JSON object');
-    return JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
+    const parsed = parseLooseJSON(text);
+    if (!parsed) throw new Error('Blocky anim response had no parseable JSON object');
+    return parsed as Record<string, unknown>;
   } catch (err) {
     logger.warn('generateBlockyPetAnimations failed, returning empty tracks', { error: (err as Error).message });
     return { name: 'Pet animations', rig: 'Motor6D', tracks: [] };
