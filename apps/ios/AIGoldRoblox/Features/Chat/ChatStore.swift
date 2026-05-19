@@ -5104,6 +5104,24 @@ final class ChatStore: ObservableObject {
             )
         }
 
+        if isVehicleProject,
+           nativeRobloxArtifact == nil,
+           job.status == "completed" || job.status == "partial" {
+            let message = "Vehicle export is incomplete: this job produced only a preview image and no Roblox .rbxm model. Regenerate the vehicle after the latest backend build so the result includes DriveSeat physics, passengers, sounds, VFX, and the Studio-ready .rbxm file."
+            return PreviewPayload(
+                title: draft.title.isEmpty ? "Vehicle RBXM Missing" : "\(draft.title) Vehicle",
+                artifactType: .unavailable(message),
+                exportFileType: "rbxm",
+                artifactIds: [],
+                shareDescription: shareDescription,
+                downloadURL: nil,
+                glbDownloadURL: nil,
+                rbxmDownloadURL: nil,
+                fbxDownloadURL: nil,
+                notes: [message]
+            )
+        }
+
         if isVehicleProject, let nativeRobloxArtifact {
             let vehicleType = job.metadata?.vehicleType ?? draft.vehicleType ?? "vehicle"
             let driveMode = job.metadata?.driveMode ?? "DriveSeat"
@@ -6591,7 +6609,10 @@ final class ChatStore: ObservableObject {
         }
         if let pm = draft.petMode {
             metadata["petMode"] = pm
-            if pm == "evolution_3d" {
+            // Track 3 — both blocky (Phase 2) and evolution_3d (Phase 1) route
+            // through the pet_3d job kind; backend processGenerationJob dispatches
+            // to processBlockyPetJob vs processPet3DJob based on metadata.petMode.
+            if pm == "blocky" || pm == "evolution_3d" {
                 metadata["requestedKind"] = "pet_3d"
                 if metadata["contentCategory"] == nil { metadata["contentCategory"] = "pet" }
             }
@@ -6713,7 +6734,10 @@ final class ChatStore: ObservableObject {
         }
         if let pm = draft.petMode {
             metadata["petMode"] = pm
-            if pm == "evolution_3d" {
+            // Track 3 — both blocky (Phase 2) and evolution_3d (Phase 1) route
+            // through the pet_3d job kind; backend processGenerationJob dispatches
+            // to processBlockyPetJob vs processPet3DJob based on metadata.petMode.
+            if pm == "blocky" || pm == "evolution_3d" {
                 metadata["requestedKind"] = "pet_3d"
                 if metadata["contentCategory"] == nil { metadata["contentCategory"] = "pet" }
             }
