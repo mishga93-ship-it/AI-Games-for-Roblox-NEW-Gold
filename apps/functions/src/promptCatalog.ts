@@ -4988,9 +4988,19 @@ function buildInterviewStateInstruction(
   const clothingTypeFromMeta = typeof (metadata as Record<string, unknown> | undefined)?.clothingType === 'string'
     ? String((metadata as Record<string, unknown>).clothingType)
     : '';
-  const clothingHint = (kind === 'clothing' && clothingTypeFromMeta)
-    ? ` USER PRE-PICKED clothingType="${clothingTypeFromMeta}" via the iOS welcome picker — SKIP the 2D/3D mode question (Turn 1) entirely. ${clothingTypeFromMeta === 't_shirt' ? 'Type is a Classic T-Shirt (front-only 512x512 graphic).' : clothingTypeFromMeta === 'classic_shirt' ? 'Type is a Classic Shirt (585x559 wrap template).' : clothingTypeFromMeta === 'classic_pants' ? 'Type is Classic Pants (585x559 wrap template).' : clothingTypeFromMeta === 'classic_outfit' ? 'Type is a full Classic Outfit (Shirt + Pants 585x559 wrap templates).' : ''} Go straight to asking about the DESIGN: print, colors, vibe.`
+  const clothingModeFromMeta = typeof (metadata as Record<string, unknown> | undefined)?.clothingMode === 'string'
+    ? String((metadata as Record<string, unknown>).clothingMode)
     : '';
+  // 2026-05-19 UX: SKIP Turn 1 (2D/3D picker) only when clothingMode is ALREADY
+  // locked in. For Shirt/Pants/Outfit/Jacket/Sweater/Dress, mode is unset — we
+  // want the LLM to defer the "2D Classic vs 3D Layered" question to the FINAL
+  // generation turn (matching the pattern of other content chats like weapons).
+  const modeLocked = clothingTypeFromMeta === 't_shirt' || clothingModeFromMeta === 'classic_2d' || clothingModeFromMeta === 'layered_3d';
+  const clothingHint = (kind === 'clothing' && clothingTypeFromMeta && modeLocked)
+    ? ` USER PRE-PICKED clothingType="${clothingTypeFromMeta}" with mode="${clothingModeFromMeta || 'classic_2d'}" — SKIP the 2D/3D mode question entirely. ${clothingTypeFromMeta === 't_shirt' ? 'Type is a Classic T-Shirt (front-only 512x512 logo/sticker, not a wrapping shirt).' : clothingTypeFromMeta === 'classic_shirt' ? 'Type is a Classic Shirt (585x559 wrap template).' : clothingTypeFromMeta === 'classic_pants' ? 'Type is Classic Pants (585x559 wrap template).' : clothingTypeFromMeta === 'classic_outfit' ? 'Type is a Classic Outfit (Shirt+Pants 585x559 wrap).' : clothingTypeFromMeta.startsWith('layered_') ? 'Type is a 3D Layered ' + clothingTypeFromMeta.slice(8) + ' (real 3D mesh).' : ''} Go straight to asking about the DESIGN: print, colors, vibe.`
+    : (kind === 'clothing' && clothingTypeFromMeta)
+      ? ` USER picked garment="${clothingTypeFromMeta}" but the 2D vs 3D mode is NOT yet decided. Run the design interview normally (fit/style/print/colors). At the FINAL turn (when presenting GDD summary), include these quickReplies INSTEAD of "Generate!": ["✨ Generate as 2D Classic", "🧥 Generate as 3D Layered", "Decide for me"]. Do not ask about mode mid-interview — only at the very end.`
+      : '';
   if (turn === 0) {
     return `INTERVIEW STATE: This is the FIRST turn (turn 0). Greet enthusiastically, acknowledge the idea, and ask exactly ONE first question about ${interviewFirstQuestionFocus(kind, metadata)}. ${interviewTurnFocus(kind, turn)} If quickReplies help, include at most 3 and make one "Decide for me".${clothingHint}`;
   }
