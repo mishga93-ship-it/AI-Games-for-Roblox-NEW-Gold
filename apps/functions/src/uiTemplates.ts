@@ -3615,14 +3615,28 @@ end
 -- -2.5 places a 2.5-stud-tall pet so its leg bottoms touch player feet.
 local FOLLOW_RADIUS = 5
 local ORBIT_SPEED = 0.25         -- revolutions per second
-local FLY_HEIGHT_OFFSET = 3
+local FLY_HEIGHT_OFFSET = 1      -- flying pets hover near player shoulder, not above head
 local STAND_HEIGHT_OFFSET = -2.5
 local LERP_ALPHA = 0.20          -- smoothing factor per Heartbeat
 local DEBUG = true               -- toggle to silence diagnostic prints
 
+-- Diagnostic snapshot of pet so we can tell from Output if it's actually
+-- visible (any part with Transparency=1 or BrickColor that's near scene
+-- background blends in). Lists every BasePart with its name, world position,
+-- size, transparency and Color3.
 print(string.format("[BlockyPetFollow] Script started for %s. HRP at %s. Waiting for player...",
     pet.Name,
     tostring(hrp.Position)))
+for _, desc in ipairs(pet:GetDescendants()) do
+    if desc:IsA("BasePart") then
+        print(string.format("  • %s pos=%s size=%s trans=%.2f color=%s",
+            desc.Name,
+            tostring(desc.Position),
+            tostring(desc.Size),
+            desc.Transparency,
+            tostring(desc.Color)))
+    end
+end
 
 local function followPositionFor(charHrp)
     local angle = tick() * ORBIT_SPEED * 2 * math.pi
