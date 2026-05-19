@@ -17045,6 +17045,31 @@ function validateFurnitureSceneGeometry(
     repairActions.push('Offset overlapping parts so each occupies a unique position.');
   }
 
+  // Session 353 — Cylinder cross-section sanity. The builder auto-rotates cylinders so
+  // the world axis with the two most-equal dims becomes the cylinder's long axis.
+  // If those two cross-section dims are very unequal (e.g. 0.3 × 2.0) the cylinder
+  // renders as a flat oval with the radius of the smaller dim — looks like a squashed
+  // disc, not a round pillar. Reject so the LLM can pick equal cross-section dims.
+  const ovalCylinders = scene.parts.filter((p) => {
+    if (p.shape !== 'Cylinder') return false;
+    const [sx, sy, sz] = p.size;
+    // For each candidate axis, the two OTHER dims should be roughly equal. Take the
+    // best candidate (the axis the builder will pick) and check whether its cross-
+    // section dims are within 30% of each other. Anything worse is a flat oval.
+    const candidates = [
+      { other: [sy, sz] },
+      { other: [sx, sz] },
+      { other: [sx, sy] },
+    ];
+    const ratios = candidates.map(({ other }) => Math.min(other[0], other[1]) / Math.max(other[0], other[1]));
+    const bestRatio = Math.max(...ratios);
+    return bestRatio < 0.7;
+  });
+  if (ovalCylinders.length > 0) {
+    issues.push(`${ovalCylinders.length} cylinder part(s) have very unequal cross-section dims — they'll render as flat ovals, not round pillars: ${ovalCylinders.slice(0, 3).map((p) => `${p.name}(${p.size.map((n) => n.toFixed(2)).join('×')})`).join(', ')}.`);
+    repairActions.push('For each Cylinder part, two of the three Size dims (the cross-section) must be within 30% of each other. E.g. a pole: [0.3, 2.8, 0.3] (X≈Z); a flat disc: [1.2, 0.18, 1.2] (X≈Z).');
+  }
+
   // Helper: check that "support" parts (legs) span the X/Z extents of the prop so the
   // model doesn't end up as a single stick. We require leg X/Z spread ≥ 60% of the
   // bounding box on the relevant axis.
@@ -23216,8 +23241,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // Session 207: weapons / items / furniture render as a prop (no character holding it).
       // The 'prop' preview style explicitly tells the image model "no people or characters",
       // matching what the user expects for a standalone weapon/item/furniture concept.
-      // NPCs / characters / clothing keep 'character' style so the asset is shown on a body.
-      const conceptContext: 'character' | 'prop' = (isWeapon || isVehicle || isItem || isFurniture) ? 'prop' : 'character';
+      // NPCs / characters keep 'character' style so the asset is shown on a body.
+      // Session 001 (Track 2 fix, 2026-05-19): layered_3d clothing also renders as
+      // 'prop' (garment-only, no mannequin) — Meshy v6 multi-image-to-3d needs clean
+      // garment silhouette, not a full Roblox avatar wearing the jacket. Without
+      // this, the concept generator produces a Mishu-style mannequin with the
+      // jacket on, and Meshy reconstructs the whole avatar mesh.
+      const conceptContext: 'character' | 'prop' = (isWeapon || isVehicle || isItem || isFurniture || isLayeredClothing) ? 'prop' : 'character';
       logger.info('concept_image: generating', { jobId, isWeapon, isVehicle, isItem, isFurniture, conceptContext, prompt: alignedConceptPrompt.slice(0, 200), previewStyle });
       try {
         conceptPreviewUrl = await generatePreviewTexture(alignedConceptPrompt, previewStyle, conceptContext);
@@ -23777,24 +23807,72 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       const use3DFromImage = !!conceptPreviewUrl;
 
       await beginStage('mesh_3d', `Starting ${meshProviderLabel} clothing mesh generation`);
-      const meshResult = await executeProvider({
-        provider: job.provider,
-        operation: use3DFromImage ? 'image-to-3d' : 'text-to-3d',
-        prompt: `3D clothing mesh: ${job.prompt}. Generate ONLY the clothing item as a standalone mesh, not the full character body. The mesh should be a wearable garment.`,
-        input: {
-          prompt: `3D clothing mesh: ${job.prompt}`,
-          conceptImageUrl: conceptPreviewUrl,
-          ...(job.metadata ?? {}),
-        },
-        kind: job.kind,
-      });
-      const meshArtifacts = await build3DModelArtifacts(job, meshResult);
-      currentJob.artifacts = [...currentJob.artifacts, ...meshArtifacts];
-      const rawMeshArtifact = meshArtifacts.find((a) => a.artifactRole === 'mesh_raw');
-      if (!rawMeshArtifact || !(rawMeshArtifact.downloadUrl ?? rawMeshArtifact.url)) {
-        throw new Error(`${meshProviderLabel} did not return a usable clothing mesh`);
+      // Session 001 (Track 2 fix, 2026-05-19): meshResult fetch is now wrapped in
+      // try/catch so a Meshy v6 failure (safety filter, timeout, no output URL)
+      // doesn't kill the entire pipeline. Instead we mark mesh_3d as failed with
+      // an actionable error message and return partial. Without this guard the
+      // throw escaped the layered_clothing block and ended Phase 2 with a vague
+      // "character_3d pipeline stage error" — iOS UI got stuck at "Processing".
+      let rawMeshArtifact: GenerationArtifact | undefined;
+      try {
+        const meshResult = await executeProvider({
+          provider: job.provider,
+          operation: use3DFromImage ? 'image-to-3d' : 'text-to-3d',
+          prompt: `3D clothing mesh: ${job.prompt}. Generate ONLY the clothing item as a standalone mesh, not the full character body. The mesh should be a wearable garment.`,
+          input: {
+            prompt: `3D clothing mesh: ${job.prompt}`,
+            conceptImageUrl: conceptPreviewUrl,
+            ...(job.metadata ?? {}),
+          },
+          kind: job.kind,
+        });
+        logger.info('Layered clothing mesh result', {
+          jobId,
+          hasMeshUrl: !!meshResult?.outputUrl,
+          provider: job.provider,
+          meshKeys: meshResult ? Object.keys(meshResult).slice(0, 8) : [],
+        });
+        const meshArtifacts = await build3DModelArtifacts(job, meshResult);
+        currentJob.artifacts = [...currentJob.artifacts, ...meshArtifacts];
+        rawMeshArtifact = meshArtifacts.find((a) => a.artifactRole === 'mesh_raw');
+        if (!rawMeshArtifact || !(rawMeshArtifact.downloadUrl ?? rawMeshArtifact.url)) {
+          await finishStage('mesh_3d', 'failed', meshArtifacts.map((a) => a.id), [
+            `${meshProviderLabel} did not return a usable garment mesh — likely safety-filter rejection of the concept image or provider timeout. Try a simpler prompt (e.g. "red leather jacket" instead of stylized themes) or regenerate.`,
+          ]);
+          return {
+            ...currentJob,
+            status: 'partial',
+            updatedAt: new Date().toISOString(),
+            errorMessage: `${meshProviderLabel} couldn't produce a 3D mesh for this garment. Try a simpler prompt or regenerate.`,
+            resultText: 'Concept image is ready, but 3D mesh generation failed. You can still use the concept image as reference or retry.',
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              previewImageUrl: conceptPreviewUrl,
+              isLayeredClothing: true,
+              meshGenerationFailed: true,
+            },
+          };
+        }
+        await finishStage('mesh_3d', 'completed', meshArtifacts.map((a) => a.id), ['Clothing mesh generated']);
+      } catch (meshError) {
+        logger.warn('Layered clothing mesh generation threw', { jobId, error: errorMessage(meshError) });
+        await finishStage('mesh_3d', 'failed', [], [
+          `${meshProviderLabel} mesh generation failed: ${errorMessage(meshError)}`,
+        ], errorMessage(meshError));
+        return {
+          ...currentJob,
+          status: 'partial',
+          updatedAt: new Date().toISOString(),
+          errorMessage: `${meshProviderLabel} couldn't produce a 3D mesh: ${errorMessage(meshError)}`,
+          resultText: 'Concept image is ready, but 3D mesh generation failed. You can still use the concept image as reference or retry.',
+          metadata: {
+            ...(currentJob.metadata ?? {}),
+            previewImageUrl: conceptPreviewUrl,
+            isLayeredClothing: true,
+            meshGenerationFailed: true,
+          },
+        };
       }
-      await finishStage('mesh_3d', 'completed', meshArtifacts.map((a) => a.id), ['Clothing mesh generated']);
 
       // Track 2 Phase 3 — convert the .glb to .fbx so Roblox Studio's 3D Importer
       // + Accessory Fitting Tool can ingest it. AFT works with both formats but
@@ -24062,21 +24140,36 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       await beginStage('quality_review', 'Comparing the assembled scene against your brief');
       const review = sceneRun.review;
       if (review) {
+        // Session 353 — honest final gate. If after 3 attempts the reviewer still
+        // rejects the best scene, surface an unmistakable "needs retry" message in
+        // metadata. iOS already reads `qualityReviewMessage`; appending the explicit
+        // call-to-action means the user is told upfront that the prop is sub-spec
+        // instead of opening a broken .rbxm and assuming the tool is buggy.
+        const isCatastrophic = review.status === 'rejected' && review.score < 40;
+        const finalUserMessage = (review.status === 'rejected')
+          ? `${review.userMessage} (Best of ${sceneRun.attempts.length} attempts — please tap Generate again or refine the brief.)`
+          : review.userMessage;
         currentJob = {
           ...currentJob,
           metadata: {
             ...(currentJob.metadata ?? {}),
             qualityReviewStatus: review.status,
             qualityReviewScore: review.score,
-            qualityReviewMessage: review.userMessage,
+            qualityReviewMessage: finalUserMessage,
             qualityReviewReasons: review.reasons,
             qualityRepairActions: review.repairActions,
+            furnitureFinalQualityVerdict: review.status,
+            furnitureNeedsUserRetry: isCatastrophic,
           },
         };
         await finishStage('quality_review', 'completed', [], [
-          `Score ${review.score}/100 — ${review.userMessage}`,
+          `Score ${review.score}/100 — ${finalUserMessage}`,
           ...review.reasons.slice(0, 4),
-          ...(review.status === 'rejected' ? ['Shipped best attempt; consider rerunning with adjusted brief.'] : []),
+          ...(review.status === 'rejected'
+            ? [isCatastrophic
+                ? `Catastrophic quality failure (score ${review.score}/100). The .rbxm was still emitted so you can inspect it, but tap Generate again to retry.`
+                : 'Shipped best attempt; consider rerunning with adjusted brief.']
+            : []),
         ]);
       } else {
         await finishStage('quality_review', 'skipped', [], ['No review available — scene generation failed.']);
