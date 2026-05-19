@@ -99,7 +99,19 @@ main
 
 `firebase deploy --only functions:api` **не заменяет** `git commit`. Любой deploy должен быть в паре с уже сделанным commit'ом тех же файлов.
 
-Порядок обязательный:
+**Канонический способ deploy в этом проекте — wrapper-скрипт**, который сам проверяет §0.6 + §0.7 на уровне shell:
+
+```bash
+bash scripts/safe-deploy-functions.sh
+```
+
+Скрипт блокирует deploy если:
+- Working tree содержит uncommitted правки в `apps/functions/src/` или `packages/shared/`.
+- Параллельный deploy финишировал меньше 3 минут назад (lock-файл `.firebase-deploy.lock`).
+
+Если есть основание обойти (емерженси): `FORCE_DEPLOY=1 bash scripts/safe-deploy-functions.sh` — но это записывается в changelog с обоснованием.
+
+**Если вызываешь `firebase deploy` напрямую (без wrapper'а)** — обязан соблюдать тот же порядок вручную:
 
 1. Правка файлов в `apps/functions/src/*` (или связанных пакетах).
 2. `npm run build --workspace apps/functions` ✅.
