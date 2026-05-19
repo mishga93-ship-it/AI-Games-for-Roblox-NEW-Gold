@@ -394,16 +394,17 @@ export function buildRobloxManifest(args: {
     return buildLayeredClothingManifest(args, metadata);
   }
 
+  // Track 3 Phase 2 (Blocky Pet) — MUST come BEFORE the pet_3d route below.
+  // When petMode==='blocky' or requestedKind==='pet_blocky', the manifest
+  // builds primitive Roblox Parts + Motor6D, NOT the evolution mesh stages.
+  // buildBlockyPetManifest is defined later in this file (Track 3 Phase 2).
+  if ((requestedKind === 'pet_blocky' || metadata.petMode === 'blocky') && args.target === 'model') {
+    return buildBlockyPetManifest(args, metadata);
+  }
+
   if (requestedKind === 'pet_3d' && args.target === 'model') {
     return buildPetEvolutionManifest(args, metadata);
   }
-
-  // TODO (Track 3 Pet Pipeline) — buildBlockyPetManifest function is referenced
-  // but not yet defined. Re-enable after the function lands. For now fall through
-  // to the generic builder so the codebase compiles and deploys.
-  // if ((requestedKind === 'pet_blocky' || metadata.petMode === 'blocky') && args.target === 'model') {
-  //   return buildBlockyPetManifest(args, metadata);
-  // }
 
   if (isVehicleModelRequest && args.target === 'model') {
     return buildVehicleModelManifest(args, metadata);
@@ -2177,10 +2178,11 @@ function buildVehicleModelManifest(
         Size: vector3(width * 0.82, Math.max(0.45, height * 0.24), length * 0.74),
         CFrame: cf(0, rootY, 0),
         Anchored: false,
-        CanCollide: true,
+        CanCollide: profile.driveMode !== 'land_wheels' && profile.driveMode !== 'tracked',
         Massless: false,
         Color: primary,
         Material: enumValue('Material', vehicleType === 'boat' ? 'Wood' : 'Metal'),
+        Transparency: 1,
       },
     },
   );
@@ -2277,10 +2279,10 @@ function resolveVehicleProfile(type: VehicleModelType, metadata: Record<string, 
   const accelerationRaw = Number(metadata.acceleration);
   const turnRateRaw = Number(metadata.turnRate);
   const defaults: Record<VehicleModelType, VehicleProfile> = {
-    car: { type, driveMode: 'land_wheels', size: [6, 2.6, 9], wheelCount: 4, seatCount: 4, topSpeed: 72, acceleration: 30, turnRate: 2.2, wheelRadius: 0.85 },
-    motorcycle: { type, driveMode: 'land_wheels', size: [2.4, 2.5, 6.4], wheelCount: 2, seatCount: 2, topSpeed: 78, acceleration: 34, turnRate: 2.8, wheelRadius: 0.75 },
+    car: { type, driveMode: 'land_wheels', size: [6.4, 2.9, 9.6], wheelCount: 4, seatCount: 4, topSpeed: 86, acceleration: 46, turnRate: 1.55, wheelRadius: 0.9 },
+    motorcycle: { type, driveMode: 'land_wheels', size: [2.4, 2.5, 6.4], wheelCount: 2, seatCount: 2, topSpeed: 78, acceleration: 38, turnRate: 2.5, wheelRadius: 0.75 },
     bicycle: { type, driveMode: 'land_wheels', size: [2.1, 2.4, 5.8], wheelCount: 2, seatCount: 1, topSpeed: 40, acceleration: 18, turnRate: 2.3, wheelRadius: 0.72 },
-    bus: { type, driveMode: 'land_wheels', size: [7.5, 4.2, 14], wheelCount: 6, seatCount: 8, topSpeed: 54, acceleration: 18, turnRate: 1.35, wheelRadius: 0.95 },
+    bus: { type, driveMode: 'land_wheels', size: [7.8, 4.4, 14.5], wheelCount: 6, seatCount: 8, topSpeed: 58, acceleration: 24, turnRate: 1.05, wheelRadius: 0.98 },
     boat: { type, driveMode: 'watercraft', size: [7, 2.8, 12], wheelCount: 0, seatCount: 4, topSpeed: 62, acceleration: 22, turnRate: 1.6, wheelRadius: 0.6 },
     plane: { type, driveMode: 'aircraft', size: [14, 3.3, 13], wheelCount: 3, seatCount: 4, topSpeed: 92, acceleration: 24, turnRate: 1.25, wheelRadius: 0.45 },
     helicopter: { type, driveMode: 'rotorcraft', size: [9, 3.4, 11], wheelCount: 0, seatCount: 4, topSpeed: 68, acceleration: 22, turnRate: 1.9, wheelRadius: 0.5 },
@@ -2373,10 +2375,84 @@ function addVehicleBodyShell(
     addBodyPart('HeadLamp', [0.38, 0.28, 0.18], [0, rootY + h * 0.38, -l * 0.48], glow, { material: 'Neon' });
     return;
   }
-  addBodyPart(vehicleType === 'bus' ? 'BusBody' : 'CarBody', [w, h * 0.42, l * 0.72], [0, rootY + 0.12, 0], primary, { material: 'SmoothPlastic' });
-  addBodyPart('CabinGlass', [w * 0.72, h * 0.34, l * 0.34], [0, rootY + h * 0.45, -l * 0.05], glass, { material: 'Glass', transparency: 0.24 });
-  addBodyPart('FrontLights', [w * 0.65, 0.16, 0.12], [0, rootY + 0.08, -l * 0.39], glow, { material: 'Neon' });
-  addBodyPart('RearBumper', [w * 0.88, 0.22, 0.14], [0, rootY - 0.02, l * 0.41], accent, { material: 'Metal' });
+  if (vehicleType === 'bus') {
+    addBodyPart('BusLowerBody', [w, h * 0.48, l * 0.82], [0, rootY + 0.2, 0.02], primary, { material: 'SmoothPlastic' });
+    addBodyPart('BusCabinShell', [w * 0.94, h * 0.44, l * 0.68], [0, rootY + h * 0.62, -l * 0.03], primary, { material: 'SmoothPlastic' });
+    addBodyPart('BusRoofCap', [w * 0.98, h * 0.08, l * 0.72], [0, rootY + h * 0.9, -l * 0.03], accent, { material: 'Metal' });
+    addBodyPart('BusWindshield', [w * 0.76, h * 0.28, 0.12], [0, rootY + h * 0.66, -l * 0.39], glass, { material: 'Glass', transparency: 0.22 });
+    addBodyPart('BusRearWindow', [w * 0.68, h * 0.24, 0.12], [0, rootY + h * 0.64, l * 0.36], glass, { material: 'Glass', transparency: 0.26 });
+    for (const side of [-1, 1]) {
+      addBodyPart(`${side < 0 ? 'Left' : 'Right'}BusWindowRow`, [0.12, h * 0.23, l * 0.48], [side * w * 0.49, rootY + h * 0.66, -l * 0.03], glass, { material: 'Glass', transparency: 0.25 });
+      addBodyPart(`${side < 0 ? 'Left' : 'Right'}BusDoorPanel`, [0.13, h * 0.36, l * 0.14], [side * w * 0.5, rootY + h * 0.44, -l * 0.27], accent, { material: 'Metal' });
+      addBodyPart(`${side < 0 ? 'Left' : 'Right'}BusMirror`, [0.12, h * 0.18, l * 0.08], [side * w * 0.58, rootY + h * 0.66, -l * 0.43], dark, { material: 'Metal' });
+      addBodyPart(`${side < 0 ? 'Left' : 'Right'}BusSideSkirt`, [0.12, h * 0.12, l * 0.72], [side * w * 0.52, rootY - h * 0.03, 0], accent, { material: 'Metal' });
+    }
+    addBodyPart('BusInteriorFloor', [w * 0.72, 0.08, l * 0.56], [0, rootY + h * 0.28, 0], dark, { material: 'Fabric' });
+    addBodyPart('BusDashboard', [w * 0.65, h * 0.12, l * 0.08], [0, rootY + h * 0.5, -l * 0.31], dark, { material: 'SmoothPlastic' });
+    addBodyPart('BusSteeringWheel', [0.18, 0.18, 0.08], [-w * 0.22, rootY + h * 0.55, -l * 0.32], dark, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
+    for (let row = 0; row < 3; row += 1) {
+      for (const side of [-1, 1]) {
+        const x = side * w * 0.22;
+        const z = -l * 0.1 + row * l * 0.16;
+        addBodyPart(`BusSeatCushion${row}_${side < 0 ? 'L' : 'R'}`, [w * 0.18, h * 0.08, l * 0.08], [x, rootY + h * 0.38, z], accent, { material: 'Fabric' });
+        addBodyPart(`BusSeatBack${row}_${side < 0 ? 'L' : 'R'}`, [w * 0.18, h * 0.22, 0.08], [x, rootY + h * 0.48, z + l * 0.04], accent, { material: 'Fabric' });
+      }
+    }
+    addBodyPart('BusFrontGrille', [w * 0.5, h * 0.16, 0.12], [0, rootY + h * 0.15, -l * 0.43], dark, { material: 'Metal' });
+    addBodyPart('BusHeadlights', [w * 0.66, h * 0.08, 0.1], [0, rootY + h * 0.24, -l * 0.44], glow, { material: 'Neon' });
+    addBodyPart('BusTailLights', [w * 0.64, h * 0.08, 0.1], [0, rootY + h * 0.24, l * 0.43], glow, { material: 'Neon' });
+    addBodyPart('BusRearBumper', [w * 0.9, h * 0.12, 0.14], [0, rootY + h * 0.02, l * 0.45], accent, { material: 'Metal' });
+    return;
+  }
+
+  addBodyPart('CarLowerBody', [w, h * 0.36, l * 0.74], [0, rootY + 0.1, 0], primary, { material: 'SmoothPlastic' });
+  addBodyPart('CarFrontNose', [w * 0.76, h * 0.22, l * 0.16], [0, rootY + h * 0.12, -l * 0.42], primary, { material: 'SmoothPlastic' });
+  addBodyPart('CarRearTrunkBlock', [w * 0.76, h * 0.2, l * 0.16], [0, rootY + h * 0.2, l * 0.39], primary, { material: 'SmoothPlastic' });
+  addBodyPart('CarHood', [w * 0.82, h * 0.16, l * 0.24], [0, rootY + h * 0.34, -l * 0.31], primary, { material: 'SmoothPlastic' });
+  addBodyPart('CarRearDeck', [w * 0.78, h * 0.16, l * 0.22], [0, rootY + h * 0.34, l * 0.28], primary, { material: 'SmoothPlastic' });
+  addBodyPart('CarCabinFrame', [w * 0.74, h * 0.42, l * 0.36], [0, rootY + h * 0.58, -l * 0.02], primary, { material: 'SmoothPlastic' });
+  addBodyPart('CarCabinRoof', [w * 0.62, h * 0.1, l * 0.28], [0, rootY + h * 0.82, -l * 0.02], accent, { material: 'Metal' });
+  addBodyPart('RoofAirScoop', [w * 0.24, h * 0.08, l * 0.14], [0, rootY + h * 0.91, -l * 0.12], accent, { material: 'Metal' });
+  addBodyPart('WindshieldGlass', [w * 0.55, h * 0.24, 0.1], [0, rootY + h * 0.58, -l * 0.22], glass, { material: 'Glass', transparency: 0.22 });
+  addBodyPart('RearWindowGlass', [w * 0.5, h * 0.22, 0.1], [0, rootY + h * 0.57, l * 0.16], glass, { material: 'Glass', transparency: 0.24 });
+  for (const side of [-1, 1]) {
+    const sideName = side < 0 ? 'Left' : 'Right';
+    addBodyPart(`${sideName}SideWindowFront`, [0.1, h * 0.2, l * 0.16], [side * w * 0.37, rootY + h * 0.58, -l * 0.08], glass, { material: 'Glass', transparency: 0.24 });
+    addBodyPart(`${sideName}SideWindowRear`, [0.1, h * 0.18, l * 0.15], [side * w * 0.37, rootY + h * 0.56, l * 0.1], glass, { material: 'Glass', transparency: 0.26 });
+    addBodyPart(`${sideName}DoorPanel`, [0.12, h * 0.22, l * 0.3], [side * w * 0.51, rootY + h * 0.2, -l * 0.01], primary, { material: 'SmoothPlastic' });
+    addBodyPart(`${sideName}DoorHandle`, [0.08, h * 0.04, l * 0.08], [side * w * 0.57, rootY + h * 0.32, -l * 0.06], accent, { material: 'Metal' });
+    addBodyPart(`${sideName}Mirror`, [0.12, h * 0.1, l * 0.07], [side * w * 0.58, rootY + h * 0.52, -l * 0.28], dark, { material: 'Metal' });
+    addBodyPart(`${sideName}SideSkirt`, [0.12, h * 0.08, l * 0.56], [side * w * 0.52, rootY - h * 0.03, 0], accent, { material: 'Metal' });
+    addBodyPart(`${sideName}FrontWheelArch`, [0.22, h * 0.24, l * 0.19], [side * w * 0.54, rootY + h * 0.08, -l * 0.34], accent, { material: 'Metal' });
+    addBodyPart(`${sideName}RearWheelArch`, [0.22, h * 0.24, l * 0.19], [side * w * 0.54, rootY + h * 0.08, l * 0.34], accent, { material: 'Metal' });
+    addBodyPart(`${sideName}WideBodyFlare`, [0.18, h * 0.12, l * 0.68], [side * w * 0.57, rootY + h * 0.16, 0], accent, { material: 'Metal' });
+  }
+  addBodyPart('InteriorFloor', [w * 0.62, 0.08, l * 0.36], [0, rootY + h * 0.28, -l * 0.02], dark, { material: 'Fabric' });
+  addBodyPart('Dashboard', [w * 0.55, h * 0.09, l * 0.08], [0, rootY + h * 0.44, -l * 0.2], dark, { material: 'SmoothPlastic' });
+  addBodyPart('CenterConsole', [w * 0.12, h * 0.08, l * 0.22], [0, rootY + h * 0.37, 0], accent, { material: 'Metal' });
+  addBodyPart('SteeringWheel', [0.2, 0.2, 0.08], [-w * 0.18, rootY + h * 0.49, -l * 0.2], dark, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
+  for (const [seatName, x, z] of [
+    ['Driver', -w * 0.18, -l * 0.05],
+    ['FrontPassenger', w * 0.18, -l * 0.05],
+    ['RearLeftPassenger', -w * 0.18, l * 0.13],
+    ['RearRightPassenger', w * 0.18, l * 0.13],
+  ] as Array<[string, number, number]>) {
+    addBodyPart(`${seatName}SeatCushion`, [w * 0.18, h * 0.07, l * 0.1], [x, rootY + h * 0.34, z], accent, { material: 'Fabric' });
+    addBodyPart(`${seatName}SeatBack`, [w * 0.18, h * 0.22, 0.08], [x, rootY + h * 0.45, z + l * 0.04], accent, { material: 'Fabric' });
+    addBodyPart(`${seatName}Headrest`, [w * 0.12, h * 0.08, 0.06], [x, rootY + h * 0.6, z + l * 0.055], dark, { material: 'Fabric' });
+  }
+  addBodyPart('FrontGrille', [w * 0.5, h * 0.14, 0.12], [0, rootY + h * 0.13, -l * 0.41], dark, { material: 'Metal' });
+  addBodyPart('FrontSplitter', [w * 0.88, h * 0.06, 0.18], [0, rootY - h * 0.03, -l * 0.43], accent, { material: 'Metal' });
+  addBodyPart('LeftHeadlightBlock', [w * 0.24, h * 0.09, 0.1], [-w * 0.24, rootY + h * 0.24, -l * 0.43], glow, { material: 'Neon' });
+  addBodyPart('RightHeadlightBlock', [w * 0.24, h * 0.09, 0.1], [w * 0.24, rootY + h * 0.24, -l * 0.43], glow, { material: 'Neon' });
+  addBodyPart('LeftTailLightBlock', [w * 0.2, h * 0.09, 0.1], [-w * 0.26, rootY + h * 0.23, l * 0.43], glow, { material: 'Neon' });
+  addBodyPart('RightTailLightBlock', [w * 0.2, h * 0.09, 0.1], [w * 0.26, rootY + h * 0.23, l * 0.43], glow, { material: 'Neon' });
+  addBodyPart('RearBumper', [w * 0.88, h * 0.1, 0.14], [0, rootY + h * 0.02, l * 0.43], accent, { material: 'Metal' });
+  addBodyPart('RearLicensePlate', [w * 0.24, h * 0.08, 0.08], [0, rootY + h * 0.18, l * 0.455], glow, { material: 'Neon', transparency: 0.15 });
+  addBodyPart('HoodAccentStripe', [w * 0.18, h * 0.04, l * 0.24], [0, rootY + h * 0.44, -l * 0.31], accent, { material: 'Metal' });
+  addBodyPart('RearSpoilerDeck', [w * 0.78, h * 0.06, l * 0.08], [0, rootY + h * 0.58, l * 0.38], accent, { material: 'Metal' });
+  addBodyPart('RearSpoilerLeftPost', [w * 0.05, h * 0.22, l * 0.04], [-w * 0.28, rootY + h * 0.47, l * 0.35], accent, { material: 'Metal' });
+  addBodyPart('RearSpoilerRightPost', [w * 0.05, h * 0.22, l * 0.04], [w * 0.28, rootY + h * 0.47, l * 0.35], accent, { material: 'Metal' });
 }
 
 function addVehicleSeats(args: {
@@ -2388,21 +2464,27 @@ function addVehicleSeats(args: {
 }): void {
   const { scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot } = args;
   const driveSeatId = uuidv4();
+  const physicalSeatTransparency = 1;
+  const seatY = profile.type === 'bus'
+    ? rootY + profile.size[1] * 0.36
+    : rootY + Math.min(0.62, profile.size[1] * 0.24);
+  const driverX = (profile.type === 'car' || profile.type === 'bus') ? -Math.min(width * 0.18, 1.25) : 0;
+  const driverZ = profile.type === 'bus' ? -length * 0.28 : -length * 0.14;
   scene.push({
     id: driveSeatId,
     className: 'VehicleSeat',
     name: 'DriveSeat',
     parentId: folders.seats,
     properties: {
-      Size: vector3(2, 0.45, 2),
-      CFrame: cf(0, rootY + 0.75, -length * 0.16),
+      Size: vector3(1.55, 0.34, 1.55),
+      CFrame: cf(driverX, seatY, driverZ),
       Anchored: false,
       CanCollide: false,
       Massless: true,
-      Transparency: 0.15,
+      Transparency: physicalSeatTransparency,
       Color: accent,
       MaxSpeed: profile.topSpeed,
-      Torque: 12000,
+      Torque: 45000,
       TurnSpeed: profile.turnRate,
       HeadsUpDisplay: true,
     },
@@ -2410,32 +2492,40 @@ function addVehicleSeats(args: {
   weldToRoot(driveSeatId, 'DriveSeatWeld');
 
   const passengerSeats = Math.max(0, profile.seatCount - 1);
-  const rows = Math.ceil(passengerSeats / 2);
+  const explicitPassengerPositions: Array<[number, number]> = profile.type === 'car'
+    ? [
+        [Math.min(width * 0.18, 1.25), driverZ],
+        [-Math.min(width * 0.18, 1.25), length * 0.11],
+        [Math.min(width * 0.18, 1.25), length * 0.11],
+      ]
+    : [];
   for (let i = 0; i < passengerSeats; i += 1) {
     const row = Math.floor(i / 2);
     const side = i % 2 === 0 ? -1 : 1;
     const singleCenter = passengerSeats === 1;
     const seatId = uuidv4();
-    const x = singleCenter ? 0 : side * Math.min(width * 0.25, 2.1);
-    const z = Math.min(length * 0.34, 1.15 + row * 1.25);
+    const explicit = explicitPassengerPositions[i];
+    const x = explicit ? explicit[0] : (singleCenter ? 0 : side * Math.min(width * 0.25, 2.1));
+    const z = explicit ? explicit[1] : (profile.type === 'bus'
+      ? -length * 0.08 + row * 1.45
+      : Math.min(length * 0.3, 0.9 + row * 1.12));
     scene.push({
       id: seatId,
       className: 'Seat',
       name: `PassengerSeat${i + 1}`,
       parentId: folders.seats,
       properties: {
-        Size: vector3(1.8, 0.42, 1.8),
-        CFrame: cf(x, rootY + 0.72, z),
+        Size: vector3(1.45, 0.32, 1.45),
+        CFrame: cf(x, seatY, z),
         Anchored: false,
         CanCollide: false,
         Massless: true,
-        Transparency: 0.18,
+        Transparency: physicalSeatTransparency,
         Color: accent,
         Disabled: false,
       },
     });
     weldToRoot(seatId, `PassengerSeat${i + 1}Weld`);
-    if (row + 1 >= rows) break;
   }
 }
 
@@ -2453,6 +2543,24 @@ function addVehiclePhysics(args: {
   scene.push({ id: rootAttachmentId, className: 'Attachment', name: 'VehicleRootAttachment', parentId: rootId, properties: { CFrame: cf(0, 0, 0) } });
 
   if (profile.wheelCount > 0) {
+    const stableLandMode = profile.driveMode === 'land_wheels' || profile.driveMode === 'tracked';
+    if (stableLandMode) {
+      const colliderId = addPart(
+        'StableGroundCollider',
+        folders.physics,
+        [width * 0.72, 0.26, length * 0.58],
+        [0, Math.max(0.16, profile.wheelRadius * 0.18), 0],
+        dark,
+        { material: 'SmoothPlastic', canCollide: true, massless: false, transparency: 1 },
+      );
+      scene.push({
+        id: uuidv4(),
+        className: 'WeldConstraint',
+        name: 'StableGroundColliderWeld',
+        parentId: colliderId,
+        properties: { Part0: ref(rootId), Part1: ref(colliderId) },
+      });
+    }
     const zPositions = profile.wheelCount <= 2
       ? [-length * 0.36, length * 0.34]
       : profile.wheelCount === 3
@@ -2473,7 +2581,7 @@ function addVehiclePhysics(args: {
           [profile.wheelRadius * 0.55, profile.wheelRadius * 2, profile.wheelRadius * 2],
           [x, wheelY, z],
           dark,
-          { shape: 'Cylinder', rot: [0, 0, 90], material: 'SmoothPlastic', canCollide: true, massless: false },
+          { shape: 'Cylinder', rot: [0, 0, 90], material: 'SmoothPlastic', canCollide: !stableLandMode, massless: stableLandMode },
         );
         const rootAtt = uuidv4();
         const wheelAtt = uuidv4();
@@ -2490,9 +2598,9 @@ function addVehiclePhysics(args: {
               Attachment1: ref(wheelAtt),
               ActuatorType: enumValue('ActuatorType', z < 0 && profile.driveMode === 'land_wheels' ? 'Servo' : 'Motor'),
               AngularVelocity: 0,
-              MotorMaxTorque: 16000,
-              ServoMaxTorque: 14000,
-              AngularSpeed: 8,
+              MotorMaxTorque: 52000,
+              ServoMaxTorque: 34000,
+              AngularSpeed: 12,
               TargetAngle: 0,
               LimitsEnabled: false,
             },
@@ -2512,7 +2620,7 @@ function addVehiclePhysics(args: {
       properties: {
         Attachment0: ref(rootAttachmentId),
         Enabled: false,
-        MaxForce: 50000,
+        MaxForce: 125000,
         VectorVelocity: vector3(0, 0, 0),
         RelativeTo: enumValue('ActuatorRelativeTo', 'World'),
       },
@@ -2539,7 +2647,7 @@ function addVehiclePhysics(args: {
         Attachment0: ref(rootAttachmentId),
         Enabled: false,
         Responsiveness: 12,
-        MaxTorque: 75000,
+        MaxTorque: 125000,
       },
     },
   );
@@ -2631,6 +2739,7 @@ local TOP_SPEED = tonumber(cfg("TopSpeed", 70)) or 70
 local ACCEL = tonumber(cfg("Acceleration", 28)) or 28
 local TURN_RATE = tonumber(cfg("TurnRate", 2.0)) or 2.0
 local WHEEL_RADIUS = math.max(tonumber(cfg("WheelRadius", 0.8)) or 0.8, 0.2)
+local DIRECT_WHEEL_MODE = DRIVE_MODE == "land_wheels"
 
 local engine = Root:FindFirstChild("EngineLoop")
 local boostSound = Root:FindFirstChild("BoostOrHorn")
@@ -2639,8 +2748,12 @@ local emitters = {}
 local driveHinges = {}
 local steerHinges = {}
 local passengerSeats = {}
+local assemblyParts = {}
 
 for _, inst in ipairs(Vehicle:GetDescendants()) do
+\tif inst:IsA("BasePart") then
+\t\ttable.insert(assemblyParts, inst)
+\tend
 \tif inst:IsA("ParticleEmitter") then
 \t\ttable.insert(emitters, inst)
 \telseif inst:IsA("HingeConstraint") then
@@ -2661,9 +2774,24 @@ local function setNetworkOwnerForDriver(humanoid)
 \t\tplayer = Players:GetPlayerFromCharacter(humanoid.Parent)
 \tend
 \tcurrentDriver = player
+\tfor _, part in ipairs(assemblyParts) do
+\t\tpcall(function()
+\t\t\tif part:CanSetNetworkOwnership() then
+\t\t\t\tif player then
+\t\t\t\t\tpart:SetNetworkOwner(player)
+\t\t\t\telse
+\t\t\t\t\tpart:SetNetworkOwnershipAuto()
+\t\t\t\tend
+\t\t\tend
+\t\tend)
+\tend
 \tpcall(function()
 \t\tif Root:CanSetNetworkOwnership() then
-\t\t\tRoot:SetNetworkOwner(player)
+\t\t\tif player then
+\t\t\t\tRoot:SetNetworkOwner(player)
+\t\t\telse
+\t\t\t\tRoot:SetNetworkOwnershipAuto()
+\t\t\tend
 \t\tend
 \tend)
 \tif engine then
@@ -2688,24 +2816,37 @@ end
 RunService.Heartbeat:Connect(function(dt)
 \tlocal throttle = DriveSeat.ThrottleFloat
 \tlocal steer = DriveSeat.SteerFloat
+\tif math.abs(throttle) < 0.05 then throttle = 0 end
+\tif math.abs(steer) < 0.08 then steer = 0 end
 \tlocal occupied = DriveSeat.Occupant ~= nil
-\tlocal speed = Root.AssemblyLinearVelocity.Magnitude
+\tlocal current = Root.AssemblyLinearVelocity
+\tlocal horizontal = Vector3.new(current.X, 0, current.Z)
+\tlocal speed = horizontal.Magnitude
 \tlocal speed01 = math.clamp(speed / math.max(TOP_SPEED, 1), 0, 1)
-\tlocal active = occupied and math.abs(throttle) > 0.03
+\tlocal active = occupied and (math.abs(throttle) > 0.03 or speed > 1)
 \tlocal cf = Root.CFrame
 \tlocal forward = flatLook(cf)
 
 \tfor _, hinge in ipairs(driveHinges) do
-\t\thinge.MotorMaxTorque = occupied and 16000 or 0
-\t\thinge.AngularVelocity = active and (-throttle * TOP_SPEED / WHEEL_RADIUS) or 0
+\t\tif DIRECT_WHEEL_MODE then
+\t\t\thinge.MotorMaxTorque = 0
+\t\t\thinge.AngularVelocity = 0
+\t\telse
+\t\t\thinge.MotorMaxTorque = occupied and 52000 or 0
+\t\t\thinge.AngularVelocity = occupied and (-throttle * TOP_SPEED / WHEEL_RADIUS) or 0
+\t\tend
 \tend
 \tfor _, hinge in ipairs(steerHinges) do
-\t\thinge.ServoMaxTorque = 14000
-\t\thinge.TargetAngle = steer * 28
+\t\tif DIRECT_WHEEL_MODE then
+\t\t\thinge.ServoMaxTorque = 0
+\t\t\thinge.TargetAngle = 0
+\t\telse
+\t\t\thinge.ServoMaxTorque = occupied and 34000 or 0
+\t\t\thinge.TargetAngle = (occupied and steer or 0) * (DRIVE_MODE == "tracked" and 30 or 24)
+\t\tend
 \tend
 
 \tif occupied then
-\t\tlocal current = Root.AssemblyLinearVelocity
 \t\tlocal target
 \t\tif DRIVE_MODE == "aircraft" then
 \t\t\tlocal lift = math.max(0, throttle) * TOP_SPEED * 0.22 + math.max(0, speed01 - 0.25) * 12
@@ -2717,11 +2858,46 @@ RunService.Heartbeat:Connect(function(dt)
 \t\telseif DRIVE_MODE == "watercraft" then
 \t\t\ttarget = forward * (throttle * TOP_SPEED) + Vector3.new(0, math.clamp(current.Y, -4, 4), 0)
 \t\telse
-\t\t\ttarget = Vector3.new((forward * (throttle * TOP_SPEED)).X, current.Y, (forward * (throttle * TOP_SPEED)).Z)
+\t\t\tlocal forwardSpeed = horizontal:Dot(forward)
+\t\t\tlocal lateral = horizontal - forward * forwardSpeed
+\t\t\tlocal desiredForwardSpeed = throttle * TOP_SPEED
+\t\t\tlocal accelRate = ACCEL
+\t\t\tif math.abs(throttle) < 0.03 then
+\t\t\t\tdesiredForwardSpeed = 0
+\t\t\t\taccelRate = ACCEL * 1.25
+\t\t\telseif math.abs(desiredForwardSpeed) < math.abs(forwardSpeed) then
+\t\t\t\taccelRate = ACCEL * 1.85
+\t\t\tend
+\t\t\tlocal delta = math.clamp(desiredForwardSpeed - forwardSpeed, -accelRate * dt, accelRate * dt)
+\t\t\tlocal nextForwardSpeed = forwardSpeed + delta
+\t\t\tlocal lateralKeep = lateral * math.max(0, 1 - math.clamp(dt * 9, 0, 1))
+\t\t\tlocal nextHorizontal = forward * nextForwardSpeed + lateralKeep
+\t\t\tlocal maxHorizontal = TOP_SPEED * 1.08
+\t\t\tif nextHorizontal.Magnitude > maxHorizontal then
+\t\t\t\tnextHorizontal = nextHorizontal.Unit * maxHorizontal
+\t\t\tend
+\t\t\ttarget = Vector3.new(nextHorizontal.X, current.Y, nextHorizontal.Z)
+\t\t\tRoot.AssemblyLinearVelocity = target
+\t\t\tlocal canPivot = DRIVE_MODE == "tracked" or math.abs(nextForwardSpeed) > 3
+\t\t\tif canPivot and steer ~= 0 then
+\t\t\t\tlocal reverseFactor = nextForwardSpeed < -1 and -1 or 1
+\t\t\t\tlocal steerScale = DRIVE_MODE == "tracked" and 1.25 or math.clamp((math.abs(nextForwardSpeed) - 2) / 22, 0, 0.85)
+\t\t\t\tRoot.AssemblyAngularVelocity = Vector3.new(0, -steer * TURN_RATE * steerScale * reverseFactor, 0)
+\t\t\telse
+\t\t\t\tRoot.AssemblyAngularVelocity = Root.AssemblyAngularVelocity:Lerp(Vector3.zero, math.clamp(dt * 12, 0, 1))
+\t\t\tend
+\t\t\ttarget = nil
 \t\tend
-\t\tlocal alpha = math.clamp(dt * (ACCEL / 14), 0, 0.28)
-\t\tRoot.AssemblyLinearVelocity = current:Lerp(target, alpha)
-\t\tRoot.AssemblyAngularVelocity = Vector3.new(0, -steer * TURN_RATE * (DRIVE_MODE == "tracked" and 1.4 or 1.0), 0)
+\t\tif target then
+\t\t\tlocal alpha = math.clamp(dt * (ACCEL / 13), 0, 0.35)
+\t\t\tRoot.AssemblyLinearVelocity = current:Lerp(target, alpha)
+\t\t\tif steer ~= 0 then
+\t\t\t\tlocal yawBoost = DRIVE_MODE == "tracked" and 1.35 or 1.0
+\t\t\t\tRoot.AssemblyAngularVelocity = Vector3.new(0, -steer * TURN_RATE * yawBoost, 0)
+\t\t\telse
+\t\t\t\tRoot.AssemblyAngularVelocity = Root.AssemblyAngularVelocity:Lerp(Vector3.zero, math.clamp(dt * 4, 0, 1))
+\t\t\tend
+\t\tend
 \telse
 \t\tRoot.AssemblyAngularVelocity = Root.AssemblyAngularVelocity:Lerp(Vector3.zero, math.clamp(dt * 2, 0, 1))
 \tend
@@ -4342,9 +4518,16 @@ function permutedSizeForCylinder(
 // The visible fallback is made from typed primitive Parts (chair/table/lamp/etc.)
 // instead of the old torso.mesh placeholder. If an uploaded Roblox Model asset is
 // available, a runtime loader swaps in the AI mesh through InsertService.
-// Session 358 — hybrid skeleton now covers chair/table/shelf/bed too (in addition to
-// lamp/plant/sign from session 357). Bump version so .rbxm forensics can distinguish.
-const FURNITURE_BUILDER_VERSION = 'hybrid-skeleton-v2-2026-05-19';
+// Session 359 — AI Mesh path now mirrors NPC's TextureID fallback chain. When the
+// Engine API extraction returns no inner textureId (Meshy GLBs often bake textures
+// into the binary, leaving the wrapper Model's MeshPart with TextureID="") we fall
+// back to metadata.textureDecalAssetId / metadata.textureAssetId set by the
+// texture_upload stage. Without this, the imported .rbxm tints the entire mesh
+// with BasePart.Color3=primaryColor3 (green for plant, etc.) instead of showing
+// the actual AI-generated PBR texture — user complaint: "цвет фигуры не тот".
+// Session 358 — hybrid skeleton covers chair/table/shelf/bed (in addition to
+// lamp/plant/sign from session 357).
+const FURNITURE_BUILDER_VERSION = 'hybrid-skeleton-v3-2026-05-19';
 
 function buildFurnitureModelManifest(
   args: {
@@ -4574,6 +4757,24 @@ function buildFurnitureModelManifest(
       ? Number(metadata.furnitureRealMeshSizeX) : handleSize[0];
     const meshSizeZ = typeof metadata.furnitureRealMeshSizeZ === 'number' && metadata.furnitureRealMeshSizeZ > 0.1
       ? Number(metadata.furnitureRealMeshSizeZ) : handleSize[2];
+    // Session 359 — TextureID resolution mirroring NPC (robloxWorker.ts:6196-6203).
+    // Priority: Engine API real TextureID > texture_upload's textureDecalAssetId >
+    // texture_upload's textureAssetId. Meshy GLBs often bake textures into the
+    // binary, leaving the inner MeshPart's TextureID empty — without the fallback
+    // chain the imported .rbxm has no texture and the mesh shows pure Color3 tint.
+    let resolvedTextureId = '';
+    if (realTextureIdNum > 0) {
+      resolvedTextureId = `rbxassetid://${realTextureIdNum}`;
+    } else {
+      const fallbackTexId = (typeof metadata.textureDecalAssetId === 'string' && metadata.textureDecalAssetId.trim())
+        ? metadata.textureDecalAssetId.trim()
+        : (typeof metadata.textureAssetId === 'string' && metadata.textureAssetId.trim())
+          ? metadata.textureAssetId.trim()
+          : '';
+      if (fallbackTexId) {
+        resolvedTextureId = `rbxassetid://${fallbackTexId}`;
+      }
+    }
     const meshProperties: Record<string, unknown> = {
       Size: vector3(meshSizeX, meshSizeY, meshSizeZ),
       CFrame: cframe(0, meshSizeY / 2, 0),
@@ -4581,13 +4782,25 @@ function buildFurnitureModelManifest(
       CanCollide: true,
       Locked: false,
       Transparency: 0,
-      Color: primaryColor3,
+      // Session 359 — when a TextureID is present, set Color3 to white so the
+      // PBR texture passes through uncolored. Otherwise BasePart.Color3 multiplies
+      // with the texture and the user's primaryColor (green for plant, terracotta
+      // for ceramic, etc.) muddies the AI-generated colors. Without a texture,
+      // fall back to primaryColor3 so the mesh shows the brief's color rather
+      // than pure white-grey untextured render.
+      Color: resolvedTextureId ? color3(1, 1, 1) : primaryColor3,
       Material: enumValue('Material', material.enumName, material.value),
       MeshId: `rbxassetid://${realMeshIdNum}`,
     };
-    if (realTextureIdNum > 0) {
-      meshProperties.TextureID = `rbxassetid://${realTextureIdNum}`;
+    if (resolvedTextureId) {
+      meshProperties.TextureID = resolvedTextureId;
     }
+    logger.info('[buildFurnitureModelManifest] AIMeshBody texture resolution', {
+      realTextureIdNum,
+      textureDecalAssetIdPresent: typeof metadata.textureDecalAssetId === 'string' && metadata.textureDecalAssetId.trim().length > 0,
+      textureAssetIdPresent: typeof metadata.textureAssetId === 'string' && metadata.textureAssetId.trim().length > 0,
+      resolvedTextureId: resolvedTextureId || '(none — mesh will be tinted with primaryColor3)',
+    });
     scene.push({
       id: uuidv4(),
       className: 'MeshPart',
