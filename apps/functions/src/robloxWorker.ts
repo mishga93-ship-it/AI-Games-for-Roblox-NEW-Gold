@@ -4342,11 +4342,9 @@ function permutedSizeForCylinder(
 // The visible fallback is made from typed primitive Parts (chair/table/lamp/etc.)
 // instead of the old torso.mesh placeholder. If an uploaded Roblox Model asset is
 // available, a runtime loader swaps in the AI mesh through InsertService.
-// Session 357 — bump this when the hybrid-skeleton / cylinder math changes.
-// Embedded into every furniture .rbxm as a BuilderVersion StringValue so we can
-// open a downloaded .rbxm and instantly verify which builder version produced it.
-// Used to diagnose stale Cloud Run warm instances serving old code.
-const FURNITURE_BUILDER_VERSION = 'hybrid-skeleton-v1-2026-05-19';
+// Session 358 — hybrid skeleton now covers chair/table/shelf/bed too (in addition to
+// lamp/plant/sign from session 357). Bump version so .rbxm forensics can distinguish.
+const FURNITURE_BUILDER_VERSION = 'hybrid-skeleton-v2-2026-05-19';
 
 function buildFurnitureModelManifest(
   args: {
@@ -4389,13 +4387,16 @@ function buildFurnitureModelManifest(
     return raw.split(/\s+/).slice(0, 5).join(' ').slice(0, 50);
   })();
   const normalizedName = sanitizeSystemName(shortTitle) || shortTitle || 'GeneratedFurniture';
-  const knownTypes = ['chair', 'table', 'lamp', 'shelf', 'rug', 'plant', 'sign', 'decor'] as const;
+  // Session 358 — added 'bed' as a new structural type (frame + mattress + 4 legs + headboard).
+  const knownTypes = ['chair', 'table', 'lamp', 'shelf', 'rug', 'plant', 'sign', 'bed', 'decor'] as const;
   type FurnitureType = typeof knownTypes[number];
   const rawType = typeof metadata.furnitureType === 'string'
     ? metadata.furnitureType.toLowerCase().trim()
     : '';
   const requestText = `${args.prompt} ${args.title} ${metadata.title ?? ''}`.toLowerCase();
   const typeAliases: Array<[FurnitureType, RegExp]> = [
+    // 'bed' MUST come before 'chair' so "bunk bed" / "single bed" don't match the bench/sofa pattern in chair.
+    ['bed', /\b(bed|bunk\s*bed|cot|mattress|berth|hammock|futon)\b|кроват|постел|спальн|матрас|гамак/i],
     ['chair', /\b(chair|seat|bench|stool|sofa|couch|throne|armchair)\b|стул|кресл|диван|трон|скам/i],
     ['table', /\b(table|desk|counter|workbench|nightstand|coffee\s*table)\b|стол|пар(т|тa)|стойк/i],
     ['lamp', /\b(lamp|lantern|torch|light|chandelier|sconce)\b|ламп|фонар|свет|факел|люстр/i],
@@ -4441,6 +4442,7 @@ function buildFurnitureModelManifest(
     rug:   { primary: { r: 0.60, g: 0.20, b: 0.20 }, accent: { r: 0.95, g: 0.85, b: 0.60 }, glow: { r: 1, g: 0.9, b: 0.7 } },
     plant: { primary: { r: 0.20, g: 0.55, b: 0.25 }, accent: { r: 0.45, g: 0.30, b: 0.18 }, glow: { r: 0.6, g: 0.95, b: 0.6 } },
     sign:  { primary: { r: 0.95, g: 0.95, b: 0.92 }, accent: { r: 0.30, g: 0.20, b: 0.15 }, glow: { r: 1.0, g: 0.95, b: 0.7 } },
+    bed:   { primary: { r: 0.85, g: 0.78, b: 0.68 }, accent: { r: 0.42, g: 0.28, b: 0.18 }, glow: { r: 1, g: 0.92, b: 0.78 } },
     decor: { primary: { r: 0.75, g: 0.75, b: 0.78 }, accent: { r: 0.95, g: 0.90, b: 1.0 },  glow: { r: 0.8, g: 0.9, b: 1.0 } },
   };
   const defaults = typeDefaults[furnitureType];
@@ -4460,6 +4462,7 @@ function buildFurnitureModelManifest(
     rug:   [6.0, 0.12, 4.0],
     plant: [1.5, 2.5, 1.5],
     sign:  [3.0, 2.0, 0.2],
+    bed:   [5.0, 2.6, 3.0],
     decor: [1.5, 1.5, 1.5],
   };
   const scaleFactor = metadata.scale === 'small' ? 0.7 : metadata.scale === 'large' ? 1.4 : 1.0;
@@ -4478,6 +4481,7 @@ function buildFurnitureModelManifest(
     rug:   { enumName: 'Fabric',       value: 1312 },
     plant: { enumName: 'Grass',        value: 1280 },
     sign:  { enumName: 'SmoothPlastic',value: 272 },
+    bed:   { enumName: 'WoodPlanks',   value: 528 },
     decor: { enumName: 'SmoothPlastic',value: 272 },
   };
   const material = materialByType[furnitureType];
@@ -4766,6 +4770,39 @@ function buildFurnitureModelManifest(
         pushFallbackPart('SignBottomTrim', [w, 0.10, Math.max(0.18, d)], [0, h * 0.45, 0], accentColor3, 'Wood');
         break;
       }
+      case 'bed': {
+        // Bed = frame (low platform) + mattress + 4 corner legs + headboard at z=-d/2.
+        // h is bed bounding height (~2.6 by default); legs are 0.30 tall, frame 0.18,
+        // mattress 0.55, headboard rises to ~h.
+        const legHeight = 0.30;
+        const frameHeight = 0.18;
+        const mattressHeight = 0.55;
+        const frameY = legHeight + frameHeight / 2;
+        const mattressY = legHeight + frameHeight + mattressHeight / 2;
+        // 4 corner legs.
+        for (const x of [-1, 1]) for (const z of [-1, 1]) {
+          pushFallbackPart('BedLeg', [0.28, legHeight, 0.28],
+            [x * w * 0.40, legHeight / 2, z * d * 0.42], accentColor3, 'Wood');
+        }
+        // Frame slab — wood color (primary).
+        pushFallbackPart('BedFrame', [w * 0.96, frameHeight, d * 0.96],
+          [0, frameY, 0], primaryColor3, 'WoodPlanks');
+        // Mattress — fabric, accent-colored linens look pulled later by LLM trim accents.
+        pushFallbackPart('BedMattress', [w * 0.92, mattressHeight, d * 0.88],
+          [0, mattressY, 0], glowColor3, 'Fabric', { canCollide: true });
+        // Pillow at the head end (negative Z by convention — feet point +Z).
+        pushFallbackPart('BedPillow', [w * 0.40, 0.18, d * 0.18],
+          [0, mattressY + mattressHeight / 2 + 0.09, -d * 0.34], primaryColor3, 'Fabric', { canCollide: false });
+        // Headboard — tall flat panel at the head, on top of the frame, rising to h.
+        const headboardHeight = h - (legHeight + frameHeight);
+        const headboardCenterY = legHeight + frameHeight + headboardHeight / 2;
+        pushFallbackPart('BedHeadboard', [w * 0.94, headboardHeight, 0.18],
+          [0, headboardCenterY, -d * 0.49], primaryColor3, 'WoodPlanks');
+        // Optional footboard (shorter than headboard) — gives the bed a finished read.
+        pushFallbackPart('BedFootboard', [w * 0.94, headboardHeight * 0.45, 0.16],
+          [0, legHeight + frameHeight + (headboardHeight * 0.45) / 2, d * 0.49], primaryColor3, 'WoodPlanks');
+        break;
+      }
       case 'decor':
       default: {
         pushFallbackPart('DecorBase', [w, h * 0.25, d], [0, h * 0.13, 0], accentColor3, 'SmoothPlastic');
@@ -4775,11 +4812,16 @@ function buildFurnitureModelManifest(
     }
   };
 
-  // Hybrid skeleton decision. For lamp/plant/sign the LLM has repeatedly produced
-  // broken structural parts (sideways posts, wrong role labels, disconnected stacks).
-  // Always run the deterministic skeleton for these types; LLM is restricted to
-  // additive accents (trim, detail, decor, light, leaves, panel, shade).
-  const HYBRID_SKELETON_TYPES = new Set<FurnitureType>(['lamp', 'plant', 'sign']);
+  // Session 358 — hybrid skeleton now covers ALL load-bearing types: chair, table,
+  // shelf, bed, lamp, plant, sign. The LLM has repeatedly produced broken structural
+  // parts (sideways posts, legs above the tabletop, wrong role labels, disconnected
+  // stacks) across every furniture type. Always run the deterministic skeleton for
+  // these types; LLM is restricted to additive accents.
+  // Only rug + decor stay LLM-first (rug is flat → hard to mess up, decor is a
+  // catch-all where the LLM's creative input is the whole value).
+  const HYBRID_SKELETON_TYPES = new Set<FurnitureType>([
+    'chair', 'table', 'lamp', 'shelf', 'plant', 'sign', 'bed',
+  ]);
   const ACCENT_ROLES = new Set<string>(['trim', 'detail', 'decor', 'light', 'leaves', 'panel', 'shade']);
   const useHybridSkeleton = HYBRID_SKELETON_TYPES.has(furnitureType);
 

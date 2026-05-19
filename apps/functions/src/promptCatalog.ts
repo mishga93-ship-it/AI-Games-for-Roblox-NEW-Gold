@@ -1670,8 +1670,8 @@ INTERVIEW FLOW:
 
 Turn 1 — FURNITURE TYPE:
 Acknowledge the idea. Determine the furniture category — this drives size, material, and whether it gets a Seat (chair) or PointLight (lamp/sign).
-Example: "Nice! What kind of prop are we making — a chair, a table, a lamp, a shelf, a rug, a plant, a sign, or general decor?"
-quickReplies: ["Chair", "Table", "Lamp", "Shelf", "Rug", "Plant", "Sign", "Decor", "Decide for me"]
+Example: "Nice! What kind of prop are we making — a chair, a table, a lamp, a shelf, a bed, a rug, a plant, a sign, or general decor?"
+quickReplies: ["Chair", "Table", "Bed", "Lamp", "Shelf", "Rug", "Plant", "Sign", "Decor", "Decide for me"]
 Type semantics:
 - chair: gets a Seat so players can sit; default size ~2.5×3×2.5 studs
 - table: flat top, defaults wood; ~4×0.4×2.5 studs
@@ -1680,6 +1680,7 @@ Type semantics:
 - rug: flat, anchored, fabric material; ~6×0.05×4 studs
 - plant: organic, grass material; ~1.5×2.5×1.5 studs
 - sign: thin board, soft glow so it reads at night; ~3×2×0.2 studs
+- bed: frame + mattress + 4 legs + headboard + pillow; default size ~5×2.6×3 studs
 - decor: anything else — vase, statue, picture frame, crate
 
 Turn 2 — STYLE + MATERIAL:
@@ -1758,7 +1759,7 @@ Your job: design a single prop made of 6-22 primitive Roblox Parts that visibly 
 OUTPUT SCHEMA (strict — keep the keys exactly as written):
 {
   "title": "string — descriptive prop name, e.g. 'Carved Oak Tavern Chair'",
-  "furnitureType": "chair | table | lamp | shelf | rug | plant | sign | decor",
+  "furnitureType": "chair | table | lamp | shelf | rug | plant | sign | bed | decor",
   "boundingBox": [W, H, D],  // overall studs the prop should fit in, before scale multiplier
   "parts": [
     {
@@ -1825,17 +1826,29 @@ PER-TYPE REQUIREMENTS:
 - Rugs MUST have canCollide=false on the body and lay flat (h <= 0.15).
 - Signs SHOULD include one role="light" part if the user implied glow ("neon sign", "led sign"); keep regular signs without it.
 
-HYBRID TYPES — for furnitureType ∈ {lamp, plant, sign} READ THIS CAREFULLY:
-For these three types, the builder ALWAYS emits a deterministic skeleton:
-- lamp: a base + a vertical pole + a shade (with a PointLight inside).
-- plant: a pot + a trunk + leaves.
-- sign: a post + a board + top/bottom trims.
-Your job for hybrid types is to add 2–6 DECORATIVE ACCENT parts ONLY. Allowed roles for accents on hybrid types: trim, detail, decor, light, leaves, panel, shade.
-DO NOT emit role=post / role=support / role=trunk / role=stem / role=back / role=seat / role=leg / role=body for hybrid types — they will be FILTERED OUT and ignored. You will waste your output budget if you emit them.
-Examples of good accents for hybrid types:
-- Lamp: a Neon "InnerGlow" Ball inside the shade (role=light), a narrow "ShadeRing" cylinder trim around the shade rim (role=trim, size like [1.05, 0.05, 1.05]), a "PullChain" small Block hanging from the bottom of the shade (role=decor).
-- Plant: a "FlowerCluster" Ball above the leaves (role=decor), a "PotRim" Cylinder trim around the pot top (role=trim).
-- Sign: a "Lantern" Neon Ball above the board (role=light), "BoardCornerTL/TR/BL/BR" small Block trims at the board corners (role=trim).
+HYBRID TYPES — for furnitureType ∈ {chair, table, lamp, shelf, plant, sign, bed} READ THIS CAREFULLY:
+For these SEVEN load-bearing types, the builder ALWAYS emits a deterministic structural skeleton:
+- chair: Seat (kind=Seat) + back + 4 corner legs.
+- table: 4 corner legs + tabletop spanning the bounding box (NOT above the top — under it).
+- lamp: base + vertical pole + shade (with PointLight inside).
+- shelf: back panel + 2 side panels + 4 horizontal boards stacked vertically.
+- plant: pot + trunk + leaves balls.
+- sign: post + board + top/bottom trims.
+- bed: 4 corner legs + frame + mattress + pillow at head + headboard (high panel at head end) + footboard (short panel at foot end).
+
+Your job for these types is to add 2–6 DECORATIVE ACCENT parts ONLY. Allowed roles for hybrid-type accents: trim, detail, decor, light, leaves, panel, shade.
+DO NOT emit role=post / role=support / role=trunk / role=stem / role=back / role=seat / role=leg / role=body / role=top for hybrid types — they will be FILTERED OUT and ignored. Emitting them wastes your output budget.
+
+DO NOT add columns / legs / posts / supports ABOVE the surface of a chair seat / table top / bed mattress — the skeleton already supports the surface from below.
+
+Examples of good accents per hybrid type:
+- Chair: "Cushion" Block on top of the seat (role=detail, h~0.08), "BackPillow" Block against the back (role=decor), "ArmrestPad" trim on each side (role=trim).
+- Table: "TableRunner" thin fabric Block across the top (role=trim, h~0.04, length=W*0.6, depth=D*0.4), "CenterpieceVase" small Cylinder in the middle (role=decor), "CornerInlay" small trim at corners (role=trim).
+- Lamp: Neon "InnerGlow" Ball inside the shade (role=light), "ShadeRing" Cylinder trim around the shade rim (role=trim, [1.05, 0.05, 1.05]), "PullChain" small Block hanging from the shade (role=decor).
+- Shelf: "Book" Blocks lying flat on a board (role=decor, size like [0.30, 0.20, 0.15]), "Vase" Ball on the top board (role=decor), "TopTrim" along the top edge (role=trim).
+- Plant: "FlowerCluster" Ball above leaves (role=decor), "PotRim" Cylinder trim around the pot top (role=trim).
+- Sign: "Lantern" Neon Ball above the board (role=light), "BoardCornerTL/TR/BL/BR" small Block trims at the board corners (role=trim).
+- Bed: "Blanket" Block draped on the mattress (role=trim, thin, covers ~70% of mattress), "ExtraPillow" Block next to the main pillow (role=decor), "BedCanopy" Block high above the headboard (role=detail).
 
 DON'T:
 - Don't make every part the same size — that hides them as a single cube.

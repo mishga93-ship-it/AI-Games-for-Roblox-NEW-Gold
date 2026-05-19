@@ -17077,7 +17077,7 @@ function validateFurnitureSceneGeometry(
   const totalTop = tops.length ? Math.max(...tops) : 0;
   const expectedMinHeight: Record<string, number> = {
     chair: 2.0, table: 1.6, lamp: 3.0, shelf: 2.8, rug: 0.05,
-    plant: 1.8, sign: 1.4, decor: 0.8,
+    plant: 1.8, sign: 1.4, bed: 1.6, decor: 0.8,
   };
   const minHeight = expectedMinHeight[type] ?? 1.2;
   if (totalTop < minHeight) {
@@ -17099,12 +17099,13 @@ function validateFurnitureSceneGeometry(
     repairActions.push('Every size dimension must be at least 0.15 studs.');
   }
 
-  // Session 355 — hybrid-skeleton types (lamp/plant/sign) get a deterministic
-  // base+pole+shade emitted by the builder regardless of LLM output, and LLM
-  // parts are filtered to additive accents only. So thin-post / centerline-stack
-  // gap checks are no longer load-bearing — they fired on LLM parts we now drop.
-  // Skipping them avoids burning retries on rejections the user wouldn't see.
-  const hybridSkeletonTypes = new Set(['lamp', 'plant', 'sign']);
+  // Session 358 — hybrid-skeleton types now cover chair / table / shelf / bed too.
+  // Builder always emits the deterministic skeleton; LLM parts are filtered to
+  // additive accents. So thin-post / centerline-stack-gap / sideways-vertical /
+  // leg-distribution / no-seat / no-top / no-leaves checks would only fire on
+  // LLM parts we drop — skipping them avoids burning regeneration retries on
+  // defects the user would never see in the final .rbxm.
+  const hybridSkeletonTypes = new Set(['chair', 'table', 'lamp', 'shelf', 'plant', 'sign', 'bed']);
   const isHybridSkeleton = hybridSkeletonTypes.has(type);
 
   // Session 346 — Structural posts/stems/trunks/supports that visibly connect
@@ -17245,7 +17246,11 @@ function validateFurnitureSceneGeometry(
     }
   };
 
-  if (type === 'chair') {
+  // Session 358 — per-type structural checks (Seat, 4 legs, top, light, leaves)
+  // are guaranteed by the deterministic skeleton for hybrid types. Skip them so
+  // we don't reject otherwise-fine accent scenes for missing parts that the
+  // builder will add anyway.
+  if (type === 'chair' && !isHybridSkeleton) {
     const hasSeat = scene.parts.some((p) => p.kind === 'Seat');
     if (!hasSeat) {
       issues.push('Chair has no part with kind="Seat" — players cannot sit on it.');
@@ -17258,7 +17263,7 @@ function validateFurnitureSceneGeometry(
     }
     checkLegDistribution('Chair', scene.boundingBox);
   }
-  if (type === 'table') {
+  if (type === 'table' && !isHybridSkeleton) {
     const legCount = scene.parts.filter((p) => p.role === 'leg').length;
     if (legCount < 3) {
       issues.push(`Table has only ${legCount} leg(s).`);
@@ -17271,14 +17276,14 @@ function validateFurnitureSceneGeometry(
     }
     checkLegDistribution('Table', scene.boundingBox);
   }
-  if (type === 'lamp') {
+  if (type === 'lamp' && !isHybridSkeleton) {
     const hasLight = scene.parts.some((p) => p.material === 'Neon' || p.role === 'light');
     if (!hasLight) {
       issues.push('Lamp has no Neon / light-emitting part.');
       repairActions.push('Add a Neon Part inside or atop the shade so the lamp visibly glows.');
     }
   }
-  if (type === 'plant') {
+  if (type === 'plant' && !isHybridSkeleton) {
     const hasLeaves = scene.parts.some((p) => p.role === 'leaves' || /leaf|leaves|foliage/i.test(p.name));
     if (!hasLeaves) {
       issues.push('Plant has no leaves part.');
@@ -23385,7 +23390,18 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // this, the concept generator produces a Mishu-style mannequin with the
       // jacket on, and Meshy reconstructs the whole avatar mesh.
       const conceptContext: 'character' | 'prop' = (isWeapon || isVehicle || isItem || isFurniture || isLayeredClothing) ? 'prop' : 'character';
-      logger.info('concept_image: generating', { jobId, isWeapon, isVehicle, isItem, isFurniture, conceptContext, prompt: alignedConceptPrompt.slice(0, 200), previewStyle });
+      logger.info('concept_image: generating', {
+        jobId,
+        isWeapon, isVehicle, isItem, isFurniture, isLayeredClothing,
+        conceptContext,
+        previewStyle,
+        jobKind: job.kind,
+        clothingMode: job.metadata?.clothingMode,
+        clothingType: job.metadata?.clothingType,
+        contentSubcategory: job.metadata?.contentSubcategory,
+        contentCategory: job.metadata?.contentCategory,
+        prompt: alignedConceptPrompt.slice(0, 200),
+      });
       try {
         conceptPreviewUrl = await generatePreviewTexture(alignedConceptPrompt, previewStyle, conceptContext);
         logger.info('concept_image: generatePreviewTexture returned', { jobId, hasUrl: !!conceptPreviewUrl });
