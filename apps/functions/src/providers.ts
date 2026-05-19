@@ -1434,13 +1434,24 @@ async function buildTShirtDebugGraphic(): Promise<Buffer> {
 
 async function generateTShirtGraphicImage(promptText: string): Promise<Buffer> {
   const cleanPrompt = promptText.trim().slice(0, 1200);
+  // 2026-05-19: PRINT/LOGO ONLY — Roblox classic T-Shirt is a decal applied to
+  // the front torso. User sees "design on top of their existing shirt", not a
+  // whole new shirt. So we must NOT draw a t-shirt SHAPE — just the logo/emblem
+  // itself, alpha-transparent everywhere else, so the avatar's underlying shirt
+  // color shows around the print.
   const prompt =
-    `Square Roblox classic T-Shirt chest graphic based on: ${cleanPrompt}. ` +
-    'Design only the front graphic that appears on a classic Roblox T-Shirt torso. ' +
-    '512x512 flat PNG composition, centered bold emblem or pattern, simple clean silhouette, high contrast, game-ready. ' +
-    'No shirt mockup, no mannequin, no human body, no 3D render, no product photo. ' +
-    'No real-world brands, no copyrighted characters, no logos, no text, no letters, no profanity. ' +
-    'Roblox-friendly cartoon style, crisp edges, readable from a small avatar view.';
+    `Standalone graphic logo/emblem design: ${cleanPrompt}. ` +
+    'IMPORTANT: This is a PRINT/STICKER design that will be applied as a flat decal to a character\'s chest in Roblox. ' +
+    'Draw ONLY the design itself (icon, emblem, symbol, or art motif), centered on a PURE WHITE background. ' +
+    'ABSOLUTELY DO NOT draw: ' +
+    '- A t-shirt shape or t-shirt outline ' +
+    '- Sleeves, collar, fabric folds, garment edges ' +
+    '- A mannequin, person, body, character, or torso ' +
+    '- A product photo or 3D mockup of a shirt ' +
+    'Just the standalone graphic floating on white, like a printable patch design or sticker artwork. ' +
+    'Square 512x512 composition, design fills ~60-70% of the canvas (centered with breathing room), bold simple shapes, high contrast, crisp edges. ' +
+    'Roblox-friendly cartoon style, readable from a small avatar view (~80px tall on screen). ' +
+    'No real-world brands, no copyrighted characters, no profanity, no text/letters unless explicitly requested in the prompt above.';
   const result = await runFal('flux-pro/v1.1', {
     endpoint: 'fal-ai/flux-pro/v1.1',
     payload: {
