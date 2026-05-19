@@ -1202,6 +1202,7 @@ ${viralStyleInjection.promptBlock}`, 8000);
       req.userId ?? 'unknown-user',
       generationPrompt,
       effectiveMetadata as Record<string, unknown>,
+      body.kind,
     );
     if (stubCheck.blocked) {
       logger.info('Smart Stubs: generation blocked', {
@@ -5319,9 +5320,14 @@ async function runSmartStubsClassification(
   userId: string,
   prompt: string,
   metadata?: Record<string, unknown>,
+  kind?: ContentGenerateRequest['kind'],
 ): Promise<{ blocked: boolean; stub?: SmartStubResult; hardPivot?: boolean; hardPivotMessage?: string }> {
+  if (shouldBypassSmartStubsForVehicleRequest(prompt, metadata, kind)) {
+    return { blocked: false };
+  }
+
   // Bypass Smart Stubs for fully supported content categories
-  const contentCategory = (metadata?.contentCategory as string) ?? '';
+  const contentCategory = normalizedMetadataString(metadata, 'contentCategory');
   const supportedCategories = [
     'weapon',
     'character',
@@ -8189,6 +8195,9 @@ function shouldPromoteVehicleRequest(
   prompt: string,
   metadata: Record<string, unknown>,
 ): string | undefined {
+  if (String(kind ?? '').trim().toLowerCase() === 'vehicle_3d') {
+    return 'explicit_vehicle_kind';
+  }
   if (isVehicleGenerationMetadata(metadata)) {
     return 'explicit_vehicle_metadata';
   }
@@ -8213,6 +8222,25 @@ function shouldPromoteVehicleRequest(
     return 'vehicle_prompt_keywords';
   }
   return undefined;
+}
+
+function shouldBypassSmartStubsForVehicleRequest(
+  prompt: string,
+  metadata?: Record<string, unknown>,
+  kind?: ContentGenerateRequest['kind'],
+): boolean {
+  if (String(kind ?? '').trim().toLowerCase() === 'vehicle_3d') return true;
+  if (isVehicleGenerationMetadata(metadata)) return true;
+  const projectKind = normalizedMetadataString(metadata, 'projectKind');
+  const category = normalizedMetadataString(metadata, 'contentCategory');
+  const subcategory = normalizedMetadataString(metadata, 'contentSubcategory');
+  const isContentAssetFlow = projectKind === 'content'
+    || projectKind === 'ugc'
+    || category === ''
+    || category === 'character'
+    || category === 'vehicle'
+    || subcategory === 'vehicles';
+  return isContentAssetFlow && promptLooksLikeVehicleAsset(prompt);
 }
 
 function resolveRequestedGenerationKind(
@@ -23472,7 +23500,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
 
     let shirtResult: ClothingTextureUploadResult | undefined;
     let pantsResult: ClothingTextureUploadResult | undefined;
-    if (conceptPreviewUrl && (isClothingTexture || isLayeredClothing)) {
+    // Session 001 (Track 2 fix, 2026-05-19): classic Shirt/Pants 2D texture pipeline
+    // should NOT run for layered_3d clothing. Previously the OR condition ran the
+    // 585x559 wrap generation even for "🧥 3D Jacket", producing a useless Shirt PNG
+    // alongside the Meshy v6 mesh attempt — wasted Flux calls + confusing artifacts.
+    // For layered_3d, skip the 2D pipeline entirely; the layered mesh block below
+    // handles the 3D mesh generation independently.
+    if (conceptPreviewUrl && isClothingTexture && !isLayeredClothing) {
       const clothingStageId = isClothingTexture ? 'clothing_texture' : undefined;
       if (clothingStageId) {
         await beginStage('clothing_texture', 'Generating clothing textures from concept image');
