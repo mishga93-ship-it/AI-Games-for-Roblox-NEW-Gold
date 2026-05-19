@@ -3068,6 +3068,9 @@ function buildBlockyPetManifest(
       Anchored: false,
       CanCollide: false,
       Massless: true,
+      // Force visible — defensive against Lune defaulting transparency or any
+      // upstream property mass-write applying HRP's Transparency=1 here.
+      Transparency: 0,
       Size: { __type: 'Vector3', x: p.size[0], y: p.size[1], z: p.size[2] },
       BrickColor: { __type: 'BrickColor', name: colorSlot(p.color) },
       Material: { __type: 'EnumItem', enum: 'Material', value: p.material ?? spec.material },

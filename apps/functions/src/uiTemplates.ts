@@ -3606,11 +3606,17 @@ if ac then
     end
 end
 
--- Configurable follow geometry.
-local FOLLOW_RADIUS = 6
+-- Configurable follow geometry. Pet HRP is placed at
+--   player.Position + (cos(angle)*RADIUS, HEIGHT_OFFSET, sin(angle)*RADIUS)
+-- Pet model is authored with HRP at (0,0,0) and other parts extending
+-- UPWARDS from there (Body at +1.1, head at +1.6). Player HRP is at waist
+-- (~2 studs above feet). To put pet feet on the floor at player feet
+-- level: STAND_HEIGHT_OFFSET ≈ -(player HRP→feet, ~2 studs). Empirically
+-- -2.5 places a 2.5-stud-tall pet so its leg bottoms touch player feet.
+local FOLLOW_RADIUS = 5
 local ORBIT_SPEED = 0.25         -- revolutions per second
-local FLY_HEIGHT_OFFSET = 4
-local STAND_HEIGHT_OFFSET = 2    -- 2 studs above player feet (visible in 3rd-person)
+local FLY_HEIGHT_OFFSET = 3
+local STAND_HEIGHT_OFFSET = -2.5
 local LERP_ALPHA = 0.20          -- smoothing factor per Heartbeat
 local DEBUG = true               -- toggle to silence diagnostic prints
 
