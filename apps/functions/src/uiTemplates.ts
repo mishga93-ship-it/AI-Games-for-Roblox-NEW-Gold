@@ -3607,17 +3607,16 @@ if ac then
 end
 
 -- Configurable follow geometry.
-local FOLLOW_RADIUS = 4
-local ORBIT_SPEED = 0.3          -- revolutions per second
-local FLY_HEIGHT_OFFSET = 3
-local STAND_HEIGHT_OFFSET = 0
-local LERP_ALPHA = 0.15          -- smoothing factor per Heartbeat
-local SPAWN_AT_PLAYER_DELAY = 0.5
+local FOLLOW_RADIUS = 6
+local ORBIT_SPEED = 0.25         -- revolutions per second
+local FLY_HEIGHT_OFFSET = 4
+local STAND_HEIGHT_OFFSET = 2    -- 2 studs above player feet (visible in 3rd-person)
+local LERP_ALPHA = 0.20          -- smoothing factor per Heartbeat
+local DEBUG = true               -- toggle to silence diagnostic prints
 
--- Initial pose: keep pet at its authored CFrame until we find a player. After
--- player found we tween/lerp toward an orbiting offset around them.
-local targetCFrame = pet:GetPivot()
-local lastT = tick()
+print(string.format("[BlockyPetFollow] Script started for %s. HRP at %s. Waiting for player...",
+    pet.Name,
+    tostring(hrp.Position)))
 
 local function followPositionFor(charHrp)
     local angle = tick() * ORBIT_SPEED * 2 * math.pi
@@ -3633,6 +3632,12 @@ local function followPositionFor(charHrp)
     return CFrame.lookAt(desiredPos, charHrp.Position)
 end
 
+-- Targeting state. snapped=false until we've teleported to player on first
+-- frame so the pet appears next to the player and only orbits gently after.
+local targetCFrame = pet:GetPivot()
+local snapped = false
+local lastDebugT = 0
+
 if idleTrack then idleTrack:Play() end
 
 RunService.Heartbeat:Connect(function()
@@ -3642,10 +3647,29 @@ RunService.Heartbeat:Connect(function()
     local hum = char and char:FindFirstChild("HumanoidRootPart")
     if not hum then return end
 
-    -- Compute desired CFrame and lerp toward it for smoothness.
     local desired = followPositionFor(hum)
-    targetCFrame = targetCFrame:Lerp(desired, LERP_ALPHA)
+    if not snapped then
+        -- First time we see the player: teleport pet next to them so user
+        -- sees it immediately rather than watching it lerp across the map.
+        targetCFrame = desired
+        snapped = true
+        if DEBUG then
+            print(string.format("[BlockyPetFollow] Player found (%s). Snapping pet to %s",
+                tostring(hum.Position),
+                tostring(desired.Position)))
+        end
+    else
+        targetCFrame = targetCFrame:Lerp(desired, LERP_ALPHA)
+    end
     pet:PivotTo(targetCFrame)
+
+    -- Debug print every 2 seconds so user can see pet is alive.
+    if DEBUG and tick() - lastDebugT > 2 then
+        lastDebugT = tick()
+        print(string.format("[BlockyPetFollow] pet=%s player=%s",
+            tostring(targetCFrame.Position),
+            tostring(hum.Position)))
+    end
 
     -- Animation track switching by player velocity.
     local v = hum.Velocity.Magnitude
