@@ -18,6 +18,54 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Smart Stub Bypass] Confirm & Generate больше не должен отвечать заглушкой "Huge ambition..." (2026-05-19, сессия 355)
+- **Проблема**: пользователь показал Vehicles flow, где после `Confirm & Generate` backend вернул Smart Stub: "Huge ambition! These mechanics are being compiled..." вместо запуска generation.
+- **Root cause**: Smart Stubs запускался до vehicle promotion, а allowlist поддержанных content flows не включал `vehicle` / `vehicles`. Vehicle GDD мог содержать `Data Store` / `Daily rewards`, из-за чего classifier считал запрос unsupported global mechanics.
+- **Решение**: `apps/functions/src/index.ts` теперь повышает vehicle-запрос до `vehicle_3d` до Smart Stubs, а `runSmartStubsClassification()` явно bypass-ит `vehicle`, `vehicles` и vehicle metadata.
+- **Файлы**: `apps/functions/src/index.ts`, `cursor/changelog-355.md`, `docs/PROGRESS.md`.
+- **Проверка**: `npm run build:functions` ✅; compiled-output smoke подтвердил `promotionBeforeSmartStubs=true`, `smartStubVehicleBypass=true` ✅; `git diff --check` ✅.
+- **Известные ограничения**: для реального приложения нужен fresh deploy Firebase Functions; уже полученная stub-реплика в старом чате не исчезнет сама, нужно снова нажать Generate после деплоя.
+
+### ✅ [Vehicles PNG-only Export Guard] Vehicles больше не должны уходить в PNG-only вместо `.rbxm` (2026-05-19, сессия 354)
+- **Проблема**: пользователь прислал скрин `Content Project Asset Preview`, где Vehicles result доступен только как `PNG`, без Roblox `.rbxm` файла для импорта/экспорта.
+- **Root cause**: vehicle-запрос мог потерять `requestedKind="vehicle_3d"` или vehicle metadata и пройти через generic content/image path; downstream worker также зависел от `requestedKind`, а UI мог показывать fallback preview как экспорт.
+- **Решение**: `apps/functions/src/index.ts` теперь повышает explicit/generic vehicle prompts до `vehicle_3d`, сохраняет resolved `requestedKind` и выбирает vehicle pipeline по нормализованной metadata. `apps/functions/src/robloxWorker.ts` строит vehicle manifest не только по `requestedKind`, но и по `contentCategory="vehicle"` / `contentSubcategory="vehicles"`. `GenerationPreviewView.swift` скрывает generic `Export` для `.unavailable`, чтобы старый PNG-only job не выглядел как Roblox export.
+- **Содержимое fresh RBXM**: smoke подтвердил `VehicleSeat`, `DriveSeat`, passenger seats, `VehicleController`, `EngineLoop`, `ParticleEmitter`; binary `.rbxm` собрался через Lune (`artifactType="rbxm"`, `format="binary"`, 8973 bytes, validation issues: none).
+- **Файлы**: `apps/functions/src/index.ts`, `apps/functions/src/robloxWorker.ts`, `apps/ios/AIGoldRoblox/Features/Generation/GenerationPreviewView.swift`, `cursor/changelog-354.md`, `docs/PROGRESS.md`.
+- **Проверка**: `npm run build:functions` ✅; `npm run build:worker` ✅; `xcrun swiftc -parse ...ChatStore.swift ...GenerationPreviewView.swift` ✅; `xcodebuild ... Debug ... generic/platform=iOS Simulator` ✅.
+- **Известные ограничения**: уже созданный PNG-only artifact нельзя превратить в `.rbxm` на клиенте. Нужны fresh backend deploy / fresh iOS build и новая генерация Vehicles.
+
+### ✅ [Furniture Blocky Path] Цилиндр-axis fix (lamp/plant больше не разваливаются) + cylinder cross-section validator + честный quality-gate (2026-05-19, сессия 353)
+- **Проблема**: пользователь сообщил, что Blocky-генерация фурнитуры выдаёт «сырые блочные» предметы (лампа: горизонтальные трубы, плавающие шары, без ножки). Скриншот + `content-project.rbxm` подтвердили: parts с `Shape=Cylinder` рендерились как горизонтальные трубы вдоль X вместо вертикальных столбов/плоских дисков.
+- **Root cause**: Roblox `Part.Shape = Cylinder` без поворота укладывает цилиндр горизонтально (long axis = part-local X, диаметр = min(Y, Z)). И LLM-сцена, и детерминистский fallback в `buildFurnitureModelManifest` эмитили `Size = [W, H, D]` в мировых осях с identity rotation. Lamp pole `[0.16, 2.8, 0.16]` → тонкий 0.16-stud горизонтальный цилиндр; lamp base `[1.19, 0.18, 1.19]` → горизонтальная труба. Подтверждено через WebSearch (`Roblox Enum.PartType.Cylinder which axis is height long axis`, DevForum «Change default orientation of inserted cylinders to be vertical»).
+- **Решение**:
+  - `apps/functions/src/robloxWorker.ts` — helpers `pickCylinderAxis` / `cylinderRotationFor` / `permutedSizeForCylinder`. Применяются и в LLM-эмиттере, и в `pushFallbackPart`. Identity для axis=0 (родная X-ориентация), +90° вокруг Z для вертикальных, −90° вокруг Y для Z-pipes.
+  - `apps/functions/src/promptCatalog.ts` — `generateFurnitureSceneBlock` получил блок `CYLINDERS (read carefully)`: 3 примера (vertical pole, flat disc, horizontal pipe), правило «non-axis dims must be within ~20%», запрет ручной коррекции.
+  - `apps/functions/src/index.ts` — `validateFurnitureSceneGeometry` теперь reject'ит цилиндры с cross-section ratio < 0.7 («flat oval»); `quality_review` orchestration выдаёт «(Best of N attempts — please tap Generate again or refine the brief.)» в `qualityReviewMessage` при `status==='rejected'`, новые metadata `furnitureFinalQualityVerdict` / `furnitureNeedsUserRetry` (true при score < 40).
+- **Hotfix 2 (та же сессия)**: после первого деплоя пользователь регенерировал лампу и снова получил «горизонтальный цилиндр». Гипотеза: некоторые LLM-генерации сами пре-вращают (эмитят X как long axis для вертикальных частей). Добавлен **role-based axis override** в `buildFurnitureModelManifest`: для `role ∈ {post, stem, trunk, support}` builder ПРИНУДИТЕЛЬНО ставит axis=Y независимо от того, какой dim LLM сделал longest — longest dim нормализуется в Y-слот, затем стандартный +90° rotation. В `validateFurnitureSceneGeometry` добавлен **sideways-vertical reject** (если у post/stem/trunk longest dim не Y — reject + repair с примерами `[0.3, 2.8, 0.3]`).
+- **Файлы**: `apps/functions/src/robloxWorker.ts`, `apps/functions/src/promptCatalog.ts`, `apps/functions/src/index.ts`, `apps/worker-service/runtime/lune/test_furniture_cylinder.luau`, `smoke-cylinder-fix.mjs`, `smoke-furniture-e2e.mjs`, `cursor/changelog-353.md`, `docs/PROGRESS.md`.
+- **Проверка**:
+  - `npm run build --workspace apps/functions` ✅ дважды (Stage 1 + hotfix 2).
+  - `smoke-cylinder-fix.mjs` — 5/5 pass.
+  - `test_furniture_cylinder.luau` — 7/7 pass (Lune CFrame roundtrip).
+  - `smoke-furniture-e2e.mjs` — production-pipeline e2e: deployed `buildRobloxManifest` + настоящий `build_roblox.luau` + deserialize `.rbxm`. **Worst-case input** (LLM эмитит pre-rotated pole `size=[2.6, 0.32, 0.32]`) → MainPost получает `RightVec=(0,1,0)` (стоит вертикально), BaseFoot/ShadeBody лежат плоско.
+- **Deploys**: `firebase deploy --only functions:api` сделан Claude'ом по запросу пользователя (project-specific routine, см. memory). Два деплоя за сессию (после Stage 1 и hotfix 2), оба `Successful update operation` для `api(us-central1)` на Node.js 22, `/api/health` ✅.
+- **Известные ограничения**: ранее сгенерированные `.rbxm` не пересобираются — нужна fresh generation. `worker-service` redeploy не требовался: 9-element matrix handling в `build_roblox.luau` уже корректный (verified).
+
+### ✅ [Vehicles .rbxm Pipeline] Транспорт с DriveSeat, пассажирами, звуками, VFX и физикой (2026-05-19, сессия 352)
+- **Задача**: реализовать Vehicles для Roblox: машины, мотоциклы, лодки, самолёты, вертолёты, танки, космические корабли, велосипеды, автобусы; формат `.rbxm`.
+- **Решение**: после ресерча Roblox Creator Hub и open-source chassis вариантов добавлен self-contained `vehicle_3d` pipeline: iOS category `vehicles`, `vehicle_interview/vehicle_generation`, metadata `requestedKind="vehicle_3d"`, backend stages `generate_vehicle_scripts → quality_review → export_rbxm`, deterministic `buildVehicleModelManifest`.
+- **Содержимое RBXM**: `VehicleConfig`, `ChassisRoot`, `DriveSeat`, passenger `Seat`, welded body parts, wheel `HingeConstraint`/mover constraints, `EngineLoop`, boost/horn sound, exhaust/wake/trail/dust particles, lights/glow, `VehicleController` script with speed clamps and network ownership handoff.
+- **Файлы**: `apps/functions/src/{types,promptCatalog,index,robloxWorker}.ts`, `packages/shared/src/types.ts`, `packages/shared/dist/types.d.ts`, `packages/shared/dist/types.d.ts.map`, `apps/ios/AIGoldRoblox/{Core/API/AIWorkspaceAPI.swift,Features/Forge/ForgeView.swift,Features/Chat/ChatStore.swift}`, `cursor/changelog-352.md`, `docs/PROGRESS.md`.
+- **Проверка**: `npm run build:functions` ✅; `npm run build:worker` ✅; `xcrun swiftc -parse ...AIWorkspaceAPI.swift ...ForgeView.swift ...ChatStore.swift` ✅; `xcodebuild ... Debug ... generic/platform=iOS Simulator` ✅; smoke manifest + binary `.rbxm` через Lune для 9 типов (`car`, `motorcycle`, `boat`, `plane`, `helicopter`, `tank`, `spaceship`, `bicycle`, `bus`) ✅ — в каждом есть `VehicleSeat`, passenger seats, `VehicleController`, sounds, particle VFX, validation issues: none.
+
+### ✅ [Simple GitHub Workflow Rule] GitHub как checkpoint, main-only без PR/worktree по умолчанию (2026-05-18, сессия 351)
+- **Задача**: упростить правила работы с GitHub, чтобы не путаться между `main`, worktree, PR и Xcode.
+- **Решение**: в `AGENTS.md` добавлен раздел `0.5 Упрощённый режим Git/GitHub для этого проекта`: одно рабочее место `/Users/test/Downloads/AI Games for Roblox NEW Gold` на `main`; Xcode открывает только эту папку; worktree/PR не использовать без прямого разрешения; незакоммиченные изменения можно тестировать локально; commit только после успешной проверки; push только по отдельной команде пользователя.
+- **Файлы**: `AGENTS.md`, `cursor/changelog-351.md`, `docs/PROGRESS.md`.
+- **Проверка**: docs/config-only change — перечитаны изменённые workflow-файлы, `git diff --check` по tracked workflow-файлам.
+- **Эффект**: будущие сессии должны работать проще: локально в `main`, сохранять проверенные состояния commit-ами и отправлять в GitHub только по явной просьбе.
+
 ### ✅ [Track 3] 3D Pet Asset Generation в чате (2026-05-18, сессия 350)
 - **Задача**: добавить отдельный chip-flow для AI-генерации 3D Pet ассетов (.rbxm) с моделью + AI follow + leveling + rarity + visual evolution (3 mesh-стадии на pet: lvl 1 / lvl 25 / lvl 50).
 - **Pattern**: зеркалит Track 2 (layered clothing) — chat → classify → multi-view → mesh → rig → FBX convert → validate → assemble RBXM → iOS handoff.
@@ -3620,6 +3668,25 @@
 - **Файлы**: `apps/functions/src/robloxWorker.ts`, `apps/functions/src/index.ts`, `apps/functions/dist/robloxWorker.js`, `apps/functions/dist/index.js`, `cursor/changelog-208.md`, `docs/PROGRESS.md`.
 - **Проверка**: `npm run build --workspace apps/functions` passed; smoke `buildRobloxManifest()` с two fake uploaded Gym Bro assets подтвердил `hasLoader=true`, `fallbackCount=12`, `generated_accessory_visible_fallback_v1=true`, `generatedAccessoryAssetCount=2`, `qualityStatus=passed`; `git diff --check` passed.
 - **Deploy**: `firebase deploy --only functions:api --project roblox-ai-generator-v2-2-ios` ✅; `/api/health` вернул `{"ok":true,"service":"ai-roblox-gold-firebase-api","region":"us-central1"}`. Старый `/Users/test/Downloads/gym-bro-roast-npc-.rbxm` не изменится — нужен fresh regenerate.
+
+### ✅ [Git ↔ working tree ↔ Firebase prod рассинхрон] Диагноз и восстановление «хождения по кругу» с 15 мая (2026-05-19, сессия 356)
+- **Проблема**: пользователь жаловался, что с пятницы фиксы Claude/Codex не видны, «по кругу одно и то же» по Vehicles, Furniture-лампе, Pets, одежде.
+- **Root cause**:
+  1. Сессии 353/354/355 вносили правки в `apps/functions/src/*.ts`, `apps/ios/.../GenerationPreviewView.swift`, `packages/shared/src/types.ts`, делали `firebase deploy` (по routine memory) — но **не делали `git commit`**. Источник в working tree, prod-функции свежие, а `git log` отстаёт. Следующая сессия Codex/Claude не видит этих правок в истории.
+  2. 14 коммитов локально не запушены в `origin/main`.
+  3. Лишний worktree `.claude/worktrees/elastic-poincare-569e44` на коммите, уже включённом в main; симлинк `.claude/worktrees/zealous-yonath-c6f45a → ../..` (самоссылка).
+  4. iOS бинарь, вероятно, устарел — UI-фикс [GenerationPreviewView.swift](apps/ios/AIGoldRoblox/Features/Generation/GenerationPreviewView.swift) не вступит в силу без Xcode Clean Build.
+  5. Старые job-ы в Firebase Storage не пересобираются — пользователь, открывая старые чаты, видит закэшированные сломанные артефакты.
+- **Решение**:
+  - Добавлено правило [AGENTS.md](AGENTS.md) §0.6 «Firebase deploy идёт ПОСЛЕ commit'а» — deploy без commit'а запрещён.
+  - Обновлена memory `feedback_firebase_deploy.md`: строгий порядок build → changelog → commit → deploy → health check.
+  - Закоммичены накопленные правки сессий 348–355 (catch-up commit для backend+iOS+shared, отдельный docs commit).
+  - Удалены worktree `elastic-poincare-569e44` и симлинк `zealous-yonath-c6f45a`.
+- **Файлы**: [AGENTS.md](AGENTS.md), `cursor/changelog-356.md`, `docs/PROGRESS.md`, `feedback_firebase_deploy.md` (memory).
+- **Push в origin**: НЕ сделан (правило §0.5 п.7 — только по отдельной команде пользователя). 16 коммитов локально не запушены.
+- **Stash@{0}**: оставлен (старый WIP T-Shirt уже в main коммитом `452b7ac`; drop требует явной команды).
+- **iOS rebuild**: требуется Product → Clean Build Folder + Run в Xcode, чтобы фикс UI сессии 354 (`.unavailable` без Export-кнопки) вступил в силу.
+- **Проверка на стороне пользователя**: после iOS rebuild — по одному свежему Generate на Vehicles / Furniture lamp blocky / Pets / Clothing. Не из старых чатов.
 
 ## Known Issues
 
