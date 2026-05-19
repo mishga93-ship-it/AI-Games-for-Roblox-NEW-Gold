@@ -464,6 +464,15 @@ enum AIWorkspaceAPI {
         let petElement: String?
         let petIsFlying: Bool?
         let isPetEvolution: Bool?
+        // Track 3 Phase 2 (Blocky Pet)
+        let isBlockyPet: Bool?
+        let blockyRig: String?
+        let partCount: Int?
+        let jointCount: Int?
+        // Vehicles pipeline metadata
+        let vehicleType: String?
+        let driveMode: String?
+        let seatCount: Int?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: DynamicCodingKey.self)
@@ -521,6 +530,20 @@ enum AIWorkspaceAPI {
             petElement = try? container.decode(String.self, forKey: .init("petElement"))
             petIsFlying = try? container.decode(Bool.self, forKey: .init("petIsFlying"))
             isPetEvolution = try? container.decode(Bool.self, forKey: .init("isPetEvolution"))
+            isBlockyPet = try? container.decode(Bool.self, forKey: .init("isBlockyPet"))
+            blockyRig = try? container.decode(String.self, forKey: .init("blockyRig"))
+            partCount = try? container.decode(Int.self, forKey: .init("partCount"))
+            jointCount = try? container.decode(Int.self, forKey: .init("jointCount"))
+            vehicleType = try? container.decode(String.self, forKey: .init("vehicleType"))
+            driveMode = try? container.decode(String.self, forKey: .init("driveMode"))
+            if let seatCountInt = try? container.decode(Int.self, forKey: .init("seatCount")) {
+                seatCount = seatCountInt
+            } else if let seatCountString = try? container.decode(String.self, forKey: .init("seatCount")),
+                      let parsedSeatCount = Int(seatCountString) {
+                seatCount = parsedSeatCount
+            } else {
+                seatCount = nil
+            }
         }
 
         private struct DynamicCodingKey: CodingKey {
@@ -595,6 +618,13 @@ enum AIWorkspaceAPI {
         let petStageIndex: Int?
         let petBaseName: String?
         let petStages: Int?
+        // Track 3 Phase 2 (Blocky Pet)
+        let isBlockyPet: Bool?
+        let isBlockyPetSpec: Bool?
+        let isPetAnimation: Bool?
+        let isBlockyAnimation: Bool?
+        let isPetDecal: Bool?
+        let trackName: String?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -620,6 +650,12 @@ enum AIWorkspaceAPI {
             petStageIndex = try? container.decode(Int.self, forKey: .petStageIndex)
             petBaseName = try? container.decode(String.self, forKey: .petBaseName)
             petStages = try? container.decode(Int.self, forKey: .petStages)
+            isBlockyPet = try? container.decode(Bool.self, forKey: .isBlockyPet)
+            isBlockyPetSpec = try? container.decode(Bool.self, forKey: .isBlockyPetSpec)
+            isPetAnimation = try? container.decode(Bool.self, forKey: .isPetAnimation)
+            isBlockyAnimation = try? container.decode(Bool.self, forKey: .isBlockyAnimation)
+            isPetDecal = try? container.decode(Bool.self, forKey: .isPetDecal)
+            trackName = try? container.decode(String.self, forKey: .trackName)
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -629,6 +665,7 @@ enum AIWorkspaceAPI {
             case role, animationName, rig, animationType, looped, keyframeCount
             case isPetMesh, isPetRiggedFbx, isPetEvolution, isPetConcept
             case petStageIndex, petBaseName, petStages
+            case isBlockyPet, isBlockyPetSpec, isPetAnimation, isBlockyAnimation, isPetDecal, trackName
         }
     }
 

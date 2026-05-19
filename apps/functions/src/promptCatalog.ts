@@ -1233,6 +1233,61 @@ CRITICAL: The title must be VISUALLY DESCRIPTIVE — it drives the 3D model gene
 A vague prompt = a bad 3D model. Focus on shape, materials, colors, glow effects, distinctive features.
 `.trim(),
 
+  smartInterviewVehicle: `
+You are a senior Roblox vehicle systems designer. You help users create playable vehicle .rbxm assets: cars, motorcycles, boats, planes, helicopters, tanks, spaceships, bicycles, and buses.
+
+GOAL:
+Create a self-contained Roblox vehicle Model with DriveSeat/VehicleSeat, passenger Seats, physics controller, engine sounds, and VFX. The first release uses a deterministic Roblox Parts chassis so it works even without external mesh providers.
+
+CONVERSATION STYLE:
+- Ask exactly ONE question per turn.
+- Offer at most 3 quick replies plus "Decide for me".
+- Recommend stable arcade handling by default. Never over-promise simulation-grade racing physics.
+
+INTERVIEW FLOW:
+
+Turn 1 — VEHICLE TYPE:
+Ask what kind of vehicle to build.
+quickReplies: ["Car", "Motorcycle", "Boat", "Plane", "Helicopter", "Tank", "Spaceship", "Bicycle", "Bus", "Decide for me"]
+
+Turn 2 — HANDLING + PASSENGERS:
+Ask how it should feel and how many passengers it should carry.
+quickReplies: ["Stable arcade", "Fast racer", "Heavy realistic", "Drift / agile", "2 passengers", "4 passengers", "Decide for me"]
+
+Turn 3 — STYLE + EFFECTS:
+Ask visual theme, colors, and signature effects.
+Cover: low-poly/cartoon/realistic/sci-fi/military/pirate/retro, primary/accent/glow colors, engine/exhaust/wake/trails/skid effects.
+quickReplies: ["Neon sci-fi", "Military", "Cartoon low-poly", "Sports", "Pirate / boat", "Decide for me"]
+
+Turn 4 — FINAL VEHICLE BRIEF:
+Summarize the exact vehicle to generate and show the GDD card.
+quickReplies: ["Generate!", "Change type", "Change handling", "Start over"]
+
+Only set action to "generating" when the user confirms.
+
+When confirming, populate GDD fields:
+- title: vivid vehicle name
+- genre: "vehicle"
+- vehicleType: "car" | "motorcycle" | "boat" | "plane" | "helicopter" | "tank" | "spaceship" | "bicycle" | "bus"
+- driveMode: "land_wheels" | "watercraft" | "aircraft" | "rotorcraft" | "tracked" | "hover"
+- seatCount: number including driver, 1-12
+- handling: "stable_arcade" | "fast_racer" | "heavy" | "drift" | "agile"
+- topSpeed: number
+- acceleration: number
+- turnRate: number
+- primaryColor: "#RRGGBB"
+- accentColor: "#RRGGBB"
+- glowColor: "#RRGGBB"
+- mechanics: include DriveSeat/VehicleSeat, passengers, engine sound, visual effects, physics controller
+- requestedKind: "vehicle_3d"
+- contentCategory: "vehicle"
+
+IMPORTANT:
+- The generated asset is a playable .rbxm Model, not a full game map.
+- Include passenger seats if requested.
+- Keep safety realistic: no gore, no real-world weapon branding.
+`.trim(),
+
   generateWeaponScripts: `
 You are a senior Roblox Luau engineer generating production-ready weapon combat scripts.
 Output ONLY pure Luau code — no markdown prose, no code fences, no explanations outside of comments.
@@ -2584,6 +2639,256 @@ Do NOT generate MonetizationServer, ShopClient, installer scripts, or any other 
 The server and client scripts are provided separately and are battle-tested.
 `.trim(),
 
+  // Track 3 Phase 2 — Blocky Pet spec generator. LLM emits a JSON layout of
+  // primitive Parts + Motor6D joints + colour palette + optional decals. The
+  // manifest builder turns this into a .rbxm Model with Anchored=false Parts
+  // welded via Motor6D, ready for keyframed animation.
+  generateBlockyPetSpec: `
+Generate a Roblox **blocky pet** model spec as JSON. The pet is built from
+primitive Roblox Parts (Ball / Block / Cylinder / Wedge) welded together with
+Motor6D joints, in the classic Pet Simulator X / Adopt Me style — NOT a
+realistic 3D mesh.
+
+The user prompt describes the species, mood, colour, and special features
+(wings, horns, glow, etc.). Your job is to design a 10-18 part layout that
+reads at a glance as that creature, using ONLY blocky primitives, with the
+correct rig family for the species.
+
+Return ONLY valid JSON with this schema (no prose, no markdown fence):
+{
+  "name": "string — short PascalCase, e.g. FluffyFox",
+  "rig": "Biped" | "Quadruped" | "Winged" | "Serpentine" | "Aquatic",
+  "colors": {
+    "primary":   "BrickColor name, e.g. Bright orange",
+    "secondary": "BrickColor name, e.g. White",
+    "accent":    "BrickColor name, e.g. Really black",
+    "eye":       "BrickColor name, e.g. Really black"
+  },
+  "material": "SmoothPlastic" | "Plastic" | "Neon" | "Wood" | "Fabric" | "Metal",
+  "height": number  /* total bounding-box height in studs, 2.5-4.5 typical */,
+  "parts": [
+    {
+      "name": "Body",
+      "shape": "Block" | "Ball" | "Cylinder" | "Wedge" | "CornerWedge",
+      "size":     [w, h, d],                /* studs, MINIMUM 0.15 per axis */
+      "position": [x, y, z],                /* Part CENTER, Y up, origin = floor */
+      "rotation": [rx, ry, rz],             /* degrees, optional */
+      "color":    "primary" | "secondary" | "accent" | "eye" | literal BrickColor name,
+      "role":     "primary_part" /* exactly one part has this role */
+                | "head" | "snout" | "eye" | "nose" | "ear"
+                | "tail" | "leg_front_left" | "leg_front_right"
+                | "leg_back_left" | "leg_back_right"
+                | "wing_left" | "wing_right" | "horn" | "mane" | "fin"
+                | "spike" | "detail"
+    }
+  ],
+  "joints": [
+    {
+      "name": "Root",        /* Motor6D name, animator targets it */
+      "part0": "HumanoidRootPart",
+      "part1": "Body"
+    },
+    { "name": "Neck", "part0": "Body", "part1": "Head" },
+    { "name": "LeftFrontLegJoint", "part0": "Body", "part1": "LegFL" }
+    /* ... one joint per articulated part */
+  ],
+  "decals": [
+    {
+      "part": "EyeL",
+      "face": "Front",
+      "imagePrompt": "cartoon fox iris green pupil, transparent background, 256x256"
+    }
+  ]
+}
+
+RIG FAMILY RULES (critical — the animator depends on these joint names):
+- Biped (humanoid robot / standing pets): Body + Head, two arms (LegFL/LegFR
+  renamed as "ArmL"/"ArmR" with role="detail"), two legs (LegBL/LegBR).
+  Joints: Root, Neck, LeftArmJoint, RightArmJoint, LeftLegJoint, RightLegJoint.
+- Quadruped (dog/cat/wolf/fox/horse/lion): four legs in role/name pattern
+  leg_front_left=LegFL, leg_front_right=LegFR, leg_back_left=LegBL,
+  leg_back_right=LegBR. Joints: Root, Neck, LeftFrontLegJoint,
+  RightFrontLegJoint, LeftBackLegJoint, RightBackLegJoint, TailJoint
+  (if tail present). Ears optional with LeftEarJoint/RightEarJoint.
+- Winged (dragon/phoenix/bird): same as Quadruped PLUS wing_left=WingL +
+  wing_right=WingR Wedge parts and LeftWingJoint/RightWingJoint.
+- Serpentine (snake/dragon-without-legs): 4-7 body segments named
+  Segment1..N, joints SegmentJoint1..N-1 chaining them. No legs.
+- Aquatic (fish/shark): Body + Head + Tail (single fin) + role=fin parts
+  for dorsal/pectoral. Joints: Root, Neck, TailJoint, optional FinJoint*.
+
+PART SIZE/POSITION RULES (avoid invisible or floating geometry):
+- Minimum side length 0.15 studs for ANY dimension.
+- Structural parts (Body, legs, neck) at least 0.30 studs in narrow dims —
+  thinner reads as invisible wire from gameplay distance.
+- Eyes are small Balls 0.20-0.35 studs, position Front of head face.
+- Legs touch the floor: leg bottom (y_center - h/2) at y ≈ 0.
+- Head is above and forward of body (positive Y, negative Z if facing -Z).
+- Tail is behind body (positive Z), tilted up via rotation [25,0,0].
+- The Body part MUST have role="primary_part" — it becomes the model's
+  PrimaryPart and the Root Motor6D pivots off HumanoidRootPart→Body.
+
+COLOR SLOT USAGE:
+- Use colors.primary for the main body/head/limbs.
+- Use colors.secondary for snout, belly, paws, ear inner, wing membranes.
+- Use colors.accent for ears, claws, spikes, tail tip, eyebrows.
+- Use colors.eye for eyes (typically "Really black" or vivid).
+
+PALETTE TIPS PER ELEMENT (when prompt mentions an element):
+- Fire:  Bright orange / Bright red / Bright yellow / Really black, material=Neon for accents
+- Ice:   Light blue / White / Toothpaste / Really black, material=Neon for accents
+- Shadow: Really black / Dark stone grey / Royal purple, material=Plastic
+- Light: White / Cool yellow / Bright yellow, material=Neon for primary
+- Nature: Bright green / Br. yellowish green / Reddish brown, material=Wood/Plastic
+- Tech: Medium stone grey / Cyan / Really black, material=Metal
+
+DECALS GUIDANCE:
+- Emit 2-4 decals max (cost). Mostly for eyes (1 per eye) and 1 body pattern.
+- imagePrompt MUST be cartoon Roblox style, transparent background, 256x256.
+- Skip decals entirely for low-cost generations (return decals: []).
+
+EXAMPLE — a "fluffy fox companion":
+{
+  "name": "FluffyFox",
+  "rig": "Quadruped",
+  "colors": {"primary":"Bright orange","secondary":"White","accent":"Really black","eye":"Really black"},
+  "material": "SmoothPlastic",
+  "height": 2.8,
+  "parts": [
+    {"name":"Body","shape":"Block","size":[1.8,1.3,2.6],"position":[0,1.1,0],"color":"primary","role":"primary_part"},
+    {"name":"Head","shape":"Block","size":[1.2,1.1,1.3],"position":[0,1.6,-1.7],"color":"primary","role":"head"},
+    {"name":"Snout","shape":"Block","size":[0.7,0.5,0.7],"position":[0,1.45,-2.3],"color":"secondary","role":"snout"},
+    {"name":"Nose","shape":"Ball","size":[0.25,0.25,0.25],"position":[0,1.55,-2.55],"color":"accent","role":"nose"},
+    {"name":"EyeL","shape":"Ball","size":[0.22,0.22,0.22],"position":[-0.3,1.8,-2.15],"color":"eye","role":"eye"},
+    {"name":"EyeR","shape":"Ball","size":[0.22,0.22,0.22],"position":[0.3,1.8,-2.15],"color":"eye","role":"eye"},
+    {"name":"EarL","shape":"Wedge","size":[0.45,0.7,0.45],"position":[-0.4,2.25,-1.45],"rotation":[0,0,-12],"color":"primary","role":"ear"},
+    {"name":"EarR","shape":"Wedge","size":[0.45,0.7,0.45],"position":[0.4,2.25,-1.45],"rotation":[0,0,12],"color":"primary","role":"ear"},
+    {"name":"Tail","shape":"Cylinder","size":[0.4,1.6,0.4],"position":[0,1.4,1.8],"rotation":[35,0,0],"color":"primary","role":"tail"},
+    {"name":"TailTip","shape":"Ball","size":[0.45,0.45,0.45],"position":[0,1.95,2.4],"color":"secondary","role":"detail"},
+    {"name":"LegFL","shape":"Cylinder","size":[0.35,1.0,0.35],"position":[-0.55,0.5,-1.0],"color":"primary","role":"leg_front_left"},
+    {"name":"LegFR","shape":"Cylinder","size":[0.35,1.0,0.35],"position":[0.55,0.5,-1.0],"color":"primary","role":"leg_front_right"},
+    {"name":"LegBL","shape":"Cylinder","size":[0.35,1.0,0.35],"position":[-0.55,0.5,0.9],"color":"primary","role":"leg_back_left"},
+    {"name":"LegBR","shape":"Cylinder","size":[0.35,1.0,0.35],"position":[0.55,0.5,0.9],"color":"primary","role":"leg_back_right"}
+  ],
+  "joints": [
+    {"name":"Root","part0":"HumanoidRootPart","part1":"Body"},
+    {"name":"Neck","part0":"Body","part1":"Head"},
+    {"name":"SnoutJoint","part0":"Head","part1":"Snout"},
+    {"name":"NoseJoint","part0":"Snout","part1":"Nose"},
+    {"name":"LeftEyeJoint","part0":"Head","part1":"EyeL"},
+    {"name":"RightEyeJoint","part0":"Head","part1":"EyeR"},
+    {"name":"LeftEarJoint","part0":"Head","part1":"EarL"},
+    {"name":"RightEarJoint","part0":"Head","part1":"EarR"},
+    {"name":"TailJoint","part0":"Body","part1":"Tail"},
+    {"name":"TailTipJoint","part0":"Tail","part1":"TailTip"},
+    {"name":"LeftFrontLegJoint","part0":"Body","part1":"LegFL"},
+    {"name":"RightFrontLegJoint","part0":"Body","part1":"LegFR"},
+    {"name":"LeftBackLegJoint","part0":"Body","part1":"LegBL"},
+    {"name":"RightBackLegJoint","part0":"Body","part1":"LegBR"}
+  ],
+  "decals": []
+}
+`.trim(),
+
+  // Track 3 Phase 2 — Blocky Pet animation keyframes targeting Motor6D
+  // joints on a Part-based rig (not R6/R15 humanoid). Same JSON schema as
+  // generateAnimation but joints reference the spec's Motor6D names.
+  generateBlockyPetAnimation: `
+Generate Motor6D keyframe animations for a blocky Roblox pet. The pet is
+built from primitive Parts with Motor6D joints — you animate the joints,
+NOT humanoid R15/R6 limbs.
+
+You will be given:
+- The pet's rig family (Quadruped / Biped / Winged / Serpentine / Aquatic)
+- The list of available Motor6D joint names from the spec
+- Whether the pet flies (isFlying=true)
+
+Return ONLY valid JSON with this schema:
+{
+  "name": "Pet animations",
+  "rig": "Motor6D",
+  "tracks": [
+    {
+      "trackName": "Idle",
+      "type": "idle",
+      "looped": true,
+      "priority": "Idle",
+      "duration": 3.0,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "poses": [
+            { "joint": "Neck", "cframe": { "x":0,"y":0,"z":0, "rx":0.0, "ry":0.0, "rz":0.0 } }
+          ]
+        }
+      ]
+    },
+    {
+      "trackName": "Walk",
+      "type": "walk",
+      "looped": true,
+      "priority": "Movement",
+      "duration": 0.8,
+      "keyframes": [ /* ... */ ]
+    },
+    {
+      "trackName": "Fly", /* only if isFlying=true */
+      "type": "fly",
+      "looped": true,
+      "priority": "Movement",
+      "duration": 0.6,
+      "keyframes": [ /* ... */ ]
+    }
+  ]
+}
+
+CFRAME RULES (Roblox Motor6D — local-space transform of the child relative
+to its joint's resting offset):
+- x/y/z are LOCAL position offsets in studs (usually 0).
+- rx/ry/rz are LOCAL rotation in RADIANS.
+- Use SMALL rotations for idle (0.05-0.15), MEDIUM for walk (0.25-0.6),
+  LARGE for fly wing-flap (0.6-1.2).
+- Position offsets only when the pet bobs (HumanoidRootPart or Body), 0.1-0.3.
+
+QUADRUPED WALK PATTERN (8 keyframes, duration 0.8s, looped):
+- Cross-pattern: LeftFront + RightBack forward, RightFront + LeftBack back.
+- time 0.0:    LeftFrontLegJoint rx:0.4, RightBackLegJoint rx:0.4,
+               RightFrontLegJoint rx:-0.4, LeftBackLegJoint rx:-0.4,
+               TailJoint ry:0.1, Neck ry:0.05
+- time 0.2:    all four legs rx:0 (passing through), TailJoint ry:0
+- time 0.4:    LeftFrontLegJoint rx:-0.4, RightBackLegJoint rx:-0.4,
+               RightFrontLegJoint rx:0.4, LeftBackLegJoint rx:0.4,
+               TailJoint ry:-0.1, Neck ry:-0.05
+- time 0.6:    passing through (same as 0.2)
+- time 0.8:    same as 0.0 (closes the loop)
+
+QUADRUPED IDLE PATTERN (4 keyframes, duration 3.0s, looped — gentle breathing):
+- time 0.0: Neck rx:0.03, TailJoint ry:0.05
+- time 1.0: Neck rx:0.08, TailJoint ry:-0.05
+- time 2.0: Neck rx:0.03, TailJoint ry:0.05
+- time 3.0: same as 0.0
+
+WINGED FLY PATTERN (4 keyframes, duration 0.6s, looped):
+- time 0.0: LeftWingJoint rz:-0.8, RightWingJoint rz:0.8 (wings up)
+- time 0.15: LeftWingJoint rz:-0.2, RightWingJoint rz:0.2 (wings half-down)
+- time 0.3:  LeftWingJoint rz:0.3,  RightWingJoint rz:-0.3 (wings down)
+- time 0.45: LeftWingJoint rz:-0.2, RightWingJoint rz:0.2 (back up)
+- time 0.6:  same as 0.0
+
+BIPED WALK is a 2-leg cross-step with LeftLegJoint and RightLegJoint
+alternating rx:0.4 / rx:-0.4 over 1.0s.
+
+SERPENTINE MARCH is a sinusoidal wave across SegmentJoint1..N — each
+joint's ry follows sin(t*pi*2 + i*phase) where phase = pi/3 per segment.
+
+AQUATIC MARCH oscillates the TailJoint ry:0.6 / -0.6 over 0.7s with the
+Body slightly rocking (Neck ry:0.1 / -0.1 in phase).
+
+NEVER reference a joint that isn't in the provided joint list. If a joint
+is missing for the requested motion (e.g. no TailJoint), gracefully skip
+that channel and animate the remaining joints only.
+`.trim(),
+
   generateAnimation: `
 Generate a Roblox animation as a JSON keyframe sequence.
 The user will describe the animation type (walk, run, jump, attack, idle, dance, emote) and rig (R6 or R15).
@@ -3839,6 +4144,7 @@ function explicitCategoryIntentFromMetadata(
     case 'pvp_arena': return useGenerationIntent ? 'pvp_arena_generation' : 'pvp_arena_interview';
     case 'simulator': return useGenerationIntent ? 'simulator_generation' : 'simulator_interview';
     case 'weapons': return useGenerationIntent ? 'weapon_generation' : 'weapon_interview';
+    case 'vehicles': return useGenerationIntent ? 'vehicle_generation' : 'vehicle_interview';
     case 'items': return useGenerationIntent ? 'item_generation' : 'item_interview';
     case 'buildings': return useGenerationIntent ? 'building_generation' : 'building_interview';
     case 'furniture': return useGenerationIntent ? 'furniture_generation' : 'furniture_interview';
@@ -3856,6 +4162,7 @@ function explicitCategoryIntentFromMetadata(
     case 'animation': return useGenerationIntent ? 'animation_generation' : 'animation_interview';
     case 'script': return useGenerationIntent ? 'script_generation' : 'script_interview';
     case 'weapon': return useGenerationIntent ? 'weapon_generation' : 'weapon_interview';
+    case 'vehicle': return useGenerationIntent ? 'vehicle_generation' : 'vehicle_interview';
     case 'item_tool': return useGenerationIntent ? 'item_generation' : 'item_interview';
     case 'furniture_prop': return useGenerationIntent ? 'furniture_generation' : 'furniture_interview';
     case 'building': return useGenerationIntent ? 'building_generation' : 'building_interview';
@@ -3880,6 +4187,7 @@ function promptIntentFamily(intent: PromptIntent): string {
   if (intent.startsWith('animation_')) return 'animation';
   if (intent.startsWith('script_') || intent === 'script_doctor') return 'script';
   if (intent.startsWith('weapon_')) return 'weapon';
+  if (intent.startsWith('vehicle_')) return 'vehicle';
   if (intent.startsWith('item_')) return 'item';
   if (intent.startsWith('furniture_')) return 'furniture';
   if (intent.startsWith('building_')) return 'building';
@@ -3926,6 +4234,7 @@ function chatIntentFromMetadata(metadata?: PromptContextMetadata): PromptIntent 
   if (metadata?.contentCategory === 'animation') return 'animation_interview';
   if (metadata?.contentCategory === 'script') return 'script_interview';
   if (metadata?.contentCategory === 'weapon') return 'weapon_interview';
+  if (metadata?.contentCategory === 'vehicle' || (metadata as Record<string, unknown>)?.contentSubcategory === 'vehicles') return 'vehicle_interview';
   if (metadata?.contentCategory === 'item_tool') return 'item_interview';
   if (metadata?.contentCategory === 'furniture_prop') return 'furniture_interview';
   if (metadata?.contentCategory === 'building') return 'building_interview';
@@ -3975,6 +4284,7 @@ function generationIntentFromRequest(request: ContentGenerateRequest): PromptInt
       return 'script_doctor';
     case 'character_3d':
       if (request.metadata?.contentCategory === 'weapon') return 'weapon_generation';
+      if (request.metadata?.contentCategory === 'vehicle') return 'vehicle_generation';
       if (request.metadata?.contentCategory === 'item_tool') return 'item_generation';
       if (request.metadata?.contentCategory === 'furniture_prop') return 'furniture_generation';
       if (request.metadata?.contentCategory === 'building') return 'building_generation';
@@ -4202,6 +4512,10 @@ export function buildChatPrompt(args: {
         return PROMPT_CATALOG.smartInterviewWeapon;
       case 'weapon_generation':
         return `${PROMPT_CATALOG.smartInterviewWeapon}\n\n${PROMPT_CATALOG.generateWeaponScripts}`;
+      case 'vehicle_interview':
+        return PROMPT_CATALOG.smartInterviewVehicle;
+      case 'vehicle_generation':
+        return PROMPT_CATALOG.smartInterviewVehicle;
       case 'anime_skill_interview':
         return PROMPT_CATALOG.smartInterviewAnimeSkill;
       case 'anime_skill_generation':
@@ -4289,6 +4603,7 @@ You are also a full Roblox expert. If the user asks questions (about development
   const isUIInterview = intent === 'ui_interview' || intent === 'ui_generation';
   const isScriptInterview = intent === 'script_interview';
   const isWeaponInterview = intent === 'weapon_interview' || intent === 'weapon_generation';
+  const isVehicleInterview = intent === 'vehicle_interview' || intent === 'vehicle_generation';
   const isItemInterview = intent === 'item_interview' || intent === 'item_generation';
   const isBuildingInterview = intent === 'building_interview' || intent === 'building_generation';
   const isMapInterview = intent === 'map_interview' || intent === 'map_generation';
@@ -4314,6 +4629,7 @@ You are also a full Roblox expert. If the user asks questions (about development
     isUIInterview,
     isScriptInterview,
     isWeaponInterview,
+    isVehicleInterview,
     isItemInterview,
     isBuildingInterview,
     isMapInterview,
@@ -4380,6 +4696,7 @@ type InterviewStateKind =
   | 'ui'
   | 'script'
   | 'weapon'
+  | 'vehicle'
   | 'item'
   | 'building'
   | 'map'
@@ -4400,6 +4717,7 @@ interface InterviewStateFlags {
   isUIInterview: boolean;
   isScriptInterview: boolean;
   isWeaponInterview: boolean;
+  isVehicleInterview: boolean;
   isItemInterview: boolean;
   isBuildingInterview: boolean;
   isMapInterview: boolean;
@@ -4421,6 +4739,7 @@ function maxTurnsForInterview(flags: InterviewStateFlags): number {
     || flags.isAudioInterview
     || flags.isDecalInterview
     || flags.isWeaponInterview
+    || flags.isVehicleInterview
     || flags.isItemInterview
     || flags.isBuildingInterview
     || flags.isMapInterview
@@ -4452,6 +4771,7 @@ function resolveInterviewStateKind(flags: InterviewStateFlags): InterviewStateKi
   if (flags.isUIInterview) return 'ui';
   if (flags.isScriptInterview) return 'script';
   if (flags.isWeaponInterview) return 'weapon';
+  if (flags.isVehicleInterview) return 'vehicle';
   if (flags.isItemInterview) return 'item';
   if (flags.isBuildingInterview) return 'building';
   if (flags.isMapInterview) return 'map';
@@ -4483,6 +4803,7 @@ function interviewFirstQuestionFocus(kind: InterviewStateKind, metadata?: Prompt
     ui: 'UI type and screen goal',
     script: 'system category and architecture',
     weapon: 'weapon category and combat role',
+    vehicle: 'vehicle type, handling model, passenger count, and effects',
     item: 'item category and gameplay use logic',
     building: 'building type and gameplay purpose',
     map: 'map environment type and player flow',
@@ -4546,6 +4867,12 @@ function interviewTurnFocus(kind: InterviewStateKind, turn: number): string {
       'Turn 2: visual details and colors.',
       'Turn 3: combat behavior.',
       'Turn 4: final weapon brief.',
+    ],
+    vehicle: [
+      'Turn 1: vehicle type.',
+      'Turn 2: handling and passengers.',
+      'Turn 3: style, colors, sounds, and VFX.',
+      'Turn 4: final vehicle brief.',
     ],
     item: [
       'Turn 1: item type.',

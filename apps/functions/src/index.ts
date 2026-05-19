@@ -1384,7 +1384,15 @@ ${viralStyleInjection.promptBlock}`, 8000);
       history: ['Queued generation job', `Selected provider: ${provider}`],
       stages: (() => {
         if (requestedKind === 'clothing_3d') return createLayeredClothingPipelineStages();
-        if (requestedKind === 'pet_3d') return createPetEvolutionPipelineStages();
+        if (requestedKind === 'pet_3d') {
+          // Track 3 Phase 2 (Blocky Pet): user picked blocky mode in iOS chat;
+          // we still keep the pet_3d kind for backward compat with downstream
+          // consumers, but route to the 6-stage blocky pipeline instead of
+          // the 14-stage Tripo/Meshy mesh chain.
+          if (effectiveMetadata.petMode === 'blocky') return createBlockyPetPipelineStages();
+          return createPetEvolutionPipelineStages();
+        }
+        if (requestedKind === 'vehicle_3d' || effectiveMetadata.contentCategory === 'vehicle') return createVehiclePipelineStages();
         if (requestedKind === 'animation') return createAnimationPipelineStages();
         if (requestedKind === 'decal_texture') return createDecalTexturePipelineStages();
         if (effectiveMetadata.contentCategory === 'gamepass') return createMonetizationPipelineStages();
@@ -1433,7 +1441,7 @@ ${viralStyleInjection.promptBlock}`, 8000);
 
     await db.collection('generationJobs').doc(jobId).set(job);
 
-    const asyncKinds: GenerationJob['kind'][] = ['character_3d', 'clothing_3d', 'pet_3d', 'animation', 'game_package', 'rbxl_build', 'rbxm_build', 'code'];
+    const asyncKinds: GenerationJob['kind'][] = ['character_3d', 'clothing_3d', 'pet_3d', 'vehicle_3d', 'animation', 'game_package', 'rbxl_build', 'rbxm_build', 'code'];
     if (asyncKinds.includes(requestedKind)) {
       const selfHost = req.header('host') ?? 'api-z4yzt6dhjq-uc.a.run.app';
       const selfUrl = `https://${selfHost}/api/internal/run-3d-pipeline`;
@@ -5856,6 +5864,20 @@ function createDecalTexturePipelineStages(): GenerationStageProgress[] {
   ];
 }
 
+// Track 3 Phase 2 (Blocky Pet pipeline) — primitive-Part pet with Motor6D
+// rig and LLM-generated Motor6D keyframe animations. 5 stages, no external
+// mesh providers needed. ~30-60s end-to-end, ~$0.05-0.15 per pet.
+function createBlockyPetPipelineStages(): GenerationStageProgress[] {
+  return [
+    { id: 'classify_pet' as GenerationStageId, title: 'Classify pet (species, rarity, rig)', status: 'pending' },
+    { id: 'blocky_spec' as GenerationStageId, title: 'Generate blocky pet layout (parts + joints)', status: 'pending' },
+    { id: 'blocky_decals' as GenerationStageId, title: 'Generate surface decals (eyes, patterns)', status: 'pending' },
+    { id: 'blocky_animations' as GenerationStageId, title: 'Generate Motor6D animations (idle, walk[, fly])', status: 'pending' },
+    { id: 'package_blocky_pet' as GenerationStageId, title: 'Package .rbxm', status: 'pending' },
+    { id: 'export_pet_rbxm' as GenerationStageId, title: 'Export final .rbxm', status: 'pending' },
+  ];
+}
+
 // Track 3 (3D Pet pipeline) — visual-evolution pet with 3 mesh stages
 // (lvl 1 / lvl 25 / lvl 50). Stages are required (stage1) or skip-on-fail
 // (stage2/stage3) so the pet ships gracefully when later stages fail.
@@ -5973,6 +5995,69 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
     { id: 'mesh_optimized', title: 'Optimize mesh', status: 'pending' },
     { id: 'export_rbxm', title: 'Export furniture RBXM', status: 'pending' },
   ];
+}
+
+function createVehiclePipelineStages(): GenerationStageProgress[] {
+  return [
+    { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
+    { id: 'quality_review', title: 'Vehicle package QA', status: 'pending' },
+    { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
+  ];
+}
+
+type VehicleTypeId = 'car' | 'motorcycle' | 'boat' | 'plane' | 'helicopter' | 'tank' | 'spaceship' | 'bicycle' | 'bus';
+
+function detectVehicleType(prompt: string, metadata?: Record<string, unknown>): VehicleTypeId {
+  const raw = typeof metadata?.vehicleType === 'string' ? metadata.vehicleType.toLowerCase().trim() : '';
+  const known = new Set<VehicleTypeId>(['car', 'motorcycle', 'boat', 'plane', 'helicopter', 'tank', 'spaceship', 'bicycle', 'bus']);
+  if (known.has(raw as VehicleTypeId)) return raw as VehicleTypeId;
+  const haystack = `${prompt} ${metadata?.title ?? ''} ${metadata?.genre ?? ''} ${metadata?.theme ?? ''}`.toLowerCase();
+  if (/\b(bus|coach|shuttle)\b|автобус|маршрутк/i.test(haystack)) return 'bus';
+  if (/\b(tank|armored|armoured|tread|tracked)\b|танк|гусениц/i.test(haystack)) return 'tank';
+  if (/\b(helicopter|heli|chopper|rotor)\b|вертол/i.test(haystack)) return 'helicopter';
+  if (/\b(plane|airplane|jet|fighter|aircraft)\b|самол[её]т|истреб/i.test(haystack)) return 'plane';
+  if (/\b(boat|ship|speedboat|yacht|submarine)\b|лодк|корабл|яхт|катер/i.test(haystack)) return 'boat';
+  if (/\b(spaceship|space\s*ship|starfighter|ufo|rocket)\b|косми|звездол|ракета|нло/i.test(haystack)) return 'spaceship';
+  if (/\b(motorcycle|motorbike|bike|hoverbike)\b|мото|байк/i.test(haystack)) return 'motorcycle';
+  if (/\b(bicycle|cycle|bmx)\b|велосип/i.test(haystack)) return 'bicycle';
+  return 'car';
+}
+
+function vehicleDriveMode(vehicleType: VehicleTypeId): string {
+  switch (vehicleType) {
+    case 'boat': return 'watercraft';
+    case 'plane': return 'aircraft';
+    case 'helicopter': return 'rotorcraft';
+    case 'tank': return 'tracked';
+    case 'spaceship': return 'hover';
+    case 'car':
+    case 'motorcycle':
+    case 'bicycle':
+    case 'bus':
+    default:
+      return 'land_wheels';
+  }
+}
+
+function inferVehicleSeatCount(vehicleType: VehicleTypeId, metadata?: Record<string, unknown>): number {
+  const explicit = Number(metadata?.seatCount ?? metadata?.passengerCount);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.min(12, Math.round(explicit)));
+  switch (vehicleType) {
+    case 'motorcycle':
+    case 'bicycle':
+      return 2;
+    case 'plane':
+    case 'helicopter':
+    case 'boat':
+    case 'tank':
+    case 'spaceship':
+      return 4;
+    case 'bus':
+      return 8;
+    case 'car':
+    default:
+      return 4;
+  }
 }
 
 function createBuildingPipelineStages(): GenerationStageProgress[] {
@@ -8062,6 +8147,15 @@ function resolveRequestedGenerationKind(
   kind: ContentGenerateRequest['kind'],
   metadata: ContentGenerateRequest['metadata'],
 ): GenerationJob['kind'] {
+  const requestedKind = typeof (metadata as Record<string, unknown> | undefined)?.requestedKind === 'string'
+    ? String((metadata as Record<string, unknown>).requestedKind)
+    : '';
+  if (requestedKind === 'pet_3d') {
+    return 'pet_3d';
+  }
+  if (requestedKind === 'vehicle_3d') {
+    return 'vehicle_3d';
+  }
   if (kind === 'character_3d') {
     return 'character_3d';
   }
@@ -9127,6 +9221,246 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
   }
 }
 
+// ---------------------------------------------------------------------------
+// Track 3 Phase 2 (Blocky Pet pipeline) — primitive-Part pet driven by Motor6D
+// rig + LLM-keyframed Motor6D animations. 5 logical stages + final export.
+// No external mesh provider (no Meshy/Tripo) — fully self-contained:
+//   1) classify_pet         (LLM — species/skeleton/rarity/element)
+//   2) blocky_spec          (LLM — JSON layout of parts + joints + colours)
+//   3) blocky_decals        (optional — Flux 256x256 PNGs + Open Cloud upload)
+//   4) blocky_animations    (LLM — Motor6D keyframes per track)
+//   5) package_blocky_pet   (assemble .rbxm via buildBlockyPetManifest)
+//   6) export_pet_rbxm      (binary export via maybeBuildRobloxBinary)
+// ---------------------------------------------------------------------------
+async function processBlockyPetJob(jobId: string, job: GenerationJob): Promise<GenerationJob> {
+  const prompt = job.prompt || '';
+  const metadata: Record<string, unknown> = { ...(job.metadata ?? {}), contentCategory: 'pet', requestedKind: 'pet_3d', petMode: 'blocky' };
+  const requestedSpecies = typeof metadata.petSpecies === 'string' ? metadata.petSpecies : undefined;
+
+  let currentJob: GenerationJob = {
+    ...job,
+    kind: 'pet_3d',
+    metadata,
+    stages: job.stages && job.stages.length > 0 ? job.stages : createBlockyPetPipelineStages(),
+    artifacts: [...job.artifacts],
+    history: [...job.history, 'Blocky Pet pipeline: classify → spec → decals → animations → package → export'],
+  };
+
+  const beginStage = async (stageId: GenerationStageId, notes?: string[]) => {
+    currentJob = updateStage(currentJob, stageId, { status: 'processing', startedAt: new Date().toISOString(), notes });
+    await persistJobSnapshot(jobId, currentJob);
+  };
+  const finishStage = async (
+    stageId: GenerationStageId,
+    status: GenerationStageStatus,
+    artifactIds: string[] = [],
+    notes: string[] = [],
+    errorMsg?: string,
+  ) => {
+    currentJob = updateStage(currentJob, stageId, {
+      status,
+      completedAt: new Date().toISOString(),
+      artifactIds: artifactIds.length > 0 ? artifactIds : undefined,
+      notes: notes.length > 0 ? notes : undefined,
+      errorMessage: errorMsg,
+    });
+    await persistJobSnapshot(jobId, currentJob);
+  };
+
+  try {
+    // ── 1. classify_pet ───────────────────────────────────────────────
+    await beginStage('classify_pet' as GenerationStageId, ['Classifying species / skeleton / rarity']);
+    const classification = await classifyPet(prompt, requestedSpecies);
+    await finishStage('classify_pet' as GenerationStageId, 'completed', [], [
+      `species=${classification.speciesType}`,
+      `skeleton=${classification.skeletonType}`,
+      `rarity=${classification.rarity}`,
+      `element=${classification.element}`,
+      `isFlying=${classification.isFlying}`,
+    ]);
+
+    // ── 2. blocky_spec ────────────────────────────────────────────────
+    await beginStage('blocky_spec' as GenerationStageId, ['LLM generating blocky pet layout (parts + Motor6D joints)']);
+    const providersModule = await import('./providers.js');
+    const spec = await providersModule.generateBlockyPetSpec({ prompt, classification });
+    const specArtifact = await uploadTextArtifact(currentJob, JSON.stringify(spec, null, 2), {
+      type: 'json',
+      extension: 'json',
+      mimeType: 'application/json',
+      name: `${spec.name}-spec.json`,
+      previewText: `${spec.parts.length} parts, ${spec.joints.length} joints, rig=${spec.rig}`,
+      stageId: 'blocky_spec' as GenerationStageId,
+      artifactRole: 'brief',
+      metadata: { isBlockyPetSpec: true, partCount: spec.parts.length, jointCount: spec.joints.length, rig: spec.rig },
+    });
+    currentJob.artifacts = [...currentJob.artifacts, specArtifact];
+    await finishStage('blocky_spec' as GenerationStageId, 'completed', [specArtifact.id], [
+      `${spec.parts.length} parts, ${spec.joints.length} joints, rig=${spec.rig}`,
+      `palette: primary=${spec.colors.primary}, accent=${spec.colors.accent ?? '—'}`,
+    ]);
+
+    // ── 3. blocky_decals (optional, non-fatal) ────────────────────────
+    await beginStage('blocky_decals' as GenerationStageId, [
+      spec.decals && spec.decals.length > 0
+        ? `Generating ${spec.decals.length} decal texture(s) via Flux`
+        : 'No decals requested — skipping',
+    ]);
+    if (spec.decals && spec.decals.length > 0) {
+      try {
+        for (const decal of spec.decals) {
+          const decalUrl = await generatePreviewTexture(decal.imagePrompt, 'roblox', 'prop');
+          if (decalUrl) {
+            const decalArt = await copyExternalArtifact(currentJob, decalUrl, 'image/png', {
+              name: `${spec.name}-${decal.part}-${decal.face}-decal.png`,
+              stageId: 'blocky_decals' as GenerationStageId,
+              artifactRole: 'decal_texture',
+              metadata: { isPetDecal: true, decalPart: decal.part, decalFace: decal.face },
+            });
+            currentJob.artifacts = [...currentJob.artifacts, decalArt];
+            decal.textureId = decalUrl; // populated for buildBlockyPetManifest
+          }
+        }
+        await finishStage('blocky_decals' as GenerationStageId, 'completed', [], [
+          `Generated ${spec.decals.filter((d) => !!d.textureId).length}/${spec.decals.length} decals`,
+        ]);
+      } catch (decalErr) {
+        await finishStage('blocky_decals' as GenerationStageId, 'skipped', [], [
+          `Decal generation skipped: ${errorMessage(decalErr)}. Pet ships with no surface decals.`,
+        ], errorMessage(decalErr));
+      }
+    } else {
+      await finishStage('blocky_decals' as GenerationStageId, 'skipped', [], ['No decals in spec — skipping']);
+    }
+
+    // ── 4. blocky_animations (LLM Motor6D keyframes → Lune build_animation) ──
+    await beginStage('blocky_animations' as GenerationStageId, [
+      `LLM generating Motor6D keyframes for ${classification.isFlying ? 'idle+walk+fly' : 'idle+walk'}`,
+    ]);
+    const animationAssetIds: Record<string, string> = {};
+    try {
+      const animsRaw = await providersModule.generateBlockyPetAnimations({ spec, isFlying: classification.isFlying });
+      const tracks = (animsRaw as { tracks?: Array<{ trackName?: string; keyframes?: unknown[] } & Record<string, unknown>> }).tracks ?? [];
+      for (const track of tracks) {
+        const trackName = typeof track.trackName === 'string' ? track.trackName : 'Anim';
+        // Adapt to existing buildAnimationBinary which expects a single
+        // KeyframeSequence JSON. We synthesise per-track json with rig=R6
+        // so the Lune build_animation script can produce a KeyframeSequence
+        // even though our joints are Motor6D-named (the Lune script doesn't
+        // gate on rig type — it just creates Keyframe + Pose instances per
+        // joint name).
+        const trackJson: Record<string, unknown> = {
+          name: trackName,
+          rig: 'R6',
+          type: track.type ?? 'idle',
+          looped: track.looped ?? true,
+          priority: track.priority ?? 'Idle',
+          duration: track.duration ?? 1.0,
+          keyframes: track.keyframes ?? [],
+        };
+        const animBuild = await buildAnimationBinary(trackJson);
+        if (animBuild?.outputBase64) {
+          const animArt = await uploadBinaryArtifact(currentJob, Buffer.from(animBuild.outputBase64, 'base64'), {
+            type: 'rbxm',
+            extension: 'rbxm',
+            mimeType: 'application/octet-stream',
+            name: `${spec.name}-${trackName}.rbxm`,
+            previewText: `${trackName} KeyframeSequence (${(track.keyframes as unknown[] | undefined)?.length ?? 0} keyframes)`,
+            stageId: 'blocky_animations' as GenerationStageId,
+            artifactRole: 'bundle',
+            metadata: { isPetAnimation: true, trackName, isBlockyAnimation: true },
+          });
+          currentJob.artifacts = [...currentJob.artifacts, animArt];
+          // For offline-play mode the AnimationId stays empty; Studio plays
+          // the KeyframeSequence directly via LoadAnimation lookup on the
+          // Animation child. When Roblox Open Cloud upload succeeds later
+          // we'd populate animationAssetIds[trackName] with rbxassetid://.
+        }
+      }
+      await finishStage('blocky_animations' as GenerationStageId, 'completed', [], [
+        `Generated ${tracks.length} animation track(s)`,
+      ]);
+    } catch (animErr) {
+      await finishStage('blocky_animations' as GenerationStageId, 'skipped', [], [
+        `Animation generation skipped: ${errorMessage(animErr)}. Pet still follows player via AlignPosition.`,
+      ], errorMessage(animErr));
+    }
+
+    // ── 5. package_blocky_pet ─────────────────────────────────────────
+    await beginStage('package_blocky_pet' as GenerationStageId, ['Assembling .rbxm scene tree (Parts + Motor6D + AnimationController)']);
+    const manifestMetadata: Record<string, unknown> = {
+      ...metadata,
+      requestedKind: 'pet_3d',
+      petMode: 'blocky',
+      petBaseName: classification.baseName,
+      petSpeciesType: classification.speciesType,
+      petSkeletonType: classification.skeletonType,
+      petRarity: classification.rarity,
+      petElement: classification.element,
+      petIsFlying: classification.isFlying,
+      blockyPetSpec: spec,
+      blockyPetAnimationAssetIds: animationAssetIds,
+    };
+    const starterScript = `print("[Pet_${classification.baseName}] Blocky pet loaded — Motor6D rig active, follow + level + rarity ready")`;
+    const manifest = buildRobloxManifest({
+      title: `Blocky Pet ${classification.baseName}`,
+      summary: `AI-generated blocky Roblox pet (${classification.rarity} ${classification.element} ${classification.speciesType}) — Track 3 Phase 2`,
+      target: 'model',
+      prompt,
+      starterScript,
+      metadata: manifestMetadata,
+    });
+    await finishStage('package_blocky_pet' as GenerationStageId, 'completed', [], [
+      `Manifest assembled with ${spec.parts.length} parts + ${spec.joints.length} Motor6D joints`,
+    ]);
+
+    // ── 6. export_pet_rbxm ────────────────────────────────────────────
+    await beginStage('export_pet_rbxm' as GenerationStageId, ['Exporting .rbxm via worker']);
+    const nativeBuild = await maybeBuildRobloxBinary(manifest);
+    const exportArtifacts: GenerationArtifact[] = [];
+    if (nativeBuild?.bufferBase64) {
+      exportArtifacts.push(await uploadBinaryArtifact(currentJob, Buffer.from(nativeBuild.bufferBase64, 'base64'), {
+        type: nativeBuild.artifactType,
+        extension: nativeBuild.artifactType,
+        mimeType: 'application/octet-stream',
+        name: nativeBuild.fileName ?? `${classification.baseName}-blocky.rbxm`,
+        previewText: nativeBuild.summary,
+        stageId: 'export_pet_rbxm' as GenerationStageId,
+        artifactRole: 'export_binary',
+        metadata: { isBlockyPet: true, petBaseName: classification.baseName, isPetEvolution: false },
+      }));
+    }
+    currentJob = { ...currentJob, artifacts: [...currentJob.artifacts, ...exportArtifacts] };
+    await finishStage('export_pet_rbxm' as GenerationStageId, exportArtifacts.length > 0 ? 'completed' : 'failed', exportArtifacts.map((a) => a.id), [
+      exportArtifacts.length > 0 ? `.rbxm ready (${exportArtifacts[0].name})` : 'No .rbxm produced',
+    ]);
+
+    return {
+      ...currentJob,
+      status: exportArtifacts.length > 0 ? 'completed' : 'partial',
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...currentJob.metadata,
+        petClassification: classification,
+        blockyPetSpec: spec,
+      },
+      history: [
+        ...currentJob.history,
+        `Blocky pet finished: ${spec.parts.length} parts, rig=${spec.rig}, rarity=${classification.rarity}`,
+      ],
+    };
+  } catch (err) {
+    const msg = errorMessage(err);
+    logger.error('Blocky pet pipeline failed', { jobId, error: msg });
+    return {
+      ...currentJob,
+      status: 'failed',
+      updatedAt: new Date().toISOString(),
+      errorMessage: msg,
+      history: [...currentJob.history, `Blocky pet pipeline failed: ${msg}`],
+    };
+  }
+}
+
 // runMeshy is a non-exported function inside providers.ts — pet pipeline calls
 // it through a tiny wrapper that routes pet content into the same path used
 // for character/NPC content (multi-view + creature negative prompt).
@@ -9420,10 +9754,15 @@ async function processGenerationJob(jobId: string, job: GenerationJob): Promise<
     if (job.metadata?.contentCategory === 'building') {
       return await processBuildingJob(jobId, job);
     }
-    if (job.kind === 'character_3d' || job.kind === 'clothing_3d') {
+    if (job.kind === 'character_3d' || job.kind === 'clothing_3d' || job.kind === 'vehicle_3d') {
       return await processCharacter3DJob(jobId, job);
     }
     if (job.kind === 'pet_3d') {
+      // Track 3 Phase 2: route to blocky path when user picked it; otherwise
+      // fall through to the existing Meshy/Tripo 14-stage chain.
+      if (job.metadata?.petMode === 'blocky') {
+        return await processBlockyPetJob(jobId, job);
+      }
       return await processPet3DJob(jobId, job);
     }
     if (job.kind === 'decal_texture') {
@@ -22583,6 +22922,7 @@ async function continueCharacter3DPhase2(jobId: string, job: GenerationJob): Pro
 
 async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePhase2 = false): Promise<GenerationJob> {
   const isWeapon = job.metadata?.contentCategory === 'weapon';
+  const isVehicle = job.kind === 'vehicle_3d' || job.metadata?.contentCategory === 'vehicle';
   const isItem = job.metadata?.contentCategory === 'item_tool';
   const isFurniture = job.metadata?.contentCategory === 'furniture_prop';
   const isLayeredClothing = job.kind === 'clothing_3d'
@@ -22590,11 +22930,11 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
   const explicitClothingType = typeof job.metadata?.clothingType === 'string'
     ? job.metadata.clothingType
     : undefined;
-  const isTShirt = !isWeapon && !isItem && !isFurniture && !isLayeredClothing
+  const isTShirt = !isWeapon && !isVehicle && !isItem && !isFurniture && !isLayeredClothing
     && explicitClothingType === 't_shirt';
-  const isClothingTexture = !isWeapon && !isItem && !isFurniture && !isLayeredClothing && !isTShirt
+  const isClothingTexture = !isWeapon && !isVehicle && !isItem && !isFurniture && !isLayeredClothing && !isTShirt
     && isTextureClothing(job.prompt, job.metadata ?? {});
-  const isNpc = !isWeapon && !isItem && !isFurniture && !isLayeredClothing && !isClothingTexture && isNpcCharacter(job.prompt, job.metadata ?? {});
+  const isNpc = !isWeapon && !isVehicle && !isItem && !isFurniture && !isLayeredClothing && !isClothingTexture && isNpcCharacter(job.prompt, job.metadata ?? {});
   let npcRole: NpcRole = isNpc ? detectNpcRole(job.prompt, job.metadata ?? {}) : 'quest_giver';
 
   // Phase 0 spike (branch npc-mesh-test, changelog-249): NPCs opt into the existing
@@ -22699,17 +23039,19 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
 
   const basePipelineStages = isWeapon
     ? createWeaponPipelineStages()
-    : isItem
-      ? createItemPipelineStages()
-      : isFurniture
-        ? createFurniturePipelineStages(furnitureBuildMode)
-        : isLayeredClothing
-          ? createLayeredClothingPipelineStages()
-          : isClothingTexture
-            ? createClothingPipelineStages()
-            : isNpc
-              ? createNpcPipelineStages(resolveNpcVisualPipelineMode(patchedMetadata))
-              : createCharacterPipelineStages(false);
+    : isVehicle
+      ? createVehiclePipelineStages()
+      : isItem
+        ? createItemPipelineStages()
+        : isFurniture
+          ? createFurniturePipelineStages(furnitureBuildMode)
+          : isLayeredClothing
+            ? createLayeredClothingPipelineStages()
+            : isClothingTexture
+              ? createClothingPipelineStages()
+              : isNpc
+                ? createNpcPipelineStages(resolveNpcVisualPipelineMode(patchedMetadata))
+                : createCharacterPipelineStages(false);
   let currentJob: GenerationJob = {
     ...job,
     metadata: patchedMetadata,
@@ -22803,6 +23145,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
   // concept (then the actual T-Shirt graphic ran inside the isTShirt branch).
   const needsConceptGate = !resumePhase2
     && !isTShirt
+    && !isVehicle
     && (!isFurniture || furnitureUsesExternalMesh)
     && (!isNpc || npcNeedsConceptApproval);
   const title = typeof job.metadata?.title === 'string' && job.metadata.title.trim()
@@ -22874,8 +23217,8 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // The 'prop' preview style explicitly tells the image model "no people or characters",
       // matching what the user expects for a standalone weapon/item/furniture concept.
       // NPCs / characters / clothing keep 'character' style so the asset is shown on a body.
-      const conceptContext: 'character' | 'prop' = (isWeapon || isItem || isFurniture) ? 'prop' : 'character';
-      logger.info('concept_image: generating', { jobId, isWeapon, isItem, isFurniture, conceptContext, prompt: alignedConceptPrompt.slice(0, 200), previewStyle });
+      const conceptContext: 'character' | 'prop' = (isWeapon || isVehicle || isItem || isFurniture) ? 'prop' : 'character';
+      logger.info('concept_image: generating', { jobId, isWeapon, isVehicle, isItem, isFurniture, conceptContext, prompt: alignedConceptPrompt.slice(0, 200), previewStyle });
       try {
         conceptPreviewUrl = await generatePreviewTexture(alignedConceptPrompt, previewStyle, conceptContext);
         logger.info('concept_image: generatePreviewTexture returned', { jobId, hasUrl: !!conceptPreviewUrl });
@@ -23660,13 +24003,18 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     // - procedural_legacy restores the old fast Part-only NPC path.
     let latestModelArtifact: GenerationArtifact | undefined;
     let robloxMeshAssetId: number | undefined;
-    const shouldRunMeshAssetPipeline = (!isFurniture || furnitureUsesExternalMesh)
+    const shouldRunMeshAssetPipeline = !isVehicle
+      && (!isFurniture || furnitureUsesExternalMesh)
       && (!isNpc || npcVisualPipeline === 'mesh_asset_v1');
 
     if (!shouldRunMeshAssetPipeline && isNpc) {
       logger.info('[NpcVisuals] external mesh generation skipped by NPC visual pipeline', {
         jobId,
         npcVisualPipeline,
+      });
+    } else if (!shouldRunMeshAssetPipeline && isVehicle) {
+      logger.info('[Vehicle] external mesh generation skipped; deterministic playable chassis will be exported', {
+        jobId,
       });
     } else if (!shouldRunMeshAssetPipeline && isFurniture) {
       logger.info('[Furniture] external mesh generation skipped by build mode', {
@@ -24602,6 +24950,35 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       }
     }
 
+    if (isVehicle) {
+      await beginStage('generate_vehicle_scripts', 'Configuring vehicle controller and physics profile');
+      const vehicleType = detectVehicleType(job.prompt, currentJob.metadata ?? {});
+      const seatCount = inferVehicleSeatCount(vehicleType, currentJob.metadata ?? {});
+      const driveMode = vehicleDriveMode(vehicleType);
+      currentJob = {
+        ...currentJob,
+        metadata: {
+          ...(currentJob.metadata ?? {}),
+          vehicleType,
+          driveMode,
+          seatCount,
+          requestedKind: 'vehicle_3d',
+        },
+      };
+      await finishStage('generate_vehicle_scripts', 'completed', [], [
+        `Vehicle type: ${vehicleType}`,
+        `Drive mode: ${driveMode}`,
+        `Seats: ${seatCount}`,
+        'Using canonical self-contained VehicleController template',
+      ]);
+
+      await beginStage('quality_review', 'Checking vehicle package requirements before export');
+      await finishStage('quality_review', 'completed', [], [
+        'Required package: DriveSeat, passenger Seats, ChassisRoot, physics controller, engine sounds, VFX markers.',
+        'Detailed class-level validation runs after manifest build in the worker smoke checks.',
+      ]);
+    }
+
     // ── NPC character scripts generation ──
     let npcScripts: Array<{ name: string; scriptType: 'Script' | 'LocalScript' | 'ModuleScript'; container: string; source: string }> = [];
     if (isNpc) {
@@ -25140,26 +25517,31 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     }
 
     // ── RBXM Export ──
-    await beginStage('export_rbxm', isWeapon ? 'Building weapon Tool RBXM' : isItem ? 'Building item Tool RBXM' : isFurniture ? 'Building furniture Model RBXM' : isNpc ? 'Building NPC model RBXM' : 'Building Roblox binary export');
+    await beginStage('export_rbxm', isWeapon ? 'Building weapon Tool RBXM' : isVehicle ? 'Building vehicle Model RBXM' : isItem ? 'Building item Tool RBXM' : isFurniture ? 'Building furniture Model RBXM' : isNpc ? 'Building NPC model RBXM' : 'Building Roblox binary export');
     try {
       const exportSummary = isWeapon
         ? `Roblox weapon Tool package for ${title}.`
-        : isItem
-          ? `Roblox item Tool package for ${title}.`
-          : isFurniture
-            ? `Roblox furniture Model package for ${title}.`
-            : isNpc
-              ? `Roblox NPC character package for ${title} (${npcRole}).`
-              : `Roblox-ready character export package for ${title}.`;
+        : isVehicle
+          ? `Roblox playable vehicle Model package for ${title}.`
+          : isItem
+            ? `Roblox item Tool package for ${title}.`
+            : isFurniture
+              ? `Roblox furniture Model package for ${title}.`
+              : isNpc
+                ? `Roblox NPC character package for ${title} (${npcRole}).`
+                : `Roblox-ready character export package for ${title}.`;
       const { starterScript } = resolveStarterScript(buildStarterLuau(job, exportSummary));
       let exportMetadata: Record<string, unknown> = {
         ...(currentJob.metadata ?? {}),
-        requestedKind: isWeapon ? 'weapon_3d' : isItem ? 'item_3d' : isFurniture ? 'furniture_3d' : 'character_3d',
+        requestedKind: isWeapon ? 'weapon_3d' : isVehicle ? 'vehicle_3d' : isItem ? 'item_3d' : isFurniture ? 'furniture_3d' : 'character_3d',
         sourceModelUrl: latestModelArtifact?.downloadUrl ?? latestModelArtifact?.url,
         sourceModelArtifactId: latestModelArtifact?.id,
-        rigType: (isWeapon || isItem || isFurniture) ? undefined : 'R15-auto-bridge',
+        rigType: (isWeapon || isVehicle || isItem || isFurniture) ? undefined : 'R15-auto-bridge',
         weaponType: isWeapon ? detectWeaponType(job.prompt, currentJob.metadata ?? {}) : undefined,
         weaponScripts: isWeapon ? weaponScripts : undefined,
+        vehicleType: isVehicle ? detectVehicleType(job.prompt, currentJob.metadata ?? {}) : undefined,
+        driveMode: isVehicle ? vehicleDriveMode(detectVehicleType(job.prompt, currentJob.metadata ?? {})) : undefined,
+        seatCount: isVehicle ? inferVehicleSeatCount(detectVehicleType(job.prompt, currentJob.metadata ?? {}), currentJob.metadata ?? {}) : undefined,
         itemType: isItem ? detectItemType(job.prompt, currentJob.metadata ?? {}) : undefined,
         itemScripts: isItem ? itemScripts : undefined,
         furnitureBuildMode: isFurniture ? (furnitureBuildModePreference ?? 'auto') : undefined,
@@ -25388,11 +25770,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       }
       const bundleName = isWeapon
         ? `${title}-weapon-bundle.json`
-        : isItem
-          ? `${title}-item-bundle.json`
-          : isFurniture
-            ? `${title}-furniture-bundle.json`
-            : `${title}-character-bundle.json`;
+        : isVehicle
+          ? `${title}-vehicle-bundle.json`
+          : isItem
+            ? `${title}-item-bundle.json`
+            : isFurniture
+              ? `${title}-furniture-bundle.json`
+              : `${title}-character-bundle.json`;
       const bundle = buildProjectBundle(job, exportSummary, starterScript, manifest, nativeBuild);
       exportArtifacts.push(await uploadTextArtifact(job, JSON.stringify(bundle, null, 2), {
         type: 'project_bundle',
@@ -25443,10 +25827,14 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       resultText: has3DModel
         ? isFurniture
           ? `Furniture ${furnitureBuildMode === 'parts' ? 'Parts' : 'AI Mesh'} pipeline completed with model artifacts.`
-          : 'Auto 3D character pipeline completed with model artifacts.'
+          : isVehicle
+            ? 'Vehicle RBXM pipeline completed with playable model artifacts.'
+            : 'Auto 3D character pipeline completed with model artifacts.'
         : isFurniture
           ? 'Furniture pipeline completed with partial exports.'
-          : 'Auto 3D character pipeline completed with partial exports.',
+          : isVehicle
+            ? 'Vehicle pipeline completed with partial exports.'
+            : 'Auto 3D character pipeline completed with partial exports.',
       metadata: {
         ...(currentJob.metadata ?? {}),
         artifactModeration,

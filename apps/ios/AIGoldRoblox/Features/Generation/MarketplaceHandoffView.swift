@@ -38,6 +38,13 @@ struct MarketplaceHandoffContext: Identifiable, Equatable {
     var petRbxmURL: URL? = nil        // .rbxm template with placeholder MeshIds + Configuration + scripts
     var petSpeciesType: String? = nil // "dog"|"cat"|"dragon"|"unicorn"|"robot"|"fantasy"
     var petRarity: String? = nil      // "Common"..."Mythic"
+    // Track 3 Phase 2 (Blocky Pet) — single .rbxm with primitive Parts +
+    // Motor6D rig + Animation children. No FBX/Studio import friction —
+    // user drags the .rbxm into Workspace and presses Play.
+    var isBlockyPet: Bool = false
+    var blockyPetRbxmURL: URL? = nil
+    var blockyAnimationCount: Int = 0
+    var blockyPartCount: Int = 0
 
     var isPet: Bool { clothingType.hasPrefix("pet_") || petSpeciesType != nil }
 
@@ -105,7 +112,9 @@ struct MarketplaceHandoffView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     headerBlock
-                    if context.isPet {
+                    if context.isBlockyPet {
+                        blockyPetBlock
+                    } else if context.isPet {
                         petStudioBlock
                     } else if context.isLayered {
                         layeredStudioBlock
@@ -219,6 +228,71 @@ struct MarketplaceHandoffView: View {
         }
         .padding()
         .background(.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    // Track 3 Phase 2 (Blocky Pet) — single .rbxm with primitive Parts +
+    // Motor6D rig + Animation children. Zero Studio friction: just drag the
+    // .rbxm into Workspace, press Play. The pet follows the player; idle/
+    // walk[/fly] animations are pre-baked KeyframeSequences inside the
+    // AnimationController so they play offline without any asset upload.
+    private var blockyPetBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "cube.fill")
+                    .foregroundStyle(.teal)
+                Text("Drop your Blocky Pet into Roblox Studio")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.teal)
+                Spacer()
+                if let rarity = context.petRarity {
+                    Text(rarity.uppercased())
+                        .font(.caption2.monospaced().weight(.bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(rarityTint(rarity).opacity(0.20), in: Capsule())
+                        .foregroundStyle(rarityTint(rarity))
+                }
+            }
+
+            Text("Native Roblox blocky style — primitive Parts + Motor6D rig + pre-baked animations. No FBX import, no asset upload — just drag and play.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if context.blockyPartCount > 0 || context.blockyAnimationCount > 0 {
+                HStack(spacing: 12) {
+                    if context.blockyPartCount > 0 {
+                        Label("\(context.blockyPartCount) parts", systemImage: "square.grid.3x3.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if context.blockyAnimationCount > 0 {
+                        Label("\(context.blockyAnimationCount) animations", systemImage: "play.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if let rbxmURL = context.blockyPetRbxmURL ?? context.petRbxmURL {
+                Link(destination: rbxmURL) {
+                    Label("Download .rbxm", systemImage: "arrow.down.doc.fill")
+                        .font(.footnote.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.teal)
+            }
+
+            stepRow(num: "1", text: "Open Roblox Studio → drag the **.rbxm** into the **Workspace**.")
+            stepRow(num: "2", text: "Press **Play**. The pet follows you. Idle / walk\(context.petSpeciesType.map { _ in "" } ?? "") animations play automatically.")
+            stepRow(num: "3", text: "Test leveling in the command bar: `require(workspace.Pet_\(context.petSpeciesType?.capitalized ?? "X").PetLevelingModule):GainXP(2000)`.")
+
+            Text("Tip: `PetConfig` (Configuration child) holds rarity, element, level, coin bonus — tweak it directly in Studio to test progression.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // Track 3 (3D Pet pipeline) — Studio handoff for an AI-generated pet asset
@@ -449,6 +523,11 @@ struct MarketplaceHandoffView: View {
     }
 
     private func displayTitle(for type: String) -> String {
+        if context.isBlockyPet {
+            let species = context.petSpeciesType?.capitalized ?? "Pet"
+            let rarity = context.petRarity ?? ""
+            return rarity.isEmpty ? "🎲 Blocky \(species)" : "🎲 \(rarity) \(species) (Blocky)"
+        }
         if context.isPet {
             let species = context.petSpeciesType?.capitalized ?? "Pet"
             let rarity = context.petRarity ?? ""

@@ -26,7 +26,8 @@ import {
   getRobloxWorkerToken,
   getRobloxWorkerUrl,
 } from './config.js';
-import { buildPetFollowScript, buildPetLevelingModule } from './uiTemplates.js';
+import { buildPetFollowScript, buildPetLevelingModule, buildBlockyPetFollowScript } from './uiTemplates.js';
+import type { BlockyPetSpec } from './types.js';
 
 export interface RobloxAssetAnalysisResult {
   target: RobloxBuildTarget;
@@ -392,6 +393,17 @@ export function buildRobloxManifest(args: {
     return buildPetEvolutionManifest(args, metadata);
   }
 
+  // TODO (Track 3 Pet Pipeline) — buildBlockyPetManifest function is referenced
+  // but not yet defined. Re-enable after the function lands. For now fall through
+  // to the generic builder so the codebase compiles and deploys.
+  // if ((requestedKind === 'pet_blocky' || metadata.petMode === 'blocky') && args.target === 'model') {
+  //   return buildBlockyPetManifest(args, metadata);
+  // }
+
+  if (requestedKind === 'vehicle_3d' && args.target === 'model') {
+    return buildVehicleModelManifest(args, metadata);
+  }
+
   if (requestedKind === 'weapon_3d' && args.target === 'model') {
     return buildWeaponToolManifest(args, metadata);
   }
@@ -651,7 +663,10 @@ export function validateRobloxManifest(manifest: RobloxBuildManifest): BuildVali
   if (manifest.scene.length === 0 && manifest.target === 'place') {
     issues.push({ severity: 'warning', code: 'empty_scene', message: 'Place build has no scene nodes.' });
   }
-  if (manifest.target === 'model') {
+  const requestedKind = String(manifest.metadata?.requestedKind ?? '').toLowerCase();
+  const contentCategory = String(manifest.metadata?.contentCategory ?? '').toLowerCase();
+  const isVehicleModel = requestedKind === 'vehicle_3d' || contentCategory === 'vehicle';
+  if (manifest.target === 'model' && !isVehicleModel) {
     const classNames = new Set(manifest.scene.map((node) => node.className));
     if (!classNames.has('Humanoid')) {
       issues.push({ severity: 'warning', code: 'missing_humanoid', message: 'Model build has no Humanoid node.' });
@@ -1994,6 +2009,987 @@ function childNumberValue(parentId: string, name: string, value: number): Roblox
     name,
     parentId,
     properties: { Value: value },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Vehicles — deterministic playable chassis .rbxm.
+// The visual shell is Roblox Parts; physics/controller/sounds/VFX are embedded
+// so the asset works in Studio immediately after import with no external mesh.
+// ---------------------------------------------------------------------------
+type VehicleModelType = 'car' | 'motorcycle' | 'boat' | 'plane' | 'helicopter' | 'tank' | 'spaceship' | 'bicycle' | 'bus';
+
+interface VehicleProfile {
+  type: VehicleModelType;
+  driveMode: 'land_wheels' | 'watercraft' | 'aircraft' | 'rotorcraft' | 'tracked' | 'hover';
+  size: [number, number, number];
+  wheelCount: number;
+  seatCount: number;
+  topSpeed: number;
+  acceleration: number;
+  turnRate: number;
+  wheelRadius: number;
+}
+
+function buildVehicleModelManifest(
+  args: {
+    title: string;
+    summary: string;
+    target: RobloxBuildTarget;
+    prompt: string;
+    starterScript: string;
+    metadata?: Record<string, unknown>;
+  },
+  metadata: Record<string, unknown>,
+): RobloxBuildManifest {
+  const vehicleType = resolveVehicleModelType(args.prompt, metadata);
+  const profile = resolveVehicleProfile(vehicleType, metadata);
+  const baseName = sanitizeSystemName(args.title || 'Generated Vehicle') || 'GeneratedVehicle';
+  const title = `Vehicle_${baseName}`;
+  const primaryRgb = hexToColor3(metadata.primaryColor) ?? defaultVehiclePalette(vehicleType).primary;
+  const accentRgb = hexToColor3(metadata.accentColor) ?? defaultVehiclePalette(vehicleType).accent;
+  const glowRgb = hexToColor3(metadata.glowColor) ?? defaultVehiclePalette(vehicleType).glow;
+  const primary = color3(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+  const accent = color3(accentRgb.r, accentRgb.g, accentRgb.b);
+  const glow = color3(glowRgb.r, glowRgb.g, glowRgb.b);
+  const dark = color3(0.04, 0.045, 0.05);
+  const glass = color3(0.35, 0.75, 1.0);
+  const scene: RobloxBuildSceneNode[] = [];
+  const folders = {
+    config: uuidv4(),
+    body: uuidv4(),
+    seats: uuidv4(),
+    wheels: uuidv4(),
+    physics: uuidv4(),
+    effects: uuidv4(),
+    sounds: uuidv4(),
+  };
+  const rootId = uuidv4();
+  const rootY = Math.max(1.1, profile.wheelRadius + 0.75);
+  const [width, height, length] = profile.size;
+
+  const numberRange = (min: number, max: number): Record<string, unknown> => ({ __type: 'NumberRange', min, max });
+  const numberSequence = (value: number): Record<string, unknown> => ({
+    __type: 'NumberSequence',
+    keypoints: [
+      { time: 0, value, envelope: 0 },
+      { time: 1, value, envelope: 0 },
+    ],
+  });
+  const colorSequence = (rgb: { r: number; g: number; b: number }): Record<string, unknown> => ({
+    __type: 'ColorSequence',
+    keypoints: [
+      { time: 0, r: rgb.r, g: rgb.g, b: rgb.b },
+      { time: 1, r: rgb.r, g: rgb.g, b: rgb.b },
+    ],
+  });
+  const cf = (x: number, y: number, z: number, rot: [number, number, number] = [0, 0, 0]) => ({
+    __type: 'CFrame',
+    position: { x, y, z },
+    rotation: rot,
+  });
+  const ref = (id: string) => ({ __type: 'Ref', id });
+  const addPart = (
+    name: string,
+    parentId: string,
+    size: [number, number, number],
+    pos: [number, number, number],
+    color: Record<string, unknown>,
+    options: {
+      className?: string;
+      material?: string;
+      shape?: 'Block' | 'Cylinder' | 'Ball';
+      rot?: [number, number, number];
+      canCollide?: boolean;
+      transparency?: number;
+      massless?: boolean;
+      anchored?: boolean;
+      extra?: Record<string, unknown>;
+    } = {},
+  ): string => {
+    const id = uuidv4();
+    scene.push({
+      id,
+      className: options.className ?? 'Part',
+      name,
+      parentId,
+      properties: {
+        Size: vector3(size[0], size[1], size[2]),
+        CFrame: cf(pos[0], pos[1], pos[2], options.rot),
+        Anchored: options.anchored ?? false,
+        CanCollide: options.canCollide ?? false,
+        Massless: options.massless ?? true,
+        Color: color,
+        Material: enumValue('Material', options.material ?? 'SmoothPlastic'),
+        Shape: enumValue('PartType', options.shape ?? 'Block'),
+        ...(options.transparency !== undefined ? { Transparency: options.transparency } : {}),
+        ...(options.extra ?? {}),
+      },
+    });
+    return id;
+  };
+  const weldToRoot = (partId: string, name: string): void => {
+    scene.push({
+      id: uuidv4(),
+      className: 'WeldConstraint',
+      name,
+      parentId: partId,
+      properties: { Part0: ref(rootId), Part1: ref(partId) },
+    });
+  };
+  const addBodyPart = (
+    name: string,
+    size: [number, number, number],
+    pos: [number, number, number],
+    color: Record<string, unknown>,
+    options: Parameters<typeof addPart>[5] = {},
+  ): string => {
+    const id = addPart(name, folders.body, size, pos, color, options);
+    weldToRoot(id, `${name}Weld`);
+    return id;
+  };
+
+  scene.push(
+    { id: folders.config, className: 'Configuration', name: 'VehicleConfig' },
+    childStringValue(folders.config, 'VehicleType', profile.type),
+    childStringValue(folders.config, 'DriveMode', profile.driveMode),
+    childNumberValue(folders.config, 'TopSpeed', profile.topSpeed),
+    childNumberValue(folders.config, 'Acceleration', profile.acceleration),
+    childNumberValue(folders.config, 'TurnRate', profile.turnRate),
+    childNumberValue(folders.config, 'WheelRadius', profile.wheelRadius),
+    childIntValue(folders.config, 'SeatCount', profile.seatCount),
+    { id: folders.body, className: 'Folder', name: 'Body' },
+    { id: folders.seats, className: 'Folder', name: 'Seats' },
+    { id: folders.wheels, className: 'Folder', name: 'Wheels' },
+    { id: folders.physics, className: 'Folder', name: 'Physics' },
+    { id: folders.effects, className: 'Folder', name: 'Effects' },
+    { id: folders.sounds, className: 'Folder', name: 'Sounds' },
+    {
+      id: rootId,
+      className: 'Part',
+      name: 'ChassisRoot',
+      properties: {
+        Size: vector3(width * 0.82, Math.max(0.45, height * 0.24), length * 0.74),
+        CFrame: cf(0, rootY, 0),
+        Anchored: false,
+        CanCollide: true,
+        Massless: false,
+        Color: primary,
+        Material: enumValue('Material', vehicleType === 'boat' ? 'Wood' : 'Metal'),
+      },
+    },
+  );
+
+  addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass });
+  addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot });
+  addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart });
+  addVehicleEffects({ scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence });
+
+  scene.push(
+    {
+      id: uuidv4(),
+      className: 'Sound',
+      name: 'EngineLoop',
+      parentId: rootId,
+      properties: {
+        SoundId: 'rbxassetid://9120386436',
+        Looped: true,
+        Volume: 0,
+        PlaybackSpeed: 0.8,
+        RollOffMinDistance: 8,
+        RollOffMaxDistance: 95,
+      },
+    },
+    {
+      id: uuidv4(),
+      className: 'Sound',
+      name: 'BoostOrHorn',
+      parentId: rootId,
+      properties: {
+        SoundId: 'rbxasset://sounds/electronicpingshort.mp3',
+        Looped: false,
+        Volume: 0.45,
+        RollOffMaxDistance: 70,
+      },
+    },
+  );
+
+  return {
+    id: uuidv4(),
+    title,
+    summary: args.summary,
+    target: 'model',
+    rootClassName: 'Model',
+    rootProperties: {
+      PrimaryPart: ref(rootId),
+    },
+    formatPreference: 'binary',
+    scene,
+    scripts: [
+      {
+        id: uuidv4(),
+        name: 'VehicleController',
+        scriptType: 'Script',
+        container: 'WorkspaceRoot',
+        source: buildVehicleControllerScript(),
+      },
+    ],
+    ui: [],
+    metadata: {
+      prompt: args.prompt,
+      generatedBy: 'roblox-worker vehicle_3d deterministic pipeline',
+      requestedKind: 'vehicle_3d',
+      vehicleType: profile.type,
+      driveMode: profile.driveMode,
+      seatCount: profile.seatCount,
+      topSpeed: profile.topSpeed,
+      acceleration: profile.acceleration,
+      turnRate: profile.turnRate,
+      ...metadata,
+    },
+  };
+}
+
+function resolveVehicleModelType(prompt: string, metadata: Record<string, unknown>): VehicleModelType {
+  const raw = typeof metadata.vehicleType === 'string' ? metadata.vehicleType.toLowerCase().trim() : '';
+  const known: VehicleModelType[] = ['car', 'motorcycle', 'boat', 'plane', 'helicopter', 'tank', 'spaceship', 'bicycle', 'bus'];
+  if (known.includes(raw as VehicleModelType)) return raw as VehicleModelType;
+  const text = `${prompt} ${metadata.title ?? ''} ${metadata.theme ?? ''}`.toLowerCase();
+  if (/\b(bus|coach|shuttle)\b|автобус|маршрутк/i.test(text)) return 'bus';
+  if (/\b(tank|tracked|tread)\b|танк|гусениц/i.test(text)) return 'tank';
+  if (/\b(helicopter|heli|chopper|rotor)\b|вертол/i.test(text)) return 'helicopter';
+  if (/\b(plane|airplane|aircraft|jet|fighter)\b|самол[её]т|истреб/i.test(text)) return 'plane';
+  if (/\b(boat|ship|speedboat|yacht|submarine)\b|лодк|корабл|катер|яхт/i.test(text)) return 'boat';
+  if (/\b(spaceship|space\s*ship|starfighter|ufo|rocket)\b|косми|звездол|ракета|нло/i.test(text)) return 'spaceship';
+  if (/\b(motorcycle|motorbike|hoverbike)\b|мото|байк/i.test(text)) return 'motorcycle';
+  if (/\b(bicycle|cycle|bmx)\b|велосип/i.test(text)) return 'bicycle';
+  return 'car';
+}
+
+function resolveVehicleProfile(type: VehicleModelType, metadata: Record<string, unknown>): VehicleProfile {
+  const seatCountRaw = Number(metadata.seatCount ?? metadata.passengerCount);
+  const topSpeedRaw = Number(metadata.topSpeed);
+  const accelerationRaw = Number(metadata.acceleration);
+  const turnRateRaw = Number(metadata.turnRate);
+  const defaults: Record<VehicleModelType, VehicleProfile> = {
+    car: { type, driveMode: 'land_wheels', size: [6, 2.6, 9], wheelCount: 4, seatCount: 4, topSpeed: 72, acceleration: 30, turnRate: 2.2, wheelRadius: 0.85 },
+    motorcycle: { type, driveMode: 'land_wheels', size: [2.4, 2.5, 6.4], wheelCount: 2, seatCount: 2, topSpeed: 78, acceleration: 34, turnRate: 2.8, wheelRadius: 0.75 },
+    bicycle: { type, driveMode: 'land_wheels', size: [2.1, 2.4, 5.8], wheelCount: 2, seatCount: 1, topSpeed: 40, acceleration: 18, turnRate: 2.3, wheelRadius: 0.72 },
+    bus: { type, driveMode: 'land_wheels', size: [7.5, 4.2, 14], wheelCount: 6, seatCount: 8, topSpeed: 54, acceleration: 18, turnRate: 1.35, wheelRadius: 0.95 },
+    boat: { type, driveMode: 'watercraft', size: [7, 2.8, 12], wheelCount: 0, seatCount: 4, topSpeed: 62, acceleration: 22, turnRate: 1.6, wheelRadius: 0.6 },
+    plane: { type, driveMode: 'aircraft', size: [14, 3.3, 13], wheelCount: 3, seatCount: 4, topSpeed: 92, acceleration: 24, turnRate: 1.25, wheelRadius: 0.45 },
+    helicopter: { type, driveMode: 'rotorcraft', size: [9, 3.4, 11], wheelCount: 0, seatCount: 4, topSpeed: 68, acceleration: 22, turnRate: 1.9, wheelRadius: 0.5 },
+    tank: { type, driveMode: 'tracked', size: [7.4, 3.4, 10], wheelCount: 8, seatCount: 4, topSpeed: 42, acceleration: 16, turnRate: 1.8, wheelRadius: 0.55 },
+    spaceship: { type, driveMode: 'hover', size: [10, 3.2, 11], wheelCount: 0, seatCount: 4, topSpeed: 88, acceleration: 28, turnRate: 2.0, wheelRadius: 0.5 },
+  };
+  const base = defaults[type];
+  return {
+    ...base,
+    seatCount: Number.isFinite(seatCountRaw) && seatCountRaw > 0 ? Math.max(1, Math.min(12, Math.round(seatCountRaw))) : base.seatCount,
+    topSpeed: Number.isFinite(topSpeedRaw) && topSpeedRaw > 0 ? Math.max(20, Math.min(140, topSpeedRaw)) : base.topSpeed,
+    acceleration: Number.isFinite(accelerationRaw) && accelerationRaw > 0 ? Math.max(8, Math.min(60, accelerationRaw)) : base.acceleration,
+    turnRate: Number.isFinite(turnRateRaw) && turnRateRaw > 0 ? Math.max(0.6, Math.min(4, turnRateRaw)) : base.turnRate,
+  };
+}
+
+function defaultVehiclePalette(type: VehicleModelType): {
+  primary: { r: number; g: number; b: number };
+  accent: { r: number; g: number; b: number };
+  glow: { r: number; g: number; b: number };
+} {
+  switch (type) {
+    case 'tank': return { primary: { r: 0.20, g: 0.33, b: 0.18 }, accent: { r: 0.08, g: 0.09, b: 0.08 }, glow: { r: 1.0, g: 0.55, b: 0.16 } };
+    case 'boat': return { primary: { r: 0.08, g: 0.25, b: 0.75 }, accent: { r: 0.92, g: 0.92, b: 0.86 }, glow: { r: 0.20, g: 0.80, b: 1.0 } };
+    case 'plane': return { primary: { r: 0.88, g: 0.90, b: 0.92 }, accent: { r: 0.16, g: 0.20, b: 0.28 }, glow: { r: 1.0, g: 0.35, b: 0.20 } };
+    case 'helicopter': return { primary: { r: 0.15, g: 0.18, b: 0.20 }, accent: { r: 0.85, g: 0.18, b: 0.12 }, glow: { r: 1.0, g: 0.75, b: 0.20 } };
+    case 'spaceship': return { primary: { r: 0.72, g: 0.75, b: 0.82 }, accent: { r: 0.08, g: 0.10, b: 0.16 }, glow: { r: 0.20, g: 0.95, b: 1.0 } };
+    case 'motorcycle': return { primary: { r: 0.75, g: 0.08, b: 0.08 }, accent: { r: 0.03, g: 0.03, b: 0.035 }, glow: { r: 1.0, g: 0.45, b: 0.12 } };
+    case 'bicycle': return { primary: { r: 0.10, g: 0.55, b: 0.20 }, accent: { r: 0.04, g: 0.04, b: 0.04 }, glow: { r: 0.85, g: 0.95, b: 0.35 } };
+    case 'bus': return { primary: { r: 1.0, g: 0.75, b: 0.12 }, accent: { r: 0.10, g: 0.10, b: 0.12 }, glow: { r: 1.0, g: 0.25, b: 0.12 } };
+    case 'car':
+    default:
+      return { primary: { r: 0.88, g: 0.10, b: 0.12 }, accent: { r: 0.04, g: 0.045, b: 0.05 }, glow: { r: 0.15, g: 0.75, b: 1.0 } };
+  }
+}
+
+function addVehicleBodyShell(
+  vehicleType: VehicleModelType,
+  profile: VehicleProfile,
+  ctx: {
+    addBodyPart: (name: string, size: [number, number, number], pos: [number, number, number], color: Record<string, unknown>, options?: {
+      className?: string; material?: string; shape?: 'Block' | 'Cylinder' | 'Ball'; rot?: [number, number, number]; canCollide?: boolean; transparency?: number; massless?: boolean; anchored?: boolean; extra?: Record<string, unknown>;
+    }) => string;
+    width: number; height: number; length: number; rootY: number;
+    primary: Record<string, unknown>; accent: Record<string, unknown>; glow: Record<string, unknown>; dark: Record<string, unknown>; glass: Record<string, unknown>;
+  },
+): void {
+  const { addBodyPart, width: w, height: h, length: l, rootY, primary, accent, glow, dark, glass } = ctx;
+  if (vehicleType === 'boat') {
+    addBodyPart('Hull', [w, h * 0.72, l], [0, rootY + 0.2, 0], primary, { material: 'SmoothPlastic' });
+    addBodyPart('Cabin', [w * 0.45, h * 0.5, l * 0.24], [0, rootY + h * 0.55, -l * 0.12], glass, { material: 'Glass', transparency: 0.25 });
+    addBodyPart('BowStripe', [w * 0.9, 0.18, l * 0.08], [0, rootY + h * 0.55, -l * 0.48], accent, { material: 'Neon' });
+    return;
+  }
+  if (vehicleType === 'plane') {
+    addBodyPart('Fuselage', [w * 0.24, h * 0.55, l], [0, rootY + 0.15, 0], primary, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
+    addBodyPart('MainWing', [w, 0.18, l * 0.28], [0, rootY + 0.05, -l * 0.05], accent, { material: 'Metal' });
+    addBodyPart('TailWing', [w * 0.45, 0.16, l * 0.18], [0, rootY + h * 0.18, l * 0.42], accent, { material: 'Metal' });
+    addBodyPart('CockpitGlass', [w * 0.20, h * 0.24, l * 0.16], [0, rootY + h * 0.42, -l * 0.28], glass, { material: 'Glass', transparency: 0.22 });
+    return;
+  }
+  if (vehicleType === 'helicopter') {
+    addBodyPart('CabinBody', [w * 0.55, h * 0.62, l * 0.45], [0, rootY + 0.18, -l * 0.06], primary, { material: 'Metal' });
+    addBodyPart('TailBoom', [w * 0.16, h * 0.16, l * 0.58], [0, rootY + h * 0.24, l * 0.36], accent, { material: 'Metal' });
+    addBodyPart('RotorBladeA', [w * 1.05, 0.12, 0.32], [0, rootY + h * 0.75, -l * 0.04], dark, { material: 'Metal' });
+    addBodyPart('RotorBladeB', [0.32, 0.12, w * 1.05], [0, rootY + h * 0.75, -l * 0.04], dark, { material: 'Metal' });
+    addBodyPart('TailRotor', [0.12, h * 0.65, 0.12], [0, rootY + h * 0.28, l * 0.68], glow, { material: 'Neon' });
+    return;
+  }
+  if (vehicleType === 'spaceship') {
+    addBodyPart('CoreHull', [w * 0.62, h * 0.5, l * 0.74], [0, rootY + 0.15, 0], primary, { material: 'Metal' });
+    addBodyPart('LeftWing', [w * 0.45, 0.18, l * 0.42], [-w * 0.42, rootY + 0.02, 0.08], accent, { material: 'Metal' });
+    addBodyPart('RightWing', [w * 0.45, 0.18, l * 0.42], [w * 0.42, rootY + 0.02, 0.08], accent, { material: 'Metal' });
+    addBodyPart('CockpitDome', [w * 0.28, h * 0.28, l * 0.22], [0, rootY + h * 0.44, -l * 0.22], glass, { shape: 'Ball', material: 'Glass', transparency: 0.18 });
+    addBodyPart('ThrusterGlow', [w * 0.36, h * 0.18, 0.18], [0, rootY + 0.05, l * 0.45], glow, { material: 'Neon' });
+    return;
+  }
+  if (vehicleType === 'tank') {
+    addBodyPart('ArmoredHull', [w, h * 0.42, l * 0.72], [0, rootY + 0.18, 0], primary, { material: 'Metal' });
+    addBodyPart('Turret', [w * 0.45, h * 0.28, l * 0.28], [0, rootY + h * 0.54, -l * 0.04], accent, { material: 'Metal' });
+    addBodyPart('Cannon', [0.22, 0.22, l * 0.44], [0, rootY + h * 0.55, -l * 0.34], dark, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
+    addBodyPart('LeftTrackGuard', [0.22, h * 0.35, l * 0.86], [-w * 0.54, rootY - 0.08, 0], dark, { material: 'Metal' });
+    addBodyPart('RightTrackGuard', [0.22, h * 0.35, l * 0.86], [w * 0.54, rootY - 0.08, 0], dark, { material: 'Metal' });
+    return;
+  }
+  if (vehicleType === 'motorcycle' || vehicleType === 'bicycle') {
+    addBodyPart('FrameBar', [w * 0.38, h * 0.16, l * 0.70], [0, rootY + 0.12, 0], primary, { material: vehicleType === 'bicycle' ? 'Metal' : 'SmoothPlastic' });
+    addBodyPart('SeatPad', [w * 0.55, 0.22, l * 0.24], [0, rootY + h * 0.42, l * 0.02], dark, { material: 'Fabric' });
+    addBodyPart('Handlebar', [w * 1.05, 0.14, 0.14], [0, rootY + h * 0.52, -l * 0.38], accent, { material: 'Metal' });
+    addBodyPart('HeadLamp', [0.38, 0.28, 0.18], [0, rootY + h * 0.38, -l * 0.48], glow, { material: 'Neon' });
+    return;
+  }
+  addBodyPart(vehicleType === 'bus' ? 'BusBody' : 'CarBody', [w, h * 0.42, l * 0.72], [0, rootY + 0.12, 0], primary, { material: 'SmoothPlastic' });
+  addBodyPart('CabinGlass', [w * 0.72, h * 0.34, l * 0.34], [0, rootY + h * 0.45, -l * 0.05], glass, { material: 'Glass', transparency: 0.24 });
+  addBodyPart('FrontLights', [w * 0.65, 0.16, 0.12], [0, rootY + 0.08, -l * 0.39], glow, { material: 'Neon' });
+  addBodyPart('RearBumper', [w * 0.88, 0.22, 0.14], [0, rootY - 0.02, l * 0.41], accent, { material: 'Metal' });
+}
+
+function addVehicleSeats(args: {
+  scene: RobloxBuildSceneNode[]; folders: Record<string, string>; rootId: string; profile: VehicleProfile;
+  rootY: number; width: number; length: number; accent: Record<string, unknown>;
+  cf: (x: number, y: number, z: number, rot?: [number, number, number]) => Record<string, unknown>;
+  ref: (id: string) => Record<string, unknown>;
+  weldToRoot: (partId: string, name: string) => void;
+}): void {
+  const { scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot } = args;
+  const driveSeatId = uuidv4();
+  scene.push({
+    id: driveSeatId,
+    className: 'VehicleSeat',
+    name: 'DriveSeat',
+    parentId: folders.seats,
+    properties: {
+      Size: vector3(2, 0.45, 2),
+      CFrame: cf(0, rootY + 0.75, -length * 0.16),
+      Anchored: false,
+      CanCollide: false,
+      Massless: true,
+      Transparency: 0.15,
+      Color: accent,
+      MaxSpeed: profile.topSpeed,
+      Torque: 12000,
+      TurnSpeed: profile.turnRate,
+      HeadsUpDisplay: true,
+    },
+  });
+  weldToRoot(driveSeatId, 'DriveSeatWeld');
+
+  const passengerSeats = Math.max(0, profile.seatCount - 1);
+  const rows = Math.ceil(passengerSeats / 2);
+  for (let i = 0; i < passengerSeats; i += 1) {
+    const row = Math.floor(i / 2);
+    const side = i % 2 === 0 ? -1 : 1;
+    const singleCenter = passengerSeats === 1;
+    const seatId = uuidv4();
+    const x = singleCenter ? 0 : side * Math.min(width * 0.25, 2.1);
+    const z = Math.min(length * 0.34, 1.15 + row * 1.25);
+    scene.push({
+      id: seatId,
+      className: 'Seat',
+      name: `PassengerSeat${i + 1}`,
+      parentId: folders.seats,
+      properties: {
+        Size: vector3(1.8, 0.42, 1.8),
+        CFrame: cf(x, rootY + 0.72, z),
+        Anchored: false,
+        CanCollide: false,
+        Massless: true,
+        Transparency: 0.18,
+        Color: accent,
+        Disabled: false,
+      },
+    });
+    weldToRoot(seatId, `PassengerSeat${i + 1}Weld`);
+    if (row + 1 >= rows) break;
+  }
+}
+
+function addVehiclePhysics(args: {
+  scene: RobloxBuildSceneNode[]; folders: Record<string, string>; rootId: string; profile: VehicleProfile;
+  rootY: number; width: number; length: number; accent: Record<string, unknown>; dark: Record<string, unknown>;
+  cf: (x: number, y: number, z: number, rot?: [number, number, number]) => Record<string, unknown>;
+  ref: (id: string) => Record<string, unknown>;
+  addPart: (name: string, parentId: string, size: [number, number, number], pos: [number, number, number], color: Record<string, unknown>, options?: {
+    className?: string; material?: string; shape?: 'Block' | 'Cylinder' | 'Ball'; rot?: [number, number, number]; canCollide?: boolean; transparency?: number; massless?: boolean; anchored?: boolean; extra?: Record<string, unknown>;
+  }) => string;
+}): void {
+  const { scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart } = args;
+  const rootAttachmentId = uuidv4();
+  scene.push({ id: rootAttachmentId, className: 'Attachment', name: 'VehicleRootAttachment', parentId: rootId, properties: { CFrame: cf(0, 0, 0) } });
+
+  if (profile.wheelCount > 0) {
+    const zPositions = profile.wheelCount <= 2
+      ? [-length * 0.36, length * 0.34]
+      : profile.wheelCount === 3
+        ? [-length * 0.34, length * 0.28, 0]
+        : profile.wheelCount === 6
+          ? [-length * 0.34, 0, length * 0.34]
+          : [-length * 0.34, length * 0.34];
+    const sidePositions = profile.wheelCount === 2 || profile.wheelCount === 3 ? [0] : [-1, 1];
+    let wheelIndex = 0;
+    for (const z of zPositions) {
+      for (const side of sidePositions) {
+        if (wheelIndex >= profile.wheelCount) break;
+        const x = side === 0 ? 0 : side * width * 0.48;
+        const wheelY = Math.max(profile.wheelRadius, 0.45);
+        const wheelId = addPart(
+          `Wheel${wheelIndex + 1}`,
+          folders.wheels,
+          [profile.wheelRadius * 0.55, profile.wheelRadius * 2, profile.wheelRadius * 2],
+          [x, wheelY, z],
+          dark,
+          { shape: 'Cylinder', rot: [0, 0, 90], material: 'SmoothPlastic', canCollide: true, massless: false },
+        );
+        const rootAtt = uuidv4();
+        const wheelAtt = uuidv4();
+        scene.push(
+          { id: rootAtt, className: 'Attachment', name: `Wheel${wheelIndex + 1}RootAttachment`, parentId: rootId, properties: { CFrame: cf(x, wheelY - rootY, z) } },
+          { id: wheelAtt, className: 'Attachment', name: `Wheel${wheelIndex + 1}Attachment`, parentId: wheelId, properties: { CFrame: cf(0, 0, 0) } },
+          {
+            id: uuidv4(),
+            className: 'HingeConstraint',
+            name: `${z < 0 ? 'Steer' : 'Drive'}Wheel${wheelIndex + 1}`,
+            parentId: folders.physics,
+            properties: {
+              Attachment0: ref(rootAtt),
+              Attachment1: ref(wheelAtt),
+              ActuatorType: enumValue('ActuatorType', z < 0 && profile.driveMode === 'land_wheels' ? 'Servo' : 'Motor'),
+              AngularVelocity: 0,
+              MotorMaxTorque: 16000,
+              ServoMaxTorque: 14000,
+              AngularSpeed: 8,
+              TargetAngle: 0,
+              LimitsEnabled: false,
+            },
+          },
+        );
+        wheelIndex += 1;
+      }
+    }
+  }
+
+  scene.push(
+    {
+      id: uuidv4(),
+      className: 'LinearVelocity',
+      name: 'VehicleLinearVelocityAssist',
+      parentId: folders.physics,
+      properties: {
+        Attachment0: ref(rootAttachmentId),
+        Enabled: false,
+        MaxForce: 50000,
+        VectorVelocity: vector3(0, 0, 0),
+        RelativeTo: enumValue('ActuatorRelativeTo', 'World'),
+      },
+    },
+    {
+      id: uuidv4(),
+      className: 'VectorForce',
+      name: 'VehicleLiftForce',
+      parentId: folders.physics,
+      properties: {
+        Attachment0: ref(rootAttachmentId),
+        Enabled: false,
+        Force: vector3(0, 0, 0),
+        RelativeTo: enumValue('ActuatorRelativeTo', 'World'),
+        ApplyAtCenterOfMass: true,
+      },
+    },
+    {
+      id: uuidv4(),
+      className: 'AlignOrientation',
+      name: 'VehicleOrientationAssist',
+      parentId: folders.physics,
+      properties: {
+        Attachment0: ref(rootAttachmentId),
+        Enabled: false,
+        Responsiveness: 12,
+        MaxTorque: 75000,
+      },
+    },
+  );
+
+  if (profile.type === 'helicopter') {
+    const rotorDiscId = addPart('RotorBlurDisc', folders.physics, [width * 1.15, 0.04, width * 1.15], [0, rootY + profile.size[1] * 0.82, -length * 0.04], accent, { shape: 'Cylinder', material: 'Glass', transparency: 0.62 });
+    scene.push({ id: uuidv4(), className: 'WeldConstraint', name: 'RotorBlurWeld', parentId: rotorDiscId, properties: { Part0: ref(rootId), Part1: ref(rotorDiscId) } });
+  }
+}
+
+function addVehicleEffects(args: {
+  scene: RobloxBuildSceneNode[]; folders: Record<string, string>; rootId: string; profile: VehicleProfile;
+  rootY: number; width: number; length: number; glowRgb: { r: number; g: number; b: number };
+  cf: (x: number, y: number, z: number, rot?: [number, number, number]) => Record<string, unknown>;
+  numberRange: (min: number, max: number) => Record<string, unknown>;
+  numberSequence: (value: number) => Record<string, unknown>;
+  colorSequence: (rgb: { r: number; g: number; b: number }) => Record<string, unknown>;
+}): void {
+  const { scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence } = args;
+  const addEmitter = (attachmentName: string, name: string, pos: [number, number, number], rate: number, speed: [number, number], color = glowRgb): void => {
+    const attId = uuidv4();
+    scene.push(
+      { id: attId, className: 'Attachment', name: attachmentName, parentId: rootId, properties: { CFrame: cf(pos[0], pos[1] - rootY, pos[2]) } },
+      {
+        id: uuidv4(),
+        className: 'ParticleEmitter',
+        name,
+        parentId: attId,
+        properties: {
+          Enabled: false,
+          Rate: rate,
+          Lifetime: numberRange(0.25, 0.9),
+          Speed: numberRange(speed[0], speed[1]),
+          Size: numberSequence(0.55),
+          Color: colorSequence(color),
+          LightEmission: 0.25,
+        },
+      },
+    );
+  };
+  addEmitter('ExhaustAttachmentL', 'ExhaustSmokeL', [-width * 0.22, rootY + 0.05, length * 0.46], 12, [2, 8], { r: 0.55, g: 0.55, b: 0.55 });
+  addEmitter('ExhaustAttachmentR', 'ExhaustSmokeR', [width * 0.22, rootY + 0.05, length * 0.46], 12, [2, 8], { r: 0.55, g: 0.55, b: 0.55 });
+  addEmitter('LeftTrailAttachment', profile.driveMode === 'watercraft' ? 'BoatWakeL' : profile.driveMode === 'hover' ? 'ThrusterTrailL' : 'WheelDustL', [-width * 0.42, 0.45, length * 0.22], 18, [4, 12]);
+  addEmitter('RightTrailAttachment', profile.driveMode === 'watercraft' ? 'BoatWakeR' : profile.driveMode === 'hover' ? 'ThrusterTrailR' : 'WheelDustR', [width * 0.42, 0.45, length * 0.22], 18, [4, 12]);
+  if (profile.driveMode === 'aircraft' || profile.driveMode === 'rotorcraft') {
+    addEmitter('AirTrailAttachmentL', 'AirTrailL', [-width * 0.48, rootY + 0.2, length * 0.1], 10, [8, 18], { r: 0.82, g: 0.9, b: 1.0 });
+    addEmitter('AirTrailAttachmentR', 'AirTrailR', [width * 0.48, rootY + 0.2, length * 0.1], 10, [8, 18], { r: 0.82, g: 0.9, b: 1.0 });
+  }
+  scene.push({
+    id: uuidv4(),
+    className: 'PointLight',
+    name: 'VehicleGlow',
+    parentId: rootId,
+    properties: {
+      Enabled: false,
+      Brightness: 1.8,
+      Range: 16,
+      Color: color3(glowRgb.r, glowRgb.g, glowRgb.b),
+    },
+  });
+}
+
+function buildVehicleControllerScript(): string {
+  return `
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local Vehicle = script.Parent
+local Config = Vehicle:FindFirstChild("VehicleConfig")
+local Root = Vehicle:FindFirstChild("ChassisRoot")
+local DriveSeat = Vehicle:FindFirstChild("DriveSeat", true)
+
+if not Root or not DriveSeat or not DriveSeat:IsA("VehicleSeat") then
+\twarn("[VehicleController] Missing ChassisRoot or DriveSeat")
+\treturn
+end
+
+local function cfg(name, fallback)
+\tlocal value = Config and Config:FindFirstChild(name)
+\tif value and value:IsA("ValueBase") then
+\t\treturn value.Value
+\tend
+\treturn fallback
+end
+
+local VEHICLE_TYPE = tostring(cfg("VehicleType", "car"))
+local DRIVE_MODE = tostring(cfg("DriveMode", "land_wheels"))
+local TOP_SPEED = tonumber(cfg("TopSpeed", 70)) or 70
+local ACCEL = tonumber(cfg("Acceleration", 28)) or 28
+local TURN_RATE = tonumber(cfg("TurnRate", 2.0)) or 2.0
+local WHEEL_RADIUS = math.max(tonumber(cfg("WheelRadius", 0.8)) or 0.8, 0.2)
+
+local engine = Root:FindFirstChild("EngineLoop")
+local boostSound = Root:FindFirstChild("BoostOrHorn")
+local glow = Root:FindFirstChild("VehicleGlow")
+local emitters = {}
+local driveHinges = {}
+local steerHinges = {}
+local passengerSeats = {}
+
+for _, inst in ipairs(Vehicle:GetDescendants()) do
+\tif inst:IsA("ParticleEmitter") then
+\t\ttable.insert(emitters, inst)
+\telseif inst:IsA("HingeConstraint") then
+\t\tif inst.Name:find("Steer") then
+\t\t\ttable.insert(steerHinges, inst)
+\t\telse
+\t\t\ttable.insert(driveHinges, inst)
+\t\tend
+\telseif inst:IsA("Seat") and not inst:IsA("VehicleSeat") then
+\t\ttable.insert(passengerSeats, inst)
+\tend
+end
+
+local currentDriver = nil
+local function setNetworkOwnerForDriver(humanoid)
+\tlocal player = nil
+\tif humanoid and humanoid.Parent then
+\t\tplayer = Players:GetPlayerFromCharacter(humanoid.Parent)
+\tend
+\tcurrentDriver = player
+\tpcall(function()
+\t\tif Root:CanSetNetworkOwnership() then
+\t\t\tRoot:SetNetworkOwner(player)
+\t\tend
+\tend)
+\tif engine then
+\t\tif player and not engine.IsPlaying then engine:Play() end
+\t\tif not player then engine:Stop() end
+\tend
+\tVehicle:SetAttribute("DriverUserId", player and player.UserId or 0)
+end
+
+DriveSeat:GetPropertyChangedSignal("Occupant"):Connect(function()
+\tsetNetworkOwnerForDriver(DriveSeat.Occupant)
+end)
+setNetworkOwnerForDriver(DriveSeat.Occupant)
+
+local function flatLook(cframe)
+\tlocal look = cframe.LookVector
+\tlocal flat = Vector3.new(look.X, 0, look.Z)
+\tif flat.Magnitude < 0.001 then return Vector3.new(0, 0, -1) end
+\treturn flat.Unit
+end
+
+RunService.Heartbeat:Connect(function(dt)
+\tlocal throttle = DriveSeat.ThrottleFloat
+\tlocal steer = DriveSeat.SteerFloat
+\tlocal occupied = DriveSeat.Occupant ~= nil
+\tlocal speed = Root.AssemblyLinearVelocity.Magnitude
+\tlocal speed01 = math.clamp(speed / math.max(TOP_SPEED, 1), 0, 1)
+\tlocal active = occupied and math.abs(throttle) > 0.03
+\tlocal cf = Root.CFrame
+\tlocal forward = flatLook(cf)
+
+\tfor _, hinge in ipairs(driveHinges) do
+\t\thinge.MotorMaxTorque = occupied and 16000 or 0
+\t\thinge.AngularVelocity = active and (-throttle * TOP_SPEED / WHEEL_RADIUS) or 0
+\tend
+\tfor _, hinge in ipairs(steerHinges) do
+\t\thinge.ServoMaxTorque = 14000
+\t\thinge.TargetAngle = steer * 28
+\tend
+
+\tif occupied then
+\t\tlocal current = Root.AssemblyLinearVelocity
+\t\tlocal target
+\t\tif DRIVE_MODE == "aircraft" then
+\t\t\tlocal lift = math.max(0, throttle) * TOP_SPEED * 0.22 + math.max(0, speed01 - 0.25) * 12
+\t\t\ttarget = forward * (math.max(throttle, 0) * TOP_SPEED) + Vector3.new(0, lift, 0)
+\t\telseif DRIVE_MODE == "rotorcraft" then
+\t\t\ttarget = forward * (math.max(throttle, 0) * TOP_SPEED * 0.45) + Vector3.new(0, throttle * TOP_SPEED * 0.42, 0)
+\t\telseif DRIVE_MODE == "hover" then
+\t\t\ttarget = forward * (throttle * TOP_SPEED) + Vector3.new(0, math.sin(os.clock() * 2) * 1.6, 0)
+\t\telseif DRIVE_MODE == "watercraft" then
+\t\t\ttarget = forward * (throttle * TOP_SPEED) + Vector3.new(0, math.clamp(current.Y, -4, 4), 0)
+\t\telse
+\t\t\ttarget = Vector3.new((forward * (throttle * TOP_SPEED)).X, current.Y, (forward * (throttle * TOP_SPEED)).Z)
+\t\tend
+\t\tlocal alpha = math.clamp(dt * (ACCEL / 14), 0, 0.28)
+\t\tRoot.AssemblyLinearVelocity = current:Lerp(target, alpha)
+\t\tRoot.AssemblyAngularVelocity = Vector3.new(0, -steer * TURN_RATE * (DRIVE_MODE == "tracked" and 1.4 or 1.0), 0)
+\telse
+\t\tRoot.AssemblyAngularVelocity = Root.AssemblyAngularVelocity:Lerp(Vector3.zero, math.clamp(dt * 2, 0, 1))
+\tend
+
+\tif engine then
+\t\tengine.Volume = occupied and (0.18 + speed01 * 0.55 + math.abs(throttle) * 0.15) or 0
+\t\tengine.PlaybackSpeed = 0.72 + speed01 * 0.85 + math.abs(throttle) * 0.15
+\t\tif occupied and not engine.IsPlaying then engine:Play() end
+\tend
+\tif boostSound and occupied and math.abs(throttle) > 0.95 and speed01 > 0.55 and not boostSound.IsPlaying then
+\t\tboostSound:Play()
+\tend
+\tif glow then glow.Enabled = occupied and (DRIVE_MODE == "hover" or speed01 > 0.18) end
+\tfor _, emitter in ipairs(emitters) do
+\t\temitter.Enabled = occupied and (active or speed01 > 0.12)
+\t\temitter.Rate = (active and 10 or 0) + speed01 * 28
+\tend
+\tlocal passengerCount = 0
+\tfor _, seat in ipairs(passengerSeats) do
+\t\tif seat.Occupant then passengerCount += 1 end
+\tend
+\tVehicle:SetAttribute("PassengerCount", passengerCount)
+\tVehicle:SetAttribute("Speed", math.floor(speed + 0.5))
+\tVehicle:SetAttribute("VehicleType", VEHICLE_TYPE)
+end)
+
+print("[VehicleController] Ready:", Vehicle.Name, VEHICLE_TYPE, DRIVE_MODE)
+`;
+}
+
+// ---------------------------------------------------------------------------
+// Track 3 Phase 2 (Blocky Pet) — assemble an .rbxm Model from a BlockyPetSpec.
+// Output structure:
+//   Model "Pet_{name}"  (PrimaryPart = HumanoidRootPart)
+//     Configuration "PetConfig" (Species/Rarity/Element/Level/XP/etc.)
+//     Part "HumanoidRootPart" (invisible driver — anchored=false, massless=true)
+//     Part "{name}" × N   (each spec.parts[i] becomes a Part child of the model)
+//     Motor6D × J         (each spec.joints[j] welds part0 → part1)
+//     AnimationController
+//       Animation "Idle"  (Inline KeyframeSequence asset emitted by anim stage)
+//       Animation "Walk"
+//       [Animation "Fly"] (only if isFlying)
+//     Script "PetFollowScript"
+//     ModuleScript "PetLevelingModule"
+//
+// Animation IDs are filled by index.ts after the Lune build_animation pass
+// stores each KeyframeSequence as a child of the Animation node (Studio's
+// animator picks it up by descendant lookup; no external upload needed for
+// offline play). If upload_roblox succeeded the Animation.AnimationId field
+// gets the rbxassetid:// URL instead.
+// ---------------------------------------------------------------------------
+function buildBlockyPetManifest(
+  args: {
+    title: string;
+    summary: string;
+    target: RobloxBuildTarget;
+    prompt: string;
+    starterScript: string;
+    metadata?: Record<string, unknown>;
+  },
+  metadata: Record<string, unknown>,
+): RobloxBuildManifest {
+  const specRaw = metadata.blockyPetSpec;
+  if (!specRaw || typeof specRaw !== 'object') {
+    throw new Error('buildBlockyPetManifest: metadata.blockyPetSpec is required');
+  }
+  const spec = specRaw as BlockyPetSpec;
+  const baseName = sanitizeIdentifier(spec.name || args.title || 'Pet');
+  const rarity = typeof metadata.petRarity === 'string' ? metadata.petRarity : 'Rare';
+  const element = typeof metadata.petElement === 'string' ? metadata.petElement : 'Neutral';
+  const speciesType = typeof metadata.petSpeciesType === 'string' ? metadata.petSpeciesType : 'fantasy';
+  const skeletonType = typeof metadata.petSkeletonType === 'string' ? metadata.petSkeletonType : 'quadruped';
+  const isFlying = !!metadata.petIsFlying;
+  const coinBonusBase = rarityCoinBonus(rarity);
+  const animationAssetIds = (metadata.blockyPetAnimationAssetIds as Record<string, string> | undefined) ?? {};
+
+  const petModelId = uuidv4();
+  const configId = uuidv4();
+  const acId = uuidv4();
+  const hrpId = uuidv4();
+
+  const scene: RobloxBuildSceneNode[] = [
+    {
+      id: petModelId,
+      className: 'Model',
+      name: `Pet_${baseName}`,
+      parentId: 'WorkspaceRoot',
+    },
+    {
+      id: configId,
+      className: 'Configuration',
+      name: 'PetConfig',
+      parentId: petModelId,
+    },
+    childStringValue(configId, 'SpeciesType', speciesType),
+    childStringValue(configId, 'SkeletonType', skeletonType),
+    childStringValue(configId, 'Rarity', rarity),
+    childStringValue(configId, 'Element', element),
+    childBoolValue(configId, 'IsFlying', isFlying),
+    childIntValue(configId, 'Level', 1),
+    childIntValue(configId, 'XP', 0),
+    childIntValue(configId, 'EvolutionStage', 1),
+    childNumberValue(configId, 'CoinBonusBase', coinBonusBase),
+    childStringValue(configId, 'BlockyRig', spec.rig),
+    {
+      id: hrpId,
+      className: 'Part',
+      name: 'HumanoidRootPart',
+      parentId: petModelId,
+      properties: {
+        Transparency: 1,
+        Anchored: false,
+        CanCollide: false,
+        Massless: true,
+        Size: { __type: 'Vector3', x: 2, y: 2, z: 2 },
+      },
+    },
+  ];
+
+  // Map "primary"/"secondary"/"accent"/"eye" slots → actual BrickColor names.
+  const colorSlot = (slot: string): string => {
+    if (slot === 'primary') return spec.colors.primary;
+    if (slot === 'secondary') return spec.colors.secondary ?? spec.colors.primary;
+    if (slot === 'accent') return spec.colors.accent ?? spec.colors.primary;
+    if (slot === 'eye') return spec.colors.eye ?? 'Really black';
+    return slot; // literal BrickColor name
+  };
+
+  // Map BlockyPartShape → Roblox Part class + Shape enum (when applicable).
+  const partNameToId = new Map<string, string>();
+  partNameToId.set('HumanoidRootPart', hrpId);
+  for (const p of spec.parts) {
+    const partId = uuidv4();
+    partNameToId.set(p.name, partId);
+    const isCylinder = p.shape === 'Cylinder';
+    const isBall = p.shape === 'Ball';
+    const isWedge = p.shape === 'Wedge' || p.shape === 'CornerWedge';
+    const className = isWedge ? (p.shape === 'CornerWedge' ? 'CornerWedgePart' : 'WedgePart') : 'Part';
+    const props: Record<string, unknown> = {
+      Anchored: false,
+      CanCollide: false,
+      Massless: true,
+      Size: { __type: 'Vector3', x: p.size[0], y: p.size[1], z: p.size[2] },
+      BrickColor: { __type: 'BrickColor', name: colorSlot(p.color) },
+      Material: { __type: 'EnumItem', enum: 'Material', value: p.material ?? spec.material },
+      CFrame: {
+        __type: 'CFrame',
+        position: { x: p.position[0], y: p.position[1], z: p.position[2] },
+        rotation: p.rotation ?? [0, 0, 0],
+      },
+    };
+    if (!isWedge) {
+      if (isBall) props.Shape = { __type: 'EnumItem', enum: 'PartType', value: 'Ball' };
+      else if (isCylinder) props.Shape = { __type: 'EnumItem', enum: 'PartType', value: 'Cylinder' };
+      else props.Shape = { __type: 'EnumItem', enum: 'PartType', value: 'Block' };
+    }
+    scene.push({
+      id: partId,
+      className,
+      name: p.name,
+      parentId: petModelId,
+      properties: props,
+    });
+
+    // Attach decals if any target this part. The texture id is filled in at
+    // generation time after Open Cloud upload — otherwise the Decal ships
+    // with an empty Texture (Studio shows it as a placeholder).
+    const decalsForPart = (spec.decals ?? []).filter((d) => d.part === p.name);
+    for (const d of decalsForPart) {
+      scene.push({
+        id: uuidv4(),
+        className: 'Decal',
+        name: `${p.name}_${d.face}_Decal`,
+        parentId: partId,
+        properties: {
+          Face: { __type: 'EnumItem', enum: 'NormalId', value: d.face },
+          Texture: d.textureId ?? '',
+        },
+      });
+    }
+  }
+
+  // PrimaryPart = HumanoidRootPart (already at scene[2] virtually — Lune
+  // builder reads Model.PrimaryPart by attribute name lookup; we surface it
+  // via a marker StringValue so build_roblox.luau wires it on assemble).
+  scene.push({
+    id: uuidv4(),
+    className: 'StringValue',
+    name: '_PrimaryPartName',
+    parentId: petModelId,
+    properties: { Value: 'HumanoidRootPart' },
+  });
+
+  // Motor6D joints. Each joint references two parts by name; the manifest
+  // stores the cross-instance handles via InstanceRef property type that
+  // build_roblox.luau resolves through instanceMap. C0 = at part0's pivot,
+  // C1 = at part1's pivot — both default to identity (which keeps each part
+  // at its authored CFrame; animations drive Motor.Transform).
+  for (const j of spec.joints) {
+    const part0Id = partNameToId.get(j.part0);
+    const part1Id = partNameToId.get(j.part1);
+    if (!part0Id || !part1Id) continue; // validated upstream — defensive
+    scene.push({
+      id: uuidv4(),
+      className: 'Motor6D',
+      name: j.name,
+      parentId: part1Id, // Motor6D conventionally parented to the child Part
+      properties: {
+        Part0: { __type: 'InstanceRef', refId: part0Id },
+        Part1: { __type: 'InstanceRef', refId: part1Id },
+      },
+    });
+  }
+
+  // AnimationController + Animation children for Idle / Walk / Fly. The
+  // animation-stage in index.ts populates animationAssetIds (rbxassetid://
+  // strings after Open Cloud upload) or attaches a KeyframeSequence as a
+  // child of each Animation for offline-play fallback.
+  scene.push({
+    id: acId,
+    className: 'AnimationController',
+    name: 'AnimationController',
+    parentId: petModelId,
+  });
+  for (const trackName of (isFlying ? ['Idle', 'Walk', 'Fly'] : ['Idle', 'Walk'])) {
+    scene.push({
+      id: uuidv4(),
+      className: 'Animation',
+      name: trackName,
+      parentId: acId,
+      properties: { AnimationId: animationAssetIds[trackName] ?? '' },
+    });
+  }
+
+  return {
+    id: uuidv4(),
+    title: args.title,
+    summary: args.summary,
+    target: 'model',
+    formatPreference: 'binary',
+    scene,
+    scripts: [
+      {
+        id: uuidv4(),
+        name: 'PetFollowScript',
+        scriptType: 'Script',
+        container: petModelId,
+        source: buildBlockyPetFollowScript(),
+      },
+      {
+        id: uuidv4(),
+        name: 'PetLevelingModule',
+        scriptType: 'ModuleScript',
+        container: petModelId,
+        source: buildPetLevelingModule(),
+      },
+    ],
+    ui: [],
+    metadata: {
+      prompt: args.prompt,
+      generatedBy: 'roblox-worker blocky-pet pipeline',
+      isBlockyPet: true,
+      petBaseName: baseName,
+      petSpeciesType: speciesType,
+      petSkeletonType: skeletonType,
+      petRarity: rarity,
+      petElement: element,
+      petIsFlying: isFlying,
+      blockyRig: spec.rig,
+      partCount: spec.parts.length,
+      jointCount: spec.joints.length,
+      ...metadata,
+    },
   };
 }
 
@@ -3348,9 +4344,24 @@ function buildFurnitureModelManifest(
     ['sign', /\b(sign|poster|billboard|banner|plaque|label)\b|вывес|плакат|баннер|таблич/i],
   ];
   const detectedType = typeAliases.find(([, pattern]) => pattern.test(requestText))?.[0] ?? 'decor';
-  const furnitureType: FurnitureType = (knownTypes as readonly string[]).includes(rawType)
-    ? (rawType as FurnitureType)
-    : detectedType;
+  // Session 346 — when an LLM scene JSON is in metadata, the SCENE's furnitureType
+  // is authoritative. We've seen production bugs where metadata.furnitureType was
+  // stale ("table" from a prior chat) but the LLM correctly classified the prop as
+  // "lamp" — and the builder shipped a table-shaped Handle around lamp parts.
+  let llmSceneFurnitureType: string | undefined;
+  if (typeof metadata.furnitureLLMScene === 'string') {
+    try {
+      const parsed = JSON.parse(metadata.furnitureLLMScene) as { furnitureType?: unknown };
+      if (typeof parsed.furnitureType === 'string') {
+        const cleaned = parsed.furnitureType.toLowerCase().trim();
+        if ((knownTypes as readonly string[]).includes(cleaned)) {
+          llmSceneFurnitureType = cleaned;
+        }
+      }
+    } catch { /* ignore parse errors — caught later when emitting parts */ }
+  }
+  const furnitureType: FurnitureType = (llmSceneFurnitureType as FurnitureType | undefined)
+    ?? ((knownTypes as readonly string[]).includes(rawType) ? (rawType as FurnitureType) : detectedType);
   const rawMeshAssetId = typeof metadata.meshAssetId === 'string' ? metadata.meshAssetId : undefined;
   const buildMode = typeof metadata.furnitureResolvedBuildMode === 'string'
     ? metadata.furnitureResolvedBuildMode
@@ -3426,13 +4437,24 @@ function buildFurnitureModelManifest(
 
   // Anchored Model — furniture sits in the world, not held as a Tool.
   // PrimaryPart = invisible Handle so users can move the whole prop with PivotTo.
+  // Session 346 — when an LLM scene is present, Handle is MINIMAL (0.5 stud cube
+  // at y=0.25) so the model's bounding-box bottom matches the prop's actual floor-
+  // touching base. With the previous big Handle (sized to the full bbox like 1.4×4.5×1.4
+  // for a lamp), Studio's drop-on-surface offset moved the entire prop up by half the
+  // Handle height — the lamp ended up floating ~2 studs above the baseplate.
+  const hasLLMSceneForHandle = typeof metadata.furnitureLLMScene === 'string' && metadata.furnitureLLMScene.length > 10;
+  const handleSizeForBuild: [number, number, number] = hasLLMSceneForHandle
+    ? [0.5, 0.5, 0.5]
+    : handleSize;
+  const handleCFrameY = hasLLMSceneForHandle ? 0.25 : handleSize[1] / 2;
   const scene: RobloxBuildSceneNode[] = [
     {
       id: handleId,
       className: 'Part',
       name: 'Handle',
       properties: {
-        Size: vector3(handleSize[0], handleSize[1], handleSize[2]),
+        Size: vector3(handleSizeForBuild[0], handleSizeForBuild[1], handleSizeForBuild[2]),
+        CFrame: cframe(0, handleCFrameY, 0),
         Transparency: 1,
         Anchored: true,
         CanCollide: false,

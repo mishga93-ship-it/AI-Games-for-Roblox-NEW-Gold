@@ -883,6 +883,39 @@ final class ChatStore: ObservableObject {
     // Track 3: also supports pet_3d jobs — petStudioBlock takes precedence over
     // layered/classic clothing blocks when petSpeciesType is set.
     func openMarketplaceHandoff() {
+        // Track 3 Phase 2 (Blocky Pet): single .rbxm with primitive Parts +
+        // Motor6D rig + pre-baked animations. Simpler handoff than 3D path —
+        // no FBX, no asset upload, just one .rbxm to drag into Workspace.
+        if let species = draft.petSpecies, draft.petMode == "blocky" {
+            let petJob = lastFailedGenerationJob
+            let rbxmURL = petJob?.artifacts
+                .first(where: { $0.metadata?.isBlockyPet == true && ($0.type == "rbxm" || $0.name.hasSuffix(".rbxm")) })
+                .flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+                ?? petJob?.artifacts.first(where: { $0.type == "rbxm" }).flatMap { ($0.downloadUrl ?? $0.url).flatMap(URL.init(string:)) }
+            let partCount = petJob?.metadata?.partCount ?? 0
+            let animationCount = petJob?.artifacts.filter { $0.metadata?.isPetAnimation == true }.count ?? 0
+            let rarity = petJob?.metadata?.petRarity
+            marketplaceHandoffContext = MarketplaceHandoffContext(
+                clothingType: "pet_\(species)",
+                title: draft.title,
+                suggestedDescription: "AI-generated Roblox blocky pet (\(species)) — Motor6D rig, follow/leveling/rarity built in.",
+                suggestedTags: ["pet", "blocky", species, "ai", "ugc"],
+                suggestedPriceRobux: 0,
+                robloxAssetId: nil,
+                textureDownloadURL: nil,
+                meshFbxURL: nil,
+                meshGlbURL: nil,
+                validationWarnings: [],
+                petRbxmURL: rbxmURL,
+                petSpeciesType: species,
+                petRarity: rarity,
+                isBlockyPet: true,
+                blockyPetRbxmURL: rbxmURL,
+                blockyAnimationCount: animationCount,
+                blockyPartCount: partCount
+            )
+            return
+        }
         // Track 3 (3D Pet pipeline): if the user has petSpecies+petMode set,
         // route to a pet-specific handoff context with per-stage download URLs.
         if let species = draft.petSpecies, draft.petMode == "evolution_3d" {
@@ -1080,6 +1113,30 @@ final class ChatStore: ObservableObject {
 	            default: break
 	            }
 	        }
+        if contentSubcategory == "vehicles" {
+            switch normalized {
+            case "car", "sports car", "truck / jeep", "truck/jeep", "truck", "jeep":
+                draft.vehicleType = "car"
+            case "motorcycle", "motorbike":
+                draft.vehicleType = "motorcycle"
+            case "boat":
+                draft.vehicleType = "boat"
+            case "plane", "airplane":
+                draft.vehicleType = "plane"
+            case "helicopter", "heli":
+                draft.vehicleType = "helicopter"
+            case "tank":
+                draft.vehicleType = "tank"
+            case "spaceship", "space ship", "sci-fi hover", "sci fi hover", "hover":
+                draft.vehicleType = "spaceship"
+            case "bicycle", "bike":
+                draft.vehicleType = "bicycle"
+            case "bus":
+                draft.vehicleType = "bus"
+            default:
+                break
+            }
+        }
 	        if contentSubcategory == "npcs" {
             switch normalized {
             case "patrol guard":     draft.npcRole = "guard"; draft.npcBehaviorMode = "patrol"
@@ -1143,31 +1200,51 @@ final class ChatStore: ObservableObject {
             openMarketplaceHandoff()
             return
         }
-        // Track 3 (3D Pet pipeline): pet-species picker. Maps welcome-message tap
-        // → draft.petSpecies + draft.petMode so generationMetadata sends pet
-        // routing upstream. Backend dispatches requestedKind=pet_3d.
+        // Track 3 (Pet pipeline): pet-species picker. Default to Phase 2
+        // BLOCKY mode (fast, free, native Roblox style). User can opt into
+        // Phase 1 3D photoreal mesh path explicitly via "🐾 3D ..." chips.
         if contentSubcategory == "pets" {
             switch normalized {
-            case "🐕 dog", "dog", "🐕":
+            // Blocky (default — Phase 2)
+            case "🎲 dog", "blocky dog", "🐕 dog", "dog", "🐕":
                 draft.petSpecies = "dog"
-                draft.petMode = "evolution_3d"
-            case "🐈 cat", "cat", "🐈":
+                draft.petMode = "blocky"
+            case "🎲 cat", "blocky cat", "🐈 cat", "cat", "🐈":
                 draft.petSpecies = "cat"
-                draft.petMode = "evolution_3d"
-            case "🐉 dragon", "dragon", "🐉":
+                draft.petMode = "blocky"
+            case "🎲 dragon", "blocky dragon", "🐉 dragon", "dragon", "🐉":
                 draft.petSpecies = "dragon"
-                draft.petMode = "evolution_3d"
-            case "🦄 unicorn", "unicorn", "🦄":
+                draft.petMode = "blocky"
+            case "🎲 unicorn", "blocky unicorn", "🦄 unicorn", "unicorn", "🦄":
                 draft.petSpecies = "unicorn"
-                draft.petMode = "evolution_3d"
-            case "🤖 robot", "robot", "🤖":
+                draft.petMode = "blocky"
+            case "🎲 robot", "blocky robot", "🤖 robot", "robot", "🤖":
                 draft.petSpecies = "robot"
-                draft.petMode = "evolution_3d"
-            case "✨ custom", "custom", "fantasy creature", "cute companion":
+                draft.petMode = "blocky"
+            case "🎲 custom", "blocky custom", "✨ custom", "custom", "fantasy creature", "cute companion":
                 draft.petSpecies = "fantasy"
-                draft.petMode = "evolution_3d"
+                draft.petMode = "blocky"
             case "robot pet":
                 draft.petSpecies = "robot"
+                draft.petMode = "blocky"
+            // 3D Premium (Phase 1 — opt-in, requires TRIPO_API_KEY for quadrupeds)
+            case "🐾 3d dog", "3d dog":
+                draft.petSpecies = "dog"
+                draft.petMode = "evolution_3d"
+            case "🐾 3d cat", "3d cat":
+                draft.petSpecies = "cat"
+                draft.petMode = "evolution_3d"
+            case "🐾 3d dragon", "3d dragon":
+                draft.petSpecies = "dragon"
+                draft.petMode = "evolution_3d"
+            case "🐾 3d unicorn", "3d unicorn":
+                draft.petSpecies = "unicorn"
+                draft.petMode = "evolution_3d"
+            case "🐾 3d robot", "3d robot":
+                draft.petSpecies = "robot"
+                draft.petMode = "evolution_3d"
+            case "🐾 3d custom", "3d custom":
+                draft.petSpecies = "fantasy"
                 draft.petMode = "evolution_3d"
             default: break
             }
@@ -1873,7 +1950,7 @@ final class ChatStore: ObservableObject {
 
     private var shouldRunGenerationDetached: Bool {
         switch generationKind {
-        case "character_3d", "clothing_3d", "game_package", "rbxl_build", "rbxm_build", "animation":
+        case "character_3d", "clothing_3d", "pet_3d", "vehicle_3d", "game_package", "rbxl_build", "rbxm_build", "animation":
             return true
         default:
             return false
@@ -4157,8 +4234,14 @@ final class ChatStore: ObservableObject {
             return lower.contains("intermediate") || lower.contains("npc") ? "Промежуточная NPC-модель" : "Экспорт модели"
         case "generate_npc_behavior", "generate_character_scripts":
             return "Поведение NPC"
+        case "generate_vehicle_scripts":
+            return "Контроллер транспорта"
+        case "quality_review":
+            return "Проверка качества"
         case "export_rbxm":
-            return lower.contains("npc") ? "Экспорт NPC RBXM" : "Сборка RBXM"
+            if lower.contains("npc") { return "Экспорт NPC RBXM" }
+            if lower.contains("vehicle") || lower.contains("transport") { return "Экспорт Vehicle RBXM" }
+            return "Сборка RBXM"
         case "generate_keyframes":
             return "Ключевые кадры"
         case "generate_cages":
@@ -4236,6 +4319,13 @@ final class ChatStore: ObservableObject {
                 GenerationStage(id: "generating", title: "Generating UI", status: "pending"),
                 GenerationStage(id: "concept_image", title: "Preview image", status: "pending"),
                 GenerationStage(id: "export_rbxm", title: "Building .rbxm", status: "pending"),
+            ]
+        }
+        if contentSubcategory == "vehicles" {
+            return [
+                generationStage(id: "generate_vehicle_scripts", title: "Configure vehicle controller", status: "pending"),
+                generationStage(id: "quality_review", title: "Vehicle package QA", status: "pending"),
+                generationStage(id: "export_rbxm", title: "Export Vehicle RBXM", status: "pending")
             ]
         }
         if contentSubcategory == "npcs" || contentSubcategory == "roast_npc" {
@@ -4569,6 +4659,7 @@ final class ChatStore: ObservableObject {
         let subcategory = job.metadata?.contentSubcategory ?? ""
         let isBuildingRequest = category == "building" || subcategory == "buildings"
         let isMapRequest = category == "map_environment" || subcategory == "maps"
+        let isVehicleRequest = category == "vehicle" || subcategory == "vehicles" || job.kind == "vehicle_3d"
         let isObbyTrollRequest = subcategory == "obby_troll"
         let isNpcRequest = category == "npc_ai"
             || subcategory == "npcs"
@@ -4593,6 +4684,10 @@ final class ChatStore: ObservableObject {
             requestLabel = "Map environment request"
             defaultProblem = "- Keep the map environment close to the user prompt and fix the exact quality-review failures before export."
             defaultAction = "- Rebuild the map scene with the requested biome/structure cues visible and reviewable before export."
+        } else if isVehicleRequest {
+            requestLabel = "Vehicle request"
+            defaultProblem = "- Keep the requested vehicle type, controls, passenger count, sounds, VFX, and physics behavior from the user's prompt."
+            defaultAction = "- Rebuild the vehicle .rbxm so it includes a DriveSeat, passenger seats, controller script, physics constraints, sounds, and speed-based VFX before export."
         } else {
             requestLabel = "Game package request"
             defaultProblem = "- Keep the request closer to the user prompt and make the playable route obvious."
@@ -4651,6 +4746,20 @@ final class ChatStore: ObservableObject {
             metadata["contentSubcategory"] = subcategory
         } else if job.metadata?.contentCategory == "building" {
             metadata["contentSubcategory"] = "buildings"
+        } else if job.metadata?.contentCategory == "vehicle" || job.kind == "vehicle_3d" {
+            metadata["contentSubcategory"] = "vehicles"
+        }
+        if job.metadata?.contentCategory == "vehicle" || job.kind == "vehicle_3d" {
+            metadata["requestedKind"] = "vehicle_3d"
+        }
+        if let vehicleType = job.metadata?.vehicleType {
+            metadata["vehicleType"] = sanitizeForPrompt(vehicleType, maxLength: 40)
+        }
+        if let driveMode = job.metadata?.driveMode {
+            metadata["driveMode"] = sanitizeForPrompt(driveMode, maxLength: 60)
+        }
+        if let seatCount = job.metadata?.seatCount {
+            metadata["seatCount"] = "\(seatCount)"
         }
         if let title = job.metadata?.title {
             metadata["title"] = sanitizeForPrompt(title, maxLength: 120)
@@ -4701,6 +4810,10 @@ final class ChatStore: ObservableObject {
         let nativeRobloxArtifact = finalRobloxArtifact
             ?? job.artifacts.last(where: { ($0.type == "rbxl" || $0.type == "rbxm") && $0.stageId != "export_model" })
             ?? job.artifacts.last(where: { $0.type == "rbxl" || $0.type == "rbxm" })
+        let isVehicleProject = contentSubcategory == "vehicles"
+            || job.metadata?.contentCategory == "vehicle"
+            || job.metadata?.contentSubcategory == "vehicles"
+            || job.kind == "vehicle_3d"
         let real3DArtifact = job.artifacts.last(where: {
             $0.is3DModel
                 && $0.type != "rbxm"
@@ -4727,7 +4840,7 @@ final class ChatStore: ObservableObject {
             return fallback
         }
         let downloadURL: URL? = {
-            let candidates: [String?] = contentSubcategory == "npcs"
+            let candidates: [String?] = (contentSubcategory == "npcs" || isVehicleProject)
                 ? [
                     nativeRobloxArtifact?.downloadUrl,
                     glbArtifact?.downloadUrl,
@@ -4919,9 +5032,9 @@ final class ChatStore: ObservableObject {
         }
 
         let isScriptsContent = projectKind == .content && (contentSubcategory == "scripts" || contentSubcategory == "anime_skills")
-        let isCharacterProject = (projectKind == .content || projectKind == .ugc) && !isScriptsContent
+        let isCharacterProject = (projectKind == .content || projectKind == .ugc) && !isScriptsContent && !isVehicleProject
         let isGameProject = projectKind == .game || projectKind == .clone
-        let shows3D = isCharacterProject || isGameProject
+        let shows3D = isCharacterProject || isVehicleProject || isGameProject
         let gameWorldTitle = job.metadata?.displayTitle.map { "\($0) Game World" }
             ?? (draft.title.isEmpty ? "Game World" : "\(draft.title) Game World")
         func gamePreviewNotes(exportLine: String) -> [String] {
@@ -4988,6 +5101,39 @@ final class ChatStore: ObservableObject {
                 rbxmDownloadURL: rbxmDownloadURL,
                 fbxDownloadURL: nil,
                 notes: notes
+            )
+        }
+
+        if isVehicleProject, let nativeRobloxArtifact {
+            let vehicleType = job.metadata?.vehicleType ?? draft.vehicleType ?? "vehicle"
+            let driveMode = job.metadata?.driveMode ?? "DriveSeat"
+            var notes: [String] = [
+                "Playable \(vehicleType) package with DriveSeat controls.",
+                "Includes passenger seats, physics controller, engine sound, and speed-based VFX.",
+                "Drag the .rbxm into Workspace in Studio, press Play, and sit in DriveSeat."
+            ]
+            if let seatCount = job.metadata?.seatCount {
+                notes.insert("Seats: \(seatCount) | Mode: \(driveMode)", at: 1)
+            }
+            if let qualityMessage = job.metadata?.qualityReviewMessage, !qualityMessage.isEmpty {
+                notes.append("Quality review: \(qualityMessage)")
+            }
+            return PreviewPayload(
+                title: draft.title.isEmpty ? "Vehicle RBXM" : "\(draft.title) Vehicle",
+                artifactType: .robloxBinary(
+                    kind: nativeRobloxArtifact.type,
+                    notes: notes
+                ),
+                exportFileType: nativeRobloxArtifact.type,
+                artifactIds: artifactIds,
+                shareDescription: shareDescription,
+                downloadURL: rbxmDownloadURL ?? downloadURL,
+                glbDownloadURL: nil,
+                rbxmDownloadURL: rbxmDownloadURL,
+                fbxDownloadURL: nil,
+                notes: notes,
+                trendingShowcaseItems: trendingShowcaseItems,
+                trendingShowcaseCategory: trendingShowcaseCategory
             )
         }
 
@@ -6126,11 +6272,14 @@ final class ChatStore: ObservableObject {
         case "items":
             return ["Example: Legendary pickup glow", "Example: Mining pickaxe tool", "Example: Healing potion consumable", "Switch to Interview"]
         case "pets":
-            // Track 3 (3D Pet pipeline) — quick-generate path. Each example
-            // becomes the user prompt; sendQuickReply already mapped petSpecies
-            // / petMode on the welcome chip tap, so the pipeline routes to
-            // requestedKind=pet_3d with 3 evolution stages.
-            return ["🐕 Dog", "🐈 Cat", "🐉 Dragon", "🦄 Unicorn", "🤖 Robot", "Example: Fluffy fox companion", "Example: Robot drone pet", "Example: Tiny dragon hatchling", "Switch to Interview"]
+            // Track 3 — quick-generate path. Default = blocky pets (Phase 2,
+            // 30-60s, free); 3D premium row is opt-in.
+            return [
+                "🎲 Dog", "🎲 Cat", "🎲 Dragon", "🎲 Unicorn", "🎲 Robot",
+                "Example: Fluffy fox companion", "Example: Robot drone pet", "Example: Tiny dragon hatchling",
+                "🐾 3D Dog (premium)", "🐾 3D Dragon (premium)",
+                "Switch to Interview",
+            ]
         case "scripts":
             return ["Pet System", "Shop / Economy", "DataStore / Saving", "Leaderboard", "Inventory", "Combat System", "Daily Rewards", "Rebirth / Prestige", "Quest System", "Dialogue System", "Day / Night Cycle", "Teleportation", "Custom Script…", "Switch to Interview"]
         case "ui":
@@ -6172,7 +6321,7 @@ final class ChatStore: ObservableObject {
         case "anime_skills":
             return ["Dash strike", "AOE burst", "Projectile", "Beam", "Buff / aura", "Domain Expansion", "Ultimate (multiphase)", "Decide for me", "Start over"]
         case "vehicles":
-            return ["Sports car", "Sci-fi hover", "Truck / jeep", "Decide for me", "Start over"]
+            return ["Car", "Motorcycle", "Boat", "Plane", "Helicopter", "Tank", "Spaceship", "Bicycle", "Bus", "Decide for me", "Start over"]
         case "buildings":
             return ["House modular", "Tower / castle", "Shop front", "Decide for me", "Start over"]
         case "furniture":
@@ -6182,11 +6331,14 @@ final class ChatStore: ObservableObject {
 	        case "items":
 	            return ["Key / unlock", "Potion / buff", "Coin / currency", "Medkit / heal", "Resource / material", "Other tool", "Decide for me", "Start over"]
         case "pets":
-            // Track 3 (3D Pet pipeline) — species picker for evolution_3d mode.
-            // Each chip sets draft.petSpecies + draft.petMode="evolution_3d"
-            // (see sendQuickReply switch above). Pipeline produces a .rbxm with
-            // 3 evolution stages, follow/leveling/rarity scripts.
-            return ["🐕 Dog", "🐈 Cat", "🐉 Dragon", "🦄 Unicorn", "🤖 Robot", "✨ Custom", "Decide for me", "Start over"]
+            // Track 3 — pet species picker. Default = blocky (Phase 2, fast +
+            // free + native Roblox style). 3D premium row is opt-in and
+            // requires TRIPO_API_KEY for quadrupeds.
+            return [
+                "🎲 Dog", "🎲 Cat", "🎲 Dragon", "🎲 Unicorn", "🎲 Robot", "🎲 Custom",
+                "🐾 3D Dog (premium)", "🐾 3D Cat (premium)", "🐾 3D Dragon (premium)",
+                "Decide for me", "Start over",
+            ]
         case "scripts":
             return ["Pet System", "Daily Rewards", "Day/Night Cycle", "Teleportation", "Rebirth", "Quest System", "DataStore", "Combat System", "Decide for me", "Start over"]
         case "ui":
@@ -6349,6 +6501,7 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "ui" { return "code" }
         if contentSubcategory == "decals" { return "decal_texture" }
         if contentSubcategory == "weapons" { return "character_3d" }
+        if contentSubcategory == "vehicles" { return "vehicle_3d" }
         if contentSubcategory == "items" { return "character_3d" }
         if contentSubcategory == "npcs" { return "character_3d" }
         if contentSubcategory == "buildings" { return "character_3d" }
@@ -6408,6 +6561,10 @@ final class ChatStore: ObservableObject {
         }
         if let sub = contentSubcategory {
             metadata["contentSubcategory"] = sub
+            if sub == "vehicles" {
+                metadata["requestedKind"] = "vehicle_3d"
+                if metadata["contentCategory"] == nil { metadata["contentCategory"] = "vehicle" }
+            }
             if sub == "roast_npc" {
                 metadata["npcMode"] = "roast"
             }
@@ -6526,6 +6683,10 @@ final class ChatStore: ObservableObject {
         }
         if let sub = contentSubcategory {
             metadata["contentSubcategory"] = sub
+            if sub == "vehicles" {
+                metadata["requestedKind"] = "vehicle_3d"
+                if metadata["contentCategory"] == nil { metadata["contentCategory"] = "vehicle" }
+            }
             if sub == "roast_npc" {
                 metadata["npcMode"] = "roast"
             }
@@ -6667,6 +6828,9 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "weapons" {
             return preferredFlow == .quickGenerate ? "weapon_generation" : "weapon_interview"
         }
+        if contentSubcategory == "vehicles" {
+            return preferredFlow == .quickGenerate ? "vehicle_generation" : "vehicle_interview"
+        }
         if contentSubcategory == "items" {
             return preferredFlow == .quickGenerate ? "item_generation" : "item_interview"
         }
@@ -6718,6 +6882,7 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "simulator" { return "simulator_generation" }
         if contentSubcategory == "ui" { return "ui_generation" }
         if contentSubcategory == "weapons" { return "weapon_generation" }
+        if contentSubcategory == "vehicles" { return "vehicle_generation" }
         if contentSubcategory == "items" { return "item_generation" }
         if contentSubcategory == "buildings" { return "building_generation" }
         if contentSubcategory == "furniture" { return "furniture_generation" }
@@ -6864,6 +7029,7 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "anime_skills" { return "script" }
         if contentSubcategory == "passes" { return "gamepass" }
         if contentSubcategory == "weapons" { return "weapon" }
+        if contentSubcategory == "vehicles" { return "vehicle" }
         if contentSubcategory == "items" { return "item_tool" }
         if contentSubcategory == "buildings" { return "building" }
         if contentSubcategory == "furniture" { return "furniture_prop" }
@@ -6994,6 +7160,9 @@ private struct ProjectDraft {
     // petMode:    "evolution_3d" — triggers requestedKind=pet_3d pipeline.
     var petSpecies: String?
     var petMode: String?
+    // Vehicles pipeline: user-picked chassis archetype from quick replies or
+    // inferred by backend from the interview/GDD.
+    var vehicleType: String?
     // Session #095: user-picked weapon colors (hex #RRGGBB). Set by WeaponColorPickerBubble.
     var weaponPrimaryColor: String?
     var weaponAccentColor: String?
@@ -7041,6 +7210,9 @@ private struct ProjectDraft {
             monetization: "VIP + boosts + daily rewards",
             clothingMode: nil,
             clothingType: nil,
+            petSpecies: nil,
+            petMode: nil,
+            vehicleType: nil,
 	            weaponPrimaryColor: nil,
 	            weaponAccentColor: nil,
 	            weaponGlowColor: nil,
@@ -7088,6 +7260,7 @@ private struct ProjectDraft {
             "monetization": monetization
         ]
         if let c = weaponPrimaryColor { dict["primaryColor"] = c }
+        if let vehicleType { dict["vehicleType"] = vehicleType }
 	        if let c = weaponAccentColor  { dict["accentColor"]  = c }
 	        if let c = weaponGlowColor    { dict["glowColor"]    = c }
 	        if let t = weaponType         { dict["weaponType"]   = t }
@@ -7154,6 +7327,10 @@ private struct ProjectDraft {
 	            ].compactMap { $0 }.joined(separator: " ")
 	            return "Generate a Studio-ready Items & Tools package for \(title). \(details) It must export as a real Tool with Handle, readable in-hand proportions, Tool.Activated use logic, local use animation/feedback, sound, particles, and server-authoritative effects. Genre: \(genre). Style: \(style)."
 	        }
+        if contentSubcategory == "vehicles" {
+            let typeLine = vehicleType.map { "Vehicle type: \($0)." } ?? "Vehicle type: infer from the request."
+            return "Generate a Studio-ready playable Vehicles package for \(title). \(typeLine) It must export as .rbxm with a VehicleSeat/DriveSeat, passenger seats, self-contained control script, stable physics, engine sounds, exhaust/trail/wake VFX, and clear edit-mode Roblox parts. Genre: \(genre). Style: \(style)."
+        }
 	        if contentSubcategory == "npcs" {
             let themeLine = npcTheme.map { "Theme/archetype: \($0)." } ?? ""
             let visualLine = (npcVisualHooks?.isEmpty == false) ? "Required visual hooks: \(npcVisualHooks!.joined(separator: "; "))." : ""

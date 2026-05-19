@@ -81,6 +81,8 @@ export type PromptIntent =
   | 'script_generation'
   | 'weapon_interview'
   | 'weapon_generation'
+  | 'vehicle_interview'
+  | 'vehicle_generation'
   | 'item_interview'
   | 'item_generation'
   | 'building_interview'
@@ -242,6 +244,7 @@ export type GenerationStageId =
   | 'generate_keyframes'
   | 'generate_decal_image'
   | 'generate_weapon_scripts'
+  | 'generate_vehicle_scripts'
   | 'generate_item_scripts'
   | 'generate_building_scene'
   | 'generate_building_scripts'
@@ -275,7 +278,14 @@ export type GenerationStageId =
   | 'convert_pet_fbx'
   | 'validate_pet'
   | 'package_pet'
-  | 'export_pet_rbxm';
+  | 'export_pet_rbxm'
+  // Track 3 Phase 2 (Blocky Pet): native-Roblox blocky pet from primitive
+  // Parts + Motor6D rig + LLM-keyframed Motor6D animations. 5 stages, no
+  // external mesh providers needed (Meshy/Tripo bypassed entirely).
+  | 'blocky_spec'
+  | 'blocky_decals'
+  | 'blocky_animations'
+  | 'package_blocky_pet';
 
 export type GenerationStageStatus =
   | 'pending'
@@ -325,6 +335,7 @@ export type GenerationKind =
   | 'character_3d'
   | 'clothing_3d'
   | 'pet_3d'
+  | 'vehicle_3d'
   | 'animation'
   | 'code'
   | 'image'
@@ -382,6 +393,76 @@ export interface RobloxBuildScript {
     | 'Workspace'
     | string;
   source: string;
+}
+
+// ---------------------------------------------------------------------------
+// Track 3 Phase 2 (Blocky Pet) — JSON spec the LLM emits for a primitive-part
+// pet. The manifest builder turns this spec into a Roblox Model with
+// Anchored=false Parts welded via Motor6D, ready for Motor6D-based animation.
+// ---------------------------------------------------------------------------
+export type BlockyPartShape = 'Ball' | 'Cylinder' | 'Block' | 'Wedge' | 'CornerWedge';
+
+export interface BlockyPetPart {
+  /** Unique part name within the pet model (e.g. "Body", "Head", "LegFL"). */
+  name: string;
+  shape: BlockyPartShape;
+  /** [x, y, z] studs. Minimum 0.15 per dim. */
+  size: [number, number, number];
+  /** Part CENTER position relative to model origin (HumanoidRootPart). Y up. */
+  position: [number, number, number];
+  /** Optional rotation in degrees [rx, ry, rz]. */
+  rotation?: [number, number, number];
+  /**
+   * Colour slot — 'primary' | 'secondary' | 'accent' draw from spec.colors,
+   * or a literal BrickColor name like "Bright orange".
+   */
+  color: string;
+  /** Optional material override (defaults to spec.material). */
+  material?: string;
+  /**
+   * Functional role — used by the rig builder to wire Motor6D correctly,
+   * and by the animator to know which joints to drive in walk cycle.
+   */
+  role: 'primary_part' | 'head' | 'snout' | 'eye' | 'nose' | 'ear' | 'tail'
+    | 'leg_front_left' | 'leg_front_right' | 'leg_back_left' | 'leg_back_right'
+    | 'wing_left' | 'wing_right' | 'horn' | 'mane' | 'fin' | 'spike' | 'detail';
+}
+
+export interface BlockyPetJoint {
+  /** Joint name (used as the Motor6D Name; the animator references this name). */
+  name: string;
+  /** Parent part name. Use "HumanoidRootPart" to attach to the invisible root. */
+  part0: string;
+  part1: string;
+}
+
+export interface BlockyPetDecal {
+  /** Name of the Part this decal sits on. */
+  part: string;
+  /** Roblox face: "Front" | "Back" | "Top" | "Bottom" | "Left" | "Right". */
+  face: 'Front' | 'Back' | 'Top' | 'Bottom' | 'Left' | 'Right';
+  /** Flux prompt for the texture image (256×256). */
+  imagePrompt: string;
+  /** When the worker uploads the image to Roblox we fill this with rbxassetid://. */
+  textureId?: string;
+}
+
+export interface BlockyPetSpec {
+  /** Short PascalCase display name (e.g. "FluffyFox"). */
+  name: string;
+  /** Skeleton family — drives keyframe generation. */
+  rig: 'Biped' | 'Quadruped' | 'Winged' | 'Serpentine' | 'Aquatic';
+  /** Colour palette — slots referenced from each Part. */
+  colors: { primary: string; secondary?: string; accent?: string; eye?: string };
+  /** Default Material for non-detail parts. */
+  material: 'SmoothPlastic' | 'Plastic' | 'Neon' | 'Wood' | 'Fabric' | 'Metal' | 'ForceField';
+  /** Total bounding-box height in studs (defaults to 3). */
+  height?: number;
+  /** Parts and Motor6D joints. */
+  parts: BlockyPetPart[];
+  joints: BlockyPetJoint[];
+  /** Optional surface decals (eyes, patterns). */
+  decals?: BlockyPetDecal[];
 }
 
 export type RobloxAssetType = 'mesh' | 'texture' | 'audio' | 'animation';
