@@ -1306,12 +1306,14 @@ private extension ForgeView {
             // ProjectOption(id: "accessories", title: "Accessories", details: "Hats, glasses, wings, backpacks, and extras.", kind: .content),
             // ProjectOption(id: "bodies", title: "Avatar Bodies & Heads", details: "Avatar body and head assets.", kind: .content),
             ProjectOption(id: "weapons", title: "Weapons", details: "Weapons with hit effects, VFX, and SFX.", kind: .content, tags: ["asset"]),
-            // ProjectOption(id: "vehicles", title: "Vehicles", details: "Vehicles with gameplay-ready attributes.", kind: .content),
+            ProjectOption(id: "vehicles", title: "Vehicles", details: "Cars, bikes, boats, planes, helicopters, tanks, spaceships, and buses with DriveSeat physics, passengers, sounds, and VFX.", kind: .content, tags: ["asset", "system", "world"]),
             ProjectOption(id: "buildings", title: "Buildings & Structures", details: "Houses, shops, castles, bases, arenas — with interiors, furniture, and interactive doors/seats/spawns.", kind: .content, tags: ["asset", "world"]),
             ProjectOption(id: "furniture", title: "Furniture & Props", details: "Chairs, tables, lamps, shelves, rugs, plants, signs — to fill buildings and maps.", kind: .content, tags: ["asset", "world"]),
             ProjectOption(id: "maps", title: "Maps & Environments", details: "Cities, forests, arenas, dungeons, terrain, lighting, rivers, bridges, and sky atmosphere.", kind: .content, tags: ["asset", "world"]),
             ProjectOption(id: "items", title: "Items & Tools", details: "Keys, potions, coins, medkits, resources — with use-logic.", kind: .content, tags: ["asset", "economy"]),
-            // ProjectOption(id: "pets", title: "Pets", details: "Pet assets with rarity and progression hooks.", kind: .content),
+            // Track 3 — pets are back: native blocky pets (default, ~30s, free) via Parts + Motor6D + LLM keyframes;
+            // optional 🐾 3D photoreal mesh path via Meshy/Tripo for premium pets.
+            ProjectOption(id: "pets", title: "Pets", details: "Blocky pets with follow/leveling/rarity/animations — dog, cat, dragon, unicorn, robot, fantasy. 3D photoreal premium variant available.", kind: .content, tags: ["asset", "new", "social"]),
             ProjectOption(id: "scripts", title: "Scripts / Systems", details: "Pet System, Shop, DataStore, Leaderboard, Inventory, Combat, Daily Rewards, Rebirth, Quest, Dialogue, Day/Night Cycle, Teleportation, or any system by description.", kind: .content, tags: ["system"]),
             ProjectOption(id: "ui", title: "UI / GUI", details: "HUD, menus, windows, and interface systems.", kind: .content, tags: ["system"]),
             ProjectOption(id: "passes", title: "Game Passes & Products", details: "Monetization products and premium passes.", kind: .content, tags: ["system", "economy"]),
