@@ -3106,15 +3106,31 @@ function buildBlockyPetManifest(
     properties: { Value: 'HumanoidRootPart' },
   });
 
-  // Motor6D joints. Each joint references two parts by name; the manifest
-  // stores the cross-instance handles via InstanceRef property type that
-  // build_roblox.luau resolves through instanceMap. C0 = at part0's pivot,
-  // C1 = at part1's pivot — both default to identity (which keeps each part
-  // at its authored CFrame; animations drive Motor.Transform).
+  // Motor6D joints. CRITICAL: We MUST compute C0 from the authored offset
+  // between Part0 and Part1 — without it Motor6D snaps Part1 to Part0's
+  // origin on Play (because default C0=C1=identity makes Part1.CFrame =
+  // Part0.CFrame). Result before fix: whole pet collapsed onto
+  // HumanoidRootPart at (0,0,0) at the moment Play started.
+  //
+  // Formula: Motor6D sets Part1.CFrame = Part0.CFrame * C0 * Transform *
+  // C1:Inverse(). With Transform=identity and C1=identity, setting
+  // C0 = (Part1_authored - Part0_authored) makes Part1 stay at its
+  // authored world position.
+  //
+  // HumanoidRootPart authored position is (0,0,0). Other parts use
+  // spec.parts[i].position.
+  const partAuthoredPos = new Map<string, [number, number, number]>();
+  partAuthoredPos.set('HumanoidRootPart', [0, 0, 0]);
+  for (const p of spec.parts) {
+    partAuthoredPos.set(p.name, [p.position[0], p.position[1], p.position[2]]);
+  }
   for (const j of spec.joints) {
     const part0Id = partNameToId.get(j.part0);
     const part1Id = partNameToId.get(j.part1);
     if (!part0Id || !part1Id) continue; // validated upstream — defensive
+    const p0 = partAuthoredPos.get(j.part0) ?? [0, 0, 0];
+    const p1 = partAuthoredPos.get(j.part1) ?? [0, 0, 0];
+    const c0Offset: [number, number, number] = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
     scene.push({
       id: uuidv4(),
       className: 'Motor6D',
@@ -3123,6 +3139,8 @@ function buildBlockyPetManifest(
       properties: {
         Part0: { __type: 'InstanceRef', refId: part0Id },
         Part1: { __type: 'InstanceRef', refId: part1Id },
+        C0: { __type: 'CFrame', position: { x: c0Offset[0], y: c0Offset[1], z: c0Offset[2] }, rotation: [0, 0, 0] },
+        C1: { __type: 'CFrame', position: { x: 0, y: 0, z: 0 }, rotation: [0, 0, 0] },
       },
     });
   }
