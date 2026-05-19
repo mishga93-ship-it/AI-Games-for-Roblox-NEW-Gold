@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Reference Scale Hotfix] Машина поднята, колёса исправлены, детали стали крупнее (2026-05-19, сессия 363)
+- **Проблема**: пользователь сравнил fresh `content-project-vehicle.rbxm` с примером `ghbvth.rbxm`: машина “утонула” и всё ещё выглядела бедно, несмотря на наличие многих named parts.
+- **Root cause**: бинарное сравнение показало, что проблема была в масштабе/высоте, а не в part count. Пример: visible bbox height `7.377`, wheel diameter `3`, `DriveSeat` y=`3.1`. Fresh generated: visible bbox height `4.361`, wheel diameter `1.8`, hidden `DriveSeat` y=`2.07`; к тому же cylinder wheels были повёрнуты так, что вертикальная высота колеса была только толщиной (`0.495`), а не диаметром.
+- **Решение**: `apps/functions/src/robloxWorker.ts` — car profile увеличен до `size=[6.8,3.65,10.8]`, `wheelRadius=1.35`; `DriveSeat` поднят до `rootY + h*0.34`; `StableGroundCollider` bottom выровнен на `Y=0`; кузов получил крупные raised body/cockpit/rear blocks (`CarCenterTunnel`, `CarRearBodyPanel`, high bulkhead/roof/spoiler), увеличенные wheel arches/flares, rear bumper/diffuser/tail lights/exhaust и visible rim/hub details. Лишний `Z=90` rotation у wheel/rim/hub cylinders убран, поэтому колёса стоят вертикально и касаются ground.
+- **Проверка**: `npm run build:functions` ✅; local Lune build `/private/tmp/vehicle-reference-scale.rbxm` ✅; inspect подтвердил `220` instances, visible bbox `8.028 x 6.954 x 11.374`, `DriveSeat` y=`3.341`, `Wheel1..4` bottom=`0`/top=`2.7`, `StableGroundCollider` bottom=`0`/top=`0.36`; `git diff --check -- apps/functions/src/robloxWorker.ts` ✅.
+- **Известные ограничения**: пример `ghbvth.rbxm` использует union/texture-heavy модель; наш Vehicles export остаётся deterministic blocky `.rbxm`. Старые скачанные `.rbxm` не меняются, нужен fresh export после deploy.
+
 ### ✅ [Vehicles Open Cockpit Hotfix] Убрана визуальная красная плита, кузов стал сегментированным (2026-05-19, сессия 362)
 - **Проблема**: после сессии 361 свежий `content-prect-vehicle.rbxm` технически уже содержал hidden `ChassisRoot`, `StableGroundCollider`, non-collide wheels и новый controller, но в Studio всё ещё выглядел как красная плоская платформа.
 - **Root cause**: видимой плоскостью теперь была не `ChassisRoot`, а сама `CarLowerBody`: большой красный блок `6.4 x 1.04 x 7.1` с верхней гранью почти на уровне hidden `DriveSeat`.
