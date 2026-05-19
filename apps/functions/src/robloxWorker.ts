@@ -376,6 +376,11 @@ export function buildRobloxManifest(args: {
 }): RobloxBuildManifest {
   const metadata = args.metadata ?? {};
   const requestedKind = typeof metadata.requestedKind === 'string' ? metadata.requestedKind : undefined;
+  const contentCategory = typeof metadata.contentCategory === 'string' ? metadata.contentCategory : undefined;
+  const contentSubcategory = typeof metadata.contentSubcategory === 'string' ? metadata.contentSubcategory : undefined;
+  const isVehicleModelRequest = requestedKind === 'vehicle_3d'
+    || contentCategory === 'vehicle'
+    || contentSubcategory === 'vehicles';
 
   if (requestedKind === 'clothing_texture' && args.target === 'model') {
     return buildClothingOnlyManifest(args, metadata);
@@ -400,7 +405,7 @@ export function buildRobloxManifest(args: {
   //   return buildBlockyPetManifest(args, metadata);
   // }
 
-  if (requestedKind === 'vehicle_3d' && args.target === 'model') {
+  if (isVehicleModelRequest && args.target === 'model') {
     return buildVehicleModelManifest(args, metadata);
   }
 
@@ -4292,6 +4297,46 @@ function buildItemToolManifest(
   };
 }
 
+// Session 353 — Roblox `BasePart.Shape = Cylinder` lays the cylinder horizontally:
+// long axis = part-local X, circular face is perpendicular to X. So size = [W, H, D]
+// is interpreted as length-W cylinder along X with diameter min(H, D). Without rotation,
+// a "tall thin pole" emitted with size [0.16, 2.8, 0.16] renders as a 0.16-stud-long
+// X-axis cylinder with a 0.16 diameter — a flat disc, not a pole. The fix below picks
+// the intended cylinder axis (the world axis whose other two dims are most equal —
+// because a cylinder has a circular cross-section) and emits a CFrame rotation so
+// part-local X aligns with that axis, plus a permuted Size so the rendered world
+// extents match the [W, H, D] the caller asked for.
+type CylAxis = 0 | 1 | 2;
+function pickCylinderAxis(size: [number, number, number]): CylAxis {
+  const [sx, sy, sz] = size;
+  const cand: Array<{ axis: CylAxis; ratio: number; len: number }> = [
+    { axis: 0, ratio: Math.min(sy, sz) / Math.max(sy, sz), len: sx },
+    { axis: 1, ratio: Math.min(sx, sz) / Math.max(sx, sz), len: sy },
+    { axis: 2, ratio: Math.min(sx, sy) / Math.max(sx, sy), len: sz },
+  ];
+  // Best candidate = the axis whose OTHER two dims are most equal (closest to 1).
+  // Tie-break: prefer the axis whose length is the longest (so a 1×4×1 pole picks Y).
+  cand.sort((a, b) => (b.ratio - a.ratio) || (b.len - a.len));
+  return cand[0].axis;
+}
+function cylinderRotationFor(axis: CylAxis): number[] {
+  // Row-major 3x3 rotation matrix R such that part-local X = world axis.
+  // Identity for axis=0 (default Roblox cylinder lying along X).
+  if (axis === 1) return [0, -1, 0, 1, 0, 0, 0, 0, 1];      // +90° around Z: part-X → world-Y
+  if (axis === 2) return [0, 0, 1, 0, 1, 0, -1, 0, 0];      // -90° around Y: part-X → world-Z
+  return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+}
+function permutedSizeForCylinder(
+  size: [number, number, number],
+  axis: CylAxis,
+): [number, number, number] {
+  // Part-local size such that, after the rotation above, the world extents match `size`.
+  // axis=0: identity. axis=1: swap X/Y. axis=2: swap X/Z.
+  if (axis === 1) return [size[1], size[0], size[2]];
+  if (axis === 2) return [size[2], size[1], size[0]];
+  return [size[0], size[1], size[2]];
+}
+
 // ── Furniture & Props manifest builder (session #108, hardened #270) ──
 // Builds an anchored single-prop Model with a stable invisible Handle as PrimaryPart.
 // The visible fallback is made from typed primitive Parts (chair/table/lamp/etc.)
@@ -4563,6 +4608,152 @@ function buildFurnitureModelManifest(
     }
   }
   const shapeNumByName: Record<string, number> = { Ball: 0, Block: 1, Cylinder: 2 };
+
+  // ── Session 355 — Hybrid skeleton infrastructure ──
+  // Moved out of the post-LLM-branch fall-through so both paths can call the same
+  // proven-correct deterministic skeleton. The LLM-scene branch used to early-return
+  // and skip this entirely; for furnitureType ∈ {lamp, plant, sign} we now ALWAYS
+  // emit the skeleton (base + pole + shade / pot + stem + leaves / post + board)
+  // and restrict the LLM to additive accent roles. The cylinder rotation math from
+  // session 353 is reused unchanged.
+  const shapeValues: Record<'Block' | 'Ball' | 'Cylinder', number> = { Ball: 0, Block: 1, Cylinder: 2 };
+  const pushFallbackPart = (
+    suffix: string,
+    size: [number, number, number],
+    position: [number, number, number],
+    color: Record<string, unknown>,
+    materialName: string,
+    options: {
+      className?: 'Part' | 'Seat';
+      shape?: 'Block' | 'Ball' | 'Cylinder';
+      canCollide?: boolean;
+      transparency?: number;
+      extra?: Record<string, unknown>;
+    } = {},
+  ): string => {
+    const id = uuidv4();
+    const shapeName = options.shape ?? 'Block';
+    // Session 346 — when a baked AI MeshPart is present in the scene, the fallback
+    // primitives would overlap the real mesh in Edit mode. Hide them by default
+    // (transparency=1, no collision) so only the proper mesh shows.
+    const hideForBakedMesh = hasBakedFurnitureMesh;
+    // Session 353 — Cylinder-axis fix. Callers pass size = [W, H, D] in world axes
+    // (e.g. LampPole [0.16, h*0.70, 0.16]). Without rotation, that becomes a 0.16-
+    // stud horizontal cylinder along part-X. Pick the intended axis (most-equal
+    // cross-section) and emit a CFrame rotation + permuted part-local Size so the
+    // rendered world extents match `size`.
+    let partSize: [number, number, number] = [size[0], size[1], size[2]];
+    let partCFrame: Record<string, unknown> = cframe(position[0], position[1], position[2]);
+    if (shapeName === 'Cylinder') {
+      const axis = pickCylinderAxis(size);
+      partSize = permutedSizeForCylinder(size, axis);
+      const r = cylinderRotationFor(axis);
+      partCFrame = {
+        __type: 'CFrame',
+        position: { x: position[0], y: position[1], z: position[2] },
+        rotation: r,
+      };
+    }
+    scene.push({
+      id,
+      className: options.className ?? 'Part',
+      name: `Fallback${suffix}`,
+      properties: {
+        Size: vector3(partSize[0], partSize[1], partSize[2]),
+        CFrame: partCFrame,
+        Anchored: true,
+        CanCollide: hideForBakedMesh ? false : (options.canCollide ?? true),
+        Locked: false,
+        Transparency: hideForBakedMesh ? 1 : (options.transparency ?? 0),
+        Color: color,
+        Material: enumValue('Material', materialName, materialValues[materialName]),
+        Shape: enumValue('PartType', shapeName, shapeValues[shapeName]),
+        ...(options.extra ?? {}),
+      },
+    });
+    return id;
+  };
+
+  // Skeleton emitter — runs the same per-type switch we used to inline below the
+  // LLM branch. Returns the part id that should host the PointLight (lamp shade /
+  // sign board). For non-light types returns handleId as a safe default.
+  let skeletonLightParentId = handleId;
+  const emitSkeleton = (): void => {
+    const [w, h, d] = handleSize;
+    switch (furnitureType) {
+      case 'chair': {
+        pushFallbackPart('ChairSeat', [w * 0.82, 0.32, d * 0.75], [0, h * 0.34, 0], accentColor3, 'Fabric', {
+          className: 'Seat',
+          extra: { Disabled: false },
+        });
+        pushFallbackPart('ChairBack', [w * 0.85, h * 0.65, 0.22], [0, h * 0.66, d * 0.34], primaryColor3, 'Wood');
+        for (const x of [-1, 1]) for (const z of [-1, 1]) {
+          pushFallbackPart('ChairLeg', [0.20, h * 0.48, 0.20], [x * w * 0.33, h * 0.12, z * d * 0.28], primaryColor3, 'Wood');
+        }
+        break;
+      }
+      case 'table': {
+        pushFallbackPart('TableTop', [w, 0.32, d], [0, h * 0.78, 0], primaryColor3, 'WoodPlanks');
+        for (const x of [-1, 1]) for (const z of [-1, 1]) {
+          pushFallbackPart('TableLeg', [0.22, h * 0.72, 0.22], [x * w * 0.39, h * 0.38, z * d * 0.36], accentColor3, 'Wood');
+        }
+        break;
+      }
+      case 'lamp': {
+        pushFallbackPart('LampBase', [w * 0.85, 0.18, d * 0.85], [0, 0.09, 0], accentColor3, 'Metal', { shape: 'Cylinder' });
+        pushFallbackPart('LampPole', [0.16, h * 0.70, 0.16], [0, h * 0.38, 0], accentColor3, 'Metal', { shape: 'Cylinder' });
+        skeletonLightParentId = pushFallbackPart('LampShade', [w, h * 0.22, d], [0, h * 0.78, 0], primaryColor3, 'SmoothPlastic');
+        break;
+      }
+      case 'shelf': {
+        pushFallbackPart('ShelfBack', [w, h, 0.12], [0, h * 0.5, d * 0.18], primaryColor3, 'Wood');
+        pushFallbackPart('ShelfLeftSide', [0.16, h, d], [-w * 0.48, h * 0.5, 0], primaryColor3, 'Wood');
+        pushFallbackPart('ShelfRightSide', [0.16, h, d], [w * 0.48, h * 0.5, 0], primaryColor3, 'Wood');
+        for (const y of [0.18, 0.42, 0.66, 0.90]) {
+          pushFallbackPart('ShelfBoard', [w, 0.12, d], [0, h * y, 0], accentColor3, 'WoodPlanks');
+        }
+        break;
+      }
+      case 'rug': {
+        pushFallbackPart('RugBody', [w, Math.max(0.06, h), d], [0, Math.max(0.03, h * 0.5), 0], primaryColor3, 'Fabric', { canCollide: false });
+        pushFallbackPart('RugTrimFront', [w, 0.04, 0.12], [0, h + 0.03, d * 0.47], accentColor3, 'Fabric', { canCollide: false });
+        pushFallbackPart('RugTrimBack', [w, 0.04, 0.12], [0, h + 0.03, -d * 0.47], accentColor3, 'Fabric', { canCollide: false });
+        pushFallbackPart('RugTrimLeft', [0.12, 0.04, d], [-w * 0.47, h + 0.03, 0], accentColor3, 'Fabric', { canCollide: false });
+        pushFallbackPart('RugTrimRight', [0.12, 0.04, d], [w * 0.47, h + 0.03, 0], accentColor3, 'Fabric', { canCollide: false });
+        break;
+      }
+      case 'plant': {
+        pushFallbackPart('PlantPot', [w * 0.72, h * 0.32, d * 0.72], [0, h * 0.16, 0], accentColor3, 'SmoothPlastic', { shape: 'Cylinder' });
+        pushFallbackPart('PlantStem', [0.16, h * 0.42, 0.16], [0, h * 0.48, 0], accentColor3, 'Wood', { shape: 'Cylinder', canCollide: false });
+        pushFallbackPart('PlantLeavesCenter', [w, h * 0.38, d], [0, h * 0.76, 0], primaryColor3, 'Grass', { shape: 'Ball', canCollide: false });
+        pushFallbackPart('PlantLeavesSideA', [w * 0.70, h * 0.30, d * 0.70], [-w * 0.30, h * 0.66, 0], primaryColor3, 'Grass', { shape: 'Ball', canCollide: false });
+        pushFallbackPart('PlantLeavesSideB', [w * 0.70, h * 0.30, d * 0.70], [w * 0.30, h * 0.66, 0], primaryColor3, 'Grass', { shape: 'Ball', canCollide: false });
+        break;
+      }
+      case 'sign': {
+        pushFallbackPart('SignPost', [0.18, h * 0.70, 0.18], [0, h * 0.28, 0], accentColor3, 'Wood');
+        skeletonLightParentId = pushFallbackPart('SignBoard', [w, h * 0.55, Math.max(0.16, d)], [0, h * 0.74, 0], primaryColor3, 'SmoothPlastic');
+        pushFallbackPart('SignTopTrim', [w, 0.10, Math.max(0.18, d)], [0, h * 1.03, 0], accentColor3, 'Wood');
+        pushFallbackPart('SignBottomTrim', [w, 0.10, Math.max(0.18, d)], [0, h * 0.45, 0], accentColor3, 'Wood');
+        break;
+      }
+      case 'decor':
+      default: {
+        pushFallbackPart('DecorBase', [w, h * 0.25, d], [0, h * 0.13, 0], accentColor3, 'SmoothPlastic');
+        pushFallbackPart('DecorCore', [w * 0.82, h * 0.72, d * 0.82], [0, h * 0.58, 0], primaryColor3, 'SmoothPlastic', { shape: 'Ball' });
+        break;
+      }
+    }
+  };
+
+  // Hybrid skeleton decision. For lamp/plant/sign the LLM has repeatedly produced
+  // broken structural parts (sideways posts, wrong role labels, disconnected stacks).
+  // Always run the deterministic skeleton for these types; LLM is restricted to
+  // additive accents (trim, detail, decor, light, leaves, panel, shade).
+  const HYBRID_SKELETON_TYPES = new Set<FurnitureType>(['lamp', 'plant', 'sign']);
+  const ACCENT_ROLES = new Set<string>(['trim', 'detail', 'decor', 'light', 'leaves', 'panel', 'shade']);
+  const useHybridSkeleton = HYBRID_SKELETON_TYPES.has(furnitureType);
+
   if (llmSceneParts.length > 0) {
     // Session 346 — auto-widen guard. LLMs keep producing realistic-but-invisible
     // 0.08-0.25 stud structural posts/stems/trunks AND thin neon "LED strip" lights
@@ -4611,6 +4802,19 @@ function buildFurnitureModelManifest(
       logger.info('[buildFurnitureModelManifest] floored sub-min dimensions', { flooredCount, min: MIN_ANY_DIM });
     }
 
+    // Session 355 — hybrid skeleton for verticals-required types. Always emit the
+    // proven-correct deterministic skeleton (lamp = base+pole+shade etc.), then
+    // restrict LLM parts to additive accent roles. Non-hybrid types still get
+    // LLM-first behavior (chair, table, shelf, rug, decor work fine LLM-driven).
+    if (useHybridSkeleton) {
+      emitSkeleton();
+      const before = llmSceneParts.length;
+      llmSceneParts = llmSceneParts.filter((p) => ACCENT_ROLES.has((p.role ?? '').toLowerCase()));
+      logger.info('[buildFurnitureModelManifest] hybrid skeleton emitted; LLM filtered to accents', {
+        type: furnitureType, beforeFilter: before, afterFilter: llmSceneParts.length,
+      });
+    }
+
     for (const p of llmSceneParts) {
       const matKey = Object.prototype.hasOwnProperty.call(materialValues, p.material) ? p.material : 'SmoothPlastic';
       const shapeName: 'Block' | 'Ball' | 'Cylinder' = p.shape === 'Cylinder' || p.shape === 'Ball' ? p.shape : 'Block';
@@ -4620,16 +4824,90 @@ function buildFurnitureModelManifest(
       // part, which is what made every furniture prop collapse into the model origin
       // and look like "board + post". Emit CFrame so the binary builder actually
       // records the part's location.
+      // BUG FIX (session 353): Roblox Cylinder Shape lies horizontally — long axis is
+      // part-local X. The LLM emits size in WORLD axes ([W, H, D]) intending Y as
+      // the vertical axis of a pole/post or as the thin axis of a flat disc base.
+      // Without rotation, a [0.16, 2.8, 0.16] pole becomes a 0.16-stud horizontal
+      // disc; a [1.2, 0.18, 1.2] base becomes a 1.2-stud horizontal tube. We pick
+      // the cylinder's intended axis (the world axis whose other two dims are most
+      // equal — that's where the circular cross-section lives) and emit a rotation
+      // so part-local X aligns with that axis, plus a permuted Size so the rendered
+      // world extents still match what the LLM asked for.
+      let worldX = Math.max(0.1, p.size[0]) * scaleFactor;
+      let worldY = Math.max(0.1, p.size[1]) * scaleFactor;
+      let worldZ = Math.max(0.1, p.size[2]) * scaleFactor;
+      const worldPosX = p.position[0] * scaleFactor;
+      const worldPosY = p.position[1] * scaleFactor;
+      const worldPosZ = p.position[2] * scaleFactor;
+
+      // Session 355 — universal aspect-ratio safety net. If any part (Block or
+      // Cylinder) is dramatically elongated (longest dim ≥ 1.8× the second-longest)
+      // AND that long dim is NOT Y, the LLM almost certainly intended it to stand
+      // upright. Normalize by swapping the longest dim into the Y slot. For Block
+      // this is the entire fix; for Cylinder the existing role/cylinder-axis logic
+      // below then sees Y as the longest and rotates correctly.
+      {
+        const dimsArr = [worldX, worldY, worldZ];
+        const sorted = [...dimsArr].sort((a, b) => b - a);
+        const longest = sorted[0];
+        const secondLongest = sorted[1];
+        const longestIdxAll = worldX >= worldY && worldX >= worldZ
+          ? 0
+          : (worldZ >= worldY ? 2 : 1);
+        if (secondLongest > 0 && longest / secondLongest >= 1.8 && longestIdxAll !== 1) {
+          const swapped: [number, number, number] = [worldX, worldY, worldZ];
+          const tmp = swapped[1];
+          swapped[1] = swapped[longestIdxAll];
+          swapped[longestIdxAll] = tmp;
+          worldX = swapped[0];
+          worldY = swapped[1];
+          worldZ = swapped[2];
+        }
+      }
+
+      let partSizeArr: [number, number, number] = [worldX, worldY, worldZ];
+      let rotationMatrix: number[] = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+      if (shapeName === 'Cylinder') {
+        // Session 353 (fix 2) — role-based axis override. Some LLMs "know" the Roblox
+        // cylinder-along-X quirk and pre-rotate by emitting size=[2.8, 0.3, 0.3] for
+        // a vertical lamp pole. pickCylinderAxis then correctly picks axis=X (no
+        // rotation) and the pole stays horizontal — same broken visual the user saw.
+        // For roles that MUST stand upright (post/stem/trunk/support), force axis=Y
+        // and remap whichever dim the LLM picked as longest to the Y slot.
+        const verticalRoles = new Set(['post', 'stem', 'trunk', 'support']);
+        const isVertical = verticalRoles.has((p.role ?? '').toLowerCase());
+        let axis: CylAxis;
+        let normalizedWorld: [number, number, number] = [worldX, worldY, worldZ];
+        if (isVertical) {
+          // Pick the longest dim and force it to be world Y.
+          const dims: Array<[number, 0 | 1 | 2]> = [[worldX, 0], [worldY, 1], [worldZ, 2]];
+          dims.sort((a, b) => b[0] - a[0]);
+          const longestIdx = dims[0][1];
+          if (longestIdx !== 1) {
+            // Swap the longest-dim slot into Y; the other two stay as cross-section.
+            const swapped: [number, number, number] = [worldX, worldY, worldZ];
+            const tmp = swapped[1];
+            swapped[1] = swapped[longestIdx];
+            swapped[longestIdx] = tmp;
+            normalizedWorld = swapped;
+          }
+          axis = 1;
+        } else {
+          axis = pickCylinderAxis([worldX, worldY, worldZ]);
+        }
+        partSizeArr = permutedSizeForCylinder(normalizedWorld, axis);
+        rotationMatrix = cylinderRotationFor(axis);
+      }
       scene.push({
         id: uuidv4(),
         className: p.kind === 'Seat' ? 'Seat' : 'Part',
         name: (p.name || `LLMPart${scene.length}`).slice(0, 40),
         properties: {
-          Size: vector3(Math.max(0.1, p.size[0]) * scaleFactor, Math.max(0.1, p.size[1]) * scaleFactor, Math.max(0.1, p.size[2]) * scaleFactor),
+          Size: vector3(partSizeArr[0], partSizeArr[1], partSizeArr[2]),
           CFrame: {
             __type: 'CFrame',
-            position: { x: p.position[0] * scaleFactor, y: p.position[1] * scaleFactor, z: p.position[2] * scaleFactor },
-            rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            position: { x: worldPosX, y: worldPosY, z: worldPosZ },
+            rotation: rotationMatrix,
           },
           Anchored: true,
           CanCollide: p.canCollide ?? true,
@@ -4642,140 +4920,9 @@ function buildFurnitureModelManifest(
         },
       });
     }
-    // Skip deterministic fallback below by returning the manifest now.
-    // Same return shape as the canonical end-of-function below — scripts are minimal
-    // (just the starter script if provided; no AI mesh loader since there's no mesh).
-    const llmScripts: RobloxBuildScript[] = [];
-    if (args.starterScript && args.starterScript.trim()) {
-      llmScripts.push({
-        id: 'furniture-starter',
-        name: `${normalizedName}Starter`,
-        scriptType: 'Script' as const,
-        container: 'ServerScriptService' as const,
-        source: args.starterScript,
-      });
-    }
-    return {
-      id: uuidv4(),
-      title: shortTitle,
-      summary: args.summary,
-      target: args.target,
-      rootClassName: 'Model',
-      rootProperties: {
-        PrimaryPart: { __type: 'Ref', id: handleId },
-      },
-      formatPreference: 'binary' as RobloxArtifactFormat,
-      scene,
-      scripts: llmScripts,
-      assets: [],
-    };
-  }
-  const shapeValues: Record<'Block' | 'Ball' | 'Cylinder', number> = { Ball: 0, Block: 1, Cylinder: 2 };
-  const pushFallbackPart = (
-    suffix: string,
-    size: [number, number, number],
-    position: [number, number, number],
-    color: Record<string, unknown>,
-    materialName: string,
-    options: {
-      className?: 'Part' | 'Seat';
-      shape?: 'Block' | 'Ball' | 'Cylinder';
-      canCollide?: boolean;
-      transparency?: number;
-      extra?: Record<string, unknown>;
-    } = {},
-  ): string => {
-    const id = uuidv4();
-    const shapeName = options.shape ?? 'Block';
-    // Session 346 — when a baked AI MeshPart is present in the scene, the fallback
-    // primitives would overlap the real mesh in Edit mode. Hide them by default
-    // (transparency=1, no collision) so only the proper mesh shows.
-    const hideForBakedMesh = hasBakedFurnitureMesh;
-    scene.push({
-      id,
-      className: options.className ?? 'Part',
-      name: `Fallback${suffix}`,
-      properties: {
-        Size: vector3(size[0], size[1], size[2]),
-        CFrame: cframe(position[0], position[1], position[2]),
-        Anchored: true,
-        CanCollide: hideForBakedMesh ? false : (options.canCollide ?? true),
-        Locked: false,
-        Transparency: hideForBakedMesh ? 1 : (options.transparency ?? 0),
-        Color: color,
-        Material: enumValue('Material', materialName, materialValues[materialName]),
-        Shape: enumValue('PartType', shapeName, shapeValues[shapeName]),
-        ...(options.extra ?? {}),
-      },
-    });
-    return id;
-  };
-
-  let lightParentId = handleId;
-  const [w, h, d] = handleSize;
-  switch (furnitureType) {
-    case 'chair': {
-      pushFallbackPart('ChairSeat', [w * 0.82, 0.32, d * 0.75], [0, h * 0.34, 0], accentColor3, 'Fabric', {
-        className: 'Seat',
-        extra: { Disabled: false },
-      });
-      pushFallbackPart('ChairBack', [w * 0.85, h * 0.65, 0.22], [0, h * 0.66, d * 0.34], primaryColor3, 'Wood');
-      for (const x of [-1, 1]) for (const z of [-1, 1]) {
-        pushFallbackPart('ChairLeg', [0.20, h * 0.48, 0.20], [x * w * 0.33, h * 0.12, z * d * 0.28], primaryColor3, 'Wood');
-      }
-      break;
-    }
-    case 'table': {
-      pushFallbackPart('TableTop', [w, 0.32, d], [0, h * 0.78, 0], primaryColor3, 'WoodPlanks');
-      for (const x of [-1, 1]) for (const z of [-1, 1]) {
-        pushFallbackPart('TableLeg', [0.22, h * 0.72, 0.22], [x * w * 0.39, h * 0.38, z * d * 0.36], accentColor3, 'Wood');
-      }
-      break;
-    }
-    case 'lamp': {
-      pushFallbackPart('LampBase', [w * 0.85, 0.18, d * 0.85], [0, 0.09, 0], accentColor3, 'Metal', { shape: 'Cylinder' });
-      pushFallbackPart('LampPole', [0.16, h * 0.70, 0.16], [0, h * 0.38, 0], accentColor3, 'Metal', { shape: 'Cylinder' });
-      lightParentId = pushFallbackPart('LampShade', [w, h * 0.22, d], [0, h * 0.78, 0], primaryColor3, 'SmoothPlastic');
-      break;
-    }
-    case 'shelf': {
-      pushFallbackPart('ShelfBack', [w, h, 0.12], [0, h * 0.5, d * 0.18], primaryColor3, 'Wood');
-      pushFallbackPart('ShelfLeftSide', [0.16, h, d], [-w * 0.48, h * 0.5, 0], primaryColor3, 'Wood');
-      pushFallbackPart('ShelfRightSide', [0.16, h, d], [w * 0.48, h * 0.5, 0], primaryColor3, 'Wood');
-      for (const y of [0.18, 0.42, 0.66, 0.90]) {
-        pushFallbackPart('ShelfBoard', [w, 0.12, d], [0, h * y, 0], accentColor3, 'WoodPlanks');
-      }
-      break;
-    }
-    case 'rug': {
-      pushFallbackPart('RugBody', [w, Math.max(0.06, h), d], [0, Math.max(0.03, h * 0.5), 0], primaryColor3, 'Fabric', { canCollide: false });
-      pushFallbackPart('RugTrimFront', [w, 0.04, 0.12], [0, h + 0.03, d * 0.47], accentColor3, 'Fabric', { canCollide: false });
-      pushFallbackPart('RugTrimBack', [w, 0.04, 0.12], [0, h + 0.03, -d * 0.47], accentColor3, 'Fabric', { canCollide: false });
-      pushFallbackPart('RugTrimLeft', [0.12, 0.04, d], [-w * 0.47, h + 0.03, 0], accentColor3, 'Fabric', { canCollide: false });
-      pushFallbackPart('RugTrimRight', [0.12, 0.04, d], [w * 0.47, h + 0.03, 0], accentColor3, 'Fabric', { canCollide: false });
-      break;
-    }
-    case 'plant': {
-      pushFallbackPart('PlantPot', [w * 0.72, h * 0.32, d * 0.72], [0, h * 0.16, 0], accentColor3, 'SmoothPlastic', { shape: 'Cylinder' });
-      pushFallbackPart('PlantStem', [0.16, h * 0.42, 0.16], [0, h * 0.48, 0], accentColor3, 'Wood', { shape: 'Cylinder', canCollide: false });
-      pushFallbackPart('PlantLeavesCenter', [w, h * 0.38, d], [0, h * 0.76, 0], primaryColor3, 'Grass', { shape: 'Ball', canCollide: false });
-      pushFallbackPart('PlantLeavesSideA', [w * 0.70, h * 0.30, d * 0.70], [-w * 0.30, h * 0.66, 0], primaryColor3, 'Grass', { shape: 'Ball', canCollide: false });
-      pushFallbackPart('PlantLeavesSideB', [w * 0.70, h * 0.30, d * 0.70], [w * 0.30, h * 0.66, 0], primaryColor3, 'Grass', { shape: 'Ball', canCollide: false });
-      break;
-    }
-    case 'sign': {
-      pushFallbackPart('SignPost', [0.18, h * 0.70, 0.18], [0, h * 0.28, 0], accentColor3, 'Wood');
-      lightParentId = pushFallbackPart('SignBoard', [w, h * 0.55, Math.max(0.16, d)], [0, h * 0.74, 0], primaryColor3, 'SmoothPlastic');
-      pushFallbackPart('SignTopTrim', [w, 0.10, Math.max(0.18, d)], [0, h * 1.03, 0], accentColor3, 'Wood');
-      pushFallbackPart('SignBottomTrim', [w, 0.10, Math.max(0.18, d)], [0, h * 0.45, 0], accentColor3, 'Wood');
-      break;
-    }
-    case 'decor':
-    default: {
-      pushFallbackPart('DecorBase', [w, h * 0.25, d], [0, h * 0.13, 0], accentColor3, 'SmoothPlastic');
-      pushFallbackPart('DecorCore', [w * 0.82, h * 0.72, d * 0.82], [0, h * 0.58, 0], primaryColor3, 'SmoothPlastic', { shape: 'Ball' });
-      break;
-    }
+  } else {
+    // No LLM scene parsed — fall back to deterministic skeleton only.
+    emitSkeleton();
   }
 
   // Lamps and signs get a local light on the visible shade/board, not on the pivot shell.
@@ -4784,7 +4931,7 @@ function buildFurnitureModelManifest(
       id: uuidv4(),
       className: 'PointLight',
       name: 'FurnitureGlow',
-      parentId: lightParentId,
+      parentId: skeletonLightParentId,
       properties: {
         Brightness: furnitureType === 'lamp' ? 2.5 : 0.8,
         Range: furnitureType === 'lamp' ? 16 : 6,

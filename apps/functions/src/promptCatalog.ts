@@ -1802,8 +1802,16 @@ SIZE RULES (avoid invisible parts):
 - VERTICAL CONTINUITY: when one part is meant to rest on another (shade on post, top on legs, trim on base), their CFrame ranges (y_center ± size_y/2) MUST overlap or touch by at least 0.05 studs. NEVER leave a vertical gap — Roblox does not auto-connect floating parts, and from a few studs away a 0.5-stud gap reads as "broken floating geometry".
 
 MATERIALS:
-- Use Roblox's official Material enum names exactly (capital-cased above). No "OakWood", no "VelvetFabric".
+- Use Roblox's official Material enum names exactly (capital-cased above). No "OldWood", no "VelvetFabric".
 - Wood, WoodPlanks, Marble, Brick, Slate, Concrete, Metal, SmoothPlastic, Plastic, Fabric, Grass, Glass, Neon. Anything else will be silently downgraded.
+
+CYLINDERS (read carefully):
+- For shape="Cylinder", emit \`size\` in WORLD axes EXACTLY as you would for a Block: [W, H, D] where H is the vertical height. The builder auto-rotates the cylinder so its long axis aligns with the world axis whose other two dimensions are most equal.
+- A vertical lamp pole: size=[0.3, 2.8, 0.3] — width 0.3 along X, height 2.8 along Y, depth 0.3 along Z. Builder auto-rotates so the cylinder stands upright.
+- A flat round disc base lying on the floor: size=[1.2, 0.18, 1.2] — wide on X/Z, thin on Y. Builder auto-rotates so the disc lies flat.
+- A horizontal pipe running along Z: size=[0.3, 0.3, 4.0] — long Z dim, equal X and Y. Builder auto-rotates so the pipe lies along Z.
+- For cylinders intended to be round, the two non-axis dimensions MUST be approximately equal (within ~20% of each other). Otherwise Roblox renders the cylinder with the radius of the smaller dim and you get a flat oval instead of a round circle.
+- DO NOT emit pre-rotated cylinders or use Block to fake cylinders — the builder handles rotation; you only specify world-axis sizes.
 
 COLORS:
 - Use the user's primaryColor for the dominant surface, accentColor for trim/cushion/top, glowColor for any light-emitting part.
@@ -1816,6 +1824,18 @@ PER-TYPE REQUIREMENTS:
 - Plants MUST have at least one role="leaves" green-tinted part above a role="trunk" or pot.
 - Rugs MUST have canCollide=false on the body and lay flat (h <= 0.15).
 - Signs SHOULD include one role="light" part if the user implied glow ("neon sign", "led sign"); keep regular signs without it.
+
+HYBRID TYPES — for furnitureType ∈ {lamp, plant, sign} READ THIS CAREFULLY:
+For these three types, the builder ALWAYS emits a deterministic skeleton:
+- lamp: a base + a vertical pole + a shade (with a PointLight inside).
+- plant: a pot + a trunk + leaves.
+- sign: a post + a board + top/bottom trims.
+Your job for hybrid types is to add 2–6 DECORATIVE ACCENT parts ONLY. Allowed roles for accents on hybrid types: trim, detail, decor, light, leaves, panel, shade.
+DO NOT emit role=post / role=support / role=trunk / role=stem / role=back / role=seat / role=leg / role=body for hybrid types — they will be FILTERED OUT and ignored. You will waste your output budget if you emit them.
+Examples of good accents for hybrid types:
+- Lamp: a Neon "InnerGlow" Ball inside the shade (role=light), a narrow "ShadeRing" cylinder trim around the shade rim (role=trim, size like [1.05, 0.05, 1.05]), a "PullChain" small Block hanging from the bottom of the shade (role=decor).
+- Plant: a "FlowerCluster" Ball above the leaves (role=decor), a "PotRim" Cylinder trim around the pot top (role=trim).
+- Sign: a "Lantern" Neon Ball above the board (role=light), "BoardCornerTL/TR/BL/BR" small Block trims at the board corners (role=trim).
 
 DON'T:
 - Don't make every part the same size — that hides them as a single cube.

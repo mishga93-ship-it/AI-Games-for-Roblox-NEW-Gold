@@ -1185,6 +1185,18 @@ If the reference is a UI screenshot, preserve layout hierarchy, spacing, palette
 ${viralStyleInjection.promptBlock}`, 8000);
     }
 
+    const vehicleRoutingReason = shouldPromoteVehicleRequest(body.kind, generationPrompt, effectiveMetadata);
+    if (vehicleRoutingReason) {
+      effectiveMetadata.contentCategory = 'vehicle';
+      effectiveMetadata.contentSubcategory = 'vehicles';
+      effectiveMetadata.requestedKind = 'vehicle_3d';
+      effectiveMetadata.vehicleRoutingReason = vehicleRoutingReason;
+      logger.info('[Vehicles] Promoted request to vehicle_3d', {
+        bodyKind: body.kind,
+        vehicleRoutingReason,
+      });
+    }
+
     // ── Smart Stubs: 3-tier classification before heavy generation ──
     const stubCheck = await runSmartStubsClassification(
       req.userId ?? 'unknown-user',
@@ -1392,7 +1404,7 @@ ${viralStyleInjection.promptBlock}`, 8000);
           if (effectiveMetadata.petMode === 'blocky') return createBlockyPetPipelineStages();
           return createPetEvolutionPipelineStages();
         }
-        if (requestedKind === 'vehicle_3d' || effectiveMetadata.contentCategory === 'vehicle') return createVehiclePipelineStages();
+        if (requestedKind === 'vehicle_3d' || isVehicleGenerationMetadata(effectiveMetadata)) return createVehiclePipelineStages();
         if (requestedKind === 'animation') return createAnimationPipelineStages();
         if (requestedKind === 'decal_texture') return createDecalTexturePipelineStages();
         if (effectiveMetadata.contentCategory === 'gamepass') return createMonetizationPipelineStages();
@@ -1432,7 +1444,8 @@ ${viralStyleInjection.promptBlock}`, 8000);
       dispatchMode: getJobDispatchMode() as JobDispatchMode,
       metadata: {
         ...effectiveMetadata,
-        requestedKind: body.kind,
+        requestedKind,
+        rawRequestedKind: body.kind,
         moderationEventId: moderation.eventId,
         // Preserve user-chosen chat provider (building Architect Agent reads this).
         chatProvider: typeof body.provider === 'string' ? body.provider : undefined,
@@ -5324,13 +5337,18 @@ async function runSmartStubsClassification(
     'item_tool',
     'furniture_prop',
     'ugc_accessory',
+    'vehicle',
   ];
   if (supportedCategories.includes(contentCategory)) {
     return { blocked: false };
   }
 
   const contentSubcategory = ((metadata?.contentSubcategory as string) ?? '').toLowerCase();
-  if (contentSubcategory === 'npcs') {
+  if (contentSubcategory === 'npcs' || contentSubcategory === 'vehicles') {
+    return { blocked: false };
+  }
+
+  if (isVehicleGenerationMetadata(metadata)) {
     return { blocked: false };
   }
 
@@ -8143,6 +8161,60 @@ function providerForKind(kind?: string, metadata?: Record<string, unknown>): AIP
   }
 }
 
+function normalizedMetadataString(metadata: Record<string, unknown> | undefined, key: string): string {
+  const value = metadata?.[key];
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isVehicleGenerationMetadata(metadata?: Record<string, unknown>): boolean {
+  const requestedKind = normalizedMetadataString(metadata, 'requestedKind');
+  const category = normalizedMetadataString(metadata, 'contentCategory');
+  const subcategory = normalizedMetadataString(metadata, 'contentSubcategory');
+  const intent = normalizedMetadataString(metadata, 'intent');
+  const genre = normalizedMetadataString(metadata, 'genre');
+  return requestedKind === 'vehicle_3d'
+    || category === 'vehicle'
+    || subcategory === 'vehicles'
+    || intent === 'vehicle_interview'
+    || intent === 'vehicle_generation'
+    || genre === 'vehicle';
+}
+
+function promptLooksLikeVehicleAsset(prompt: string): boolean {
+  return /\b(vehicle|vehicles|car|cars|kart|truck|bus|bike|bicycle|motorcycle|boat|ship|plane|airplane|helicopter|tank|spaceship|hovercraft|drive\s*seat|vehicle\s*seat|passenger\s*seat|машин[ауы]?|авто|мотоцикл|байк|велосипед|лодк[ауы]?|катер|корабл|самол[её]т|вертол[её]т|танк|космическ|автобус|пассажирск)\b/i.test(prompt);
+}
+
+function shouldPromoteVehicleRequest(
+  kind: ContentGenerateRequest['kind'],
+  prompt: string,
+  metadata: Record<string, unknown>,
+): string | undefined {
+  if (isVehicleGenerationMetadata(metadata)) {
+    return 'explicit_vehicle_metadata';
+  }
+  const projectKind = normalizedMetadataString(metadata, 'projectKind');
+  const subcategory = normalizedMetadataString(metadata, 'contentSubcategory');
+  const category = normalizedMetadataString(metadata, 'contentCategory');
+  const isGenericContent = projectKind === 'content' || projectKind === 'ugc' || category === 'character' || category === '';
+  const hasSpecificNonVehicleSubcategory = subcategory.length > 0 && subcategory !== 'content' && subcategory !== 'characters';
+  const kindCanBePromoted = ![
+    'audio',
+    'animation',
+    'code',
+    'decal_texture',
+    'game_package',
+    'rbxl_build',
+    'rbxm_build',
+    'search',
+    'transcription',
+    'voice_stream_finalize',
+  ].includes(String(kind ?? ''));
+  if (isGenericContent && !hasSpecificNonVehicleSubcategory && kindCanBePromoted && promptLooksLikeVehicleAsset(prompt)) {
+    return 'vehicle_prompt_keywords';
+  }
+  return undefined;
+}
+
 function resolveRequestedGenerationKind(
   kind: ContentGenerateRequest['kind'],
   metadata: ContentGenerateRequest['metadata'],
@@ -8150,6 +8222,9 @@ function resolveRequestedGenerationKind(
   const requestedKind = typeof (metadata as Record<string, unknown> | undefined)?.requestedKind === 'string'
     ? String((metadata as Record<string, unknown>).requestedKind)
     : '';
+  if (isVehicleGenerationMetadata(metadata as Record<string, unknown> | undefined)) {
+    return 'vehicle_3d';
+  }
   if (requestedKind === 'pet_3d') {
     return 'pet_3d';
   }
@@ -16996,40 +17071,52 @@ function validateFurnitureSceneGeometry(
     repairActions.push('Every size dimension must be at least 0.15 studs.');
   }
 
+  // Session 355 — hybrid-skeleton types (lamp/plant/sign) get a deterministic
+  // base+pole+shade emitted by the builder regardless of LLM output, and LLM
+  // parts are filtered to additive accents only. So thin-post / centerline-stack
+  // gap checks are no longer load-bearing — they fired on LLM parts we now drop.
+  // Skipping them avoids burning retries on rejections the user wouldn't see.
+  const hybridSkeletonTypes = new Set(['lamp', 'plant', 'sign']);
+  const isHybridSkeleton = hybridSkeletonTypes.has(type);
+
   // Session 346 — Structural posts/stems/trunks/supports that visibly connect
   // separated chunks of the prop. Below ~0.3 studs in narrow dims they read as
   // an invisible wire from gameplay distance, making the shade/leaves/top look
   // like they float with nothing holding them up. (See the "lamp with floating
   // shade" report — center post was 0.22 stud thick, lamp was 1.4 stud wide.)
   const structuralRoles = new Set(['post', 'stem', 'trunk', 'support']);
-  const thinStructural = scene.parts.filter((p) => {
-    if (!structuralRoles.has(p.role)) return false;
-    // For a vertical post: the narrow dims are X and Z (the tall dim is Y).
-    const narrowDims = [p.size[0], p.size[2]];
-    return Math.min(...narrowDims) < 0.3;
-  });
-  if (thinStructural.length > 0) {
-    issues.push(`${thinStructural.length} structural part(s) too thin — they'll read as an invisible wire: ${thinStructural.slice(0, 3).map((p) => `${p.name}(${Math.min(p.size[0], p.size[2]).toFixed(2)} stud)`).join(', ')}.`);
-    repairActions.push('Structural posts/stems/trunks/supports must be at least 0.3 studs in both X and Z dimensions to read visually from gameplay distance.');
+  if (!isHybridSkeleton) {
+    const thinStructural = scene.parts.filter((p) => {
+      if (!structuralRoles.has(p.role)) return false;
+      // For a vertical post: the narrow dims are X and Z (the tall dim is Y).
+      const narrowDims = [p.size[0], p.size[2]];
+      return Math.min(...narrowDims) < 0.3;
+    });
+    if (thinStructural.length > 0) {
+      issues.push(`${thinStructural.length} structural part(s) too thin — they'll read as an invisible wire: ${thinStructural.slice(0, 3).map((p) => `${p.name}(${Math.min(p.size[0], p.size[2]).toFixed(2)} stud)`).join(', ')}.`);
+      repairActions.push('Structural posts/stems/trunks/supports must be at least 0.3 studs in both X and Z dimensions to read visually from gameplay distance.');
+    }
   }
 
   // Session 346 — Vertical gaps between stacked structural elements. A 0.5+ stud
   // gap between e.g. the BasePlate and the CenterPost makes the lamp look broken
   // even when the geometry technically reaches its full height.
-  const verticalRanges = flatTypes.has(type) ? [] : scene.parts
-    .map((p) => ({ name: p.name, role: p.role, top: p.position[1] + p.size[1] / 2, bottom: p.position[1] - p.size[1] / 2, x: p.position[0], z: p.position[2] }))
-    .sort((a, b) => a.bottom - b.bottom);
-  // Center-axis structural stack: parts within ~0.5 studs of the prop's vertical
-  // centerline. These should chain top-to-bottom without big air gaps.
-  const centerStackParts = verticalRanges.filter((p) => Math.abs(p.x) < 0.5 && Math.abs(p.z) < 0.5);
-  for (let i = 1; i < centerStackParts.length; i++) {
-    const prev = centerStackParts[i - 1];
-    const curr = centerStackParts[i];
-    const gap = curr.bottom - prev.top;
-    if (gap > 0.5) {
-      issues.push(`Vertical gap of ${gap.toFixed(2)} studs between ${prev.name} (top y=${prev.top.toFixed(2)}) and ${curr.name} (bottom y=${curr.bottom.toFixed(2)}) — the prop will look broken.`);
-      repairActions.push(`Close the gap: add a connecting part, or move ${curr.name} down so it touches ${prev.name}.`);
-      break;
+  if (!isHybridSkeleton) {
+    const verticalRanges = flatTypes.has(type) ? [] : scene.parts
+      .map((p) => ({ name: p.name, role: p.role, top: p.position[1] + p.size[1] / 2, bottom: p.position[1] - p.size[1] / 2, x: p.position[0], z: p.position[2] }))
+      .sort((a, b) => a.bottom - b.bottom);
+    // Center-axis structural stack: parts within ~0.5 studs of the prop's vertical
+    // centerline. These should chain top-to-bottom without big air gaps.
+    const centerStackParts = verticalRanges.filter((p) => Math.abs(p.x) < 0.5 && Math.abs(p.z) < 0.5);
+    for (let i = 1; i < centerStackParts.length; i++) {
+      const prev = centerStackParts[i - 1];
+      const curr = centerStackParts[i];
+      const gap = curr.bottom - prev.top;
+      if (gap > 0.5) {
+        issues.push(`Vertical gap of ${gap.toFixed(2)} studs between ${prev.name} (top y=${prev.top.toFixed(2)}) and ${curr.name} (bottom y=${curr.bottom.toFixed(2)}) — the prop will look broken.`);
+        repairActions.push(`Close the gap: add a connecting part, or move ${curr.name} down so it touches ${prev.name}.`);
+        break;
+      }
     }
   }
 
@@ -17043,6 +17130,28 @@ function validateFurnitureSceneGeometry(
   if (duplicates > 0) {
     issues.push(`${duplicates} part(s) share an exact position with another part — they will z-fight.`);
     repairActions.push('Offset overlapping parts so each occupies a unique position.');
+  }
+
+  // Session 353 (fix 2) — vertical-role orientation. If the LLM emits a structural
+  // post/stem/trunk/support whose LONGEST size dim isn't Y, it has either pre-rotated
+  // (compensating for the old Roblox cylinder quirk) or rotated the prop sideways.
+  // The builder now force-corrects shape=Cylinder roles for us, but Block at the same
+  // size would still render horizontally. Reject so the LLM emits Y as the long axis
+  // for everything that needs to stand upright.
+  // Session 355 — skip this check for hybrid-skeleton types; LLM "post" parts are
+  // dropped at the builder anyway, so flagging them here just spends retries.
+  if (!isHybridSkeleton) {
+    const sidewaysVertical = scene.parts.filter((p) => {
+      const role = (p.role ?? '').toLowerCase();
+      if (!['post', 'stem', 'trunk', 'support'].includes(role)) return false;
+      const [sx, sy, sz] = p.size;
+      const maxDim = Math.max(sx, sy, sz);
+      return sy < maxDim * 0.95;
+    });
+    if (sidewaysVertical.length > 0) {
+      issues.push(`${sidewaysVertical.length} structural part(s) are not standing up — their longest dim is NOT Y: ${sidewaysVertical.slice(0, 3).map((p) => `${p.name}(role=${p.role} size=${p.size.map((n) => n.toFixed(2)).join('×')})`).join(', ')}.`);
+      repairActions.push('For role="post"/"stem"/"trunk"/"support" parts, the Y dim MUST be the largest (the part stands up). E.g. lamp pole: [0.3, 2.8, 0.3] — Y is 2.8, not X. Plant trunk: [0.4, 1.8, 0.4] — Y is 1.8.');
+    }
   }
 
   // Session 353 — Cylinder cross-section sanity. The builder auto-rotates cylinders so
@@ -23806,7 +23915,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       const meshProviderLabel = job.provider === 'hunyuan3d' ? 'Hunyuan3D v3' : 'Meshy v6';
       const use3DFromImage = !!conceptPreviewUrl;
 
-      await beginStage('mesh_3d', `Starting ${meshProviderLabel} clothing mesh generation`);
+      await beginStage('mesh_3d', `Generating 3D garment mesh via ${meshProviderLabel} (typically 2-5 minutes — please wait, this is normal)`);
       // Session 001 (Track 2 fix, 2026-05-19): meshResult fetch is now wrapped in
       // try/catch so a Meshy v6 failure (safety filter, timeout, no output URL)
       // doesn't kill the entire pipeline. Instead we mark mesh_3d as failed with

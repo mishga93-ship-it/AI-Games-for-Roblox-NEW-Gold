@@ -1210,6 +1210,8 @@ struct GenerationPreviewView: View {
                         }
                     }
                 }
+            } else if case .unavailable = artifactType {
+                EmptyView()
             } else {
                 PrimaryButton(title: "Export", action: onExport)
             }

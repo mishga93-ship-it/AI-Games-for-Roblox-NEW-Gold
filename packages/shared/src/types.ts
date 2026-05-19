@@ -175,6 +175,8 @@ export type PromptIntent =
   | 'map_generation'
   | 'audio_generation'
   | 'audio_interview'
+  | 'vehicle_interview'
+  | 'vehicle_generation'
   | 'clothing_interview'
   | 'animation_interview'
   | 'animation_generation'
@@ -271,7 +273,9 @@ export type GenerationStageId =
   | 'export_model'
   | 'export_rbxm'
   | 'generate_keyframes'
-  | 'generate_decal_image';
+  | 'generate_decal_image'
+  | 'generate_vehicle_scripts'
+  | 'quality_review';
 
 export type GenerationStageStatus =
   | 'pending'
@@ -309,6 +313,8 @@ export type GenerationKind =
   | 'game_package'
   | 'character_3d'
   | 'clothing_3d'
+  | 'pet_3d'
+  | 'vehicle_3d'
   | 'code'
   | 'image'
   | 'audio'
