@@ -18,6 +18,24 @@
 
 ## Выполненные задачи
 
+### ✅ [Furniture Hybrid Skeleton] Lamp/Plant/Sign — детерминистский каркас + LLM как декоратор (2026-05-19, сессия 357)
+- **Проблема**: пользователь сгенерировал лампу третий раз подряд (post sessions 353 stage 1 + hotfix 2) и опять увидел горизонтальный «таблетка»-post вместо столба, плафон в воздухе, disconnected parts. LLM каждый раз называет вертикальную опору по-разному (Post / MainPost / LowerSupportArm) и иногда ставит role=`body` / `decor` — мой Cylinder-only role override это не ловил. Block-shape post со стороной 2.8 тоже не нормализовался.
+- **Root cause**: pipeline полагался на LLM-эмиссию корректной структуры. LLM непредсказуем — невозможно гарантировать правильный role/shape/size.
+- **Решение** (hybrid skeleton — Option A из plan agent):
+  - `apps/functions/src/robloxWorker.ts` — `pushFallbackPart` и новая helper-функция `emitSkeleton()` подняты выше LLM-ветки. В LLM-branch для `furnitureType ∈ {lamp, plant, sign}` теперь **ВСЕГДА** вызывается `emitSkeleton()` (FallbackLampBase + LampPole + LampShade / PlantPot + Stem + Leaves / SignPost + Board + Trims), а LLM-парты фильтруются до accent-allow-list `{trim, detail, decor, light, leaves, panel, shade}`. Все role=post/leg/back/seat/support/trunk/stem/body части от LLM **отфильтровываются**.
+  - Дополнительно — **universal aspect-ratio safety-net**: для ЛЮБОГО part'а (Block или Cylinder) в LLM-сцене, если `longest / secondLongest ≥ 1.8` и longest dim не в Y — longest dim перемещается в Y слот (Block рендерится вертикально, Cylinder затем поворачивается existing logic'ом).
+  - Early-return из LLM-ветки убран, общий tail (PointLight + scripts + manifest) shared между LLM-path и no-LLM-path.
+  - `apps/functions/src/index.ts` — `validateFurnitureSceneGeometry` обёртка `if (!isHybridSkeleton)` для thin-structural / centerline-gap / sideways-vertical чеков (skeleton деттерминистский, эти чеки на LLM-парты которые фильтрованы — это лишние retries).
+  - `apps/functions/src/promptCatalog.ts` — добавлен блок `HYBRID TYPES` в `generateFurnitureSceneBlock`: объясняет LLM-у что для lamp/plant/sign skeleton всегда есть, что post/support/trunk/stem/back/seat/leg/body будут отфильтрованы, и даёт примеры accent parts.
+- **Файлы**: `apps/functions/src/robloxWorker.ts`, `apps/functions/src/index.ts`, `apps/functions/src/promptCatalog.ts`, `smoke-furniture-e2e.mjs` (worst-case + 8 assertions), `cursor/changelog-357.md`, `docs/PROGRESS.md`.
+- **Проверка**:
+  - `npm run build --workspace apps/functions` ✅ TypeScript clean.
+  - `node smoke-cylinder-fix.mjs` — 5/5 pass (helper math).
+  - `./.local-tools/lune/lune run apps/worker-service/runtime/lune/test_furniture_cylinder.luau` — 7/7 pass (Lune CFrame roundtrip).
+  - `node smoke-furniture-e2e.mjs` — **ALL 8 ASSERTIONS PASSED**: worst-case LLM input с MislabeledPost (Block, role=body, size=[2.8,0.3,0.3]) + MainPost (Cylinder, role=post, size=[2.6,0.32,0.32]) → ОБА отфильтрованы; FallbackLampBase/Pole/Shade эмиттированы из skeleton'а; accent parts (shade/light/trim) прошли. Lune-roundtrip: `FallbackLampPole RightVec=(0,1,0)` — pole стоит вертикально.
+- **Deploy**: `firebase deploy --only functions:api` — `Successful update operation` для `api(us-central1)` на Node.js 22, `/api/health` ✅.
+- **Ограничения**: старые `.rbxm` не пересобираются. chair/table/shelf/rug/decor — LLM-first остаётся (там не было повторных багов).
+
 ### ✅ [Vehicles Smart Stub Bypass] Confirm & Generate больше не должен отвечать заглушкой "Huge ambition..." (2026-05-19, сессия 355)
 - **Проблема**: пользователь показал Vehicles flow, где после `Confirm & Generate` backend вернул Smart Stub: "Huge ambition! These mechanics are being compiled..." вместо запуска generation.
 - **Root cause**: Smart Stubs запускался до vehicle promotion, а allowlist поддержанных content flows не включал `vehicle` / `vehicles`. Vehicle GDD мог содержать `Data Store` / `Daily rewards`, из-за чего classifier считал запрос unsupported global mechanics.
