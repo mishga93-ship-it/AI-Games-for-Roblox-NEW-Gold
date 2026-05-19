@@ -1159,14 +1159,22 @@ final class ChatStore: ObservableObject {
         // concept image instead of a 2-3 stage clothing texture flow.
         if contentSubcategory == "clothing" {
             switch normalized {
+            // 2026-05-19 fix: classic picks must EXPLICITLY reset clothingMode to
+            // "classic_2d" — otherwise stale "layered_3d" from a previous selection
+            // in the same draft routes the job to clothing_3d kind, sending a
+            // Classic Shirt request through the full 9-stage 3D mesh pipeline.
             case "t-shirt", "tshirt":
                 draft.clothingType = "t_shirt"
+                draft.clothingMode = "classic_2d"
             case "classic shirt", "shirt":
                 draft.clothingType = "classic_shirt"
+                draft.clothingMode = "classic_2d"
             case "classic pants", "pants":
                 draft.clothingType = "classic_pants"
+                draft.clothingMode = "classic_2d"
             case "full outfit", "outfit", "full outfit (shirt + pants)":
                 draft.clothingType = "classic_outfit"
+                draft.clothingMode = "classic_2d"
             // Track 2 — Layered 3D picks. Set both clothingType (for AccessoryType
             // routing) and clothingMode="layered_3d" (so backend enters mesh pipeline).
             case "🧥 3d jacket", "3d jacket", "jacket":
@@ -5102,6 +5110,46 @@ final class ChatStore: ObservableObject {
                 fbxDownloadURL: nil,
                 notes: notes
             )
+        }
+
+        if isVehicleProject, let nativeRobloxArtifact {
+            let vehiclePreviewArtifact = job.artifacts.first(where: {
+                $0.metadata?.role == "vehicle_preview_scene_render"
+                    || ($0.artifactRole == "preview_texture" && $0.stageId == "export_rbxm" && ($0.type == "png" || ($0.mimeType ?? "").contains("image")))
+            }) ?? thumbnailArtifact
+            let previewImageURL = (vehiclePreviewArtifact?.downloadUrl
+                ?? vehiclePreviewArtifact?.url
+                ?? job.metadata?.previewImageUrl).flatMap(URL.init(string:))
+            if let previewImageURL {
+                let vehicleType = job.metadata?.vehicleType ?? draft.vehicleType ?? "vehicle"
+                let driveMode = job.metadata?.driveMode ?? "land_wheels"
+                var notes: [String] = [
+                    "Blocky 3D preview rendered from the exact RBXM Parts model.",
+                    "Playable \(vehicleType) with DriveSeat, stabilized acceleration, passenger seats, engine sound, wheel dust, and exhaust VFX.",
+                    "Interior includes cabin parts, dashboard, steering wheel, seats, mirrors, lights, and trim.",
+                    "Tap Export Vehicle RBXM, drag into Workspace in Studio, press Play, and sit in DriveSeat."
+                ]
+                if let seatCount = job.metadata?.seatCount {
+                    notes.insert("Seats: \(seatCount) | Mode: \(driveMode)", at: 1)
+                }
+                if let qualityMessage = job.metadata?.qualityReviewMessage, !qualityMessage.isEmpty {
+                    notes.append("Quality review: \(qualityMessage)")
+                }
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Vehicle Preview" : "\(draft.title) Vehicle",
+                    artifactType: .media(kind: "vehicle_preview", remoteURL: previewImageURL),
+                    exportFileType: nativeRobloxArtifact.type,
+                    artifactIds: artifactIds,
+                    shareDescription: shareDescription,
+                    downloadURL: rbxmDownloadURL ?? downloadURL,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: rbxmDownloadURL,
+                    fbxDownloadURL: nil,
+                    notes: notes,
+                    trendingShowcaseItems: trendingShowcaseItems,
+                    trendingShowcaseCategory: trendingShowcaseCategory
+                )
+            }
         }
 
         if isVehicleProject,
