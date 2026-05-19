@@ -17554,6 +17554,126 @@ function createFurniturePreviewPng(scene: FurnitureScene, title: string): Buffer
   ]);
 }
 
+function createVehiclePreviewSceneFromManifest(manifest: RobloxBuildManifest, title: string): FurnitureScene {
+  const numberFrom = (value: unknown, fallback: number): number => {
+    const num = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  };
+  const vector3From = (value: unknown): [number, number, number] | null => {
+    if (!value || typeof value !== 'object') return null;
+    const obj = value as Record<string, unknown>;
+    return [
+      numberFrom(obj.x, 1),
+      numberFrom(obj.y, 1),
+      numberFrom(obj.z, 1),
+    ];
+  };
+  const cframePositionFrom = (value: unknown): [number, number, number] | null => {
+    if (!value || typeof value !== 'object') return null;
+    const obj = value as Record<string, unknown>;
+    const pos = obj.position;
+    if (!pos || typeof pos !== 'object') return null;
+    const p = pos as Record<string, unknown>;
+    return [
+      numberFrom(p.x, 0),
+      numberFrom(p.y, 0),
+      numberFrom(p.z, 0),
+    ];
+  };
+  const enumValueFrom = (value: unknown, fallback: string): string => {
+    if (!value || typeof value !== 'object') return fallback;
+    const obj = value as Record<string, unknown>;
+    return typeof obj.value === 'string' && obj.value.trim() ? obj.value : fallback;
+  };
+  const hexFromColor3 = (value: unknown, fallback: string): string => {
+    if (!value || typeof value !== 'object') return fallback;
+    const obj = value as Record<string, unknown>;
+    const toByte = (raw: unknown): number => {
+      const n = numberFrom(raw, 0);
+      return Math.max(0, Math.min(255, Math.round(n <= 1 ? n * 255 : n)));
+    };
+    const r = toByte(obj.r);
+    const g = toByte(obj.g);
+    const b = toByte(obj.b);
+    return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+  };
+  const roleFor = (nodeName: string, material: string): string => {
+    const name = nodeName.toLowerCase();
+    const mat = material.toLowerCase();
+    if (/light|glow|neon|headlamp|tail/.test(name) || mat === 'neon') return 'light';
+    if (/glass|window|windshield/.test(name) || mat === 'glass') return 'window';
+    if (/seat|headrest|dashboard|console|steering/.test(name)) return 'interior';
+    if (/wheel|tire|track/.test(name)) return 'wheel';
+    if (/spoiler|splitter|grille|bumper|mirror|handle|skirt|arch/.test(name)) return 'detail';
+    return 'body';
+  };
+  const previewableClasses = new Set(['Part', 'Seat', 'VehicleSeat', 'WedgePart', 'CornerWedgePart']);
+  const parts: FurnitureScenePart[] = [];
+  for (const node of manifest.scene ?? []) {
+    if (!previewableClasses.has(node.className)) continue;
+    const props = node.properties ?? {};
+    const size = vector3From(props.Size);
+    const position = cframePositionFrom(props.CFrame);
+    if (!size || !position) continue;
+    const transparency = numberFrom(props.Transparency, 0);
+    if (transparency >= 0.96) continue;
+    const material = enumValueFrom(props.Material, 'SmoothPlastic');
+    const shape = node.className === 'WedgePart' || node.className === 'CornerWedgePart'
+      ? 'Block'
+      : enumValueFrom(props.Shape, 'Block');
+    const validShape: FurnitureScenePart['shape'] = shape === 'Cylinder' || shape === 'Ball' ? shape : 'Block';
+    const fallbackColor = roleFor(node.name, material) === 'window'
+      ? '#63CFF7'
+      : roleFor(node.name, material) === 'wheel'
+        ? '#1A1A1D'
+        : '#9A9A9A';
+    parts.push({
+      name: node.name,
+      kind: node.className === 'Seat' || node.className === 'VehicleSeat' ? 'Seat' : 'Part',
+      role: roleFor(node.name, material),
+      shape: validShape,
+      position,
+      size: [
+        Math.max(0.08, Math.abs(size[0])),
+        Math.max(0.08, Math.abs(size[1])),
+        Math.max(0.08, Math.abs(size[2])),
+      ],
+      color: hexFromColor3(props.Color, fallbackColor),
+      material,
+      transparency: Math.min(0.75, Math.max(0, transparency)),
+      canCollide: props.CanCollide === true,
+    });
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const part of parts) {
+    minX = Math.min(minX, part.position[0] - part.size[0] / 2);
+    maxX = Math.max(maxX, part.position[0] + part.size[0] / 2);
+    minY = Math.min(minY, part.position[1] - part.size[1] / 2);
+    maxY = Math.max(maxY, part.position[1] + part.size[1] / 2);
+    minZ = Math.min(minZ, part.position[2] - part.size[2] / 2);
+    maxZ = Math.max(maxZ, part.position[2] + part.size[2] / 2);
+  }
+  const boundingBox: [number, number, number] = Number.isFinite(minX)
+    ? [maxX - minX, maxY - minY, maxZ - minZ]
+    : [8, 4, 10];
+  return {
+    title,
+    furnitureType: 'vehicle',
+    boundingBox,
+    parts: parts.length > 0 ? parts : [{
+      name: 'VehicleFallbackBody',
+      kind: 'Part',
+      role: 'body',
+      shape: 'Block',
+      position: [0, 2, 0],
+      size: [6, 2, 9],
+      color: '#D73030',
+      material: 'SmoothPlastic',
+      canCollide: true,
+    }],
+  };
+}
+
 function addGuaranteedBuildingWindows(
   scene: BuildingScene,
   dims: BuildingDimensions,
@@ -26004,8 +26124,52 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           },
         };
       }
-      const nativeBuild = await maybeBuildRobloxBinary(manifest);
       const exportArtifacts: GenerationArtifact[] = [];
+      if (isVehicle) {
+        try {
+          const vehiclePreviewScene = createVehiclePreviewSceneFromManifest(manifest, title);
+          const previewBuffer = createFurniturePreviewPng(vehiclePreviewScene, title);
+          const previewArtifact = await uploadBinaryArtifact(job, previewBuffer, {
+            type: 'png',
+            extension: 'png',
+            mimeType: 'image/png',
+            name: `${title}-vehicle-preview.png`,
+            previewText: 'Blocky vehicle preview rendered from the exact Roblox Parts manifest.',
+            stageId: 'export_rbxm',
+            artifactRole: 'preview_texture',
+            metadata: {
+              isPreviewTexture: true,
+              role: 'vehicle_preview_scene_render',
+              vehiclePreviewMode: 'blocky_manifest_render',
+              vehicleType: manifest.metadata?.vehicleType,
+              driveMode: manifest.metadata?.driveMode,
+              partCount: vehiclePreviewScene.parts.length,
+            },
+          });
+          const vehiclePreviewImageUrl = previewArtifact.downloadUrl ?? previewArtifact.url;
+          exportArtifacts.push(previewArtifact);
+          exportMetadata = {
+            ...exportMetadata,
+            previewImageUrl: vehiclePreviewImageUrl,
+            vehiclePreviewImageUrl,
+            vehiclePreviewMode: 'blocky_manifest_render',
+            vehiclePreviewPartCount: vehiclePreviewScene.parts.length,
+          };
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              ...exportMetadata,
+            },
+          };
+        } catch (previewError) {
+          logger.warn('[VehiclePreview] blocky manifest preview generation failed', {
+            jobId,
+            error: errorMessage(previewError),
+          });
+        }
+      }
+      const nativeBuild = await maybeBuildRobloxBinary(manifest);
       if (nativeBuild?.bufferBase64) {
         exportArtifacts.push(await uploadBinaryArtifact(job, Buffer.from(nativeBuild.bufferBase64, 'base64'), {
           type: nativeBuild.artifactType,
