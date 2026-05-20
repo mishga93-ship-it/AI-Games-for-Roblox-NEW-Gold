@@ -2468,8 +2468,8 @@ function addVehicleBodyShell(
   }
 
   const sedanDriverX = -w * 0.24;
-  const sedanSteeringY = rootY + h * 0.62;
-  const sedanSteeringZ = -l * 0.25;
+  const sedanSteeringY = rootY + h * 0.72;
+  const sedanSteeringZ = -l * 0.18;
   const lowerY = rootY + h * 0.22;
   const cabinY = rootY + h * 0.68;
   const roofY = rootY + h * 0.93;
@@ -2478,15 +2478,20 @@ function addVehicleBodyShell(
   addBodyPart('FamilyCarBodyShell', [w * 0.92, h * 0.36, l * 0.72], [0, lowerY, 0], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarLowerBeltDark', [w * 0.94, h * 0.08, l * 0.76], [0, rootY + h * 0.08, 0], dark, { material: 'Metal' });
   addBodyPart('FamilyCarFrontHood', [w * 0.78, h * 0.20, l * 0.28], [0, rootY + h * 0.42, -l * 0.32], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarHoodToWindshieldTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, -l * 0.20], accent, { material: 'Metal' });
   addBodyPart('FamilyCarRearCargoBlock', [w * 0.80, h * 0.28, l * 0.24], [0, rootY + h * 0.40, l * 0.33], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarCargoToRearGlassTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, l * 0.20], accent, { material: 'Metal' });
   addBodyPart('FamilyCarCabinShell', [w * 0.76, h * 0.44, l * 0.42], [0, cabinY, -l * 0.02], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarCabinBackPanel', [w * 0.72, h * 0.42, 0.12], [0, cabinY, l * 0.22], primary, { material: 'SmoothPlastic' });
-  addBodyPart('FamilyCarRoofPanel', [w * 0.78, h * 0.12, l * 0.48], [0, roofY, -l * 0.01], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarRoofPanel', [w * 0.78, h * 0.12, l * 0.48], [0, roofY, -l * 0.01], accent, { material: 'Metal' });
+  addBodyPart('FamilyCarRoofEdgeTrim', [w * 0.80, h * 0.04, l * 0.50], [0, roofY - h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackLeft', [0.1, h * 0.06, l * 0.42], [-w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackRight', [0.1, h * 0.06, l * 0.42], [w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackFront', [w * 0.52, h * 0.05, 0.08], [0, roofY + h * 0.07, -l * 0.21], silver, { material: 'Metal' });
-  addBodyPart('FamilyCarWindshieldLarge', [w * 0.58, h * 0.34, 0.12], [0, cabinY + h * 0.03, -l * 0.25], glass, { material: 'Glass', transparency: 0.16 });
-  addBodyPart('FamilyCarRearGlassLarge', [w * 0.52, h * 0.30, 0.12], [0, cabinY + h * 0.02, l * 0.25], glass, { material: 'Glass', transparency: 0.18 });
+  addBodyPart('FamilyCarWindshieldLarge', [w * 0.58, h * 0.34, 0.12], [0, cabinY + h * 0.03, -l * 0.25], glass, { material: 'Glass', transparency: 0.38 });
+  addBodyPart('FamilyCarRearGlassLarge', [w * 0.52, h * 0.30, 0.12], [0, cabinY + h * 0.02, l * 0.25], glass, { material: 'Glass', transparency: 0.40 });
+  addBodyPart('FamilyCarFrontBeltLineSegment', [w * 0.92, h * 0.045, 0.08], [0, rootY + h * 0.57, -l * 0.355], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarRearBeltLineSegment', [w * 0.92, h * 0.045, 0.08], [0, rootY + h * 0.57, l * 0.355], silver, { material: 'Metal' });
   addBodyPart('FamilyCarFrontBumper', [w * 0.92, h * 0.15, 0.22], [0, rootY + h * 0.12, -l * 0.47], dark, { material: 'Metal' });
   addBodyPart('FamilyCarRearBumper', [w * 0.92, h * 0.15, 0.22], [0, rootY + h * 0.12, l * 0.47], dark, { material: 'Metal' });
   addBodyPart('FamilyCarFrontGrilleWide', [w * 0.54, h * 0.18, 0.1], [0, rootY + h * 0.26, -l * 0.49], dark, { material: 'Metal' });
@@ -2503,8 +2508,8 @@ function addVehicleBodyShell(
     const windowX = side * w * 0.565;
     addBodyPart(`${sideName}FamilyCarFrontDoor`, [0.16, h * 0.40, l * 0.22], [outsideX, rootY + h * 0.38, -l * 0.11], primary, { material: 'SmoothPlastic' });
     addBodyPart(`${sideName}FamilyCarRearDoor`, [0.16, h * 0.40, l * 0.22], [outsideX, rootY + h * 0.38, l * 0.12], primary, { material: 'SmoothPlastic' });
-    addBodyPart(`${sideName}FamilyCarFrontWindow`, [0.10, h * 0.24, l * 0.18], [windowX, cabinY + h * 0.05, -l * 0.12], glass, { material: 'Glass', transparency: 0.18 });
-    addBodyPart(`${sideName}FamilyCarRearWindow`, [0.10, h * 0.24, l * 0.17], [windowX, cabinY + h * 0.05, l * 0.10], glass, { material: 'Glass', transparency: 0.18 });
+    addBodyPart(`${sideName}FamilyCarFrontWindow`, [0.10, h * 0.28, l * 0.20], [windowX, cabinY + h * 0.07, -l * 0.12], glass, { material: 'Glass', transparency: 0.42 });
+    addBodyPart(`${sideName}FamilyCarRearWindow`, [0.10, h * 0.28, l * 0.19], [windowX, cabinY + h * 0.07, l * 0.10], glass, { material: 'Glass', transparency: 0.42 });
     addBodyPart(`${sideName}FamilyCarAPillar`, [0.12, h * 0.50, 0.10], [side * w * 0.40, cabinY + h * 0.02, -l * 0.24], dark, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarBPillar`, [0.12, h * 0.46, 0.10], [side * w * 0.40, cabinY + h * 0.00, -l * 0.01], dark, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarCPillar`, [0.12, h * 0.46, 0.10], [side * w * 0.40, cabinY - h * 0.01, l * 0.22], dark, { material: 'Metal' });
@@ -2528,10 +2533,10 @@ function addVehicleBodyShell(
   addBodyPart('FamilyCarCenterConsole', [w * 0.12, h * 0.12, l * 0.24], [0, rootY + h * 0.40, -l * 0.04], accent, { material: 'Metal' });
   addBodyPart('FamilyCarGearLever', [0.12, h * 0.16, 0.12], [0, rootY + h * 0.49, -l * 0.02], dark, { material: 'Metal' });
   addBodyPart('FamilyCarSteeringColumn', [0.46, 0.10, 0.10], [sedanDriverX, sedanSteeringY - h * 0.04, sedanSteeringZ - l * 0.02], dark, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
-  addBodyPart('FamilyCarSteeringWheelVisible', [0.08, 0.88, 0.88], [sedanDriverX, sedanSteeringY, sedanSteeringZ], dark, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
-  addBodyPart('FamilyCarSteeringHubVisible', [0.12, 0.28, 0.28], [sedanDriverX - 0.04, sedanSteeringY, sedanSteeringZ], silver, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
-  addBodyPart('FamilyCarSteeringTopSpoke', [0.58, 0.06, 0.06], [sedanDriverX, sedanSteeringY + 0.29, sedanSteeringZ - 0.02], silver, { material: 'Metal' });
-  addBodyPart('FamilyCarSteeringBottomSpoke', [0.58, 0.06, 0.06], [sedanDriverX, sedanSteeringY - 0.29, sedanSteeringZ - 0.02], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarSteeringWheelVisible', [0.10, 1.30, 1.30], [sedanDriverX, sedanSteeringY, sedanSteeringZ], dark, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
+  addBodyPart('FamilyCarSteeringHubVisible', [0.14, 0.42, 0.42], [sedanDriverX - 0.04, sedanSteeringY, sedanSteeringZ], silver, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
+  addBodyPart('FamilyCarSteeringTopSpoke', [0.86, 0.07, 0.07], [sedanDriverX, sedanSteeringY + 0.45, sedanSteeringZ - 0.02], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarSteeringBottomSpoke', [0.86, 0.07, 0.07], [sedanDriverX, sedanSteeringY - 0.45, sedanSteeringZ - 0.02], silver, { material: 'Metal' });
   for (const [seatName, x, z] of [
     ['Driver', -w * 0.20, -l * 0.08],
     ['FrontPassenger', w * 0.20, -l * 0.08],
@@ -2561,6 +2566,11 @@ function addVehicleBodyShell(
     addBodyPart('QARepairCarExtraRearDoorSeamLeft', [0.08, h * 0.36, 0.06], [-w * 0.63, rootY + h * 0.40, l * 0.18], dark, { material: 'Metal' });
     addBodyPart('QARepairCarExtraFrontDoorSeamRight', [0.08, h * 0.36, 0.06], [w * 0.63, rootY + h * 0.40, -l * 0.18], dark, { material: 'Metal' });
     addBodyPart('QARepairCarExtraRearDoorSeamRight', [0.08, h * 0.36, 0.06], [w * 0.63, rootY + h * 0.40, l * 0.18], dark, { material: 'Metal' });
+    addBodyPart('QARepairCarRoofSpoilerAccent', [w * 0.62, h * 0.08, 0.18], [0, roofY + h * 0.04, l * 0.20], accent, { material: 'Metal' });
+    addBodyPart('QARepairCarHoodLouvreLeft', [w * 0.18, h * 0.04, l * 0.10], [-w * 0.20, rootY + h * 0.52, -l * 0.30], accent, { material: 'Metal' });
+    addBodyPart('QARepairCarHoodLouvreRight', [w * 0.18, h * 0.04, l * 0.10], [w * 0.20, rootY + h * 0.52, -l * 0.30], accent, { material: 'Metal' });
+    addBodyPart('QARepairCarLeftRockerStripe', [0.12, h * 0.05, l * 0.74], [-w * 0.62, rootY + h * 0.16, 0], accent, { material: 'Metal' });
+    addBodyPart('QARepairCarRightRockerStripe', [0.12, h * 0.05, l * 0.74], [w * 0.62, rootY + h * 0.16, 0], accent, { material: 'Metal' });
   }
   return;
 

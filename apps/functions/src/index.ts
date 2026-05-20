@@ -6044,6 +6044,11 @@ interface VehicleManifestReviewFacts {
   hasRaceFrameMarkers: boolean;
   matchedMarkers: string[];
   missingMarkers: string[];
+  // Layer 2 — visual heuristics that catch "looks like a slab even though all named parts exist"
+  monochromeBodyShare: number; // 0..1, fraction of body volume in single dominant primary color
+  bodyVerticalLayerRange: number; // Y-spread of underbody/body/cabin/roof centers (studs)
+  glassToBodyAreaRatio: number; // side-view glass area / side-view body area
+  steeringWheelVisibleThroughWindshield: boolean; // steering wheel sits in cabin window band with glass in front
 }
 
 interface VehicleManifestReviewRun {
@@ -6098,7 +6103,133 @@ function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestRev
   const matchedMarkers = requiredMarkers.filter((marker) => text.includes(marker.toLowerCase()));
   const missingMarkers = requiredMarkers.filter((marker) => !text.includes(marker.toLowerCase()));
   const hasRaceFrameMarkers = vehicleType === 'car' && /carcentertunnel|carrearenginecover|rearspoiler|cockpitrearbulkhead|roofairscoop/.test(text);
-  return { vehicleType, driveMode, partCount, wheelCount, seatCount, hasDriveSeat, hasController, hasEngineSound, hasVfx, hasRaceFrameMarkers, matchedMarkers, missingMarkers };
+  const visual = computeVehicleVisualFacts(manifest, vehicleType);
+  return {
+    vehicleType,
+    driveMode,
+    partCount,
+    wheelCount,
+    seatCount,
+    hasDriveSeat,
+    hasController,
+    hasEngineSound,
+    hasVfx,
+    hasRaceFrameMarkers,
+    matchedMarkers,
+    missingMarkers,
+    monochromeBodyShare: visual.monochromeBodyShare,
+    bodyVerticalLayerRange: visual.bodyVerticalLayerRange,
+    glassToBodyAreaRatio: visual.glassToBodyAreaRatio,
+    steeringWheelVisibleThroughWindshield: visual.steeringWheelVisibleThroughWindshield,
+  };
+}
+
+interface VehicleVisualFacts {
+  monochromeBodyShare: number;
+  bodyVerticalLayerRange: number;
+  glassToBodyAreaRatio: number;
+  steeringWheelVisibleThroughWindshield: boolean;
+}
+
+function computeVehicleVisualFacts(manifest: RobloxBuildManifest, vehicleType: string): VehicleVisualFacts {
+  const BODY_NAME_RX = /(BodyShell|CabinShell|RoofPanel|Hood|CargoBlock|SidePanel|Fender|Underbody|Bumper|Hull|Fuselage|Cabin)/i;
+  const GLASS_NAME_RX = /(Windshield|RearGlass|FrontWindow|RearWindow|Glass|CockpitGlass|WindDeflector)/i;
+  const SKIP_RX = /(QARepair|Trim|Light|Tail|Spoke|Hub|Mirror|Plate|Stripe|Handle|Seam|Slat|Skirt|Rack)/i;
+  const HIDDEN_RX = /(Root|Chassis|Collider|Attach|Constraint)/i;
+
+  const parts = manifest.scene.filter((n) => n.className === 'Part');
+  type Box = { name: string; cx: number; cy: number; cz: number; sx: number; sy: number; sz: number; volume: number; transparency: number; isGlass: boolean; isBody: boolean; colorKey: string; colorR: number; colorG: number; colorB: number };
+
+  const boxes: Box[] = parts.map((p) => {
+    const props = (p as { properties?: Record<string, unknown> }).properties ?? {};
+    const size = (props as { Size?: { x?: number; y?: number; z?: number } }).Size ?? { x: 0, y: 0, z: 0 };
+    const cf = (props as { CFrame?: { position?: { x?: number; y?: number; z?: number } } }).CFrame ?? {};
+    const pos = cf.position ?? { x: 0, y: 0, z: 0 };
+    const col = (props as { Color?: { r?: number; g?: number; b?: number } }).Color ?? { r: 0, g: 0, b: 0 };
+    const mat = String((props as { Material?: string }).Material ?? '');
+    const transparency = Number((props as { Transparency?: number }).Transparency ?? 0);
+    const r = Number(col.r ?? 0);
+    const g = Number(col.g ?? 0);
+    const b = Number(col.b ?? 0);
+    const sx = Number(size.x ?? 0);
+    const sy = Number(size.y ?? 0);
+    const sz = Number(size.z ?? 0);
+    // Material- and transparency-based glass detection only; name-based check
+    // would mis-count opaque accent trims like "HoodToWindshieldTrim" as glass area.
+    // Exclude effectively invisible physics helpers (ChassisRoot etc.) and parts
+    // named like internal hidden helpers.
+    const isHiddenHelper = HIDDEN_RX.test(p.name) || transparency >= 0.95;
+    const isGlass = !isHiddenHelper && (mat === 'Glass' || (transparency >= 0.3 && transparency < 0.95)) && !SKIP_RX.test(p.name);
+    const isBody = !isGlass && !isHiddenHelper && !SKIP_RX.test(p.name) && BODY_NAME_RX.test(p.name);
+    // Quantize color to 0.05 buckets so near-identical reds count as one color.
+    const colorKey = `${Math.round(r * 20)}_${Math.round(g * 20)}_${Math.round(b * 20)}`;
+    return {
+      name: p.name,
+      cx: Number(pos.x ?? 0),
+      cy: Number(pos.y ?? 0),
+      cz: Number(pos.z ?? 0),
+      sx,
+      sy,
+      sz,
+      volume: Math.max(0, sx * sy * sz),
+      transparency,
+      isGlass,
+      isBody,
+      colorKey,
+      colorR: r,
+      colorG: g,
+      colorB: b,
+    };
+  });
+
+  // 1) monochromeBodyShare: dominant-color body volume / total body volume.
+  const bodyBoxes = boxes.filter((b) => b.isBody);
+  const totalBodyVolume = bodyBoxes.reduce((acc, b) => acc + b.volume, 0);
+  const volumeByColor = new Map<string, number>();
+  for (const b of bodyBoxes) {
+    volumeByColor.set(b.colorKey, (volumeByColor.get(b.colorKey) ?? 0) + b.volume);
+  }
+  const dominantVolume = Array.from(volumeByColor.values()).reduce((m, v) => Math.max(m, v), 0);
+  const monochromeBodyShare = totalBodyVolume > 0 ? dominantVolume / totalBodyVolume : 0;
+
+  // 2) bodyVerticalLayerRange: Y-spread of canonical layer parts.
+  const layerNames = ['FamilyCarUnderbody', 'FamilyCarBodyShell', 'FamilyCarCabinShell', 'FamilyCarRoofPanel'];
+  const ys = boxes.filter((b) => layerNames.some((n) => b.name === n)).map((b) => b.cy);
+  const bodyVerticalLayerRange = ys.length >= 2 ? Math.max(...ys) - Math.min(...ys) : 0;
+
+  // 3) glassToBodyAreaRatio: side-view (x,y plane) cross-section area.
+  const sideArea = (b: Box) => b.sx * b.sy;
+  const glassArea = boxes.filter((b) => b.isGlass).reduce((a, b) => a + sideArea(b), 0);
+  const bodyArea = bodyBoxes.reduce((a, b) => a + sideArea(b), 0);
+  const glassToBodyAreaRatio = bodyArea > 0 ? glassArea / bodyArea : 0;
+
+  // 4) steeringWheelVisibleThroughWindshield: SW between cabin and roof, with a glass part forward of it.
+  const sw = boxes.find((b) => b.name === 'FamilyCarSteeringWheelVisible');
+  const cabin = boxes.find((b) => b.name === 'FamilyCarCabinShell');
+  const roof = boxes.find((b) => b.name === 'FamilyCarRoofPanel');
+  const windshield = boxes.find((b) => b.name === 'FamilyCarWindshieldLarge');
+  let steeringWheelVisibleThroughWindshield = false;
+  if (sw && cabin && roof && windshield) {
+    const cabinTop = cabin.cy + cabin.sy / 2;
+    const cabinBottom = cabin.cy - cabin.sy / 2;
+    const inCabin = sw.cy >= cabinBottom && sw.cy <= roof.cy + roof.sy / 2;
+    const windshieldInFront = windshield.cz < sw.cz; // -Z is forward in this builder
+    const windshieldTransparentEnough = windshield.transparency >= 0.3;
+    const swInWindowYBand = sw.cy >= cabinTop - cabin.sy * 0.5 && sw.cy <= cabinTop + 0.6;
+    steeringWheelVisibleThroughWindshield = inCabin && windshieldInFront && windshieldTransparentEnough && swInWindowYBand;
+  }
+
+  // For non-car vehicles, skip body-specific signals (return neutral values so they don't trigger car-only checks).
+  if (vehicleType !== 'car') {
+    return {
+      monochromeBodyShare: 0,
+      bodyVerticalLayerRange: 0,
+      glassToBodyAreaRatio: 0,
+      steeringWheelVisibleThroughWindshield: false,
+    };
+  }
+
+  return { monochromeBodyShare, bodyVerticalLayerRange, glassToBodyAreaRatio, steeringWheelVisibleThroughWindshield };
 }
 
 function deterministicVehicleReview(args: {
@@ -6119,6 +6250,22 @@ function deterministicVehicleReview(args: {
     if (facts.missingMarkers.length > 0) issues.push(`missing_family_car_markers: ${facts.missingMarkers.join(', ')}.`);
     if (/family|семейн|low[-\s]*poly|cartoon|мульт|машин/i.test(args.prompt) && !facts.matchedMarkers.includes('FamilyCarBodyShell')) {
       issues.push('prompt_mismatch_family_car: prompt asks for a readable family/cartoon car but manifest lacks FamilyCarBodyShell.');
+    }
+    if (facts.monochromeBodyShare >= 0.8) {
+      issues.push(`monochrome_silhouette: ${Math.round(facts.monochromeBodyShare * 100)}% of body volume is in one color; large coplanar same-color panels read as a flat slab from chase camera.`);
+      repairActions.push('Recolor roof, hood, and trim in a contrasting tone (silver/black accent over red body) so the cabin reads as a separate volume.');
+    }
+    if (facts.bodyVerticalLayerRange < 1.2) {
+      issues.push(`flat_body_layers: vertical range between underbody/body/cabin/roof centers is only ${facts.bodyVerticalLayerRange.toFixed(2)} studs; expected at least 1.2 for a readable 3D silhouette.`);
+      repairActions.push('Raise cabin and roof higher above body shell; ensure underbody / body / cabin / roof centers are clearly separated by Y.');
+    }
+    if (facts.glassToBodyAreaRatio < 0.08) {
+      issues.push(`low_glass_area: glass parts cover only ${Math.round(facts.glassToBodyAreaRatio * 100)}% of body side area; windshield/windows too small to break up the body.`);
+      repairActions.push('Enlarge windshield, rear glass, and door windows; bump glass transparency to 0.35-0.45 so interior reads.');
+    }
+    if (!facts.steeringWheelVisibleThroughWindshield) {
+      issues.push('steering_wheel_hidden: FamilyCarSteeringWheelVisible is not positioned in the cabin window band behind a transparent windshield.');
+      repairActions.push('Raise steering wheel Y to cabin window band; enlarge its diameter; ensure windshield in front of it has transparency >= 0.3.');
     }
     repairActions.push('Rebuild as a boxy low-poly family car, not a race-frame wedge.');
     repairActions.push('Add large readable body shell, doors, roof, windshield, grille, headlights, and visible steering wheel.');
@@ -6148,6 +6295,70 @@ function deterministicVehicleReview(args: {
   };
 }
 
+function renderVehicleSideSilhouetteAscii(manifest: RobloxBuildManifest): string {
+  // Deterministic side-view (Y vs Z) ASCII projection of the manifest so the
+  // text-only LLM reviewer can "see" the silhouette without an actual image.
+  // Resolution: 24 cols (Z) x 12 rows (Y). Each cell records the highest-priority
+  // role hit by any part footprint that covers that (z, y) area.
+  const COLS = 24;
+  const ROWS = 12;
+  const parts = manifest.scene.filter((n) => n.className === 'Part');
+  const boxes = parts.map((p) => {
+    const props = (p as { properties?: Record<string, unknown> }).properties ?? {};
+    const size = (props as { Size?: { x?: number; y?: number; z?: number } }).Size ?? { x: 0, y: 0, z: 0 };
+    const cf = (props as { CFrame?: { position?: { x?: number; y?: number; z?: number } } }).CFrame ?? {};
+    const pos = cf.position ?? { x: 0, y: 0, z: 0 };
+    const transparency = Number((props as { Transparency?: number }).Transparency ?? 0);
+    return {
+      name: p.name,
+      cy: Number(pos.y ?? 0),
+      cz: Number(pos.z ?? 0),
+      sy: Number(size.y ?? 0),
+      sz: Number(size.z ?? 0),
+      transparency,
+    };
+  });
+  if (boxes.length === 0) return '(empty)';
+  const visible = boxes.filter((b) => b.transparency < 0.95);
+  if (visible.length === 0) return '(empty)';
+  const yLo = Math.min(...visible.map((b) => b.cy - b.sy / 2));
+  const yHi = Math.max(...visible.map((b) => b.cy + b.sy / 2));
+  const zLo = Math.min(...visible.map((b) => b.cz - b.sz / 2));
+  const zHi = Math.max(...visible.map((b) => b.cz + b.sz / 2));
+  const yRange = Math.max(yHi - yLo, 0.0001);
+  const zRange = Math.max(zHi - zLo, 0.0001);
+  const grid: string[][] = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => '.'));
+  // Priority: higher = more important; later writes only if higher priority.
+  const ROLE_PRIORITY: Record<string, number> = { '.': 0, B: 1, C: 2, R: 3, W: 4, G: 5, S: 6 };
+  function roleFor(name: string): string {
+    if (/SteeringWheelVisible/i.test(name)) return 'S';
+    if (/^Wheel\d+$|ChromeOuterRim|VisibleRim|TireSidewallStripe|BrakeDisc/i.test(name)) return 'W';
+    if (/Windshield|RearGlass|FrontWindow|RearWindow|Glass(?!.*Trim)|CockpitGlass/i.test(name)) return 'G';
+    if (/Roof(Panel|Edge)/i.test(name)) return 'R';
+    if (/CabinShell|CabinBackPanel|InteriorFloor|Dashboard/i.test(name)) return 'C';
+    if (/BodyShell|Hood|CargoBlock|Fender|Bumper|SidePanel|Underbody|Hull|Fuselage/i.test(name)) return 'B';
+    return '';
+  }
+  for (const b of visible) {
+    const role = roleFor(b.name);
+    if (!role) continue;
+    const zCol0 = Math.max(0, Math.floor(((b.cz - b.sz / 2) - zLo) / zRange * COLS));
+    const zCol1 = Math.min(COLS - 1, Math.floor(((b.cz + b.sz / 2) - zLo) / zRange * COLS));
+    const yRow0 = Math.max(0, Math.floor(((b.cy - b.sy / 2) - yLo) / yRange * ROWS));
+    const yRow1 = Math.min(ROWS - 1, Math.floor(((b.cy + b.sy / 2) - yLo) / yRange * ROWS));
+    for (let yRow = yRow0; yRow <= yRow1; yRow += 1) {
+      for (let zCol = zCol0; zCol <= zCol1; zCol += 1) {
+        const yIdx = ROWS - 1 - yRow; // flip so top of grid = high Y
+        const existing = grid[yIdx][zCol];
+        if ((ROLE_PRIORITY[role] ?? 0) > (ROLE_PRIORITY[existing] ?? 0)) {
+          grid[yIdx][zCol] = role;
+        }
+      }
+    }
+  }
+  return grid.map((row) => row.join('')).join('\n');
+}
+
 async function runVehicleLlmQualityReview(args: {
   prompt: string;
   title: string;
@@ -6168,15 +6379,22 @@ async function runVehicleLlmQualityReview(args: {
     hasRaceFrameMarkers: args.facts.hasRaceFrameMarkers,
     matchedMarkers: args.facts.matchedMarkers,
     missingMarkers: args.facts.missingMarkers,
+    monochromeBodyShare: args.facts.monochromeBodyShare,
+    bodyVerticalLayerRange: args.facts.bodyVerticalLayerRange,
+    glassToBodyAreaRatio: args.facts.glassToBodyAreaRatio,
+    steeringWheelVisibleThroughWindshield: args.facts.steeringWheelVisibleThroughWindshield,
     prominentPartNames: args.manifest.scene
       .filter((node) => /familycar|steering|wheel|rim|fender|hood|roof|door|windshield|fuel|engine|fork|balance|brake/i.test(node.name))
       .map((node) => `${node.className}:${node.name}`)
       .slice(0, 90),
+    sideSilhouetteAscii: renderVehicleSideSilhouetteAscii(args.manifest),
   };
   const system = [
     'You are a strict Roblox Vehicles QA reviewer.',
     'Review factual manifest evidence before a .rbxm is exported to the user.',
     'Reject if the model does not match the user brief, e.g. a family car looks like a flat race-frame wedge, no readable body, no visible steering wheel, no wheel details, or a motorcycle/bicycle can tip sideways.',
+    'Pay close attention to manifestDigest.monochromeBodyShare (>=0.8 means same-color body that visually merges into a slab), bodyVerticalLayerRange (<1.2 means body/cabin/roof are coplanar), glassToBodyAreaRatio (<0.08 means windows too small to break up the body), and steeringWheelVisibleThroughWindshield (must be true so the user sees the wheel through the front glass). Reject when any of these visual signals indicates a slab silhouette even if all required part names are present.',
+    'Also study manifestDigest.sideSilhouetteAscii: this is a deterministic side-view projection of the model. The vertical axis is Y (up), the horizontal axis is Z (front to back). Each character marks the dominant role of a part footprint (B=body, C=cabin, R=roof, G=glass, W=wheel, S=steering wheel, .=empty). A correct family car should show three vertically stacked layers (roof on top, cabin in the middle band with glass markers, body shell below, wheels at the bottom) with the steering wheel visible inside the cabin band. A single flat strip of "B" with wheels and almost no "C" or "R" is the slab failure mode — reject it.',
     'Do not reward speed. A slower export is acceptable only if quality passes.',
     'Output JSON only: {"status":"passed|warning|rejected","score":0-100,"userMessage":"short user-facing reason","reasons":["..."],"repairActions":["concrete fixes"]}.',
   ].join('\n');
