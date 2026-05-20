@@ -26,7 +26,13 @@ import {
   getRobloxWorkerToken,
   getRobloxWorkerUrl,
 } from './config.js';
-import { buildPetFollowScript, buildPetLevelingModule, buildBlockyPetFollowScript } from './uiTemplates.js';
+import {
+  buildPetFollowScript,
+  buildPetLevelingModule,
+  buildBlockyPetFollowScript,
+  buildBlockyPetLevelingModule,
+  buildBlockyPetEggHatchScript,
+} from './uiTemplates.js';
 import type { BlockyPetSpec } from './types.js';
 
 export interface RobloxAssetAnalysisResult {
@@ -3461,19 +3467,20 @@ function buildBlockyPetManifest(
   // the AttackBurst ParticleEmitter on tap.
   const bodyPartId = partNameToId.get('Body');
   const snoutPartId = partNameToId.get('Snout') ?? bodyPartId; // dragons have Snout, dogs/cats might not
+  // Element → RGB triplet (0..1 floats matching Color3.new). Used by
+  // body aura, attack burst, egg glow, and hatch burst.
+  const elementColor = ((): [number, number, number] => {
+    switch (element) {
+      case 'Fire':    return [1.00, 0.55, 0.10];
+      case 'Ice':     return [0.55, 0.85, 1.00];
+      case 'Shadow':  return [0.35, 0.10, 0.45];
+      case 'Light':   return [1.00, 1.00, 0.55];
+      case 'Nature':  return [0.45, 1.00, 0.45];
+      case 'Tech':    return [0.00, 0.90, 1.00];
+      default:        return [0.85, 0.85, 0.85];
+    }
+  })();
   if (bodyPartId) {
-    // Element → RGB triplet (0..1 floats matching Color3.new).
-    const elementColor = ((): [number, number, number] => {
-      switch (element) {
-        case 'Fire':    return [1.00, 0.55, 0.10];
-        case 'Ice':     return [0.55, 0.85, 1.00];
-        case 'Shadow':  return [0.35, 0.10, 0.45];
-        case 'Light':   return [1.00, 1.00, 0.55];
-        case 'Nature':  return [0.45, 1.00, 0.45];
-        case 'Tech':    return [0.00, 0.90, 1.00];
-        default:        return [0.85, 0.85, 0.85];
-      }
-    })();
     // Aura particle — continuous emitter around body for "elemental" feel.
     scene.push({
       id: uuidv4(),
@@ -3554,23 +3561,163 @@ function buildBlockyPetManifest(
       },
     });
 
-    // Sound slots — empty SoundIds; user can paste their preferred Roblox
-    // asset IDs in Studio. PetFollowScript plays them by name at runtime.
-    for (const sname of ['IdleSound', 'WalkSound', 'FlapSound', 'AttackSound']) {
+    // Sound slots. Defaults point at rbxasset:// stock sounds that ship
+    // with every Roblox install — guaranteed to play with no extra asset
+    // upload. Users can replace SoundId with any rbxassetid:// in Studio.
+    const soundDefaults: Record<string, { soundId: string; looped: boolean; volume: number }> = {
+      IdleSound:   { soundId: '',                                              looped: true,  volume: 0.35 },
+      WalkSound:   { soundId: 'rbxasset://sounds/action_footsteps_plastic.mp3', looped: true,  volume: 0.45 },
+      FlapSound:   { soundId: 'rbxasset://sounds/action_swim.mp3',              looped: true,  volume: 0.40 },
+      AttackSound: { soundId: 'rbxasset://sounds/electronicpingshort.wav',      looped: false, volume: 0.80 },
+    };
+    for (const [sname, cfg] of Object.entries(soundDefaults)) {
       scene.push({
         id: uuidv4(),
         className: 'Sound',
         name: sname,
         parentId: bodyPartId,
         properties: {
-          SoundId: '',  // user can paste rbxassetid here
-          Looped: sname === 'IdleSound' || sname === 'WalkSound' || sname === 'FlapSound',
-          Volume: 0.5,
+          SoundId: cfg.soundId,
+          Looped: cfg.looped,
+          Volume: cfg.volume,
           RollOffMaxDistance: 30,
         },
       });
     }
   }
+
+  // ── Egg + Hatch bundle ──────────────────────────────────────────────
+  // Pet spawns inside a giant egg. ProximityPrompt (E key) cracks the egg
+  // open: HatchSound + HatchBurst burst, egg parts tween to scale 0, pet
+  // parts fade in. Visual gateway between "find a pet" and "own a pet".
+  // PetFollowScript checks pet:GetAttribute("Hatched"); EggHatchScript
+  // sets it to true after the burst. If the user has no patience for the
+  // animation, the hatch script also auto-fires after 3 seconds when no
+  // ProximityPrompt instance is reachable.
+  const eggBundleId = uuidv4();
+  scene.push({
+    id: eggBundleId,
+    className: 'Folder',
+    name: 'EggBundle',
+    parentId: petModelId,
+  });
+  const eggBodyId = uuidv4();
+  // Egg body — Ball Shape with primary color × element tint. Sized ~3 studs
+  // tall (large enough to read as "an egg the size of the pet") sitting on
+  // the ground (y center = 1.6 puts bottom at 0 for spec.parts whose lowest
+  // Y is roughly 0).
+  scene.push({
+    id: eggBodyId,
+    className: 'Part',
+    name: 'EggBody',
+    parentId: eggBundleId,
+    properties: {
+      Anchored: true,
+      CanCollide: false,
+      Massless: true,
+      Shape: { __type: 'EnumItem', enum: 'PartType', value: 'Ball' },
+      Size: { __type: 'Vector3', x: 3.0, y: 3.6, z: 3.0 },
+      BrickColor: { __type: 'BrickColor', name: spec.colors.primary },
+      Material: { __type: 'EnumItem', enum: 'Material', value: 'SmoothPlastic' },
+      Transparency: 0,
+      CFrame: { __type: 'CFrame', position: { x: 0, y: 1.8, z: 0 }, rotation: [0, 0, 0] },
+    },
+  });
+  // Surface bands — two stripe parts wrap the egg horizontally, accent-colored.
+  for (const [bandName, yOff] of [['EggBandTop', 2.3], ['EggBandBot', 1.3]] as const) {
+    scene.push({
+      id: uuidv4(),
+      className: 'Part',
+      name: bandName,
+      parentId: eggBundleId,
+      properties: {
+        Anchored: true,
+        CanCollide: false,
+        Massless: true,
+        Shape: { __type: 'EnumItem', enum: 'PartType', value: 'Cylinder' },
+        Size: { __type: 'Vector3', x: 0.25, y: 2.6, z: 2.6 },
+        BrickColor: { __type: 'BrickColor', name: spec.colors.accent ?? spec.colors.secondary ?? spec.colors.primary },
+        Material: { __type: 'EnumItem', enum: 'Material', value: 'SmoothPlastic' },
+        Transparency: 0,
+        CFrame: { __type: 'CFrame', position: { x: 0, y: yOff, z: 0 }, rotation: [0, 0, 90] },
+      },
+    });
+  }
+  // Glow inside the egg — element-colored PointLight makes it "alive".
+  scene.push({
+    id: uuidv4(),
+    className: 'PointLight',
+    name: 'EggGlow',
+    parentId: eggBodyId,
+    properties: {
+      Color: { __type: 'Color3', r: elementColor[0], g: elementColor[1], b: elementColor[2] },
+      Brightness: 2.5,
+      Range: 10,
+      Shadows: false,
+    },
+  });
+  // Hatch prompt — E key, ~0.4s hold so accidental presses don't fire.
+  scene.push({
+    id: uuidv4(),
+    className: 'ProximityPrompt',
+    name: 'HatchPrompt',
+    parentId: eggBundleId,
+    properties: {
+      ActionText: 'Hatch egg',
+      ObjectText: `${spec.name} Egg`,
+      KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'E' },
+      HoldDuration: 0.4,
+      MaxActivationDistance: 12,
+      RequiresLineOfSight: false,
+    },
+  });
+  // Hatch sound — rbxasset:// stock pop, always plays on every install.
+  scene.push({
+    id: uuidv4(),
+    className: 'Sound',
+    name: 'HatchSound',
+    parentId: eggBundleId,
+    properties: {
+      SoundId: 'rbxasset://sounds/pop_mid_up.wav',
+      Volume: 1.0,
+      Looped: false,
+      RollOffMaxDistance: 40,
+    },
+  });
+  // Hatch burst — disabled by default, hatch script emits 80 particles
+  // once on Triggered. Color uses element tint so dragons crack with fire
+  // sparks etc.
+  scene.push({
+    id: uuidv4(),
+    className: 'ParticleEmitter',
+    name: 'HatchBurst',
+    parentId: eggBodyId,
+    properties: {
+      Color: {
+        __type: 'ColorSequence',
+        keypoints: [
+          { time: 0, r: elementColor[0], g: elementColor[1], b: elementColor[2] },
+          { time: 1, r: 1, g: 1, b: 1 },
+        ],
+      },
+      Texture: 'rbxasset://textures/particles/sparkles_main.dds',
+      Lifetime: { __type: 'NumberRange', min: 0.8, max: 1.6 },
+      Rate: 0,
+      Speed: { __type: 'NumberRange', min: 15, max: 30 },
+      SpreadAngle: { __type: 'Vector2', x: 180, y: 180 },
+      Size: { __type: 'NumberSequence', keypoints: [
+        { time: 0, value: 1.5, envelope: 0 },
+        { time: 1, value: 0.2, envelope: 0 },
+      ] },
+      Transparency: { __type: 'NumberSequence', keypoints: [
+        { time: 0, value: 0.0, envelope: 0 },
+        { time: 1, value: 1, envelope: 0 },
+      ] },
+      LightEmission: 1.0,
+      LightInfluence: 0,
+      Enabled: false,
+    },
+  });
 
   // Rarity-themed outline highlight — visible from any distance. Common =
   // dim grey, Mythic = bright pink/gold. Cheap "this pet is special" cue.
@@ -3638,7 +3785,14 @@ function buildBlockyPetManifest(
         name: 'PetLevelingModule',
         scriptType: 'ModuleScript',
         container: petModelId,
-        source: buildPetLevelingModule(),
+        source: buildBlockyPetLevelingModule(),
+      },
+      {
+        id: uuidv4(),
+        name: 'PetEggHatchScript',
+        scriptType: 'Script',
+        container: petModelId,
+        source: buildBlockyPetEggHatchScript(),
       },
     ],
     ui: [],
