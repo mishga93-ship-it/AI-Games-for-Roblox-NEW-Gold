@@ -1081,6 +1081,30 @@ final class ChatStore: ObservableObject {
         if normalized == "generate!" || normalized == "generate now"
             || normalized == "генерируй!" || normalized == "генерировать"
             || normalized == "всё супер, генерируй!" || normalized == "go" || normalized == "create it" {
+            // 2026-05-20: clothing chats must lock in a 2D/3D mode BEFORE generation
+            // fires. The LLM-prompt-driven final picker (promptCatalog.smartInterviewClothing)
+            // is unreliable — LLM sometimes falls back to plain "Generate!". So we
+            // intercept locally: when clothing && mode is nil AND the item has a
+            // 2D variant, show the 3-button picker right here. Items with no 2D
+            // analogue (Jacket/Sweater/Dress) pass through directly.
+            if contentSubcategory == "clothing" && draft.clothingMode == nil {
+                let ct = draft.clothingType ?? ""
+                let has2DVariant = ct == "classic_shirt" || ct == "classic_pants"
+                    || ct == "classic_outfit" || ct == "t_shirt"
+                if has2DVariant {
+                    messages.append(
+                        ChatMessage(
+                            id: UUID().uuidString,
+                            role: .assistant,
+                            content: "How should I produce it?\n\n• **2D Classic** — flat texture (585×559 wrap or 512×512 sticker), uploads to Roblox in seconds, sells via web Marketplace.\n• **3D Layered** — real 3D mesh accessory, takes 2-5 min for Meshy, finished in Studio Accessory Fitting Tool, needs UGC Program approval to publish.",
+                            quickReplies: ["✨ Generate as 2D Classic", "🧥 Generate as 3D Layered", "Decide for me"],
+                            gddRows: nil,
+                            createdAt: Date()
+                        )
+                    )
+                    return
+                }
+            }
             generateFromCurrentPlan()
             return
         }
@@ -1208,6 +1232,8 @@ final class ChatStore: ObservableObject {
                 }
                 if draft.clothingType == nil { draft.clothingType = "classic_outfit" }
                 draft.clothingMode = "classic_2d"
+                generateFromCurrentPlan()
+                return
             case "3d layered (premium)", "3d layered",
                  "🧥 generate as 3d layered", "generate as 3d layered":
                 // Final 3D pick — promote classic_* types up to layered_*.
@@ -1216,9 +1242,16 @@ final class ChatStore: ObservableObject {
                     draft.clothingType = "layered_\(kind == "outfit" ? "shirt" : kind)"
                 }
                 draft.clothingMode = "layered_3d"
+                generateFromCurrentPlan()
+                return
             case "decide for me":
                 if draft.clothingType == nil { draft.clothingType = "classic_shirt" }
                 if draft.clothingMode == nil { draft.clothingMode = "classic_2d" }
+                // If user has been through clothing interview, default-pick fires generation.
+                if contentSubcategory == "clothing" {
+                    generateFromCurrentPlan()
+                    return
+                }
             case "got it":
                 // Compliance banner dismiss — persist so future clothing chats don't repeat it
                 UserDefaults.standard.set(true, forKey: "clothing.compliance.dismissed")
