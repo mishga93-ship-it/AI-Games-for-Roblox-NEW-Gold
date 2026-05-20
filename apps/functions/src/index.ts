@@ -6041,6 +6041,7 @@ interface VehicleManifestReviewFacts {
   hasController: boolean;
   hasEngineSound: boolean;
   hasVfx: boolean;
+  hasRaceFrameMarkers: boolean;
   matchedMarkers: string[];
   missingMarkers: string[];
 }
@@ -6074,11 +6075,13 @@ function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestRev
   const requiredMarkers = vehicleType === 'car'
     ? [
         'FamilyCarBodyShell',
+        'FamilyCarCabinShell',
         'FamilyCarRoofPanel',
         'FamilyCarWindshieldLarge',
         'FamilyCarFrontGrilleWide',
         'FamilyCarSteeringWheelVisible',
         'ChromeOuterRim',
+        'FamilyCarVisibleRim',
       ]
     : (vehicleType === 'motorcycle' || vehicleType === 'bicycle')
       ? [
@@ -6094,7 +6097,8 @@ function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestRev
       : ['DriveSeat', 'VehicleController'];
   const matchedMarkers = requiredMarkers.filter((marker) => text.includes(marker.toLowerCase()));
   const missingMarkers = requiredMarkers.filter((marker) => !text.includes(marker.toLowerCase()));
-  return { vehicleType, driveMode, partCount, wheelCount, seatCount, hasDriveSeat, hasController, hasEngineSound, hasVfx, matchedMarkers, missingMarkers };
+  const hasRaceFrameMarkers = vehicleType === 'car' && /carcentertunnel|carrearenginecover|rearspoiler|cockpitrearbulkhead|roofairscoop/.test(text);
+  return { vehicleType, driveMode, partCount, wheelCount, seatCount, hasDriveSeat, hasController, hasEngineSound, hasVfx, hasRaceFrameMarkers, matchedMarkers, missingMarkers };
 }
 
 function deterministicVehicleReview(args: {
@@ -6110,7 +6114,8 @@ function deterministicVehicleReview(args: {
   if (!facts.hasVfx) issues.push('missing_vfx: vehicle has no wheel/exhaust ParticleEmitter markers.');
   if (facts.driveMode === 'land_wheels' && facts.wheelCount < 2) issues.push(`missing_wheels: land vehicle has only ${facts.wheelCount} wheel part(s).`);
   if (facts.vehicleType === 'car') {
-    if (facts.partCount < 135) issues.push(`low_car_detail: car has ${facts.partCount} physical/seat parts; premium vehicle exports need at least 135.`);
+    if (facts.partCount < 105) issues.push(`low_car_detail: car has ${facts.partCount} physical/seat parts; premium vehicle exports need at least 105.`);
+    if (facts.hasRaceFrameMarkers) issues.push('race_frame_silhouette: car still contains sports/race-frame body markers instead of the boxy family-car shell.');
     if (facts.missingMarkers.length > 0) issues.push(`missing_family_car_markers: ${facts.missingMarkers.join(', ')}.`);
     if (/family|семейн|low[-\s]*poly|cartoon|мульт|машин/i.test(args.prompt) && !facts.matchedMarkers.includes('FamilyCarBodyShell')) {
       issues.push('prompt_mismatch_family_car: prompt asks for a readable family/cartoon car but manifest lacks FamilyCarBodyShell.');
@@ -6160,6 +6165,7 @@ async function runVehicleLlmQualityReview(args: {
     hasController: args.facts.hasController,
     hasEngineSound: args.facts.hasEngineSound,
     hasVfx: args.facts.hasVfx,
+    hasRaceFrameMarkers: args.facts.hasRaceFrameMarkers,
     matchedMarkers: args.facts.matchedMarkers,
     missingMarkers: args.facts.missingMarkers,
     prominentPartNames: args.manifest.scene

@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Family Sedan Rebuild] Машина больше не строится поверх race-frame клина (2026-05-20, сессия 367)
+- **Проблема**: fresh `content-project-vehicle.rbxm` после session 366 всё ещё выглядел как длинный красный болид/клин с огромными чёрными колёсами, хотя технические markers (`FamilyCarBodyShell`, steering, rims) уже присутствовали.
+- **Root cause**: family-car parts были добавлены поверх старой sporty/race геометрии (`CarCenterTunnel`, `CarRearEngineCover`, `RearSpoiler*`, `Cockpit*`). Самые крупные красные volumes сливались в wedge silhouette, а rim/detail markers были слишком внутренними/мелкими для Studio side/chase view.
+- **Решение**: `apps/functions/src/robloxWorker.ts` — default car profile стал короче/выше со smaller wheels (`size=[6.4,4.05,9.2]`, `wheelRadius=1.05`). Car visual branch теперь early-returns после нового boxy family-sedan shell: body/cabin/roof, large windshield/rear glass/side windows, doors, pillars, mirrors, grille, bumpers, lights, interior, visible steering wheel, outer rim disks/spokes. Old race-frame car parts больше не эмитятся. `apps/functions/src/index.ts` — vehicle QA теперь требует `FamilyCarCabinShell` + `FamilyCarVisibleRim` и hard-reject'ит old race markers.
+- **Проверка**: `npm run build:functions` ✅; local Lune `.rbxm` smoke `/private/tmp/vehicle-family-sedan-v3.rbxm` ✅; inspect: `119` parts, wheel diameter `2.1`, visible bounds `9.586 x 5.951 x 9.288`, required family markers present, race markers absent. Retry smoke: `123` parts, `QARepair...` present, race markers absent. `git diff --check` ✅.
+- **Известные ограничения**: old downloaded `.rbxm` files stay unchanged; requires fresh Vehicles generation after deploy.
+
 ### ✅ [Vehicles Premium QA Gate] Кузов/руль/колёса усилены, мотоцикл стабилизирован, перед экспортом нужен LLM-review (2026-05-20, сессия 366)
 - **Проблема**: fresh Vehicles `.rbxm` всё ещё выглядел как простой красный race-frame без читаемого кузова/руля/детальных колёс; motorcycle имел те же проблемы и заваливался на бок; генерация выглядела слишком быстрой и не проходила реальную проверку перед выдачей.
 - **Root cause**: deterministic vehicle builder после сессии 365 уже добавлял части, но default silhouette всё ещё читался как открытое шасси; motorcycle part floor был слишком низким; `quality_review` stage был placeholder-ом до manifest build и не блокировал плохой `.rbxm`.
