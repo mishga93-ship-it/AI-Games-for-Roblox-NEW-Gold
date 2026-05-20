@@ -174,9 +174,18 @@ bash scripts/safe-deploy-functions.sh
 
 **Перед самым первым действием в сессии** (preflight):
 
-- `git status --short --branch` → понять, чьи правки уже в working tree.
-- `ls -lat cursor/changelog-*.md | head -3` → если последний changelog моложе твоего старта на минуты — другая сессия активна, не лезь в её файлы без явного разрешения пользователя.
-- `pgrep -fl xcodebuild` → если активный CLI-билд работает, не запускай свой; жди или используй `-derivedDataPath /tmp/...`.
+Запусти **один** скрипт — он показывает всё разом за 2 секунды:
+
+```bash
+bash scripts/preflight.sh
+```
+
+Скрипт покажет: модифицированные файлы (с временем последней правки → кто параллельно правит что), активные `firebase deploy` / `xcodebuild`, открытый ли Xcode и куда он смотрит, lock-файлы, последние 5 коммитов, unpushed count, stash, новые changelog'и. На основе этого решай — где работать, чего избежать, ждать или нет.
+
+Если скрипт по какой-то причине не работает — fallback вручную:
+- `git status --short --branch`
+- `pgrep -fl "firebase deploy"` + `pgrep -fl xcodebuild`
+- `ls -lat cursor/changelog-*.md | head -3`
 
 Это правило в паре с §0.6 (commit перед deploy) убирает корень «по кругу»: параллельные сессии больше не перетирают чужие правки молча.
 
