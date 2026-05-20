@@ -1467,12 +1467,32 @@ async function generateTShirtGraphicImage(promptText: string): Promise<Buffer> {
   if (!result.outputUrl) {
     throw new Error('Flux did not return T-Shirt graphic URL');
   }
-  const resp = await fetch(result.outputUrl);
+  // 2026-05-20: pipe Flux output through fal rembg so the white background
+  // becomes transparent. Roblox stretches the 512×512 decal across the front
+  // torso — with a solid white BG the design reads as a "white t-shirt with
+  // logo inside the t-shirt", which is what the user kept complaining about.
+  // Transparent BG → avatar's underlying shirt color shows around the print.
+  let downloadUrl = result.outputUrl;
+  const cleanedUrl = await removeImageBackgroundViaFal(result.outputUrl);
+  if (cleanedUrl) {
+    downloadUrl = cleanedUrl;
+  } else {
+    logger.warn('[generateTShirtGraphicImage] rembg returned null, using raw Flux output (white BG)');
+  }
+  const resp = await fetch(downloadUrl);
   if (!resp.ok) {
     throw new Error(`Failed to download T-Shirt graphic: ${resp.status}`);
   }
   const src = Buffer.from(await resp.arrayBuffer());
-  return sharp(src).resize(512, 512, { fit: 'cover' }).png().toBuffer();
+  // contain (not cover) + transparent background — preserves alpha and keeps
+  // the logo centred without cropping if rembg returned a non-square crop.
+  return sharp(src)
+    .resize(512, 512, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
 }
 
 export async function generateTShirtGraphic(
