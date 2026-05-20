@@ -3556,38 +3556,42 @@ function buildBlockyPetManifest(
     });
 
     // Attack ProximityPrompt — tap F to fire attack burst AND raycast
-    // damage forward. EggHatchScript flips Enabled=true after hatch.
+    // damage forward. Style=Custom means NO built-in prompt UI rectangle
+    // ever shows up (those huge boxes blocking the pet on screen). The
+    // prompt still fires Triggered when the player is in range and presses
+    // F. The BillboardGui above the pet shows the "[F] Fire" hint instead.
     scene.push({
       id: uuidv4(),
       className: 'ProximityPrompt',
       name: 'AttackPrompt',
       parentId: bodyPartId,
       properties: {
-        ActionText: `${element} attack (F)`,
+        ActionText: `${element} attack`,
         ObjectText: `Pet ${spec.name}`,
         KeyboardKeyCode: { __type: 'Enum', enumType: 'KeyCode', enumName: 'F' },
         HoldDuration: 0,
-        MaxActivationDistance: 12,
+        MaxActivationDistance: 8,
         RequiresLineOfSight: false,
         Enabled: false,
+        Style: { __type: 'Enum', enumType: 'ProximityPromptStyle', enumName: 'Custom' },
       },
     });
-    // Feed ProximityPrompt — T key, +1000 XP per tap. Lets the user spam
-    // evolution faster during testing; in shipping games game-designers
-    // can tune via PetConfig.XPBase/.XPGrowth NumberValues.
+    // Feed ProximityPrompt — same deal, Style=Custom (no big UI). Hint
+    // shown in the BillboardGui above the pet.
     scene.push({
       id: uuidv4(),
       className: 'ProximityPrompt',
       name: 'FeedPrompt',
       parentId: bodyPartId,
       properties: {
-        ActionText: 'Feed pet +1000 XP (T)',
+        ActionText: 'Feed pet (+1000 XP)',
         ObjectText: `Pet ${spec.name}`,
         KeyboardKeyCode: { __type: 'Enum', enumType: 'KeyCode', enumName: 'T' },
         HoldDuration: 0,
-        MaxActivationDistance: 10,
+        MaxActivationDistance: 6,
         RequiresLineOfSight: false,
         Enabled: false,
+        Style: { __type: 'Enum', enumType: 'ProximityPromptStyle', enumName: 'Custom' },
       },
     });
 

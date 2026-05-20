@@ -3732,34 +3732,53 @@ task.defer(function()
     end
 end)
 
--- ── BillboardGui name+level tag above the pet ──
--- Anchored to HRP so it tracks the pet wherever it moves. Updates on
--- Level / EvolutionStage changes; stage badge appears at Stage 2+ as a
--- visible cue that evolution actually happened.
+-- ── BillboardGui name+level tag above the pet (also serves as the
+-- controls hint, since AttackPrompt/FeedPrompt use Style=Custom and have
+-- no built-in UI). Two-line label so it doesn't get too wide.
 local nameGui = Instance.new("BillboardGui")
 nameGui.Name = "PetNameTag"
-nameGui.Size = UDim2.new(6, 0, 1.4, 0)
-nameGui.StudsOffset = Vector3.new(0, 3.2, 0)
+nameGui.Size = UDim2.new(7, 0, 2.4, 0)
+nameGui.StudsOffset = Vector3.new(0, 3.4, 0)
 nameGui.AlwaysOnTop = true
 nameGui.MaxDistance = 80
 nameGui.Parent = hrp
 local nameLabel = Instance.new("TextLabel")
-nameLabel.Size = UDim2.new(1, 0, 1, 0)
+nameLabel.Size = UDim2.new(1, 0, 0.55, 0)
+nameLabel.Position = UDim2.new(0, 0, 0, 0)
 nameLabel.BackgroundTransparency = 1
 nameLabel.TextColor3 = Color3.new(1, 1, 1)
 nameLabel.TextStrokeTransparency = 0
 nameLabel.TextScaled = true
 nameLabel.Font = Enum.Font.GothamBold
 nameLabel.Parent = nameGui
+local hintLabel = Instance.new("TextLabel")
+hintLabel.Name = "ControlsHint"
+hintLabel.Size = UDim2.new(1, 0, 0.45, 0)
+hintLabel.Position = UDim2.new(0, 0, 0.55, 0)
+hintLabel.BackgroundTransparency = 1
+hintLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+hintLabel.TextStrokeTransparency = 0.2
+hintLabel.TextScaled = true
+hintLabel.Font = Enum.Font.Gotham
+hintLabel.Text = ""  -- hidden until hatched
+hintLabel.Parent = nameGui
 local function refreshNameTag()
     local lvl = (cfg:FindFirstChild("Level") and cfg.Level.Value) or 1
     local stage = (cfg:FindFirstChild("EvolutionStage") and cfg.EvolutionStage.Value) or 1
     local stars = string.rep("⭐", math.max(stage - 1, 0))
     nameLabel.Text = string.format("%s — Lv %d %s", pet.Name, lvl, stars)
+    -- Show controls only after hatch — pre-hatch the egg's HatchPrompt
+    -- (default Style) already teaches the user.
+    if pet:GetAttribute("Hatched") then
+        hintLabel.Text = "[F] Fire attack  •  [T] Feed +1000 XP"
+    else
+        hintLabel.Text = ""
+    end
 end
 refreshNameTag()
 if cfg:FindFirstChild("Level") then cfg.Level.Changed:Connect(refreshNameTag) end
 if cfg:FindFirstChild("EvolutionStage") then cfg.EvolutionStage.Changed:Connect(refreshNameTag) end
+pet:GetAttributeChangedSignal("Hatched"):Connect(refreshNameTag)
 
 -- ── Auto-XP gain task — passive +50 XP/sec while hatched and below cap. ──
 -- Without this the user would have to manually feed for ~88s to see Stage 2.
@@ -4164,6 +4183,15 @@ pet:SetAttribute("Hatched", false)
 local function doHatch()
     if pet:GetAttribute("Hatched") then return end
     pet:SetAttribute("Hatched", true)
+
+    -- Disable + destroy HatchPrompt IMMEDIATELY so the player can't see
+    -- the "E" prompt lingering during the 0.6s egg-shrink animation.
+    -- Even if the EggBundle:Destroy() at +0.6s fails for any reason,
+    -- the prompt is already gone here.
+    if hatchPrompt and hatchPrompt:IsA("ProximityPrompt") then
+        hatchPrompt.Enabled = false
+        hatchPrompt:Destroy()
+    end
 
     if hatchSound and hatchSound:IsA("Sound") and hatchSound.SoundId ~= "" then
         hatchSound:Play()
