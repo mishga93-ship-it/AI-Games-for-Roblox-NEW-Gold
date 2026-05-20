@@ -6079,7 +6079,14 @@ function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestRev
   const hasController = manifest.scripts.some((script) => /vehiclecontroller/i.test(script.name)) || /vehiclecontroller/.test(text);
   const hasEngineSound = manifest.scene.some((node) => node.className === 'Sound' && /engine/i.test(node.name));
   const hasVfx = manifest.scene.some((node) => node.className === 'ParticleEmitter');
-  const requiredMarkers = vehicleType === 'car'
+  // Mesh-mode detection: when buildVehicleModelManifest emitted a MeshPart
+  // body (Meshy v6 GLB url present in metadata), the procedural family-car
+  // markers do not exist. QA must accept the mesh-mode car as a different
+  // structural shape rather than rejecting it for "missing FamilyCarBodyShell".
+  const hasMeshBody = manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
+  const requiredMarkers = hasMeshBody
+    ? ['VehicleMeshBody', 'DriveSeat', 'VehicleController']
+    : vehicleType === 'car'
     ? [
         'FamilyCarBodyShell',
         'FamilyCarCabinShell',
@@ -6259,7 +6266,13 @@ function deterministicVehicleReview(args: {
   if (!facts.hasEngineSound) issues.push('missing_engine_sound: vehicle has no engine Sound marker.');
   if (!facts.hasVfx) issues.push('missing_vfx: vehicle has no wheel/exhaust ParticleEmitter markers.');
   if (facts.driveMode === 'land_wheels' && facts.wheelCount < 2) issues.push(`missing_wheels: land vehicle has only ${facts.wheelCount} wheel part(s).`);
-  if (facts.vehicleType === 'car') {
+  // Detect mesh-mode export: the builder swapped the procedural family-sedan
+  // body for a single MeshPart named VehicleMeshBody when Meshy v6 returned a
+  // mesh URL. Mesh-mode does NOT have FamilyCar* / monochrome / vertical /
+  // glass-area / steering-visible heuristics applicable — the body is one
+  // mesh, not a stack of Blocks — so those car-specific checks are skipped.
+  const hasMeshBody = args.manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
+  if (facts.vehicleType === 'car' && !hasMeshBody) {
     if (facts.partCount < 105) issues.push(`low_car_detail: car has ${facts.partCount} physical/seat parts; premium vehicle exports need at least 105.`);
     if (facts.hasRaceFrameMarkers) issues.push('race_frame_silhouette: car still contains sports/race-frame body markers instead of the boxy family-car shell.');
     if (facts.missingMarkers.length > 0) issues.push(`missing_family_car_markers: ${facts.missingMarkers.join(', ')}.`);
@@ -6285,6 +6298,11 @@ function deterministicVehicleReview(args: {
     repairActions.push('Rebuild as a boxy low-poly family car, not a race-frame wedge.');
     repairActions.push('Add large readable body shell, doors, roof, windshield, grille, headlights, and visible steering wheel.');
     repairActions.push('Add chrome wheel rings/spokes and sidewall detail for all four wheels.');
+  } else if (facts.vehicleType === 'car' && hasMeshBody) {
+    // Mesh-mode car: only structural checks (DriveSeat / wheels / controller
+    // are already covered above). Trust the mesh body — its visual quality is
+    // Meshy's responsibility, not the deterministic heuristic battery's.
+    if (facts.missingMarkers.length > 0) issues.push(`missing_mesh_car_markers: ${facts.missingMarkers.join(', ')}.`);
   } else if (facts.vehicleType === 'motorcycle' || facts.vehicleType === 'bicycle') {
     if (facts.partCount < 52) issues.push(`low_two_wheel_detail: ${facts.vehicleType} has ${facts.partCount} physical/seat parts; expected detailed tank/forks/engine/fenders/brakes.`);
     if (facts.missingMarkers.length > 0) issues.push(`missing_two_wheel_markers: ${facts.missingMarkers.join(', ')}.`);
