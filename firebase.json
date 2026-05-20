@@ -31,8 +31,7 @@
         "firebase-debug.*.log"
       ],
       "predeploy": [
-        "npm --workspace packages/shared run build",
-        "npm --workspace apps/functions run build"
+        "bash scripts/predeploy-functions-check.sh"
       ]
     }
   ],
