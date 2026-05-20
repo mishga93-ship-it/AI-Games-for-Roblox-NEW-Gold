@@ -3615,15 +3615,33 @@ end
 -- -2.5 places a 2.5-stud-tall pet so its leg bottoms touch player feet.
 local FOLLOW_RADIUS = 5
 local ORBIT_SPEED = 0.25         -- revolutions per second
-local FLY_HEIGHT_OFFSET = 1      -- flying pets hover near player shoulder, not above head
+-- Flying pets hover ~3 studs above player HRP — that puts the pet's body at
+-- head/shoulder height (clearly visible flying companion). Combined with the
+-- procedural wing-flap animation below, the pet reads as "actually flying".
+local FLY_HEIGHT_OFFSET = 3
 -- Standing pets: HRP needs to sit just above floor level. Default R15 player
 -- HRP is ~2 studs above feet; pet authored leg-bottoms are ~0.5 studs below
 -- HRP. So pet HRP should be ~1.5 studs below player HRP (= ~0.5 studs above
--- player feet, which is roughly floor level for default baseplate). Earlier
--- value of -2.5 dropped pet below floor — invisible from above.
+-- player feet, which is roughly floor level for default baseplate).
 local STAND_HEIGHT_OFFSET = -1.5
 local LERP_ALPHA = 0.20          -- smoothing factor per Heartbeat
 local DEBUG = true               -- toggle to silence diagnostic prints
+
+-- Procedural Motor6D animation params. These drive the Motor6D.Transform of
+-- named joints in the rig (LeftWingJoint, TailJoint, LegJoints, Root) so the
+-- pet visually flaps / walks / bobs even when no Animation assets are wired.
+local WING_FLAP_SPEED = 8        -- radians per sec (sin frequency multiplier)
+local WING_FLAP_AMPLITUDE = 0.9  -- max radians of rz rotation
+local LEG_CYCLE_SPEED = 6        -- walk-step frequency (per sec)
+local LEG_CYCLE_AMPLITUDE = 0.45
+local TAIL_WAG_SPEED_IDLE = 1.5
+local TAIL_WAG_AMPLITUDE_IDLE = 0.12
+local TAIL_WAG_SPEED_MOVE = 4
+local TAIL_WAG_AMPLITUDE_MOVE = 0.30
+local BODY_BOB_SPEED_IDLE = 1.5
+local BODY_BOB_AMPLITUDE_IDLE = 0.05
+local BODY_BOB_SPEED_FLY = 3
+local BODY_BOB_AMPLITUDE_FLY = 0.30
 
 -- Diagnostic snapshot of pet so we can tell from Output if it's actually
 -- visible (any part with Transparency=1 or BrickColor that's near scene
@@ -3663,6 +3681,91 @@ local targetCFrame = pet:GetPivot()
 local snapped = false
 local lastDebugT = 0
 
+-- Collect Motor6D joints by name so the procedural animation step below can
+-- drive their .Transform property (CFrame) without needing any uploaded
+-- Animation assets.
+local jointByName = {}
+for _, descendant in ipairs(pet:GetDescendants()) do
+    if descendant:IsA("Motor6D") then
+        jointByName[descendant.Name] = descendant
+    end
+end
+local hasWings = jointByName["LeftWingJoint"] ~= nil and jointByName["RightWingJoint"] ~= nil
+print(string.format("[BlockyPetFollow] Found %d Motor6D joints. hasWings=%s",
+    (function() local n=0; for _ in pairs(jointByName) do n=n+1 end; return n end)(),
+    tostring(hasWings)))
+
+-- Helper: set a Motor6D's transform safely (no-op if joint missing).
+local function setMotor(name, cframe)
+    local m = jointByName[name]
+    if m then m.Transform = cframe end
+end
+
+-- Drive every rigged joint each Heartbeat. Pure sin-wave procedural anim —
+-- works for any pet that has the standard joint names produced by the
+-- fallback spec (LeftWingJoint, RightWingJoint, TailJoint, *LegJoint, Root).
+local function animateMotors(t, moving, isFlying)
+    -- Wings: continuous flap when flying, gentle when grounded but winged.
+    if hasWings then
+        local flapAmp = isFlying and WING_FLAP_AMPLITUDE or (WING_FLAP_AMPLITUDE * 0.3)
+        local flapSpeed = isFlying and WING_FLAP_SPEED or (WING_FLAP_SPEED * 0.5)
+        local s = math.sin(t * flapSpeed) * flapAmp
+        setMotor("LeftWingJoint",  CFrame.Angles(0, 0, -s))
+        setMotor("RightWingJoint", CFrame.Angles(0, 0, s))
+    end
+
+    -- Tail wag: faster + bigger when moving.
+    local wagSpeed = moving and TAIL_WAG_SPEED_MOVE or TAIL_WAG_SPEED_IDLE
+    local wagAmp = moving and TAIL_WAG_AMPLITUDE_MOVE or TAIL_WAG_AMPLITUDE_IDLE
+    setMotor("TailJoint", CFrame.Angles(0, math.sin(t * wagSpeed) * wagAmp, 0))
+    setMotor("TailTipJoint", CFrame.Angles(0, math.sin(t * wagSpeed + 0.5) * wagAmp * 0.5, 0))
+
+    -- Legs: walk cycle when ground-moving (diagonal trot pattern).
+    if moving and not isFlying then
+        local cycle = t * LEG_CYCLE_SPEED
+        local front = math.sin(cycle) * LEG_CYCLE_AMPLITUDE
+        local back = math.sin(cycle + math.pi) * LEG_CYCLE_AMPLITUDE
+        setMotor("LeftFrontLegJoint",  CFrame.Angles(front, 0, 0))
+        setMotor("RightFrontLegJoint", CFrame.Angles(back,  0, 0))
+        setMotor("LeftBackLegJoint",   CFrame.Angles(back,  0, 0))
+        setMotor("RightBackLegJoint",  CFrame.Angles(front, 0, 0))
+    elseif isFlying then
+        -- Legs tucked back when flying.
+        setMotor("LeftFrontLegJoint",  CFrame.Angles(-0.3, 0, 0))
+        setMotor("RightFrontLegJoint", CFrame.Angles(-0.3, 0, 0))
+        setMotor("LeftBackLegJoint",   CFrame.Angles(0.2, 0, 0))
+        setMotor("RightBackLegJoint",  CFrame.Angles(0.2, 0, 0))
+    else
+        -- Idle: legs at rest, tiny breathing motion.
+        local breathe = math.sin(t * 1.5) * 0.05
+        setMotor("LeftFrontLegJoint",  CFrame.Angles(breathe, 0, 0))
+        setMotor("RightFrontLegJoint", CFrame.Angles(breathe, 0, 0))
+        setMotor("LeftBackLegJoint",   CFrame.Angles(-breathe, 0, 0))
+        setMotor("RightBackLegJoint",  CFrame.Angles(-breathe, 0, 0))
+    end
+
+    -- Body bob via Root joint Y-offset. Flying = bigger up-down hover; idle/
+    -- walk = subtle breathing.
+    local bobSpeed = isFlying and BODY_BOB_SPEED_FLY or BODY_BOB_SPEED_IDLE
+    local bobAmp = isFlying and BODY_BOB_AMPLITUDE_FLY or BODY_BOB_AMPLITUDE_IDLE
+    setMotor("Root", CFrame.new(0, math.sin(t * bobSpeed) * bobAmp, 0))
+
+    -- Head sway: minor side-to-side when idle, follow-look (small forward
+    -- pitch) when moving.
+    if moving then
+        setMotor("Neck", CFrame.Angles(0.08, 0, 0))
+    else
+        setMotor("Neck", CFrame.Angles(0, math.sin(t * 1.2) * 0.06, 0))
+    end
+
+    -- Ears (if present, non-winged quadrupeds): bounce when moving.
+    if moving then
+        local earBounce = math.sin(t * LEG_CYCLE_SPEED * 2) * 0.15
+        setMotor("LeftEarJoint",  CFrame.Angles(earBounce, 0, -0.15))
+        setMotor("RightEarJoint", CFrame.Angles(earBounce, 0, 0.15))
+    end
+end
+
 if idleTrack then idleTrack:Play() end
 
 RunService.Heartbeat:Connect(function()
@@ -3688,24 +3791,32 @@ RunService.Heartbeat:Connect(function()
     end
     pet:PivotTo(targetCFrame)
 
+    -- Velocity-based state.
+    local v = hum.Velocity.Magnitude
+    local isFlying = cfg:FindFirstChild("IsFlying") and cfg.IsFlying.Value
+    local moving = v > 2
+
+    -- Procedural Motor6D animation — drives wings/legs/tail/body each frame.
+    animateMotors(tick(), moving, isFlying)
+
     -- Debug print every 2 seconds so user can see pet is alive.
     if DEBUG and tick() - lastDebugT > 2 then
         lastDebugT = tick()
-        print(string.format("[BlockyPetFollow] pet=%s player=%s",
+        print(string.format("[BlockyPetFollow] pet=%s player=%s moving=%s flying=%s",
             tostring(targetCFrame.Position),
-            tostring(hum.Position)))
+            tostring(hum.Position),
+            tostring(moving),
+            tostring(isFlying)))
     end
 
-    -- Animation track switching by player velocity.
-    local v = hum.Velocity.Magnitude
-    local isFlying = cfg:FindFirstChild("IsFlying") and cfg.IsFlying.Value
+    -- Optional uploaded Animation tracks (rbxassetid-backed). When AnimationId
+    -- is empty these no-op; procedural anim above does the visible work.
     if isFlying and flyTrack then
         if not flyTrack.IsPlaying then flyTrack:Play() end
         if idleTrack and idleTrack.IsPlaying then idleTrack:Stop() end
         if walkTrack and walkTrack.IsPlaying then walkTrack:Stop() end
         return
     end
-    local moving = v > 2
     if moving then
         if walkTrack and not walkTrack.IsPlaying then walkTrack:Play() end
         if idleTrack and idleTrack.IsPlaying then idleTrack:Stop() end
