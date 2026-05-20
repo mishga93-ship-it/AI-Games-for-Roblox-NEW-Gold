@@ -6516,54 +6516,56 @@ async function reviewVehicleManifestWithRepair(args: {
       vehicleQualityAttempt: attempt,
     });
     const deterministic = deterministicVehicleReview({ prompt: args.prompt, manifest });
-    // Performance: when deterministic already passed, skip the LLM/vision
-    // critic entirely. It is advisory anyway (deterministic gates export),
-    // so calling Anthropic + 3 text fallbacks for a manifest we already
-    // accepted just burns 30-60s per attempt with no behavioural effect.
-    // Only invoke the LLM when deterministic flagged a real issue and we
-    // want a second opinion + repair guidance.
-    let llmReview: ObbyQualityReviewResult | null = null;
-    if (deterministic.status === 'rejected') {
-      let previewPng: Buffer | undefined;
-      try {
-        const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
-        previewPng = createFurniturePreviewPng(scene, args.title);
-      } catch (renderErr) {
-        logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
-      }
-      llmReview = await runVehicleLlmQualityReview({
-        prompt: args.prompt,
-        title: args.title,
-        facts: vehicleManifestFacts(manifest),
-        deterministic,
-        manifest,
-        previewPng,
-      });
+    // ALWAYS render the preview PNG and run the LLM/vision critic on it.
+    // The user explicitly asked for "LLM looks at the rendered model before
+    // delivering the file" — skipping the vision step when deterministic
+    // passes silently turned the review into a text-only gate again.
+    let previewPng: Buffer | undefined;
+    try {
+      const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
+      previewPng = createFurniturePreviewPng(scene, args.title);
+    } catch (renderErr) {
+      logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
     }
-    // Hard gate = deterministic only. LLM/vision verdict is advisory: it can
-    // surface reasons and repair actions, but cannot reject a build that the
-    // deterministic checks have already approved. This avoids the failure mode
-    // where the LLM/vision reviewer rejects perfectly fine cars and the user is
-    // stuck in an infinite retry loop with no clear path forward.
+    const llmReview = await runVehicleLlmQualityReview({
+      prompt: args.prompt,
+      title: args.title,
+      facts: vehicleManifestFacts(manifest),
+      deterministic,
+      manifest,
+      previewPng,
+    });
+    // BOTH the deterministic battery AND the LLM/vision critic can block the
+    // export. Deterministic catches measurable structural failures
+    // (monochrome / flat layers / no glass / hidden steering); vision catches
+    // anything the rules can't see (proportions wrong, doesn't look like a
+    // car, wheels too big, etc.) — that was the whole point of adding the
+    // image-aware critic. We still ship when the LLM is unavailable, so a
+    // transient provider outage doesn't sink every export.
     const llmAvailable = !!llmReview;
     const llmRejected = llmReview?.status === 'rejected';
+    const llmSeriousRejection = llmRejected && (llmReview?.score ?? 0) < 55;
     const review: ObbyQualityReviewResult = llmReview
       ? {
           ...llmReview,
-          // Only deterministic.status === 'rejected' actually blocks export.
-          // LLM "rejected" downgrades to warning when deterministic passes.
+          // Reject when deterministic rejects OR when LLM/vision gives a
+          // serious rejection (status=rejected AND score<55). A merely
+          // skeptical LLM (rejected but score>=55) downgrades to warning so
+          // the export still ships — the model is borderline, not broken.
           status: deterministic.status === 'rejected'
             ? 'rejected'
-            : (llmRejected ? 'warning' : llmReview.status),
+            : (llmSeriousRejection ? 'rejected' : (llmRejected ? 'warning' : llmReview.status)),
           score: Math.round(((deterministic.score) + (llmReview.score ?? deterministic.score)) / 2),
           reviewer: 'deterministic+llm',
           reasons: [...deterministic.reasons, ...(llmReview.reasons ?? [])].slice(0, 10),
           repairActions: [...deterministic.repairActions, ...(llmReview.repairActions ?? [])].slice(0, 10),
           userMessage: deterministic.status === 'rejected'
             ? deterministic.userMessage
-            : (llmRejected
-                ? `Vehicle exported with an AI-flagged concern: ${llmReview.userMessage}. The deterministic safety checks all passed, so the model still ships.`
-                : llmReview.userMessage),
+            : (llmSeriousRejection
+                ? `Vision QA rejected this export: ${llmReview.userMessage}`
+                : (llmRejected
+                    ? `Vehicle exported with an AI-flagged concern: ${llmReview.userMessage}. The deterministic safety checks all passed, so the model still ships.`
+                    : llmReview.userMessage)),
         }
       : {
           // LLM provider failure no longer blocks the export. Deterministic
@@ -6583,10 +6585,10 @@ async function reviewVehicleManifestWithRepair(args: {
     attempts.push(review);
     bestManifest = manifest;
     bestReview = review;
-    // Exit early once the deterministic checks pass. We don't gate on LLM
-    // score anymore; the deterministic battery already covers monochrome
-    // silhouette, vertical layering, glass area, and steering visibility.
-    if (deterministic.status !== 'rejected') {
+    // Exit when BOTH gates accept the build (deterministic not rejected AND
+    // vision/LLM did not seriously reject it). Otherwise loop into another
+    // repairBoost attempt — that's the whole point of having a vision review.
+    if (review.status !== 'rejected') {
       return { manifest, metadata: { ...metadata, vehicleQualityReviewAttemptCount: attempt, vehicleQualityLlmAdvisory: llmAvailable ? llmReview?.status : 'unavailable' }, review, attempts };
     }
     metadata = {
