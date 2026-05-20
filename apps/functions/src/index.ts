@@ -15743,6 +15743,87 @@ function inferItemColorsFromPrompt(prompt: string): { primary?: string; accent?:
   return {};
 }
 
+// Per-color hex map for vehicle inference. Picks readable, mildly-saturated
+// shades that work well in Roblox SmoothPlastic with the default ambient
+// lighting. Both English and Russian color words are supported because the
+// brief title is typically authored by an iOS chat LLM that may emit either.
+// JS `\b` is ASCII-only, so "красная" never matches `\b(красн)\b`. English
+// words use full ASCII word boundaries; Russian stems use left-boundary only
+// (Cyrillic OR ASCII letter must not precede) and any suffix is allowed so
+// "красн" matches красный/красная/красные.
+const vrx = (englishAlts: string, russianStems?: string): RegExp => {
+  const enPart = `(?<![A-Za-z0-9])(?:${englishAlts})(?![A-Za-z0-9])`;
+  const ruPart = russianStems ? `(?<![\\u0400-\\u04FF])(?:${russianStems})` : '';
+  return new RegExp(ruPart ? `${enPart}|${ruPart}` : enPart, 'iu');
+};
+
+const VEHICLE_COLOR_HEX: Array<{ rx: RegExp; hex: string; isWhite?: boolean; isBlack?: boolean }> = [
+  { rx: vrx('white',          'бел'),                                      hex: '#F2F4F7', isWhite: true },
+  { rx: vrx('black',          'ч[её]рн|темн|тёмн(?!о[\\s-]*син)'),         hex: '#15161A', isBlack: true },
+  { rx: vrx('silver|chrome|metallic', 'серебр|хром|металлик'),             hex: '#B8BCC2' },
+  { rx: vrx('grey|gray',      'сер[аоыйыую]'),                             hex: '#5A5F66' },
+  { rx: vrx('red',            'красн|алый|алая'),                          hex: '#E03A2E' },
+  { rx: vrx('orange',         'оранж'),                                    hex: '#F08A1C' },
+  { rx: vrx('yellow',         'ж[её]лт'),                                  hex: '#F5C32C' },
+  { rx: vrx('green',          'зел[её]н'),                                 hex: '#3CB561' },
+  { rx: vrx('blue',           'син[ийяьее]|голуб'),                        hex: '#2E7DD7' },
+  { rx: vrx('navy',           'т[её]мно[\\s-]*син'),                       hex: '#1B3A6B' },
+  { rx: vrx('cyan|teal',      'бирюзов'),                                  hex: '#26B0B0' },
+  { rx: vrx('purple|violet',  'фиолет|сирен'),                             hex: '#8E44C2' },
+  { rx: vrx('pink|magenta',   'розов'),                                    hex: '#E84CA8' },
+  { rx: vrx('brown|tan',      'коричнев'),                                 hex: '#7A4A2B' },
+  { rx: vrx('gold|golden',    'золот'),                                    hex: '#D4AF37' },
+];
+
+function inferVehicleColorsFromPrompt(prompt: string): { primary?: string; accent?: string; glow?: string } {
+  const p = (prompt || '').toLowerCase();
+
+  // Theme-based shortcuts win over loose color matches because "police car"
+  // implies a specific livery even if only one color word is mentioned.
+  if (vrx('police|cop[\\s-]?car', 'полицейск|полиция').test(p))      return { primary: '#2E7DD7', accent: '#F2F4F7', glow: '#FF3030' };
+  if (vrx('taxi', 'такси').test(p))                                  return { primary: '#F5C32C', accent: '#15161A', glow: '#FF8800' };
+  if (vrx('school[\\s-]?bus', 'школьн').test(p) && /bus|автобус/iu.test(p)) return { primary: '#F5C32C', accent: '#15161A', glow: '#FFB100' };
+  if (vrx('fire[\\s-]?truck', 'пожарн').test(p))                     return { primary: '#E03A2E', accent: '#F2F4F7', glow: '#FF3000' };
+  if (vrx('ambulance', 'скор').test(p) && /ambulance|помощ/iu.test(p)) return { primary: '#F2F4F7', accent: '#E03A2E', glow: '#FF3030' };
+  if (vrx('military|army|tank', 'военн|армейск|танк').test(p))       return { primary: '#4A5934', accent: '#22281B', glow: '#FFB100' };
+  if (vrx('neon|cyber', 'неон|кибер').test(p))                       return { primary: '#15161A', accent: '#E84CA8', glow: '#00FFFF' };
+
+  // Multi-word color hits — scan left-to-right and keep first two distinct
+  // matches in order. "blue and white" -> primary blue, accent white.
+  const hits: Array<{ hex: string; index: number; isWhite?: boolean; isBlack?: boolean }> = [];
+  for (const entry of VEHICLE_COLOR_HEX) {
+    const m = entry.rx.exec(p);
+    if (m && m.index !== undefined) {
+      hits.push({ hex: entry.hex, index: m.index, isWhite: entry.isWhite, isBlack: entry.isBlack });
+    }
+  }
+  hits.sort((a, b) => a.index - b.index);
+  const distinct: typeof hits = [];
+  for (const h of hits) {
+    if (!distinct.some((existing) => existing.hex === h.hex)) distinct.push(h);
+    if (distinct.length === 2) break;
+  }
+
+  if (distinct.length === 0) return {};
+
+  const primaryHit = distinct[0];
+  const accentHit = distinct[1];
+
+  // Pick a sensible default accent if the brief only named one color: white
+  // body gets a dark accent so the car still reads two-tone; coloured body
+  // gets a dark or light accent depending on luminance.
+  let primary = primaryHit.hex;
+  let accent = accentHit?.hex;
+  if (!accent) {
+    accent = primaryHit.isWhite ? '#15161A' : primaryHit.isBlack ? '#B8BCC2' : '#15161A';
+  }
+
+  // Glow defaults to a complementary saturated tone so headlights pop.
+  const glow = /\b(cartoon|arcade|trending|bright|мульт|яркий)\b/i.test(p) ? '#FFEB3B' : '#FFD24A';
+
+  return { primary, accent, glow };
+}
+
 function parseItemScriptFiles(
   raw: string,
   itemType: ItemType,
@@ -23868,6 +23949,20 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     if (!meta.glowColor    && inferred.glow)    { meta.glowColor    = inferred.glow;    changed = true; }
     if (changed) {
       logger.info('[Item] injected prompt-inferred colors', {
+        jobId, primary: meta.primaryColor, accent: meta.accentColor, glow: meta.glowColor,
+      });
+      currentJob = { ...currentJob, metadata: meta };
+    }
+  }
+  if (isVehicle) {
+    const meta = { ...(currentJob.metadata ?? {}) } as Record<string, unknown>;
+    const inferred = inferVehicleColorsFromPrompt(`${job.prompt} ${typeof meta.title === 'string' ? meta.title : ''} ${typeof meta.theme === 'string' ? meta.theme : ''}`);
+    let changed = false;
+    if (!meta.primaryColor && inferred.primary) { meta.primaryColor = inferred.primary; changed = true; }
+    if (!meta.accentColor  && inferred.accent)  { meta.accentColor  = inferred.accent;  changed = true; }
+    if (!meta.glowColor    && inferred.glow)    { meta.glowColor    = inferred.glow;    changed = true; }
+    if (changed) {
+      logger.info('[Vehicle] injected prompt-inferred colors', {
         jobId, primary: meta.primaryColor, accent: meta.accentColor, glow: meta.glowColor,
       });
       currentJob = { ...currentJob, metadata: meta };
