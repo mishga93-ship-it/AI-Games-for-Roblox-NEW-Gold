@@ -23775,24 +23775,49 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
   const explicitClothingType = typeof job.metadata?.clothingType === 'string'
     ? job.metadata.clothingType
     : undefined;
-  // 2026-05-20: T-Shirt is ALWAYS classic_2d (Roblox has no layered T-Shirt
-  // AccessoryType). The LLM was occasionally setting clothingMode="layered_3d"
-  // in GDD even for T-Shirt, which routed jobs into Meshy/3D. Hard-guard here so
-  // backend never trusts a bad clothingMode for T-Shirt. Also reflect this on
-  // job.metadata so downstream code sees consistent state.
-  if (explicitClothingType === 't_shirt' && job.metadata) {
-    if (job.metadata.clothingMode !== 'classic_2d') {
+  // 2026-05-20: Clothing mode/type contradiction guard. The LLM was setting
+  // clothingMode="layered_3d" in GDD even for items the user explicitly picked
+  // as 2D Classic, silently routing jobs into the Meshy/3D pipeline. Invariants
+  // enforced here:
+  //   1. clothingType==='t_shirt'           → mode is ALWAYS classic_2d
+  //      (Roblox has no layered T-Shirt AccessoryType).
+  //   2. clothingType startsWith 'classic_' → mode is ALWAYS classic_2d
+  //      (iOS promotes type to layered_* whenever user picks 3D, so
+  //      classic_* type + layered_3d mode is an impossible combination —
+  //      must be an LLM hallucination).
+  //   3. clothingType startsWith 'layered_' → mode is ALWAYS layered_3d.
+  if (job.metadata) {
+    if (explicitClothingType === 't_shirt' && job.metadata.clothingMode !== 'classic_2d') {
       logger.warn('[processCharacter3DJob] T-Shirt arrived with non-classic_2d mode — forcing classic_2d', {
         jobId,
         receivedMode: job.metadata.clothingMode,
       });
       job.metadata.clothingMode = 'classic_2d';
+    } else if (typeof explicitClothingType === 'string'
+        && explicitClothingType.startsWith('classic_')
+        && job.metadata.clothingMode === 'layered_3d') {
+      logger.warn('[processCharacter3DJob] classic_* clothingType arrived with layered_3d mode — forcing classic_2d', {
+        jobId,
+        clothingType: explicitClothingType,
+      });
+      job.metadata.clothingMode = 'classic_2d';
+    } else if (typeof explicitClothingType === 'string'
+        && explicitClothingType.startsWith('layered_')
+        && job.metadata.clothingMode !== 'layered_3d') {
+      logger.warn('[processCharacter3DJob] layered_* clothingType arrived with non-layered_3d mode — forcing layered_3d', {
+        jobId,
+        clothingType: explicitClothingType,
+        receivedMode: job.metadata.clothingMode,
+      });
+      job.metadata.clothingMode = 'layered_3d';
     }
   }
-  const isLayeredClothing = (job.kind === 'clothing_3d' && explicitClothingType !== 't_shirt')
+  const isLayeredClothing = (job.kind === 'clothing_3d' && explicitClothingType !== 't_shirt'
+        && !(typeof explicitClothingType === 'string' && explicitClothingType.startsWith('classic_')))
     || (typeof job.metadata?.clothingMode === 'string'
         && job.metadata.clothingMode === 'layered_3d'
-        && explicitClothingType !== 't_shirt');
+        && explicitClothingType !== 't_shirt'
+        && !(typeof explicitClothingType === 'string' && explicitClothingType.startsWith('classic_')));
   const isTShirt = !isWeapon && !isVehicle && !isItem && !isFurniture && !isLayeredClothing
     && explicitClothingType === 't_shirt';
   const isClothingTexture = !isWeapon && !isVehicle && !isItem && !isFurniture && !isLayeredClothing && !isTShirt

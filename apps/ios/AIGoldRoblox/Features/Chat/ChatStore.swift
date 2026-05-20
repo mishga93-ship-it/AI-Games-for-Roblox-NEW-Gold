@@ -4018,20 +4018,30 @@ final class ChatStore: ObservableObject {
         draft.scale = remoteGDD.scale.capitalized
         draft.style = remoteGDD.visualStyle ?? "Bright trending style"
         draft.monetization = (remoteGDD.monetization ?? ["VIP", "Boosts"]).joined(separator: ", ")
-        // 2026-05-20: T-Shirt is ALWAYS classic_2d — Roblox has no layered T-Shirt
-        // AccessoryType, so the welcome-picker hard-locks it. Never let the LLM
-        // override this via GDD (the model was hallucinating clothingMode="layered_3d"
-        // and routing T-Shirt jobs into the Meshy/3D pipeline). Same protection for
-        // any clothingType the user has already locked together with a mode — we
-        // only adopt LLM's clothingMode when nothing was set yet.
+        // 2026-05-20: Mode source-of-truth for clothing is the iOS picker, never
+        // the LLM. The Smart Interview prompt asks the LLM to write clothingMode
+        // into GDD, but the model was hallucinating "layered_3d" for items the
+        // user picked as 2D Classic (T-Shirt, Classic Shirt/Pants/Outfit). That
+        // silently routed jobs into Meshy/3D and the user saw "I picked 2D but
+        // it went 3D".
+        //
+        // Trust order:
+        //   1. T-Shirt → always classic_2d (Roblox has no layered T-Shirt
+        //      AccessoryType — non-negotiable).
+        //   2. Welcome-picker locked clothingType (t_shirt / classic_* / layered_*) →
+        //      ignore GDD.clothingMode entirely. Mode comes from welcome-picker
+        //      (T-Shirt) or from the "Generate as 2D Classic / 3D Layered"
+        //      quick-reply chat sent at end of interview.
+        //   3. No clothingType set yet (raw text → LLM-driven flow) → accept
+        //      GDD.clothingMode as the LLM's best guess.
         if let mode = remoteGDD.clothingMode {
-            let lockedTShirt = draft.clothingType == "t_shirt"
-            let alreadyPicked = (draft.clothingMode?.isEmpty == false)
-            if lockedTShirt {
+            if draft.clothingType == "t_shirt" {
                 draft.clothingMode = "classic_2d"
-            } else if !alreadyPicked {
+            } else if draft.clothingType == nil || (draft.clothingType?.isEmpty == true) {
                 draft.clothingMode = mode
             }
+            // else: clothingType was set via welcome-picker — ignore GDD.clothingMode,
+            // user will pick via the mode-picker chat at end of interview.
         }
 	        if contentSubcategory == "npcs" || contentSubcategory == "roast_npc" {
 	            draft.npcTheme = remoteGDD.theme
