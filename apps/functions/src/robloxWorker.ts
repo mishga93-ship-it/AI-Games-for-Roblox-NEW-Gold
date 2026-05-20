@@ -3431,6 +3431,149 @@ function buildBlockyPetManifest(
     });
   }
 
+  // ── Element-themed effects + sounds + attack ─────────────────────────
+  // All driven by element + rarity from PetConfig. Hooks read by
+  // PetFollowScript at runtime: it listens to the AttackPrompt and ramps
+  // the AttackBurst ParticleEmitter on tap.
+  const bodyPartId = partNameToId.get('Body');
+  const snoutPartId = partNameToId.get('Snout') ?? bodyPartId; // dragons have Snout, dogs/cats might not
+  if (bodyPartId) {
+    // Element → RGB triplet (0..1 floats matching Color3.new).
+    const elementColor = ((): [number, number, number] => {
+      switch (element) {
+        case 'Fire':    return [1.00, 0.55, 0.10];
+        case 'Ice':     return [0.55, 0.85, 1.00];
+        case 'Shadow':  return [0.35, 0.10, 0.45];
+        case 'Light':   return [1.00, 1.00, 0.55];
+        case 'Nature':  return [0.45, 1.00, 0.45];
+        case 'Tech':    return [0.00, 0.90, 1.00];
+        default:        return [0.85, 0.85, 0.85];
+      }
+    })();
+    // Aura particle — continuous emitter around body for "elemental" feel.
+    scene.push({
+      id: uuidv4(),
+      className: 'ParticleEmitter',
+      name: 'AuraParticle',
+      parentId: bodyPartId,
+      properties: {
+        Color: {
+          __type: 'ColorSequence',
+          keypoints: [
+            { time: 0, r: elementColor[0], g: elementColor[1], b: elementColor[2] },
+            { time: 1, r: elementColor[0] * 0.6, g: elementColor[1] * 0.6, b: elementColor[2] * 0.6 },
+          ],
+        },
+        Texture: 'rbxasset://textures/particles/sparkles_main.dds',
+        Lifetime: { __type: 'NumberRange', min: 0.8, max: 1.6 },
+        Rate: element === 'Neutral' ? 0 : 8,
+        Speed: { __type: 'NumberRange', min: 0.5, max: 2.0 },
+        Size: { __type: 'NumberSequence', keypoints: [
+          { time: 0, value: 0.45, envelope: 0.05 },
+          { time: 1, value: 0.05, envelope: 0 },
+        ] },
+        Transparency: { __type: 'NumberSequence', keypoints: [
+          { time: 0, value: 0.2, envelope: 0 },
+          { time: 1, value: 1, envelope: 0 },
+        ] },
+        LightEmission: 0.6,
+        LightInfluence: 0,
+        Enabled: true,
+      },
+    });
+
+    // Attack burst — disabled by default, PetFollowScript turns on for ~0.5s on attack.
+    scene.push({
+      id: uuidv4(),
+      className: 'ParticleEmitter',
+      name: 'AttackBurst',
+      parentId: snoutPartId,
+      properties: {
+        Color: {
+          __type: 'ColorSequence',
+          keypoints: [
+            { time: 0, r: elementColor[0], g: elementColor[1], b: elementColor[2] },
+            { time: 1, r: 1, g: 1, b: 1 },
+          ],
+        },
+        Texture: 'rbxasset://textures/particles/fire_main.dds',
+        Lifetime: { __type: 'NumberRange', min: 0.4, max: 0.7 },
+        Rate: 0,                   // off by default
+        Speed: { __type: 'NumberRange', min: 25, max: 35 },
+        SpreadAngle: { __type: 'Vector2', x: 15, y: 15 },
+        Size: { __type: 'NumberSequence', keypoints: [
+          { time: 0, value: 1.5, envelope: 0 },
+          { time: 1, value: 0.3, envelope: 0 },
+        ] },
+        Transparency: { __type: 'NumberSequence', keypoints: [
+          { time: 0, value: 0.0, envelope: 0 },
+          { time: 1, value: 1, envelope: 0 },
+        ] },
+        LightEmission: 0.9,
+        Enabled: false,
+      },
+    });
+
+    // Attack ProximityPrompt — tap F near pet to fire the attack burst.
+    scene.push({
+      id: uuidv4(),
+      className: 'ProximityPrompt',
+      name: 'AttackPrompt',
+      parentId: bodyPartId,
+      properties: {
+        ActionText: `${element} attack`,
+        ObjectText: `Pet ${spec.name}`,
+        KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'F' },
+        HoldDuration: 0,
+        MaxActivationDistance: 12,
+        RequiresLineOfSight: false,
+      },
+    });
+
+    // Sound slots — empty SoundIds; user can paste their preferred Roblox
+    // asset IDs in Studio. PetFollowScript plays them by name at runtime.
+    for (const sname of ['IdleSound', 'WalkSound', 'FlapSound', 'AttackSound']) {
+      scene.push({
+        id: uuidv4(),
+        className: 'Sound',
+        name: sname,
+        parentId: bodyPartId,
+        properties: {
+          SoundId: '',  // user can paste rbxassetid here
+          Looped: sname === 'IdleSound' || sname === 'WalkSound' || sname === 'FlapSound',
+          Volume: 0.5,
+          RollOffMaxDistance: 30,
+        },
+      });
+    }
+  }
+
+  // Rarity-themed outline highlight — visible from any distance. Common =
+  // dim grey, Mythic = bright pink/gold. Cheap "this pet is special" cue.
+  const rarityRGB = ((): [number, number, number] => {
+    switch (rarity) {
+      case 'Mythic':    return [1.00, 0.30, 0.80];
+      case 'Legendary': return [1.00, 0.65, 0.05];
+      case 'Epic':      return [0.65, 0.30, 1.00];
+      case 'Rare':      return [0.20, 0.55, 1.00];
+      case 'Uncommon':  return [0.30, 0.90, 0.30];
+      case 'Common':
+      default:          return [0.75, 0.75, 0.75];
+    }
+  })();
+  scene.push({
+    id: uuidv4(),
+    className: 'Highlight',
+    name: 'RarityOutline',
+    parentId: petModelId,
+    properties: {
+      FillTransparency: 1,
+      OutlineColor: { __type: 'Color3', r: rarityRGB[0], g: rarityRGB[1], b: rarityRGB[2] },
+      OutlineTransparency: rarity === 'Common' ? 0.7 : 0.15,
+      Adornee: { __type: 'InstanceRef', refId: petModelId },
+    },
+  });
+
   // AnimationController + Animation children for Idle / Walk / Fly. The
   // animation-stage in index.ts populates animationAssetIds (rbxassetid://
   // strings after Open Cloud upload) or attaches a KeyframeSequence as a

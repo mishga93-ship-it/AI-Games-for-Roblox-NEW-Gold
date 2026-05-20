@@ -3689,9 +3689,61 @@ local function computeAnimRotations(t, moving, isFlying)
     return r
 end
 
+-- ── Sounds + attack effect wiring ───────────────────────────────────
+-- Sounds + ProximityPrompt + AttackBurst ParticleEmitter live under Body.
+-- We grab them once at startup; missing entries are silently ignored.
+local body = pet:FindFirstChild("Body")
+local snout = pet:FindFirstChild("Snout") or body
+local sounds = {}
+if body then
+    for _, sn in ipairs({"IdleSound", "WalkSound", "FlapSound", "AttackSound"}) do
+        local s = body:FindFirstChild(sn)
+        if s and s:IsA("Sound") then sounds[sn] = s end
+    end
+end
+local attackPrompt = body and body:FindFirstChild("AttackPrompt")
+local attackBurst = snout and snout:FindFirstChild("AttackBurst")
+local auraParticle = body and body:FindFirstChild("AuraParticle")
+
+local function safePlay(name)
+    local s = sounds[name]
+    if s and s.SoundId and s.SoundId ~= "" then
+        if not s.IsPlaying then s:Play() end
+    end
+end
+local function safeStop(name)
+    local s = sounds[name]
+    if s and s.IsPlaying then s:Stop() end
+end
+
+-- Fire attack: enable AttackBurst for 0.4s, play AttackSound once, ramp
+-- aura briefly, optional camera shake hint (set Attribute that a client
+-- LocalScript could read).
+if attackPrompt and attackPrompt:IsA("ProximityPrompt") then
+    attackPrompt.Triggered:Connect(function()
+        if attackBurst and attackBurst:IsA("ParticleEmitter") then
+            attackBurst.Enabled = true
+            -- Emit a one-shot burst + ramp down.
+            attackBurst:Emit(40)
+            task.delay(0.5, function() attackBurst.Enabled = false end)
+        end
+        local atk = sounds["AttackSound"]
+        if atk and atk.SoundId and atk.SoundId ~= "" then atk:Play() end
+        if auraParticle and auraParticle:IsA("ParticleEmitter") then
+            local prev = auraParticle.Rate
+            auraParticle.Rate = prev * 4
+            task.delay(0.6, function() auraParticle.Rate = prev end)
+        end
+        -- Signal so client scripts (if any) can shake camera.
+        pet:SetAttribute("LastAttackTick", tick())
+    end)
+end
+
 local currentHRP = hrp.CFrame
 local snapped = false
 local lastDebugT = 0
+local lastMoving = false
+local lastFlying = false
 
 RunService.Heartbeat:Connect(function()
     local owner = Players.LocalPlayer or Players:GetPlayers()[1]
@@ -3726,6 +3778,25 @@ RunService.Heartbeat:Connect(function()
         local offset = partOffsets[p.name]
         local localAnim = animRot[p.name] or CFrame.new()
         p.part.CFrame = baseCFrame * offset * localAnim
+    end
+
+    -- Sound state machine — start/stop looped sounds when state changes.
+    if isFlying ~= lastFlying or moving ~= lastMoving then
+        if isFlying then
+            safePlay("FlapSound")
+            safeStop("WalkSound")
+            safeStop("IdleSound")
+        elseif moving then
+            safePlay("WalkSound")
+            safeStop("FlapSound")
+            safeStop("IdleSound")
+        else
+            safePlay("IdleSound")
+            safeStop("WalkSound")
+            safeStop("FlapSound")
+        end
+        lastFlying = isFlying
+        lastMoving = moving
     end
 
     if DEBUG and t - lastDebugT > 2 then
