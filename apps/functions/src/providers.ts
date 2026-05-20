@@ -1054,6 +1054,13 @@ export interface OutfitDescription {
   pantsMaterial: string;
   shirtDesign: string;
   pantsDesign: string;
+  // 2026-05-20: NEW fields — *just* the graphic motif (no garment words).
+  // The compositor uses these to render the chest/leg print on transparent
+  // background. Including words like "shirt", "t-shirt", "hoodie" in the
+  // Flux prompt caused the model to draw a tilted t-shirt silhouette as
+  // the "print", which the user kept calling "принт футболки".
+  shirtPrintMotif: string;
+  pantsPrintMotif: string;
   primaryColor: string;
   secondaryColor: string;
 }
@@ -1393,9 +1400,25 @@ export async function analyzeOutfitFromConcept(imageUrl: string): Promise<Outfit
     pantsMaterial: asText(parsed.pantsMaterial, 'solid colored fabric'),
     shirtDesign: asText(parsed.shirtDesign, 'bright red casual t-shirt with clean solid color'),
     pantsDesign: asText(parsed.pantsDesign, 'dark blue denim jeans'),
+    shirtPrintMotif: sanitizePrintMotif(asText(parsed.shirtPrintMotif, 'a single bold geometric shape in the center')),
+    pantsPrintMotif: sanitizePrintMotif(asText(parsed.pantsPrintMotif, 'a thin vertical stripe down the side')),
     primaryColor: sanitizeHexColor(parsed.primaryColor, '#CC2222'),
     secondaryColor: sanitizeHexColor(parsed.secondaryColor, '#1A1A2E'),
   };
+}
+
+// 2026-05-20: Belt-and-braces guard for the print motif strings sent to
+// Flux. Even with the strongest Gemini prompt, the model occasionally
+// slips in "t-shirt" / "hoodie" / "shirt" anyway, which immediately makes
+// Flux draw a tilted garment silhouette instead of a flat print. Strip
+// every garment noun out before we send it to the image model.
+function sanitizePrintMotif(input: string): string {
+  const banned = /\b(t[\-\s]?shirts?|tshirts?|shirts?|hoodies?|sweaters?|jackets?|coats?|garments?|tops?|dresses?|pants?|jeans?|trousers?|shorts?|skirts?|sleeves?|collars?|cuffs?|hems?|fabric|clothing|outfit|apparel|wearables?|mannequins?)\b/gi;
+  const stripped = input.replace(banned, '').replace(/\s+/g, ' ').trim();
+  if (!stripped || stripped.length < 6) {
+    return 'a single bold geometric shape in the center';
+  }
+  return stripped;
 }
 
 // 2026-05-20: New "transparent print" variant — generates the design as a
@@ -1408,19 +1431,29 @@ export async function analyzeOutfitFromConcept(imageUrl: string): Promise<Outfit
 async function generateClothingDesignTransparent(
   designDescription: string,
 ): Promise<Buffer> {
+  // 2026-05-20: Defense-in-depth. The input is already sanitised in
+  // sanitizePrintMotif() before reaching here, but be safe anyway —
+  // strip any remaining garment nouns just before we hand to Flux.
+  const sanitised = designDescription
+    .replace(/\b(t[\-\s]?shirts?|tshirts?|shirts?|hoodies?|sweaters?|jackets?|coats?|garments?|tops?|dresses?|pants?|jeans?|trousers?|shorts?|skirts?|sleeves?|collars?|cuffs?|hems?|fabric|clothing|outfit|apparel|wearables?|mannequins?)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'a single bold geometric shape in the center';
   const prompt =
-    `Standalone graphic print: ${designDescription}. ` +
-    'This is a PRINT/STICKER design that will be applied as a flat decal to the CHEST of a Roblox shirt. ' +
-    'Draw ONLY the design itself (icon, emblem, symbol, art motif, or pattern motif), centered on a PURE WHITE background. ' +
-    'ABSOLUTELY DO NOT draw: ' +
-    '- A shirt shape, t-shirt outline, or garment silhouette ' +
-    '- Sleeves, collar, fabric folds, garment edges ' +
-    '- A mannequin, person, body, character, or torso ' +
-    '- A product photo or 3D mockup of clothing ' +
-    'Just the standalone graphic floating on white, like a printable patch design or sticker artwork. ' +
-    'Square 512x512 composition, design fills ~60-70% of the canvas (centered with breathing room around it), bold simple shapes, high contrast, crisp edges. ' +
-    'Roblox-friendly cartoon style, readable from a small avatar view (~80px tall on screen). ' +
-    'No real-world brand logos (Nike, Adidas, Supreme, etc.), no copyrighted characters, no profanity, no text/letters unless explicitly requested in the description.';
+    `STICKER DESIGN ONLY: ${sanitised}. ` +
+    '\n\nThis is a flat 2D STICKER / PATCH / DECAL. Think Telegram sticker, Discord emoji, or printable iron-on patch — NOT a piece of clothing.\n\n' +
+    'STRICT RULES — violations will be rejected:\n' +
+    '1. Draw the graphic motif ONLY. Pretend you are designing a single icon for an app — no garment, no clothing, no fashion product.\n' +
+    '2. Output composition: ONE centered subject taking up the middle ~50-65% of the 512×512 canvas. Pure white background everywhere else.\n' +
+    '3. ABSOLUTELY FORBIDDEN visuals (these are auto-reject):\n' +
+    '   • Any t-shirt, shirt, hoodie, jacket, dress, vest, top, or any other garment silhouette — even tilted or partially shown.\n' +
+    '   • Sleeves, collars, fabric folds, neck holes, garment seams, or any cloth-like geometry.\n' +
+    '   • A 3D rendering of clothing, a clothing product mockup, or a clothing photo.\n' +
+    '   • A mannequin, person, body, torso, head, character, or figure of any kind.\n' +
+    '   • A flat-lay top-down photograph of laid-out clothing.\n' +
+    '4. ALLOWED visuals: bold cartoon icon, stylised emblem, geometric shape, simple flat illustration, paint splatter, pattern motif, sticker-style logo (no real brands).\n' +
+    '5. Style: Roblox cartoon — bold simple shapes, high contrast, crisp edges, flat colors, no gradients, no shading, no 3D, no shadows, no wrinkles. Readable at small avatar scale (~80px tall on screen).\n' +
+    '6. No real-world brand logos (Nike, Adidas, Supreme, etc.). No copyrighted characters. No profanity. No text/letters unless the description explicitly asks for them.\n\n' +
+    'Final reminder: this is a STICKER on white background. If you start drawing fabric, sleeves, or any garment outline, STOP and draw just the icon instead.';
   const result = await runFal('flux-pro/v1.1', {
     endpoint: 'fal-ai/flux-pro/v1.1',
     payload: {
@@ -1543,25 +1576,32 @@ async function buildTShirtDebugGraphic(): Promise<Buffer> {
 }
 
 async function generateTShirtGraphicImage(promptText: string): Promise<Buffer> {
-  const cleanPrompt = promptText.trim().slice(0, 1200);
-  // 2026-05-19: PRINT/LOGO ONLY — Roblox classic T-Shirt is a decal applied to
-  // the front torso. User sees "design on top of their existing shirt", not a
-  // whole new shirt. So we must NOT draw a t-shirt SHAPE — just the logo/emblem
-  // itself, alpha-transparent everywhere else, so the avatar's underlying shirt
-  // color shows around the print.
+  // 2026-05-20: strip garment nouns from the user-supplied description before
+  // sending to Flux — the model otherwise drew tilted t-shirt silhouettes
+  // because the prompt itself contained "t-shirt", "shirt" etc. Same fix as
+  // generateClothingDesignTransparent.
+  const sanitised = promptText
+    .trim()
+    .slice(0, 1200)
+    .replace(/\b(t[\-\s]?shirts?|tshirts?|shirts?|hoodies?|sweaters?|jackets?|coats?|garments?|tops?|dresses?|pants?|jeans?|trousers?|shorts?|skirts?|sleeves?|collars?|cuffs?|hems?|fabric|clothing|outfit|apparel|wearables?|mannequins?)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'a single bold geometric shape in the center';
   const prompt =
-    `Standalone graphic logo/emblem design: ${cleanPrompt}. ` +
-    'IMPORTANT: This is a PRINT/STICKER design that will be applied as a flat decal to a character\'s chest in Roblox. ' +
-    'Draw ONLY the design itself (icon, emblem, symbol, or art motif), centered on a PURE WHITE background. ' +
-    'ABSOLUTELY DO NOT draw: ' +
-    '- A t-shirt shape or t-shirt outline ' +
-    '- Sleeves, collar, fabric folds, garment edges ' +
-    '- A mannequin, person, body, character, or torso ' +
-    '- A product photo or 3D mockup of a shirt ' +
-    'Just the standalone graphic floating on white, like a printable patch design or sticker artwork. ' +
-    'Square 512x512 composition, design fills ~60-70% of the canvas (centered with breathing room), bold simple shapes, high contrast, crisp edges. ' +
-    'Roblox-friendly cartoon style, readable from a small avatar view (~80px tall on screen). ' +
-    'No real-world brands, no copyrighted characters, no profanity, no text/letters unless explicitly requested in the prompt above.';
+    `STICKER DESIGN ONLY: ${sanitised}. ` +
+    '\n\nThis is a flat 2D STICKER / PATCH / DECAL. Think Telegram sticker, Discord emoji, or printable iron-on patch — NOT a piece of clothing.\n\n' +
+    'STRICT RULES — violations will be rejected:\n' +
+    '1. Draw the graphic motif ONLY. Pretend you are designing a single icon for an app — no garment, no clothing, no fashion product.\n' +
+    '2. Output composition: ONE centered subject taking up the middle ~50-65% of the 512×512 canvas. Pure white background everywhere else.\n' +
+    '3. ABSOLUTELY FORBIDDEN visuals (these are auto-reject):\n' +
+    '   • Any t-shirt, shirt, hoodie, jacket, dress, vest, top, or any other garment silhouette — even tilted or partially shown.\n' +
+    '   • Sleeves, collars, fabric folds, neck holes, garment seams, or any cloth-like geometry.\n' +
+    '   • A 3D rendering of clothing, a clothing product mockup, or a clothing photo.\n' +
+    '   • A mannequin, person, body, torso, head, character, or figure of any kind.\n' +
+    '   • A flat-lay top-down photograph of laid-out clothing.\n' +
+    '4. ALLOWED visuals: bold cartoon icon, stylised emblem, geometric shape, simple flat illustration, paint splatter, pattern motif, sticker-style logo (no real brands).\n' +
+    '5. Style: Roblox cartoon — bold simple shapes, high contrast, crisp edges, flat colors, no gradients, no shading, no 3D, no shadows, no wrinkles. Readable at small avatar scale (~80px tall on screen).\n' +
+    '6. No real-world brand logos (Nike, Adidas, Supreme, etc.). No copyrighted characters. No profanity. No text/letters unless the description explicitly asks for them.\n\n' +
+    'Final reminder: this is a STICKER on white background. If you start drawing fabric, sleeves, or any garment outline, STOP and draw just the icon instead.';
   const result = await runFal('flux-pro/v1.1', {
     endpoint: 'fal-ai/flux-pro/v1.1',
     payload: {
@@ -1646,7 +1686,11 @@ export async function generateShirtTexture(
       // it does for T-Shirts). The compositor's primaryColor canvas shows
       // around the logo → looks like a real printed graphic on a coloured
       // shirt, not "white square with a logo inside on a green shirt".
-      const fabricTexture = await generateClothingDesignTransparent(outfit.shirtDesign);
+      //
+      // CRITICAL: use shirtPrintMotif (NOT shirtDesign) — the motif field
+      // is garment-noun-free, so Flux draws a flat sticker instead of a
+      // tilted t-shirt silhouette (which was happening with shirtDesign).
+      const fabricTexture = await generateClothingDesignTransparent(outfit.shirtPrintMotif);
 
       const composed = await compositeShirtTemplate({
         frontTorso: fabricTexture,
@@ -1684,8 +1728,10 @@ export async function generatePantsTexture(
       // 2026-05-20 quality refactor: pants design also on transparent BG.
       // For pants the "design" is typically a stripe/seam/pocket detail —
       // works the same way as the shirt logo: rembg drops the white fill
-      // so it composites cleanly over the primary leg color.
-      const fabricTexture = await generateClothingDesignTransparent(outfit.pantsDesign);
+      // so it composites cleanly over the primary leg color. Uses the
+      // garment-noun-free pantsPrintMotif (NOT pantsDesign) to keep Flux
+      // from drawing pants-shaped silhouettes.
+      const fabricTexture = await generateClothingDesignTransparent(outfit.pantsPrintMotif);
 
       const composed = await compositePantsTemplate({
         leftLeg: fabricTexture,
