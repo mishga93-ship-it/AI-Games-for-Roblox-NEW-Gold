@@ -149,6 +149,20 @@ bash scripts/safe-deploy-functions.sh
 2. Если видишь файл `.git/index.lock` или ошибку `Another git process seems to be running` — **подожди 30-60с**, не убивай lock. Это идёт коммит другой сессии.
 3. `git log --oneline -3` — проверь, не появились ли коммиты, которых ты не делал, с того момента как начал работу. Если да — твой `git log` уже не свежий, перечитай последние changelog'и и адаптируй план.
 4. Стажь только файлы своей задачи по имени (`git add path/to/file`), не `git add .` — иначе утащишь чужие правки в свой коммит.
+5. **Stage и commit должны быть атомарными — никогда не оставляй staged правки висеть.** В этом репо `.git/index` общий для всех параллельных сессий. Если ты сделал `git add` и не закоммитил мгновенно, **любая** другая сессия, которая запустит `git commit`, **подхватит твои staged hunk'и в свой коммит** под своим message и автором (инцидент 2026-05-20: коммит `32dfcb1` подобрал чужие 2 строки в robloxWorker.ts).
+
+   **Рецепты атомарности**:
+   - **Целые файлы** — `git commit -m "msg" path/to/file` (одна команда, не трогает shared index для других файлов).
+   - **Частичные hunk'и (через patch)** — приватный index:
+     ```bash
+     TMP_INDEX=$(mktemp)
+     cp .git/index "$TMP_INDEX"
+     GIT_INDEX_FILE="$TMP_INDEX" git apply --cached my.patch
+     GIT_INDEX_FILE="$TMP_INDEX" git commit -m "msg"
+     rm "$TMP_INDEX"
+     ```
+     Так твои staged hunk'и живут в изолированном индексе и не пересекаются с shared.
+   - **Никогда не делай `git add file.ts` + thinking pause + `git commit`** — окно между этими двумя командами это race condition.
 
 **Перед `xcodebuild` (или любой iOS-сборкой через CLI):**
 
