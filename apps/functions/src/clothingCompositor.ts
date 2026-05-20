@@ -8,19 +8,24 @@ export interface TextureRegion {
 }
 
 export interface ShirtTemplatePatches {
+  // 2026-05-20 quality refactor: only the front-torso patch is required.
+  // Pro UGC shirts put a bold focal design on the front, leave the back
+  // clean, and use a solid accent color on the sleeves. Undefined patches
+  // fall back to primaryColorHex (torso) or secondaryColorHex (sleeves).
   frontTorso: Buffer;
-  backTorso: Buffer;
-  leftSleeve: Buffer;
-  rightSleeve: Buffer;
+  backTorso?: Buffer;
+  leftSleeve?: Buffer;
+  rightSleeve?: Buffer;
   primaryColorHex: string;
   secondaryColorHex?: string;
 }
 
 export interface PantsTemplatePatches {
-  frontTorso: Buffer;
-  backTorso: Buffer;
+  // Same recipe for pants: front legs get the design, back/sides solid.
+  frontTorso?: Buffer;
+  backTorso?: Buffer;
   leftLeg: Buffer;
-  rightLeg: Buffer;
+  rightLeg?: Buffer;
   primaryColorHex: string;
   secondaryColorHex?: string;
 }
@@ -133,25 +138,44 @@ async function patchForRegion(source: Buffer, region: TextureRegion): Promise<{ 
 export async function compositeShirtTemplate(patches: ShirtTemplatePatches): Promise<Buffer> {
   assertRegionBounds(SHIRT_REGIONS, 'shirt');
 
+  // 2026-05-20 quality refactor (research-backed: Roblox DevForum, UGCraft,
+  // mydesigns.io, JetLearn 2026 guides — "negative space + bold silhouette
+  // beats maximum coverage every time"):
+  //
+  //   - frontTorso  → AI design, big and bold (this is the only face the
+  //                   player ever sees from camera default)
+  //   - backTorso   → solid primaryColor (clean back, like real UGC shirts)
+  //   - torsoUp/Down/Left/Right → solid primaryColor (these are 44-64px
+  //                   wrap-edge strips — design here just creates visible
+  //                   seams along the collar/waist/sides)
+  //   - left/right sleeves (ALL 6 faces each) → solid secondaryColor (accent
+  //                   contrast color, like a "sleeve band" on athletic
+  //                   shirts — looks intentional and clean)
+  //
+  // The old code stamped the SAME AI design into all 18 UV regions, which
+  // is what produced the "tiled repeating logo everywhere" look the user
+  // complained about.
+  const accent = patches.secondaryColorHex ?? patches.primaryColorHex;
   const overlays = await Promise.all([
     patchForRegion(patches.frontTorso, SHIRT_REGIONS.torsoFront),
-    patchForRegion(patches.backTorso, SHIRT_REGIONS.torsoBack),
-    patchForRegion(patches.frontTorso, SHIRT_REGIONS.torsoRight),
-    patchForRegion(patches.frontTorso, SHIRT_REGIONS.torsoLeft),
-    patchForRegion(patches.frontTorso, SHIRT_REGIONS.torsoUp),
-    patchForRegion(patches.frontTorso, SHIRT_REGIONS.torsoDown),
-    patchForRegion(patches.leftSleeve, SHIRT_REGIONS.leftArmLeft),
-    patchForRegion(patches.leftSleeve, SHIRT_REGIONS.leftArmFront),
-    patchForRegion(patches.leftSleeve, SHIRT_REGIONS.leftArmRight),
-    patchForRegion(patches.leftSleeve, SHIRT_REGIONS.leftArmBack),
-    patchForRegion(patches.leftSleeve, SHIRT_REGIONS.leftArmUp),
-    patchForRegion(patches.leftSleeve, SHIRT_REGIONS.leftArmDown),
-    patchForRegion(patches.rightSleeve, SHIRT_REGIONS.rightArmLeft),
-    patchForRegion(patches.rightSleeve, SHIRT_REGIONS.rightArmFront),
-    patchForRegion(patches.rightSleeve, SHIRT_REGIONS.rightArmRight),
-    patchForRegion(patches.rightSleeve, SHIRT_REGIONS.rightArmBack),
-    patchForRegion(patches.rightSleeve, SHIRT_REGIONS.rightArmUp),
-    patchForRegion(patches.rightSleeve, SHIRT_REGIONS.rightArmDown),
+    patches.backTorso
+      ? patchForRegion(patches.backTorso, SHIRT_REGIONS.torsoBack)
+      : { input: await solidRegion(SHIRT_REGIONS.torsoBack, patches.primaryColorHex), left: SHIRT_REGIONS.torsoBack.x, top: SHIRT_REGIONS.torsoBack.y },
+    // Sleeves: solid accent color across every face.
+    { input: await solidRegion(SHIRT_REGIONS.leftArmLeft, accent),   left: SHIRT_REGIONS.leftArmLeft.x,   top: SHIRT_REGIONS.leftArmLeft.y },
+    { input: await solidRegion(SHIRT_REGIONS.leftArmFront, accent),  left: SHIRT_REGIONS.leftArmFront.x,  top: SHIRT_REGIONS.leftArmFront.y },
+    { input: await solidRegion(SHIRT_REGIONS.leftArmRight, accent),  left: SHIRT_REGIONS.leftArmRight.x,  top: SHIRT_REGIONS.leftArmRight.y },
+    { input: await solidRegion(SHIRT_REGIONS.leftArmBack, accent),   left: SHIRT_REGIONS.leftArmBack.x,   top: SHIRT_REGIONS.leftArmBack.y },
+    { input: await solidRegion(SHIRT_REGIONS.leftArmUp, accent),     left: SHIRT_REGIONS.leftArmUp.x,     top: SHIRT_REGIONS.leftArmUp.y },
+    { input: await solidRegion(SHIRT_REGIONS.leftArmDown, accent),   left: SHIRT_REGIONS.leftArmDown.x,   top: SHIRT_REGIONS.leftArmDown.y },
+    { input: await solidRegion(SHIRT_REGIONS.rightArmLeft, accent),  left: SHIRT_REGIONS.rightArmLeft.x,  top: SHIRT_REGIONS.rightArmLeft.y },
+    { input: await solidRegion(SHIRT_REGIONS.rightArmFront, accent), left: SHIRT_REGIONS.rightArmFront.x, top: SHIRT_REGIONS.rightArmFront.y },
+    { input: await solidRegion(SHIRT_REGIONS.rightArmRight, accent), left: SHIRT_REGIONS.rightArmRight.x, top: SHIRT_REGIONS.rightArmRight.y },
+    { input: await solidRegion(SHIRT_REGIONS.rightArmBack, accent),  left: SHIRT_REGIONS.rightArmBack.x,  top: SHIRT_REGIONS.rightArmBack.y },
+    { input: await solidRegion(SHIRT_REGIONS.rightArmUp, accent),    left: SHIRT_REGIONS.rightArmUp.x,    top: SHIRT_REGIONS.rightArmUp.y },
+    { input: await solidRegion(SHIRT_REGIONS.rightArmDown, accent),  left: SHIRT_REGIONS.rightArmDown.x,  top: SHIRT_REGIONS.rightArmDown.y },
+    // torsoUp/Down/Left/Right are intentionally NOT overlaid — the base
+    // canvas (primaryColorHex) shows through cleanly on those strips.
   ]);
 
   return sharp({
@@ -167,23 +191,36 @@ export async function compositeShirtTemplate(patches: ShirtTemplatePatches): Pro
 export async function compositePantsTemplate(patches: PantsTemplatePatches): Promise<Buffer> {
   assertRegionBounds(PANTS_REGIONS, 'pants');
 
+  // 2026-05-20 quality refactor — same recipe as shirts:
+  //   - leftLeg front face  → AI design (the leg face that's visible from the
+  //                           camera default — front of thighs/knees)
+  //   - rightLeg front face → same AI design (mirrored visually because both
+  //                           legs look the same on real pants)
+  //   - all other leg faces → solid accent color
+  //   - hip/waist torso strip → solid primaryColor
+  const accent = patches.secondaryColorHex ?? patches.primaryColorHex;
+  const designFront = patches.leftLeg;
   const overlays = await Promise.all([
-    patchForRegion(patches.frontTorso, PANTS_REGIONS.torsoFront),
-    patchForRegion(patches.backTorso, PANTS_REGIONS.torsoBack),
-    patchForRegion(patches.frontTorso, PANTS_REGIONS.torsoRight),
-    patchForRegion(patches.frontTorso, PANTS_REGIONS.torsoLeft),
-    patchForRegion(patches.leftLeg, PANTS_REGIONS.leftLegLeft),
-    patchForRegion(patches.leftLeg, PANTS_REGIONS.leftLegFront),
-    patchForRegion(patches.leftLeg, PANTS_REGIONS.leftLegRight),
-    patchForRegion(patches.leftLeg, PANTS_REGIONS.leftLegBack),
-    patchForRegion(patches.leftLeg, PANTS_REGIONS.leftLegUp),
-    patchForRegion(patches.leftLeg, PANTS_REGIONS.leftLegDown),
-    patchForRegion(patches.rightLeg, PANTS_REGIONS.rightLegLeft),
-    patchForRegion(patches.rightLeg, PANTS_REGIONS.rightLegFront),
-    patchForRegion(patches.rightLeg, PANTS_REGIONS.rightLegRight),
-    patchForRegion(patches.rightLeg, PANTS_REGIONS.rightLegBack),
-    patchForRegion(patches.rightLeg, PANTS_REGIONS.rightLegUp),
-    patchForRegion(patches.rightLeg, PANTS_REGIONS.rightLegDown),
+    // Pants cover hip/waist with the SAME design on front (visible under
+    // a tucked-in shirt), accent on back/sides.
+    { input: await solidRegion(PANTS_REGIONS.torsoFront, patches.primaryColorHex), left: PANTS_REGIONS.torsoFront.x, top: PANTS_REGIONS.torsoFront.y },
+    { input: await solidRegion(PANTS_REGIONS.torsoBack, patches.primaryColorHex),  left: PANTS_REGIONS.torsoBack.x,  top: PANTS_REGIONS.torsoBack.y },
+    { input: await solidRegion(PANTS_REGIONS.torsoLeft, patches.primaryColorHex),  left: PANTS_REGIONS.torsoLeft.x,  top: PANTS_REGIONS.torsoLeft.y },
+    { input: await solidRegion(PANTS_REGIONS.torsoRight, patches.primaryColorHex), left: PANTS_REGIONS.torsoRight.x, top: PANTS_REGIONS.torsoRight.y },
+    // Left leg: design on the FRONT face only, accent everywhere else.
+    patchForRegion(designFront, PANTS_REGIONS.leftLegFront),
+    { input: await solidRegion(PANTS_REGIONS.leftLegLeft, accent),  left: PANTS_REGIONS.leftLegLeft.x,  top: PANTS_REGIONS.leftLegLeft.y },
+    { input: await solidRegion(PANTS_REGIONS.leftLegRight, accent), left: PANTS_REGIONS.leftLegRight.x, top: PANTS_REGIONS.leftLegRight.y },
+    { input: await solidRegion(PANTS_REGIONS.leftLegBack, accent),  left: PANTS_REGIONS.leftLegBack.x,  top: PANTS_REGIONS.leftLegBack.y },
+    { input: await solidRegion(PANTS_REGIONS.leftLegUp, accent),    left: PANTS_REGIONS.leftLegUp.x,    top: PANTS_REGIONS.leftLegUp.y },
+    { input: await solidRegion(PANTS_REGIONS.leftLegDown, accent),  left: PANTS_REGIONS.leftLegDown.x,  top: PANTS_REGIONS.leftLegDown.y },
+    // Right leg: same — design on front face, accent elsewhere.
+    patchForRegion(patches.rightLeg ?? designFront, PANTS_REGIONS.rightLegFront),
+    { input: await solidRegion(PANTS_REGIONS.rightLegLeft, accent),  left: PANTS_REGIONS.rightLegLeft.x,  top: PANTS_REGIONS.rightLegLeft.y },
+    { input: await solidRegion(PANTS_REGIONS.rightLegRight, accent), left: PANTS_REGIONS.rightLegRight.x, top: PANTS_REGIONS.rightLegRight.y },
+    { input: await solidRegion(PANTS_REGIONS.rightLegBack, accent),  left: PANTS_REGIONS.rightLegBack.x,  top: PANTS_REGIONS.rightLegBack.y },
+    { input: await solidRegion(PANTS_REGIONS.rightLegUp, accent),    left: PANTS_REGIONS.rightLegUp.x,    top: PANTS_REGIONS.rightLegUp.y },
+    { input: await solidRegion(PANTS_REGIONS.rightLegDown, accent),  left: PANTS_REGIONS.rightLegDown.x,  top: PANTS_REGIONS.rightLegDown.y },
   ]);
 
   return sharp({

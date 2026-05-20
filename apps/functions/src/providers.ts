@@ -1398,6 +1398,65 @@ export async function analyzeOutfitFromConcept(imageUrl: string): Promise<Outfit
   };
 }
 
+// 2026-05-20: New "transparent print" variant — generates the design as a
+// centered logo/graphic/emblem on PURE WHITE, then pipes through fal rembg
+// so the white drops out to alpha. The compositor stamps this onto the
+// front-torso UV region, and the avatar's underlying primaryColor shows
+// around the print. Same recipe the T-Shirt path uses (and which the user
+// confirmed produces a "real graphic on a shirt" look instead of "white
+// square with logo inside a white shirt").
+async function generateClothingDesignTransparent(
+  designDescription: string,
+): Promise<Buffer> {
+  const prompt =
+    `Standalone graphic print: ${designDescription}. ` +
+    'This is a PRINT/STICKER design that will be applied as a flat decal to the CHEST of a Roblox shirt. ' +
+    'Draw ONLY the design itself (icon, emblem, symbol, art motif, or pattern motif), centered on a PURE WHITE background. ' +
+    'ABSOLUTELY DO NOT draw: ' +
+    '- A shirt shape, t-shirt outline, or garment silhouette ' +
+    '- Sleeves, collar, fabric folds, garment edges ' +
+    '- A mannequin, person, body, character, or torso ' +
+    '- A product photo or 3D mockup of clothing ' +
+    'Just the standalone graphic floating on white, like a printable patch design or sticker artwork. ' +
+    'Square 512x512 composition, design fills ~60-70% of the canvas (centered with breathing room around it), bold simple shapes, high contrast, crisp edges. ' +
+    'Roblox-friendly cartoon style, readable from a small avatar view (~80px tall on screen). ' +
+    'No real-world brand logos (Nike, Adidas, Supreme, etc.), no copyrighted characters, no profanity, no text/letters unless explicitly requested in the description.';
+  const result = await runFal('flux-pro/v1.1', {
+    endpoint: 'fal-ai/flux-pro/v1.1',
+    payload: {
+      prompt,
+      image_size: { width: 512, height: 512 },
+      num_inference_steps: 28,
+      num_images: 1,
+      guidance_scale: 5.5,
+      safety_tolerance: '5',
+    },
+  });
+  if (!result.outputUrl) {
+    throw new Error('Flux did not return clothing design URL');
+  }
+  // Background removal via fal rembg → transparent alpha around the logo.
+  let downloadUrl = result.outputUrl;
+  const cleanedUrl = await removeImageBackgroundViaFal(result.outputUrl);
+  if (cleanedUrl) {
+    downloadUrl = cleanedUrl;
+  } else {
+    logger.warn('[generateClothingDesignTransparent] rembg returned null, using raw Flux output (white BG)');
+  }
+  const resp = await fetch(downloadUrl);
+  if (!resp.ok) {
+    throw new Error(`Failed to download clothing design: ${resp.status}`);
+  }
+  const src = Buffer.from(await resp.arrayBuffer());
+  return sharp(src)
+    .resize(512, 512, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+}
+
 async function generateClothingDesign(
   designDescription: string,
   width: number,
@@ -1582,13 +1641,18 @@ export async function generateShirtTexture(
     const outfit = await analyzeOutfitFromConcept(conceptImageUrl);
 
     for (let attempt = 1; attempt <= SAFETY_MAX_RETRIES; attempt++) {
-      const fabricTexture = await generateClothingDesign(outfit.shirtDesign, 512, 512);
+      // 2026-05-20 quality refactor: render the front-torso design on a
+      // transparent background (rembg removes the white fill the same way
+      // it does for T-Shirts). The compositor's primaryColor canvas shows
+      // around the logo → looks like a real printed graphic on a coloured
+      // shirt, not "white square with a logo inside on a green shirt".
+      const fabricTexture = await generateClothingDesignTransparent(outfit.shirtDesign);
 
       const composed = await compositeShirtTemplate({
         frontTorso: fabricTexture,
-        backTorso: fabricTexture,
-        leftSleeve: fabricTexture,
-        rightSleeve: fabricTexture,
+        // backTorso / sleeves intentionally omitted — compositor fills them
+        // with primaryColor (back) and secondaryColor (sleeves) for the
+        // clean "pro UGC" look.
         primaryColorHex: outfit.primaryColor,
         secondaryColorHex: outfit.secondaryColor,
       });
@@ -1617,13 +1681,16 @@ export async function generatePantsTexture(
     const outfit = await analyzeOutfitFromConcept(conceptImageUrl);
 
     for (let attempt = 1; attempt <= SAFETY_MAX_RETRIES; attempt++) {
-      const fabricTexture = await generateClothingDesign(outfit.pantsDesign, 512, 512);
+      // 2026-05-20 quality refactor: pants design also on transparent BG.
+      // For pants the "design" is typically a stripe/seam/pocket detail —
+      // works the same way as the shirt logo: rembg drops the white fill
+      // so it composites cleanly over the primary leg color.
+      const fabricTexture = await generateClothingDesignTransparent(outfit.pantsDesign);
 
       const composed = await compositePantsTemplate({
-        frontTorso: fabricTexture,
-        backTorso: fabricTexture,
         leftLeg: fabricTexture,
-        rightLeg: fabricTexture,
+        // rightLeg / front/back torso / other faces intentionally omitted —
+        // compositor fills with primary (waist) / secondary (other faces).
         primaryColorHex: outfit.primaryColor,
         secondaryColorHex: outfit.secondaryColor,
       });
