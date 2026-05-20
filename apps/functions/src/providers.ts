@@ -2166,56 +2166,90 @@ function fallbackBlockyPetSpec(classification: PetClassification): BlockyPetSpec
   const isDragon = classification.speciesType === 'dragon' || rig === 'Winged';
   const hasWings = rig === 'Winged' || classification.isFlying;
 
-  // Base quadruped (works for dog/cat/wolf/fox/dragon/unicorn body).
-  const parts: BlockyPetSpec['parts'] = [
-    { name: 'Body',  shape: 'Block', size: [1.8, 1.3, 2.6], position: [0, 1.1, 0],     color: 'primary',   role: 'primary_part' },
-    { name: 'Head',  shape: 'Block', size: [1.2, 1.1, 1.3], position: [0, 1.6, -1.7],  color: 'primary',   role: 'head' },
-    { name: 'Snout', shape: 'Block', size: [0.7, 0.5, 0.7], position: [0, 1.45, -2.3], color: 'secondary', role: 'snout' },
-    { name: 'Nose',  shape: 'Ball',  size: [0.25, 0.25, 0.25], position: [0, 1.55, -2.55], color: 'accent', role: 'nose' },
-    { name: 'EyeL',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [-0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
-    { name: 'EyeR',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
-    { name: 'Tail',  shape: 'Cylinder', size: [0.4, 1.6, 0.4], position: [0, 1.4, 1.8], rotation: [35,0,0], color: 'primary', role: 'tail' },
-    { name: 'LegFL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, -1.0], color: 'primary', role: 'leg_front_left' },
-    { name: 'LegFR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, -1.0],  color: 'primary', role: 'leg_front_right' },
-    { name: 'LegBL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, 0.9],  color: 'primary', role: 'leg_back_left' },
-    { name: 'LegBR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, 0.9],   color: 'primary', role: 'leg_back_right' },
-  ];
+  const parts: BlockyPetSpec['parts'] = [];
+  const joints: BlockyPetSpec['joints'] = [];
 
-  const joints: BlockyPetSpec['joints'] = [
-    { name: 'Root', part0: 'HumanoidRootPart', part1: 'Body' },
-    { name: 'Neck', part0: 'Body', part1: 'Head' },
-    { name: 'SnoutJoint', part0: 'Head', part1: 'Snout' },
-    { name: 'NoseJoint',  part0: 'Snout', part1: 'Nose' },
-    { name: 'LeftEyeJoint',  part0: 'Head', part1: 'EyeL' },
-    { name: 'RightEyeJoint', part0: 'Head', part1: 'EyeR' },
-    { name: 'TailJoint', part0: 'Body', part1: 'Tail' },
-    { name: 'LeftFrontLegJoint',  part0: 'Body', part1: 'LegFL' },
-    { name: 'RightFrontLegJoint', part0: 'Body', part1: 'LegFR' },
-    { name: 'LeftBackLegJoint',   part0: 'Body', part1: 'LegBL' },
-    { name: 'RightBackLegJoint',  part0: 'Body', part1: 'LegBR' },
-  ];
-
-  // Species-specific add-ons.
   if (isDragon) {
-    // Dragons get horns on the head (Wedges pointing up+back) and a spike row
-    // along the back. Eyes are slightly larger and meaner. No floppy ears.
+    // Dragon silhouette: bigger body, distinct neck, elongated muzzle, big
+    // horns, 5 dorsal spikes, 2-segment tail, large wings, claw accents.
+    // ~21 parts — within the 24-part validator cap.
     parts.push(
-      { name: 'HornL', shape: 'Wedge', size: [0.30, 0.7, 0.30], position: [-0.35, 2.30, -1.55], rotation: [-15, 0, -8], color: 'accent', role: 'horn' },
-      { name: 'HornR', shape: 'Wedge', size: [0.30, 0.7, 0.30], position: [0.35, 2.30, -1.55],  rotation: [-15, 0,  8], color: 'accent', role: 'horn' },
-      { name: 'Spike1', shape: 'Wedge', size: [0.30, 0.45, 0.45], position: [0, 1.85, -0.6], color: 'accent', role: 'spike' },
-      { name: 'Spike2', shape: 'Wedge', size: [0.30, 0.5, 0.45], position: [0, 1.90, 0.0], color: 'accent', role: 'spike' },
-      { name: 'Spike3', shape: 'Wedge', size: [0.30, 0.45, 0.45], position: [0, 1.85, 0.6], color: 'accent', role: 'spike' },
-      { name: 'TailTip', shape: 'Wedge', size: [0.40, 0.55, 0.40], position: [0, 2.0, 2.6], rotation: [35, 0, 0], color: 'accent', role: 'spike' },
+      { name: 'Body',     shape: 'Block', size: [2.0, 1.3, 3.0], position: [0, 1.05, 0],     color: 'primary',   role: 'primary_part' },
+      { name: 'Neck',     shape: 'Block', size: [0.9, 1.1, 0.9], position: [0, 1.45, -1.7],  rotation: [-15, 0, 0], color: 'primary',   role: 'detail' },
+      { name: 'Head',     shape: 'Block', size: [1.4, 1.0, 1.6], position: [0, 2.05, -2.3],  color: 'primary',   role: 'head' },
+      { name: 'Snout',    shape: 'Block', size: [1.0, 0.6, 1.3], position: [0, 1.85, -3.25], color: 'primary',   role: 'snout' },
+      { name: 'Jaw',      shape: 'Block', size: [0.85, 0.35, 1.0], position: [0, 1.55, -3.10], color: 'secondary', role: 'detail' },
+      { name: 'Nose',     shape: 'Ball',  size: [0.32, 0.32, 0.32], position: [0, 1.95, -3.85], color: 'accent', role: 'nose' },
+      { name: 'EyeL',     shape: 'Ball',  size: [0.30, 0.30, 0.30], position: [-0.45, 2.35, -2.85], color: 'eye', role: 'eye' },
+      { name: 'EyeR',     shape: 'Ball',  size: [0.30, 0.30, 0.30], position: [0.45, 2.35, -2.85],  color: 'eye', role: 'eye' },
+      { name: 'HornL',    shape: 'Wedge', size: [0.40, 1.2, 0.40], position: [-0.45, 2.95, -2.10], rotation: [-25, 0, -10], color: 'accent', role: 'horn' },
+      { name: 'HornR',    shape: 'Wedge', size: [0.40, 1.2, 0.40], position: [0.45, 2.95, -2.10],  rotation: [-25, 0,  10], color: 'accent', role: 'horn' },
+      { name: 'Spike1',   shape: 'Wedge', size: [0.30, 0.55, 0.55], position: [0, 1.95, -0.9], color: 'accent', role: 'spike' },
+      { name: 'Spike2',   shape: 'Wedge', size: [0.30, 0.65, 0.55], position: [0, 2.00, -0.3], color: 'accent', role: 'spike' },
+      { name: 'Spike3',   shape: 'Wedge', size: [0.30, 0.70, 0.55], position: [0, 2.00, 0.3], color: 'accent', role: 'spike' },
+      { name: 'Spike4',   shape: 'Wedge', size: [0.30, 0.65, 0.55], position: [0, 1.95, 0.9], color: 'accent', role: 'spike' },
+      { name: 'Spike5',   shape: 'Wedge', size: [0.30, 0.55, 0.55], position: [0, 1.85, 1.5], color: 'accent', role: 'spike' },
+      { name: 'Tail',     shape: 'Block', size: [0.55, 0.55, 2.0], position: [0, 1.45, 2.50], rotation: [20, 0, 0], color: 'primary', role: 'tail' },
+      { name: 'TailTip',  shape: 'Wedge', size: [0.50, 0.80, 0.80], position: [0, 1.95, 3.70], rotation: [50, 0, 0], color: 'accent', role: 'spike' },
+      { name: 'LegFL',    shape: 'Block', size: [0.45, 1.0, 0.45], position: [-0.65, 0.50, -1.1], color: 'primary', role: 'leg_front_left' },
+      { name: 'LegFR',    shape: 'Block', size: [0.45, 1.0, 0.45], position: [0.65, 0.50, -1.1],  color: 'primary', role: 'leg_front_right' },
+      { name: 'LegBL',    shape: 'Block', size: [0.45, 1.0, 0.45], position: [-0.65, 0.50, 1.0],  color: 'primary', role: 'leg_back_left' },
+      { name: 'LegBR',    shape: 'Block', size: [0.45, 1.0, 0.45], position: [0.65, 0.50, 1.0],   color: 'primary', role: 'leg_back_right' },
     );
     joints.push(
-      { name: 'LeftHornJoint',  part0: 'Head', part1: 'HornL' },
-      { name: 'RightHornJoint', part0: 'Head', part1: 'HornR' },
-      { name: 'Spike1Joint', part0: 'Body', part1: 'Spike1' },
-      { name: 'Spike2Joint', part0: 'Body', part1: 'Spike2' },
-      { name: 'Spike3Joint', part0: 'Body', part1: 'Spike3' },
-      { name: 'TailTipJoint', part0: 'Tail', part1: 'TailTip' },
+      { name: 'Root',              part0: 'HumanoidRootPart', part1: 'Body' },
+      { name: 'NeckBase',          part0: 'Body', part1: 'Neck' },
+      { name: 'Neck',              part0: 'Neck', part1: 'Head' },
+      { name: 'SnoutJoint',        part0: 'Head', part1: 'Snout' },
+      { name: 'JawJoint',          part0: 'Snout', part1: 'Jaw' },
+      { name: 'NoseJoint',         part0: 'Snout', part1: 'Nose' },
+      { name: 'LeftEyeJoint',      part0: 'Head', part1: 'EyeL' },
+      { name: 'RightEyeJoint',     part0: 'Head', part1: 'EyeR' },
+      { name: 'LeftHornJoint',     part0: 'Head', part1: 'HornL' },
+      { name: 'RightHornJoint',    part0: 'Head', part1: 'HornR' },
+      { name: 'Spike1Joint',       part0: 'Body', part1: 'Spike1' },
+      { name: 'Spike2Joint',       part0: 'Body', part1: 'Spike2' },
+      { name: 'Spike3Joint',       part0: 'Body', part1: 'Spike3' },
+      { name: 'Spike4Joint',       part0: 'Body', part1: 'Spike4' },
+      { name: 'Spike5Joint',       part0: 'Body', part1: 'Spike5' },
+      { name: 'TailJoint',         part0: 'Body', part1: 'Tail' },
+      { name: 'TailTipJoint',      part0: 'Tail', part1: 'TailTip' },
+      { name: 'LeftFrontLegJoint', part0: 'Body', part1: 'LegFL' },
+      { name: 'RightFrontLegJoint',part0: 'Body', part1: 'LegFR' },
+      { name: 'LeftBackLegJoint',  part0: 'Body', part1: 'LegBL' },
+      { name: 'RightBackLegJoint', part0: 'Body', part1: 'LegBR' },
     );
   } else {
+    // Generic quadruped body for dog/cat/fox/wolf etc.
+    parts.push(
+      { name: 'Body',  shape: 'Block', size: [1.8, 1.3, 2.6], position: [0, 1.1, 0],     color: 'primary',   role: 'primary_part' },
+      { name: 'Head',  shape: 'Block', size: [1.2, 1.1, 1.3], position: [0, 1.6, -1.7],  color: 'primary',   role: 'head' },
+      { name: 'Snout', shape: 'Block', size: [0.7, 0.5, 0.7], position: [0, 1.45, -2.3], color: 'secondary', role: 'snout' },
+      { name: 'Nose',  shape: 'Ball',  size: [0.25, 0.25, 0.25], position: [0, 1.55, -2.55], color: 'accent', role: 'nose' },
+      { name: 'EyeL',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [-0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
+      { name: 'EyeR',  shape: 'Ball',  size: [0.22, 0.22, 0.22], position: [0.30, 1.80, -2.15], color: 'eye', role: 'eye' },
+      { name: 'Tail',  shape: 'Cylinder', size: [0.4, 1.6, 0.4], position: [0, 1.4, 1.8], rotation: [35,0,0], color: 'primary', role: 'tail' },
+      { name: 'LegFL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, -1.0], color: 'primary', role: 'leg_front_left' },
+      { name: 'LegFR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, -1.0],  color: 'primary', role: 'leg_front_right' },
+      { name: 'LegBL', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [-0.55, 0.50, 0.9],  color: 'primary', role: 'leg_back_left' },
+      { name: 'LegBR', shape: 'Cylinder', size: [0.35, 1.0, 0.35], position: [0.55, 0.50, 0.9],   color: 'primary', role: 'leg_back_right' },
+    );
+    joints.push(
+      { name: 'Root', part0: 'HumanoidRootPart', part1: 'Body' },
+      { name: 'Neck', part0: 'Body', part1: 'Head' },
+      { name: 'SnoutJoint', part0: 'Head', part1: 'Snout' },
+      { name: 'NoseJoint',  part0: 'Snout', part1: 'Nose' },
+      { name: 'LeftEyeJoint',  part0: 'Head', part1: 'EyeL' },
+      { name: 'RightEyeJoint', part0: 'Head', part1: 'EyeR' },
+      { name: 'TailJoint', part0: 'Body', part1: 'Tail' },
+      { name: 'LeftFrontLegJoint',  part0: 'Body', part1: 'LegFL' },
+      { name: 'RightFrontLegJoint', part0: 'Body', part1: 'LegFR' },
+      { name: 'LeftBackLegJoint',   part0: 'Body', part1: 'LegBL' },
+      { name: 'RightBackLegJoint',  part0: 'Body', part1: 'LegBR' },
+    );
+  }
+
+  if (!isDragon) {
     // Non-dragon quadrupeds get floppy ears (visually communicates dog/cat/fox).
     parts.push(
       { name: 'EarL', shape: 'Wedge', size: [0.45, 0.7, 0.45], position: [-0.40, 2.25, -1.45], rotation: [0, 0, -12], color: 'primary', role: 'ear' },
@@ -2227,13 +2261,19 @@ function fallbackBlockyPetSpec(classification: PetClassification): BlockyPetSpec
     );
   }
 
-  // Wings — for winged_quadruped OR explicitly flying pets. Large Wedge spans
-  // out and back from the upper body. accent color so they read against the
-  // primary body colour.
+  // Wings — for winged_quadruped OR explicitly flying pets. Bigger for
+  // dragons (DRAGON_WING_SCALE 1.4×) so they read as dramatic membrane wings
+  // rather than tiny flaps. Position slightly higher + further back to look
+  // like they sprout from shoulder blades, not from the back of the neck.
   if (hasWings) {
+    const wingW = isDragon ? 2.4 : 1.6;
+    const wingD = isDragon ? 2.0 : 1.4;
+    const wingY = isDragon ? 2.3 : 2.0;
+    const wingZ = isDragon ? -0.4 : 0.4;
+    const wingX = isDragon ? 1.4 : 1.10;
     parts.push(
-      { name: 'WingL', shape: 'Wedge', size: [1.6, 0.20, 1.4], position: [-1.10, 2.00, 0.4], rotation: [-15, 25, -35], color: 'accent', role: 'wing_left' },
-      { name: 'WingR', shape: 'Wedge', size: [1.6, 0.20, 1.4], position: [1.10, 2.00, 0.4],  rotation: [-15, -25,  35], color: 'accent', role: 'wing_right' },
+      { name: 'WingL', shape: 'Wedge', size: [wingW, 0.22, wingD], position: [-wingX, wingY, wingZ], rotation: [-15, 25, -35], color: 'accent', role: 'wing_left' },
+      { name: 'WingR', shape: 'Wedge', size: [wingW, 0.22, wingD], position: [wingX, wingY, wingZ],  rotation: [-15, -25,  35], color: 'accent', role: 'wing_right' },
     );
     joints.push(
       { name: 'LeftWingJoint',  part0: 'Body', part1: 'WingL' },
