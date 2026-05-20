@@ -100,6 +100,10 @@ struct GenerationPreviewView: View {
         /// of a blocky pet. Spec comes from the .rbxm artifact's
         /// metadata.blockyPetSpecJSON; user can orbit / pinch-zoom.
         case blockyPet3D(spec: BlockyPetSpecPayload, element: String, rarity: String, species: String, isFlying: Bool, notes: [String])
+        /// 2026-05-20 (Furniture/Props): interactive 3D preview of a blocky
+        /// furniture or prop. Spec is the LLM scene JSON from
+        /// metadata.furnitureSpecJSON.
+        case blockyFurniture3D(spec: FurnitureSpecPayload, furnitureType: String, notes: [String])
         case unavailable(String)
 
         var previewImageURLs: [URL] {
@@ -127,7 +131,7 @@ struct GenerationPreviewView: View {
                     if urls.count >= 2 { break }
                 }
                 return Array(urls.prefix(2))
-            case .code, .gdd, .text, .projectBundle, .robloxBinary, .model3D, .uiPreview, .unavailable, .blockyPet3D:
+            case .code, .gdd, .text, .projectBundle, .robloxBinary, .model3D, .uiPreview, .unavailable, .blockyPet3D, .blockyFurniture3D:
                 return []
             }
         }
@@ -328,6 +332,36 @@ struct GenerationPreviewView: View {
                     .background(Color.black.opacity(0.4))
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                 Text("Drag to rotate · pinch to zoom · this is exactly how the pet looks in Roblox.")
+                    .font(.appCaption)
+                    .foregroundColor(.textSecondary)
+                    .multilineTextAlignment(.leading)
+                ForEach(notes, id: \.self) { note in
+                    Text(note)
+                        .font(.appCallout)
+                        .foregroundColor(.textSecondary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+            }
+        case .blockyFurniture3D(let spec, let furnitureType, let notes):
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cube.box.fill")
+                        .font(.title2)
+                        .foregroundColor(.textPrimary)
+                    Text((spec.furnitureType ?? furnitureType).capitalized)
+                        .font(.appHeadline)
+                        .foregroundColor(.textPrimary)
+                    Spacer()
+                    BlockyPetBadge(text: "\(spec.parts.count) parts", tint: .blue)
+                }
+                BlockyFurniture3DSceneView(spec: spec)
+                    .frame(height: 360)
+                    .background(Color.black.opacity(0.3))
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                Text("Drag to rotate · pinch to zoom · this is the actual .rbxm geometry, not a render.")
                     .font(.appCaption)
                     .foregroundColor(.textSecondary)
                     .multilineTextAlignment(.leading)
@@ -1092,6 +1126,11 @@ struct GenerationPreviewView: View {
             BlockyPet3DSceneView(spec: spec, element: element)
                 .frame(height: 280)
                 .background(Color.black.opacity(0.4))
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+        case .blockyFurniture3D(let spec, _, _):
+            BlockyFurniture3DSceneView(spec: spec)
+                .frame(height: 280)
+                .background(Color.black.opacity(0.3))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
         case .animationPreview(let name, let rig, let keyframeCount, let looped, let animationType, let notes, let previewMediaURL, let previewIsVideo):
             AnimationPreviewCard(

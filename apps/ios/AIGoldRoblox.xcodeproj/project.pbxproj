@@ -92,6 +92,7 @@
 		B00101F1 /* FollowListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00101F1 /* FollowListView.swift */; };
 		B001C3D1 /* ClothingPreview3DView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C3D1 /* ClothingPreview3DView.swift */; };
 		B001C4D1 /* BlockyPet3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C4D1 /* BlockyPet3DSceneView.swift */; };
+		B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C5D1 /* BlockyFurniture3DSceneView.swift */; };
 		B001C3D2 /* WebUIPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C3D2 /* WebUIPreviewView.swift */; };
 		B001C3D3 /* MarketplaceHandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C3D3 /* MarketplaceHandoffView.swift */; };
 		EAED78FB2F4108DE8F6ABA7A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 87F8C902F756A98F181E73B2 /* FirebaseCore */; };
@@ -180,6 +181,7 @@
 		F00101F1 /* FollowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListView.swift; sourceTree = "<group>"; };
 		F001C3D1 /* ClothingPreview3DView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClothingPreview3DView.swift; sourceTree = "<group>"; };
 		F001C4D1 /* BlockyPet3DSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockyPet3DSceneView.swift; sourceTree = "<group>"; };
+		F001C5D1 /* BlockyFurniture3DSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockyFurniture3DSceneView.swift; sourceTree = "<group>"; };
 		F001C3D2 /* WebUIPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebUIPreviewView.swift; sourceTree = "<group>"; };
 		F001C3D3 /* MarketplaceHandoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketplaceHandoffView.swift; sourceTree = "<group>"; };
 		FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
@@ -374,6 +376,7 @@
 				F00100A1 /* GenerationModelPreview.swift */,
 				F001C3D1 /* ClothingPreview3DView.swift */,
 				F001C4D1 /* BlockyPet3DSceneView.swift */,
+				F001C5D1 /* BlockyFurniture3DSceneView.swift */,
 				F001C3D2 /* WebUIPreviewView.swift */,
 				F001C3D3 /* MarketplaceHandoffView.swift */,
 			);
@@ -682,6 +685,7 @@
 				B00100A1 /* GenerationModelPreview.swift in Sources */,
 				B001C3D1 /* ClothingPreview3DView.swift in Sources */,
 				B001C4D1 /* BlockyPet3DSceneView.swift in Sources */,
+				B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */,
 				B001C3D2 /* WebUIPreviewView.swift in Sources */,
 				B001C3D3 /* MarketplaceHandoffView.swift in Sources */,
 				B0010020 /* ExportView.swift in Sources */,

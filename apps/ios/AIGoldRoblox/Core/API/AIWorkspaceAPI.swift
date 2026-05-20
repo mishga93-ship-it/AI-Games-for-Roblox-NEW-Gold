@@ -633,6 +633,12 @@ enum AIWorkspaceAPI {
         let petElement: String?
         let petSpeciesType: String?
         let petIsFlying: Bool?
+        /// 2026-05-20 (Furniture/Props): same pattern as blockyPetSpecJSON —
+        /// LLM scene JSON for blocky furniture/prop generation, rendered in
+        /// iOS via BlockyFurniture3DSceneView.
+        let isBlockyFurniture: Bool?
+        let furnitureSpecJSON: String?
+        let furnitureType: String?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -669,6 +675,9 @@ enum AIWorkspaceAPI {
             petElement = try? container.decode(String.self, forKey: .petElement)
             petSpeciesType = try? container.decode(String.self, forKey: .petSpeciesType)
             petIsFlying = try? container.decode(Bool.self, forKey: .petIsFlying)
+            isBlockyFurniture = try? container.decode(Bool.self, forKey: .isBlockyFurniture)
+            furnitureSpecJSON = try? container.decode(String.self, forKey: .furnitureSpecJSON)
+            furnitureType = try? container.decode(String.self, forKey: .furnitureType)
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -680,6 +689,7 @@ enum AIWorkspaceAPI {
             case petStageIndex, petBaseName, petStages
             case isBlockyPet, isBlockyPetSpec, isPetAnimation, isBlockyAnimation, isPetDecal, trackName
             case blockyPetSpecJSON, petRarity, petElement, petSpeciesType, petIsFlying
+            case isBlockyFurniture, furnitureSpecJSON, furnitureType
         }
     }
 

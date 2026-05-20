@@ -27126,6 +27126,24 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       }
       const nativeBuild = await maybeBuildRobloxBinary(manifest);
       if (nativeBuild?.bufferBase64) {
+        // 2026-05-20 (Track 3 Phase 2): if this is a blocky-furniture job,
+        // attach the LLM scene JSON to the artifact metadata so iOS can
+        // render the interactive 3D preview (BlockyFurniture3DSceneView).
+        // Same pattern as blockyPetSpecJSON. Furniture types: chair, table,
+        // lamp, plant, sign, decor, etc.
+        const furnitureSceneRaw = typeof (currentJob.metadata as Record<string, unknown> | undefined)?.furnitureLLMScene === 'string'
+          ? (currentJob.metadata as Record<string, unknown>).furnitureLLMScene as string
+          : undefined;
+        const furnitureTypeForArtifact = typeof (currentJob.metadata as Record<string, unknown> | undefined)?.furnitureType === 'string'
+          ? (currentJob.metadata as Record<string, unknown>).furnitureType as string
+          : undefined;
+        const blockyFurnitureExtras = (isFurniture && furnitureSceneRaw)
+          ? {
+              isBlockyFurniture: true,
+              furnitureSpecJSON: furnitureSceneRaw,
+              furnitureType: furnitureTypeForArtifact ?? 'decor',
+            }
+          : {};
         exportArtifacts.push(await uploadBinaryArtifact(job, Buffer.from(nativeBuild.bufferBase64, 'base64'), {
           type: nativeBuild.artifactType,
           extension: nativeBuild.artifactType,
@@ -27140,6 +27158,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             notes: nativeBuild.notes,
             manifestSummary: describeManifest(manifest),
             acceptanceQualityGate,
+            ...blockyFurnitureExtras,
           },
         }));
       }

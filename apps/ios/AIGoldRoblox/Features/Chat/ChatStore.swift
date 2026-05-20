@@ -5322,6 +5322,40 @@ final class ChatStore: ObservableObject {
             )
         }
 
+        // 2026-05-20: same pattern as blocky-pet but for furniture/props.
+        // The .rbxm artifact carries metadata.furnitureSpecJSON; render the
+        // SceneKit 3D preview as the primary payload instead of the generic
+        // pipeline or .robloxBinary text card. Caught before .pipeline so
+        // furniture sessions surface the 3D model right away.
+        if let nativeRobloxArtifact,
+           nativeRobloxArtifact.type == "rbxm",
+           let furnSpecJSON = nativeRobloxArtifact.metadata?.furnitureSpecJSON,
+           let furnSpec = FurnitureSpecPayload.decode(from: furnSpecJSON) {
+            let furnType = nativeRobloxArtifact.metadata?.furnitureType ?? furnSpec.furnitureType ?? "prop"
+            let notes: [String] = [
+                "Blocky \(furnType) — \(furnSpec.parts.count) parts assembled.",
+                "Drag the .rbxm into Studio Workspace; physics + collision are already wired."
+            ]
+            return PreviewPayload(
+                title: "\(draft.title) — \(furnType.capitalized) Preview",
+                artifactType: .blockyFurniture3D(
+                    spec: furnSpec,
+                    furnitureType: furnType,
+                    notes: notes
+                ),
+                exportFileType: nativeRobloxArtifact.type,
+                artifactIds: artifactIds,
+                shareDescription: shareDescription,
+                downloadURL: downloadURL,
+                glbDownloadURL: glbDownloadURL,
+                rbxmDownloadURL: rbxmDownloadURL,
+                fbxDownloadURL: fbxDownloadURL,
+                notes: notes,
+                trendingShowcaseItems: trendingShowcaseItems,
+                trendingShowcaseCategory: trendingShowcaseCategory
+            )
+        }
+
         // 2026-05-20 (Track 3 Phase 2): blocky-pet projects always have the
         // .rbxm metadata.blockyPetSpecJSON. We want the user to see the
         // interactive 3D pet AS THE PRIMARY PREVIEW — not buried inside a
@@ -5777,6 +5811,13 @@ final class ChatStore: ObservableObject {
     ) -> GenerationPreviewView.ArtifactType? {
         if let binaryArtifact = artifacts.first(where: { $0.type == "rbxm" || $0.type == "rbxl" }) {
             let notes = artifacts.compactMap(\.previewText) + [summary]
+            // 2026-05-20: blocky furniture/prop — render 3D from the LLM scene
+            // JSON carried in metadata.furnitureSpecJSON.
+            if let furnSpecJSON = binaryArtifact.metadata?.furnitureSpecJSON,
+               let furnSpec = FurnitureSpecPayload.decode(from: furnSpecJSON) {
+                let furnType = binaryArtifact.metadata?.furnitureType ?? furnSpec.furnitureType ?? "prop"
+                return .blockyFurniture3D(spec: furnSpec, furnitureType: furnType, notes: notes)
+            }
             // 2026-05-20 (Track 3 Phase 2): blocky-pet rbxm carries a serialized
             // BlockyPetSpec in metadata.blockyPetSpecJSON. Render the SceneKit
             // 3D preview instead of the generic .robloxBinary text card so the
