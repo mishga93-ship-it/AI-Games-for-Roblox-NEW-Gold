@@ -3977,9 +3977,25 @@ if not eggBundle then
     return
 end
 
-local hatchPrompt = eggBundle:FindFirstChild("HatchPrompt")
-local hatchSound = eggBundle:FindFirstChild("HatchSound")
-local hatchBurst = eggBundle:FindFirstChild("HatchBurst")
+-- HatchPrompt + HatchSound + HatchBurst all live under EggBody now (the
+-- visible Ball). Falling back to direct EggBundle children for backward
+-- compatibility with older .rbxm assets.
+local eggBody = eggBundle:FindFirstChild("EggBody")
+local function eggChild(name)
+    return (eggBody and eggBody:FindFirstChild(name)) or eggBundle:FindFirstChild(name)
+end
+local hatchPrompt = eggChild("HatchPrompt")
+local hatchSound  = eggChild("HatchSound")
+local hatchBurst  = eggChild("HatchBurst")
+
+-- AttackPrompt must be disabled while the pet is inside the egg —
+-- otherwise the user walks up, sees "Fire attack" instead of "Hatch egg"
+-- and triggers the wrong action.
+local body = pet:FindFirstChild("Body")
+local attackPrompt = body and body:FindFirstChild("AttackPrompt")
+if attackPrompt and attackPrompt:IsA("ProximityPrompt") then
+    attackPrompt.Enabled = false
+end
 
 -- Hide non-egg pet parts so only the egg is visible until hatch.
 local hiddenParts = {}
@@ -3991,7 +4007,6 @@ for _, p in ipairs(pet:GetDescendants()) do
         end
     end
 end
-local body = pet:FindFirstChild("Body")
 local auraEmitter = body and body:FindFirstChild("AuraParticle")
 local auraWasEnabled
 if auraEmitter then
@@ -4039,12 +4054,16 @@ local function doHatch()
     task.delay(0.5, function()
         if auraEmitter and auraWasEnabled ~= nil then auraEmitter.Enabled = auraWasEnabled end
         if outline and outlineWas ~= nil then outline.OutlineTransparency = outlineWas end
+        if attackPrompt and attackPrompt:IsA("ProximityPrompt") then
+            attackPrompt.Enabled = true
+        end
     end)
 end
 
 if hatchPrompt and hatchPrompt:IsA("ProximityPrompt") then
     hatchPrompt.Triggered:Connect(function() doHatch() end)
 else
+    warn("[BlockyPetHatch] HatchPrompt missing — auto-hatch in 3s")
     task.delay(3, doHatch)
 end
 `;

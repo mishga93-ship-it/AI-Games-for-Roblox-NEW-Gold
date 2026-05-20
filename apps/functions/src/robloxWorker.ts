@@ -3546,6 +3546,10 @@ function buildBlockyPetManifest(
     });
 
     // Attack ProximityPrompt — tap F near pet to fire the attack burst.
+    // Enabled=false at start so the user can't accidentally fire it
+    // before the pet is hatched (Body is invisible inside the egg, but
+    // ProximityPrompt UI still appears in 3D space and confuses players).
+    // EggHatchScript flips Enabled=true after the hatch animation completes.
     scene.push({
       id: uuidv4(),
       className: 'ProximityPrompt',
@@ -3558,6 +3562,7 @@ function buildBlockyPetManifest(
         HoldDuration: 0,
         MaxActivationDistance: 12,
         RequiresLineOfSight: false,
+        Enabled: false,
       },
     });
 
@@ -3657,13 +3662,17 @@ function buildBlockyPetManifest(
     },
   });
   // Hatch prompt — E key, ~0.4s hold so accidental presses don't fire.
+  // CRITICAL: ProximityPrompt must be parented to a BasePart (or Attachment)
+  // to render in 3D space — Folder parents are silently ignored by the
+  // ProximityPromptService UI. EggBody is the visible Ball, so the prompt
+  // anchors on it and pops up when the player walks within 12 studs.
   scene.push({
     id: uuidv4(),
     className: 'ProximityPrompt',
     name: 'HatchPrompt',
-    parentId: eggBundleId,
+    parentId: eggBodyId,
     properties: {
-      ActionText: 'Hatch egg',
+      ActionText: 'Tap to hatch',
       ObjectText: `${spec.name} Egg`,
       KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'E' },
       HoldDuration: 0.4,
@@ -3671,12 +3680,15 @@ function buildBlockyPetManifest(
       RequiresLineOfSight: false,
     },
   });
-  // Hatch sound — rbxasset:// stock pop, always plays on every install.
+  // Hatch sound — rbxasset:// stock pop, parented to EggBody for 3D-positional
+  // audio. EggHatchScript looks up by name so position doesn't matter for
+  // playback, but parenting to the visible Ball means a Folder destroy
+  // wouldn't orphan the Sound mid-play.
   scene.push({
     id: uuidv4(),
     className: 'Sound',
     name: 'HatchSound',
-    parentId: eggBundleId,
+    parentId: eggBodyId,
     properties: {
       SoundId: 'rbxasset://sounds/pop_mid_up.wav',
       Volume: 1.0,
