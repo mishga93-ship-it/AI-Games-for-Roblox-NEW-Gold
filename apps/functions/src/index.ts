@@ -120,6 +120,7 @@ import {
   executeProvider,
   runChatProvider,
   runSingleChatProvider,
+  runAnthropicVisionStructured,
   generatePreviewTexture,
   generateDecalTexture,
   removeImageBackgroundViaFal,
@@ -6365,6 +6366,7 @@ async function runVehicleLlmQualityReview(args: {
   facts: VehicleManifestReviewFacts;
   deterministic: ObbyQualityReviewResult;
   manifest: RobloxBuildManifest;
+  previewPng?: Buffer;
 }): Promise<ObbyQualityReviewResult | null> {
   const digest = {
     vehicleType: args.facts.vehicleType,
@@ -6389,12 +6391,16 @@ async function runVehicleLlmQualityReview(args: {
       .slice(0, 90),
     sideSilhouetteAscii: renderVehicleSideSilhouetteAscii(args.manifest),
   };
+  const hasImage = args.previewPng && args.previewPng.length > 0;
   const system = [
     'You are a strict Roblox Vehicles QA reviewer.',
-    'Review factual manifest evidence before a .rbxm is exported to the user.',
+    'Review factual manifest evidence AND a rendered preview image of the vehicle before a .rbxm is exported to the user.',
     'Reject if the model does not match the user brief, e.g. a family car looks like a flat race-frame wedge, no readable body, no visible steering wheel, no wheel details, or a motorcycle/bicycle can tip sideways.',
     'Pay close attention to manifestDigest.monochromeBodyShare (>=0.8 means same-color body that visually merges into a slab), bodyVerticalLayerRange (<1.2 means body/cabin/roof are coplanar), glassToBodyAreaRatio (<0.08 means windows too small to break up the body), and steeringWheelVisibleThroughWindshield (must be true so the user sees the wheel through the front glass). Reject when any of these visual signals indicates a slab silhouette even if all required part names are present.',
     'Also study manifestDigest.sideSilhouetteAscii: this is a deterministic side-view projection of the model. The vertical axis is Y (up), the horizontal axis is Z (front to back). Each character marks the dominant role of a part footprint (B=body, C=cabin, R=roof, G=glass, W=wheel, S=steering wheel, .=empty). A correct family car should show three vertically stacked layers (roof on top, cabin in the middle band with glass markers, body shell below, wheels at the bottom) with the steering wheel visible inside the cabin band. A single flat strip of "B" with wheels and almost no "C" or "R" is the slab failure mode — reject it.',
+    hasImage
+      ? 'The first content block is a PNG preview rendered directly from the Roblox Parts manifest the user is about to receive. LOOK at it. Reject when the rendered image shows a flat slab, missing cabin/roof, indistinguishable colors blending into one mass, no readable doors/windows/headlights, or anything that does not match the user brief. The user has explicitly asked for this visual check before the .rbxm is delivered, so judge from the image first and use the manifest facts as supporting evidence.'
+      : 'No rendered preview image was available for this attempt — judge from the manifest facts and ASCII silhouette only.',
     'Do not reward speed. A slower export is acceptable only if quality passes.',
     'Output JSON only: {"status":"passed|warning|rejected","score":0-100,"userMessage":"short user-facing reason","reasons":["..."],"repairActions":["concrete fixes"]}.',
   ].join('\n');
@@ -6409,6 +6415,38 @@ async function runVehicleLlmQualityReview(args: {
       repairActions: args.deterministic.repairActions,
     },
   }, null, 2);
+
+  // Try Claude vision first when we have a rendered PNG, so the LLM
+  // critic actually looks at the image instead of judging by JSON alone.
+  if (hasImage && args.previewPng) {
+    try {
+      const result = await runAnthropicVisionStructured(
+        {
+          system,
+          user,
+          images: [{ base64: args.previewPng.toString('base64'), mediaType: 'image/png' }],
+        },
+        defaults.anthropicModel,
+        90_000,
+      );
+      const parsed = parseQualityReviewResponse(result.text ?? '');
+      if (parsed?.status) {
+        return {
+          status: parsed.status,
+          score: parsed.score ?? 0,
+          userMessage: parsed.userMessage ?? 'Vehicle quality review completed.',
+          reasons: parsed.reasons ?? [],
+          repairActions: parsed.repairActions ?? [],
+          reviewer: 'llm_vision',
+          llmProvider: 'anthropic',
+        };
+      }
+      logger.warn('[VehicleQualityReview] invalid Anthropic vision response, falling back to text providers');
+    } catch (err) {
+      logger.warn('[VehicleQualityReview] Anthropic vision failed, falling back to text providers', { error: errorMessage(err) });
+    }
+  }
+
   const attempts: Array<{ provider: AIProvider; model?: string }> = [
     { provider: 'anthropic', model: defaults.anthropicModel },
     { provider: 'openai', model: defaults.chatModel },
@@ -6461,12 +6499,20 @@ async function reviewVehicleManifestWithRepair(args: {
       vehicleQualityAttempt: attempt,
     });
     const deterministic = deterministicVehicleReview({ prompt: args.prompt, manifest });
+    let previewPng: Buffer | undefined;
+    try {
+      const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
+      previewPng = createFurniturePreviewPng(scene, args.title);
+    } catch (renderErr) {
+      logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
+    }
     const llmReview = await runVehicleLlmQualityReview({
       prompt: args.prompt,
       title: args.title,
       facts: vehicleManifestFacts(manifest),
       deterministic,
       manifest,
+      previewPng,
     });
     const review: ObbyQualityReviewResult = llmReview
       ? {
@@ -17037,7 +17083,7 @@ interface BuildingQualityReviewResult {
   userMessage: string;
   reasons: string[];
   repairActions: string[];
-  reviewer: 'deterministic' | 'llm' | 'deterministic+llm';
+  reviewer: 'deterministic' | 'llm' | 'deterministic+llm' | 'llm_vision';
   llmProvider?: string;
   facts: string[];
 }
@@ -28066,7 +28112,7 @@ interface ObbyQualityReviewResult {
   userMessage: string;
   reasons: string[];
   repairActions: string[];
-  reviewer: 'deterministic' | 'llm' | 'deterministic+llm';
+  reviewer: 'deterministic' | 'llm' | 'deterministic+llm' | 'llm_vision';
   llmProvider?: string;
 }
 

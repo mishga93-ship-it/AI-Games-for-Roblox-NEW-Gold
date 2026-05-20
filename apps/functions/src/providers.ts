@@ -221,6 +221,57 @@ async function runAnthropicStructured(prompt: ProviderPromptInput, model: string
   };
 }
 
+/**
+ * Vision-enabled Anthropic call: same as runAnthropicStructured but the user
+ * message becomes a content array with one or more image blocks followed by the
+ * text. Used by the vehicle quality reviewer so Claude can actually look at the
+ * rendered manifest PNG instead of judging by JSON facts alone.
+ */
+export async function runAnthropicVisionStructured(
+  prompt: {
+    system: string;
+    user: string;
+    images: Array<{ base64: string; mediaType?: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' }>;
+  },
+  model: string,
+  timeoutMs?: number,
+): Promise<ProviderResult> {
+  const apiKey = requireValue(ANTHROPIC_API_KEY.value(), 'ANTHROPIC_API_KEY');
+  const content: Array<Record<string, unknown>> = [];
+  for (const image of prompt.images) {
+    content.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: image.mediaType ?? 'image/png',
+        data: image.base64,
+      },
+    });
+  }
+  content.push({ type: 'text', text: prompt.user });
+  const raw = await fetchJson('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      system: prompt.system,
+      model,
+      max_tokens: 1400,
+      messages: [
+        { role: 'user', content },
+      ],
+    }),
+  }, timeoutMs);
+
+  return {
+    text: firstText(raw.content) ?? 'Anthropic returned no text.',
+    raw,
+  };
+}
+
 async function runGemini(prompt: string, model: string, timeoutMs?: number): Promise<ProviderResult> {
   const apiKey = requireValue(GEMINI_API_KEY.value(), 'GEMINI_API_KEY');
   const raw = await fetchJson(

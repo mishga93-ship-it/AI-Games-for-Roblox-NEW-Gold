@@ -2499,9 +2499,31 @@ function addVehicleBodyShell(
   addBodyPart('FamilyCarGrilleSlatLower', [w * 0.48, h * 0.035, 0.08], [0, rootY + h * 0.22, -l * 0.502], silver, { material: 'Metal' });
   addBodyPart('FamilyCarLeftHeadlight', [w * 0.22, h * 0.11, 0.08], [-w * 0.27, rootY + h * 0.31, -l * 0.50], glow, { material: 'Neon' });
   addBodyPart('FamilyCarRightHeadlight', [w * 0.22, h * 0.11, 0.08], [w * 0.27, rootY + h * 0.31, -l * 0.50], glow, { material: 'Neon' });
+  addBodyPart('FamilyCarLeftHeadlightGlass', [w * 0.24, h * 0.13, 0.04], [-w * 0.27, rootY + h * 0.31, -l * 0.515], glass, { material: 'Glass', transparency: 0.35 });
+  addBodyPart('FamilyCarRightHeadlightGlass', [w * 0.24, h * 0.13, 0.04], [w * 0.27, rootY + h * 0.31, -l * 0.515], glass, { material: 'Glass', transparency: 0.35 });
+  addBodyPart('FamilyCarLeftFogLamp', [w * 0.10, h * 0.06, 0.06], [-w * 0.18, rootY + h * 0.18, -l * 0.50], glow, { material: 'Neon' });
+  addBodyPart('FamilyCarRightFogLamp', [w * 0.10, h * 0.06, 0.06], [w * 0.18, rootY + h * 0.18, -l * 0.50], glow, { material: 'Neon' });
   addBodyPart('FamilyCarLeftTailLight', [w * 0.16, h * 0.14, 0.08], [-w * 0.34, rootY + h * 0.34, l * 0.49], glow, { material: 'Neon' });
   addBodyPart('FamilyCarRightTailLight', [w * 0.16, h * 0.14, 0.08], [w * 0.34, rootY + h * 0.34, l * 0.49], glow, { material: 'Neon' });
+  addBodyPart('FamilyCarLeftBrakeLightStrip', [w * 0.10, h * 0.04, 0.05], [-w * 0.34, rootY + h * 0.40, l * 0.495], glow, { material: 'Neon', transparency: 0.12 });
+  addBodyPart('FamilyCarRightBrakeLightStrip', [w * 0.10, h * 0.04, 0.05], [w * 0.34, rootY + h * 0.40, l * 0.495], glow, { material: 'Neon', transparency: 0.12 });
   addBodyPart('FamilyCarRearLicensePlate', [w * 0.26, h * 0.09, 0.06], [0, rootY + h * 0.30, l * 0.50], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarRearLicensePlateBackdrop', [w * 0.30, h * 0.13, 0.03], [0, rootY + h * 0.30, l * 0.506], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarFrontLicensePlate', [w * 0.22, h * 0.08, 0.05], [0, rootY + h * 0.16, -l * 0.50], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarHoodVentLeft', [w * 0.20, h * 0.03, l * 0.08], [-w * 0.16, rootY + h * 0.53, -l * 0.30], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarHoodVentRight', [w * 0.20, h * 0.03, l * 0.08], [w * 0.16, rootY + h * 0.53, -l * 0.30], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarHoodCenterCrease', [0.06, h * 0.04, l * 0.26], [0, rootY + h * 0.53, -l * 0.33], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarAntenna', [0.05, h * 0.32, 0.05], [w * 0.28, roofY + h * 0.18, l * 0.10], silver, { shape: 'Cylinder', rot: [0, 0, 0], material: 'Metal' });
+  addBodyPart('FamilyCarAntennaBase', [0.10, h * 0.04, 0.10], [w * 0.28, roofY + h * 0.04, l * 0.10], dark, { shape: 'Cylinder', material: 'Metal' });
+  addBodyPart('FamilyCarRearSubtleSpoiler', [w * 0.56, h * 0.06, 0.16], [0, rootY + h * 0.59, l * 0.45], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarRearSpoilerTrim', [w * 0.58, h * 0.03, 0.05], [0, rootY + h * 0.62, l * 0.45], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarLeftExhaustPipe', [0.14, 0.14, l * 0.10], [-w * 0.30, rootY + h * 0.06, l * 0.52], dark, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
+  addBodyPart('FamilyCarRightExhaustPipe', [0.14, 0.14, l * 0.10], [w * 0.30, rootY + h * 0.06, l * 0.52], dark, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
+  addBodyPart('FamilyCarLeftExhaustTip', [0.16, 0.16, 0.06], [-w * 0.30, rootY + h * 0.06, l * 0.555], silver, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
+  addBodyPart('FamilyCarRightExhaustTip', [0.16, 0.16, 0.06], [w * 0.30, rootY + h * 0.06, l * 0.555], silver, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
+  addBodyPart('FamilyCarFrontEmblem', [0.16, h * 0.06, 0.04], [0, rootY + h * 0.26, -l * 0.508], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarFrontBumperLowerSplitter', [w * 0.70, h * 0.05, 0.10], [0, rootY + h * 0.05, -l * 0.46], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarRearBumperDiffuser', [w * 0.50, h * 0.05, 0.10], [0, rootY + h * 0.05, l * 0.46], silver, { material: 'Metal' });
 
   for (const [sideName, side] of [['Left', -1], ['Right', 1]] as Array<[string, number]>) {
     const outsideX = side * w * 0.52;
@@ -2517,7 +2539,9 @@ function addVehicleBodyShell(
     addBodyPart(`${sideName}FamilyCarDoorSeamCenter`, [0.06, h * 0.40, 0.06], [side * w * 0.61, rootY + h * 0.39, 0], dark, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarDoorHandleFront`, [0.08, h * 0.045, l * 0.06], [side * w * 0.62, rootY + h * 0.46, -l * 0.12], silver, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarDoorHandleRear`, [0.08, h * 0.045, l * 0.06], [side * w * 0.62, rootY + h * 0.46, l * 0.12], silver, { material: 'Metal' });
-    addBodyPart(`${sideName}FamilyCarMirror`, [0.18, h * 0.10, l * 0.07], [side * w * 0.65, cabinY - h * 0.04, -l * 0.29], dark, { material: 'Metal' });
+    addBodyPart(`${sideName}FamilyCarMirrorStalk`, [0.08, h * 0.05, 0.10], [side * w * 0.60, cabinY - h * 0.06, -l * 0.29], dark, { material: 'Metal' });
+    addBodyPart(`${sideName}FamilyCarMirrorHousing`, [0.18, h * 0.13, l * 0.08], [side * w * 0.66, cabinY - h * 0.03, -l * 0.29], primary, { material: 'SmoothPlastic' });
+    addBodyPart(`${sideName}FamilyCarMirrorGlass`, [0.04, h * 0.10, l * 0.06], [side * w * 0.685, cabinY - h * 0.03, -l * 0.29], glass, { material: 'Glass', transparency: 0.25 });
     addBodyPart(`${sideName}FamilyCarSideSkirt`, [0.12, h * 0.08, l * 0.62], [side * w * 0.54, rootY + h * 0.07, 0], dark, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarBeltLineTrim`, [0.08, h * 0.045, l * 0.52], [side * w * 0.61, rootY + h * 0.57, 0], silver, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarFrontFender`, [0.30, h * 0.28, l * 0.22], [side * w * 0.54, rootY + h * 0.24, -l * 0.34], primary, { material: 'SmoothPlastic' });
