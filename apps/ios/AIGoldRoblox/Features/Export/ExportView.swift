@@ -65,12 +65,14 @@ struct ExportView: View {
                     ExportSection(title: "Studio Flow", rows: robloxFlow)
                     ExportSection(title: "Before Publishing", rows: qualityChecklist)
 
+                    // 2026-05-20: Buttons ordered by priority — most likely user action first.
+                    // 1. Upload to Creator Hub — the PRIMARY action (actually publishes the item).
+                    // 2. Download / Share File — alternative path: manual upload or share to another device.
+                    // 3. Save Texture PNG to Files — fallback for users who want to upload the raw PNG manually.
+                    // 4. Download All as ZIP — bulk export (less common).
+                    // 5. Show QR Code — cross-device transfer (least common).
+                    // 6. Done — dismiss.
                     if clothingTexturePngURL != nil {
-                        PrimaryButton(title: isPreparingPng ? "Preparing PNG..." : "Save Texture PNG to Files") {
-                            prepareDownloadPng(for: .files)
-                        }
-                        .disabled(isPreparingPng)
-
                         PrimaryButton(title: "Upload to Creator Hub") {
                             if let url = URL(string: "https://create.roblox.com/dashboard/creations?activeTab=TShirt") {
                                 UIApplication.shared.open(url)
@@ -83,10 +85,13 @@ struct ExportView: View {
                             prepareDownload(for: .share)
                         }
                         .disabled(isPreparingDownload)
+                    }
 
-                        PrimaryButton(title: "Show QR Code") {
-                            showQRCode = true
+                    if clothingTexturePngURL != nil {
+                        PrimaryButton(title: isPreparingPng ? "Preparing PNG..." : "Save Texture PNG to Files") {
+                            prepareDownloadPng(for: .files)
                         }
+                        .disabled(isPreparingPng)
                     }
 
                     if let jobId, !jobId.isEmpty {
@@ -94,6 +99,12 @@ struct ExportView: View {
                             prepareZipDownload(jobId: jobId)
                         }
                         .disabled(isPreparingZip)
+                    }
+
+                    if downloadURL != nil {
+                        PrimaryButton(title: "Show QR Code") {
+                            showQRCode = true
+                        }
                     }
 
                     PrimaryButton(title: "Done", action: onDismiss)

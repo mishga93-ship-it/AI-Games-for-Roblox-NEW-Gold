@@ -3383,7 +3383,7 @@ function buildBlockyPetManifest(
       Transparency: 0,
       Size: { __type: 'Vector3', x: p.size[0], y: p.size[1], z: p.size[2] },
       BrickColor: { __type: 'BrickColor', name: colorSlot(p.color) },
-      Material: { __type: 'EnumItem', enum: 'Material', value: p.material ?? spec.material },
+      Material: { __type: 'Enum', enumType: 'Material', enumName: p.material ?? spec.material },
       CFrame: {
         __type: 'CFrame',
         position: { x: p.position[0], y: p.position[1], z: p.position[2] },
@@ -3391,9 +3391,9 @@ function buildBlockyPetManifest(
       },
     };
     if (!isWedge) {
-      if (isBall) props.Shape = { __type: 'EnumItem', enum: 'PartType', value: 'Ball' };
-      else if (isCylinder) props.Shape = { __type: 'EnumItem', enum: 'PartType', value: 'Cylinder' };
-      else props.Shape = { __type: 'EnumItem', enum: 'PartType', value: 'Block' };
+      if (isBall) props.Shape = { __type: 'Enum', enumType: 'PartType', enumName: 'Ball' };
+      else if (isCylinder) props.Shape = { __type: 'Enum', enumType: 'PartType', enumName: 'Cylinder' };
+      else props.Shape = { __type: 'Enum', enumType: 'PartType', enumName: 'Block' };
     }
     scene.push({
       id: partId,
@@ -3414,7 +3414,7 @@ function buildBlockyPetManifest(
         name: `${p.name}_${d.face}_Decal`,
         parentId: partId,
         properties: {
-          Face: { __type: 'EnumItem', enum: 'NormalId', value: d.face },
+          Face: { __type: 'Enum', enumType: 'NormalId', enumName: d.face },
           Texture: d.textureId ?? '',
         },
       });
@@ -3565,7 +3565,7 @@ function buildBlockyPetManifest(
       properties: {
         ActionText: `${element} attack (F)`,
         ObjectText: `Pet ${spec.name}`,
-        KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'F' },
+        KeyboardKeyCode: { __type: 'Enum', enumType: 'KeyCode', enumName: 'F' },
         HoldDuration: 0,
         MaxActivationDistance: 12,
         RequiresLineOfSight: false,
@@ -3583,7 +3583,7 @@ function buildBlockyPetManifest(
       properties: {
         ActionText: 'Feed pet +1000 XP (T)',
         ObjectText: `Pet ${spec.name}`,
-        KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'T' },
+        KeyboardKeyCode: { __type: 'Enum', enumType: 'KeyCode', enumName: 'T' },
         HoldDuration: 0,
         MaxActivationDistance: 10,
         RequiresLineOfSight: false,
@@ -3644,10 +3644,10 @@ function buildBlockyPetManifest(
       Anchored: true,
       CanCollide: false,
       Massless: true,
-      Shape: { __type: 'EnumItem', enum: 'PartType', value: 'Ball' },
+      Shape: { __type: 'Enum', enumType: 'PartType', enumName: 'Ball' },
       Size: { __type: 'Vector3', x: 3.0, y: 3.0, z: 3.0 },
       BrickColor: { __type: 'BrickColor', name: spec.colors.primary },
-      Material: { __type: 'EnumItem', enum: 'Material', value: 'SmoothPlastic' },
+      Material: { __type: 'Enum', enumType: 'Material', enumName: 'SmoothPlastic' },
       Transparency: 0,
       CFrame: { __type: 'CFrame', position: { x: 0, y: 1.5, z: 0 }, rotation: [0, 0, 0] },
     },
@@ -3665,10 +3665,10 @@ function buildBlockyPetManifest(
         Anchored: true,
         CanCollide: false,
         Massless: true,
-        Shape: { __type: 'EnumItem', enum: 'PartType', value: 'Cylinder' },
+        Shape: { __type: 'Enum', enumType: 'PartType', enumName: 'Cylinder' },
         Size: { __type: 'Vector3', x: 0.25, y: 2.6, z: 2.6 },
         BrickColor: { __type: 'BrickColor', name: spec.colors.accent ?? spec.colors.secondary ?? spec.colors.primary },
-        Material: { __type: 'EnumItem', enum: 'Material', value: 'SmoothPlastic' },
+        Material: { __type: 'Enum', enumType: 'Material', enumName: 'SmoothPlastic' },
         Transparency: 0,
         CFrame: { __type: 'CFrame', position: { x: 0, y: yOff, z: 0 }, rotation: [0, 0, 90] },
       },
@@ -3700,7 +3700,7 @@ function buildBlockyPetManifest(
     properties: {
       ActionText: 'Tap to hatch',
       ObjectText: `${spec.name} Egg`,
-      KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'E' },
+      KeyboardKeyCode: { __type: 'Enum', enumType: 'KeyCode', enumName: 'E' },
       HoldDuration: 0.4,
       MaxActivationDistance: 12,
       RequiresLineOfSight: false,

@@ -3594,8 +3594,13 @@ local DEBUG = true
 --   part.CFrame = HRP.CFrame * bodyBob * offset * animRot[name]
 local partOffsets = {}     -- name -> CFrame (local relative to HRP)
 local parts = {}           -- ordered list of { part, name }
+-- Skip the EggBundle Folder's descendants: those are hidden by EggHatchScript
+-- and destroyed after hatch — PetFollowScript driving them would teleport
+-- the egg to the player on the frame Hatched flips to true.
+local eggBundleFolder = pet:FindFirstChild("EggBundle")
 for _, descendant in ipairs(pet:GetDescendants()) do
-    if descendant:IsA("BasePart") and descendant ~= hrp then
+    if descendant:IsA("BasePart") and descendant ~= hrp
+        and not (eggBundleFolder and descendant:IsDescendantOf(eggBundleFolder)) then
         partOffsets[descendant.Name] = hrp.CFrame:Inverse() * descendant.CFrame
         table.insert(parts, { part = descendant, name = descendant.Name })
     end
@@ -3869,10 +3874,25 @@ RunService.Heartbeat:Connect(function()
     local bobOffset = CFrame.new(0, math.sin(t * bobHz) * bobAmp, 0)
     local baseCFrame = currentHRP * bobOffset
 
+    -- PoseScale lets PetLevelingModule:Evolve resize the rig: the leveling
+    -- module multiplies each Part.Size by the scale factor and stashes the
+    -- factor here. We scale offset.Position (NOT rotation), so parts stay
+    -- at the same relative angles but at a larger distance from HRP.
+    local poseScale = pet:GetAttribute("PoseScale") or 1.0
+
     for _, p in ipairs(parts) do
-        local offset = partOffsets[p.name]
-        local localAnim = animRot[p.name] or CFrame.new()
-        p.part.CFrame = baseCFrame * offset * localAnim
+        if p.part.Parent then  -- skip parts destroyed by hatch tween
+            local offset = partOffsets[p.name]
+            local localAnim = animRot[p.name] or CFrame.new()
+            local effectiveOffset = offset
+            if poseScale ~= 1.0 then
+                local sp = offset.Position * poseScale
+                local _, _, _, r00, r01, r02, r10, r11, r12, r20, r21, r22 = offset:GetComponents()
+                effectiveOffset = CFrame.new(sp.X, sp.Y, sp.Z,
+                    r00, r01, r02, r10, r11, r12, r20, r21, r22)
+            end
+            p.part.CFrame = baseCFrame * effectiveOffset * localAnim
+        end
     end
 
     -- Sound state machine — start/stop looped sounds when state changes.
@@ -3975,6 +3995,27 @@ local function startRainbow()
     end)
 end
 
+-- Manual scale path. We can't use pet:ScaleTo because PetFollowScript
+-- overwrites every part's CFrame each Heartbeat from offsets captured at
+-- pose scale 1.0 — ScaleTo's CFrame edits get clobbered the next frame and
+-- only the Size change survives, causing parts to overlap.
+-- Instead we multiply Part.Size manually and stash a "PoseScale" attribute
+-- that PetFollowScript reads, scaling the offset.Position before writing.
+local function applyScale(targetScale)
+    local prev = pet:GetAttribute("PoseScale") or 1.0
+    local mul = targetScale / prev
+    if math.abs(mul - 1.0) < 0.001 then return end
+    -- Skip egg-bundle descendants — they're hidden then destroyed by hatch
+    -- script, no need to resize them.
+    local eggBundle = pet:FindFirstChild("EggBundle")
+    for _, p in ipairs(pet:GetDescendants()) do
+        if p:IsA("BasePart") and not (eggBundle and p:IsDescendantOf(eggBundle)) then
+            p.Size = p.Size * mul
+        end
+    end
+    pet:SetAttribute("PoseScale", targetScale)
+end
+
 function PetLeveling:Evolve(stage)
     if stage < 1 or stage > 3 then return false end
     cfg.EvolutionStage.Value = stage
@@ -3983,12 +4024,7 @@ function PetLeveling:Evolve(stage)
     if stage == 2 then desired = STAGE2_SCALE
     elseif stage == 3 then desired = STAGE3_SCALE
     else desired = 1.0 end
-    -- Model:ScaleTo (Roblox 2022+) scales the assembly + updates Motor6D
-    -- C0/C1 and Attachment positions so the rig stays coherent.
-    local ok = pcall(function() pet:ScaleTo(desired) end)
-    if not ok then
-        warn("[BlockyPetLeveling] ScaleTo unsupported in this Studio version")
-    end
+    applyScale(desired)
 
     local accentLerp = stage == 2 and 0.30 or stage == 3 and 0.55 or 0
     if accentLerp > 0 then
