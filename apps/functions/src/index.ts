@@ -6251,17 +6251,17 @@ function deterministicVehicleReview(args: {
     if (/family|семейн|low[-\s]*poly|cartoon|мульт|машин/i.test(args.prompt) && !facts.matchedMarkers.includes('FamilyCarBodyShell')) {
       issues.push('prompt_mismatch_family_car: prompt asks for a readable family/cartoon car but manifest lacks FamilyCarBodyShell.');
     }
-    if (facts.monochromeBodyShare >= 0.8) {
+    if (facts.monochromeBodyShare >= 0.55) {
       issues.push(`monochrome_silhouette: ${Math.round(facts.monochromeBodyShare * 100)}% of body volume is in one color; large coplanar same-color panels read as a flat slab from chase camera.`);
       repairActions.push('Recolor roof, hood, and trim in a contrasting tone (silver/black accent over red body) so the cabin reads as a separate volume.');
     }
-    if (facts.bodyVerticalLayerRange < 1.2) {
-      issues.push(`flat_body_layers: vertical range between underbody/body/cabin/roof centers is only ${facts.bodyVerticalLayerRange.toFixed(2)} studs; expected at least 1.2 for a readable 3D silhouette.`);
+    if (facts.bodyVerticalLayerRange < 1.5) {
+      issues.push(`flat_body_layers: vertical range between underbody/body/cabin/roof centers is only ${facts.bodyVerticalLayerRange.toFixed(2)} studs; expected at least 1.5 for a readable 3D silhouette.`);
       repairActions.push('Raise cabin and roof higher above body shell; ensure underbody / body / cabin / roof centers are clearly separated by Y.');
     }
-    if (facts.glassToBodyAreaRatio < 0.08) {
+    if (facts.glassToBodyAreaRatio < 0.12) {
       issues.push(`low_glass_area: glass parts cover only ${Math.round(facts.glassToBodyAreaRatio * 100)}% of body side area; windshield/windows too small to break up the body.`);
-      repairActions.push('Enlarge windshield, rear glass, and door windows; bump glass transparency to 0.35-0.45 so interior reads.');
+      repairActions.push('Enlarge windshield, rear glass, and door windows; bump glass transparency to 0.5-0.65 so interior reads.');
     }
     if (!facts.steeringWheelVisibleThroughWindshield) {
       issues.push('steering_wheel_hidden: FamilyCarSteeringWheelVisible is not positioned in the cabin window band behind a transparent windshield.');
@@ -6277,7 +6277,7 @@ function deterministicVehicleReview(args: {
     repairActions.push('Add two-wheel arcade stabilizer: balance skids plus upright controller so it does not fall sideways.');
   }
   if (repairActions.length === 0) repairActions.push('Keep DriveSeat, passenger seats, controller, engine sound, VFX and readable vehicle silhouette.');
-  const score = Math.max(5, 100 - issues.length * 18 - Math.max(0, facts.missingMarkers.length - 1) * 4);
+  const score = Math.max(5, 100 - issues.length * 25 - Math.max(0, facts.missingMarkers.length - 1) * 4);
   return {
     status: issues.length > 0 ? 'rejected' : 'passed',
     score,

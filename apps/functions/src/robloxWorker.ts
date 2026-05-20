@@ -2481,17 +2481,17 @@ function addVehicleBodyShell(
   addBodyPart('FamilyCarHoodToWindshieldTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, -l * 0.20], accent, { material: 'Metal' });
   addBodyPart('FamilyCarRearCargoBlock', [w * 0.80, h * 0.28, l * 0.24], [0, rootY + h * 0.40, l * 0.33], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarCargoToRearGlassTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, l * 0.20], accent, { material: 'Metal' });
-  addBodyPart('FamilyCarCabinShell', [w * 0.76, h * 0.44, l * 0.42], [0, cabinY, -l * 0.02], primary, { material: 'SmoothPlastic' });
-  addBodyPart('FamilyCarCabinBackPanel', [w * 0.72, h * 0.42, 0.12], [0, cabinY, l * 0.22], primary, { material: 'SmoothPlastic' });
-  addBodyPart('FamilyCarRoofPanel', [w * 0.78, h * 0.12, l * 0.48], [0, roofY, -l * 0.01], accent, { material: 'Metal' });
-  addBodyPart('FamilyCarRoofEdgeTrim', [w * 0.80, h * 0.04, l * 0.50], [0, roofY - h * 0.06, -l * 0.01], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarCabinShell', [w * 0.76, h * 0.50, l * 0.42], [0, cabinY, -l * 0.02], accent, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarCabinBackPanel', [w * 0.72, h * 0.46, 0.12], [0, cabinY, l * 0.22], accent, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarRoofPanel', [w * 0.78, h * 0.20, l * 0.48], [0, roofY, -l * 0.01], accent, { material: 'Metal' });
+  addBodyPart('FamilyCarRoofEdgeTrim', [w * 0.80, h * 0.08, l * 0.50], [0, roofY - h * 0.10, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackLeft', [0.1, h * 0.06, l * 0.42], [-w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackRight', [0.1, h * 0.06, l * 0.42], [w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackFront', [w * 0.52, h * 0.05, 0.08], [0, roofY + h * 0.07, -l * 0.21], silver, { material: 'Metal' });
-  addBodyPart('FamilyCarWindshieldLarge', [w * 0.58, h * 0.34, 0.12], [0, cabinY + h * 0.03, -l * 0.25], glass, { material: 'Glass', transparency: 0.38 });
-  addBodyPart('FamilyCarRearGlassLarge', [w * 0.52, h * 0.30, 0.12], [0, cabinY + h * 0.02, l * 0.25], glass, { material: 'Glass', transparency: 0.40 });
-  addBodyPart('FamilyCarFrontBeltLineSegment', [w * 0.92, h * 0.045, 0.08], [0, rootY + h * 0.57, -l * 0.355], silver, { material: 'Metal' });
-  addBodyPart('FamilyCarRearBeltLineSegment', [w * 0.92, h * 0.045, 0.08], [0, rootY + h * 0.57, l * 0.355], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarWindshieldLarge', [w * 0.58, h * 0.38, 0.12], [0, cabinY + h * 0.03, -l * 0.25], glass, { material: 'Glass', transparency: 0.55 });
+  addBodyPart('FamilyCarRearGlassLarge', [w * 0.52, h * 0.34, 0.12], [0, cabinY + h * 0.02, l * 0.25], glass, { material: 'Glass', transparency: 0.55 });
+  addBodyPart('FamilyCarFrontBeltLineSegment', [w * 0.92, h * 0.10, 0.10], [0, rootY + h * 0.57, -l * 0.355], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarRearBeltLineSegment', [w * 0.92, h * 0.10, 0.10], [0, rootY + h * 0.57, l * 0.355], silver, { material: 'Metal' });
   addBodyPart('FamilyCarFrontBumper', [w * 0.92, h * 0.15, 0.22], [0, rootY + h * 0.12, -l * 0.47], dark, { material: 'Metal' });
   addBodyPart('FamilyCarRearBumper', [w * 0.92, h * 0.15, 0.22], [0, rootY + h * 0.12, l * 0.47], dark, { material: 'Metal' });
   addBodyPart('FamilyCarFrontGrilleWide', [w * 0.54, h * 0.18, 0.1], [0, rootY + h * 0.26, -l * 0.49], dark, { material: 'Metal' });
@@ -2508,8 +2508,8 @@ function addVehicleBodyShell(
     const windowX = side * w * 0.565;
     addBodyPart(`${sideName}FamilyCarFrontDoor`, [0.16, h * 0.40, l * 0.22], [outsideX, rootY + h * 0.38, -l * 0.11], primary, { material: 'SmoothPlastic' });
     addBodyPart(`${sideName}FamilyCarRearDoor`, [0.16, h * 0.40, l * 0.22], [outsideX, rootY + h * 0.38, l * 0.12], primary, { material: 'SmoothPlastic' });
-    addBodyPart(`${sideName}FamilyCarFrontWindow`, [0.10, h * 0.28, l * 0.20], [windowX, cabinY + h * 0.07, -l * 0.12], glass, { material: 'Glass', transparency: 0.42 });
-    addBodyPart(`${sideName}FamilyCarRearWindow`, [0.10, h * 0.28, l * 0.19], [windowX, cabinY + h * 0.07, l * 0.10], glass, { material: 'Glass', transparency: 0.42 });
+    addBodyPart(`${sideName}FamilyCarFrontWindow`, [0.10, h * 0.32, l * 0.22], [windowX, cabinY + h * 0.09, -l * 0.12], glass, { material: 'Glass', transparency: 0.65 });
+    addBodyPart(`${sideName}FamilyCarRearWindow`, [0.10, h * 0.32, l * 0.21], [windowX, cabinY + h * 0.09, l * 0.10], glass, { material: 'Glass', transparency: 0.65 });
     addBodyPart(`${sideName}FamilyCarAPillar`, [0.12, h * 0.50, 0.10], [side * w * 0.40, cabinY + h * 0.02, -l * 0.24], dark, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarBPillar`, [0.12, h * 0.46, 0.10], [side * w * 0.40, cabinY + h * 0.00, -l * 0.01], dark, { material: 'Metal' });
     addBodyPart(`${sideName}FamilyCarCPillar`, [0.12, h * 0.46, 0.10], [side * w * 0.40, cabinY - h * 0.01, l * 0.22], dark, { material: 'Metal' });
@@ -3332,14 +3332,12 @@ function buildBlockyPetManifest(
     const isWedge = p.shape === 'Wedge' || p.shape === 'CornerWedge';
     const className = isWedge ? (p.shape === 'CornerWedge' ? 'CornerWedgePart' : 'WedgePart') : 'Part';
     const props: Record<string, unknown> = {
-      // CRITICAL: non-HRP parts MUST be Anchored=false so Motor6D.Transform
-      // can animate them (anchored parts ignore Motor6D — anchor wins). They
-      // stay attached to HRP via Motor6D welds. Massless+CanCollide=false
-      // means physics doesn't simulate them — they just inherit HRP's CFrame
-      // via the rigid Motor6D constraint. HRP itself is Anchored=true (set
-      // earlier in this builder) so PetFollowScript can PivotTo it without
-      // physics fighting back.
-      Anchored: false,
+      // ALL parts Anchored=true. PetFollowScript moves each part by writing
+      // .CFrame directly each Heartbeat — computed from HRP world CFrame ×
+      // captured authored offset × per-joint anim rotation. No Motor6D
+      // physics constraint, no unanchored drift across PivotTo teleports.
+      // Wings/legs/tail/body bob are animated via direct CFrame math.
+      Anchored: true,
       CanCollide: false,
       Massless: true,
       Transparency: 0,
