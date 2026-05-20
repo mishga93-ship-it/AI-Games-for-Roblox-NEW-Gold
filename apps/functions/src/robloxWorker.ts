@@ -1479,17 +1479,27 @@ function isClothingRequest(prompt: string, metadata: Record<string, unknown>): b
 export function isTextureClothing(prompt: string, metadata: Record<string, unknown>): boolean {
   const contentCategory = typeof metadata.contentCategory === 'string' ? metadata.contentCategory : '';
   const contentSubcategory = typeof metadata.contentSubcategory === 'string' ? metadata.contentSubcategory : '';
+  const clothingType = typeof metadata.clothingType === 'string' ? metadata.clothingType : '';
   // Characters/NPC chat — never route to clothing path. Smart-interview prompts
   // for NPCs frequently mention "fur", "cape", "armor", "vest", which would
   // otherwise match TEXTURE_CLOTHING below and produce an empty Shirt-only RBXM.
   if (contentSubcategory === 'characters' || contentSubcategory === 'npcs') return false;
   if (contentCategory === 'character' || contentCategory === 'npc_ai') return false;
+  // 2026-05-20: Explicit clothing intent from iOS picker beats prompt heuristics.
+  // The iterative-generation prompt embeds the project memory summary, which
+  // routinely contains the word "character" from prior GDD rows — that previously
+  // tripped IS_CHARACTER_PROMPT below and dropped the user into the 9-stage
+  // character pipeline even though they explicitly picked a Classic Shirt in the
+  // clothing chat. If metadata says clothing, trust it.
+  if (contentSubcategory === 'clothing') return true;
+  if (contentCategory === 'ugc_clothing') return true;
+  if (typeof clothingType === 'string' && (clothingType === 't_shirt'
+      || clothingType.startsWith('classic_')
+      || clothingType.startsWith('layered_'))) return true;
   if (MESH_ACCESSORY.test(prompt)) return false;
   // If prompt clearly describes a character/person/NPC, don't classify as clothing
   if (IS_CHARACTER_PROMPT.test(prompt)) return false;
   if (TEXTURE_CLOTHING.test(prompt)) return true;
-  if (contentCategory === 'ugc_clothing') return true;
-  if (contentSubcategory === 'clothing') return true;
   return false;
 }
 
@@ -2521,8 +2531,8 @@ function addVehicleBodyShell(
   addBodyPart('FamilyCarHoodCenterCrease', [0.06, h * 0.04, l * 0.26], [0, rootY + h * 0.53, -l * 0.33], silver, { material: 'Metal' });
   addBodyPart('FamilyCarAntenna', [0.05, h * 0.32, 0.05], [w * 0.28, roofY + h * 0.18, l * 0.10], silver, { shape: 'Cylinder', rot: [0, 0, 0], material: 'Metal' });
   addBodyPart('FamilyCarAntennaBase', [0.10, h * 0.04, 0.10], [w * 0.28, roofY + h * 0.04, l * 0.10], dark, { shape: 'Cylinder', material: 'Metal' });
-  addBodyPart('FamilyCarRearSubtleSpoiler', [w * 0.56, h * 0.06, 0.16], [0, rootY + h * 0.59, l * 0.45], primary, { material: 'SmoothPlastic' });
-  addBodyPart('FamilyCarRearSpoilerTrim', [w * 0.58, h * 0.03, 0.05], [0, rootY + h * 0.62, l * 0.45], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarRearDuckTailLip', [w * 0.56, h * 0.06, 0.16], [0, rootY + h * 0.59, l * 0.45], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarRearLidChromeTrim', [w * 0.58, h * 0.03, 0.05], [0, rootY + h * 0.62, l * 0.45], silver, { material: 'Metal' });
   addBodyPart('FamilyCarLeftExhaustPipe', [0.14, 0.14, l * 0.10], [-w * 0.30, rootY + h * 0.06, l * 0.52], dark, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
   addBodyPart('FamilyCarRightExhaustPipe', [0.14, 0.14, l * 0.10], [w * 0.30, rootY + h * 0.06, l * 0.52], dark, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
   addBodyPart('FamilyCarLeftExhaustTip', [0.16, 0.16, 0.06], [-w * 0.30, rootY + h * 0.06, l * 0.555], silver, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
@@ -2596,7 +2606,7 @@ function addVehicleBodyShell(
     addBodyPart('QARepairCarExtraRearDoorSeamLeft', [0.08, h * 0.36, 0.06], [-w * 0.63, rootY + h * 0.40, l * 0.18], dark, { material: 'Metal' });
     addBodyPart('QARepairCarExtraFrontDoorSeamRight', [0.08, h * 0.36, 0.06], [w * 0.63, rootY + h * 0.40, -l * 0.18], dark, { material: 'Metal' });
     addBodyPart('QARepairCarExtraRearDoorSeamRight', [0.08, h * 0.36, 0.06], [w * 0.63, rootY + h * 0.40, l * 0.18], dark, { material: 'Metal' });
-    addBodyPart('QARepairCarRoofSpoilerAccent', [w * 0.62, h * 0.08, 0.18], [0, roofY + h * 0.04, l * 0.20], accent, { material: 'Metal' });
+    addBodyPart('QARepairCarRoofWingAccent', [w * 0.62, h * 0.08, 0.18], [0, roofY + h * 0.04, l * 0.20], accent, { material: 'Metal' });
     addBodyPart('QARepairCarHoodLouvreLeft', [w * 0.18, h * 0.04, l * 0.10], [-w * 0.20, rootY + h * 0.52, -l * 0.30], accent, { material: 'Metal' });
     addBodyPart('QARepairCarHoodLouvreRight', [w * 0.18, h * 0.04, l * 0.10], [w * 0.20, rootY + h * 0.52, -l * 0.30], accent, { material: 'Metal' });
     addBodyPart('QARepairCarLeftRockerStripe', [0.12, h * 0.05, l * 0.74], [-w * 0.62, rootY + h * 0.16, 0], accent, { material: 'Metal' });
@@ -3545,22 +3555,37 @@ function buildBlockyPetManifest(
       },
     });
 
-    // Attack ProximityPrompt — tap F near pet to fire the attack burst.
-    // Enabled=false at start so the user can't accidentally fire it
-    // before the pet is hatched (Body is invisible inside the egg, but
-    // ProximityPrompt UI still appears in 3D space and confuses players).
-    // EggHatchScript flips Enabled=true after the hatch animation completes.
+    // Attack ProximityPrompt — tap F to fire attack burst AND raycast
+    // damage forward. EggHatchScript flips Enabled=true after hatch.
     scene.push({
       id: uuidv4(),
       className: 'ProximityPrompt',
       name: 'AttackPrompt',
       parentId: bodyPartId,
       properties: {
-        ActionText: `${element} attack`,
+        ActionText: `${element} attack (F)`,
         ObjectText: `Pet ${spec.name}`,
         KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'F' },
         HoldDuration: 0,
         MaxActivationDistance: 12,
+        RequiresLineOfSight: false,
+        Enabled: false,
+      },
+    });
+    // Feed ProximityPrompt — T key, +1000 XP per tap. Lets the user spam
+    // evolution faster during testing; in shipping games game-designers
+    // can tune via PetConfig.XPBase/.XPGrowth NumberValues.
+    scene.push({
+      id: uuidv4(),
+      className: 'ProximityPrompt',
+      name: 'FeedPrompt',
+      parentId: bodyPartId,
+      properties: {
+        ActionText: 'Feed pet +1000 XP (T)',
+        ObjectText: `Pet ${spec.name}`,
+        KeyboardKeyCode: { __type: 'EnumItem', enum: 'KeyCode', value: 'T' },
+        HoldDuration: 0,
+        MaxActivationDistance: 10,
         RequiresLineOfSight: false,
         Enabled: false,
       },
@@ -3607,10 +3632,9 @@ function buildBlockyPetManifest(
     parentId: petModelId,
   });
   const eggBodyId = uuidv4();
-  // Egg body — Ball Shape with primary color × element tint. Sized ~3 studs
-  // tall (large enough to read as "an egg the size of the pet") sitting on
-  // the ground (y center = 1.6 puts bottom at 0 for spec.parts whose lowest
-  // Y is roughly 0).
+  // Egg body — perfect sphere (3 studs diameter). User asked for "round egg"
+  // — previous 3×3.6×3 oval read as a stretched block from default camera.
+  // Center y=1.5 so the bottom touches y=0 (ground baseline).
   scene.push({
     id: eggBodyId,
     className: 'Part',
@@ -3621,15 +3645,17 @@ function buildBlockyPetManifest(
       CanCollide: false,
       Massless: true,
       Shape: { __type: 'EnumItem', enum: 'PartType', value: 'Ball' },
-      Size: { __type: 'Vector3', x: 3.0, y: 3.6, z: 3.0 },
+      Size: { __type: 'Vector3', x: 3.0, y: 3.0, z: 3.0 },
       BrickColor: { __type: 'BrickColor', name: spec.colors.primary },
       Material: { __type: 'EnumItem', enum: 'Material', value: 'SmoothPlastic' },
       Transparency: 0,
-      CFrame: { __type: 'CFrame', position: { x: 0, y: 1.8, z: 0 }, rotation: [0, 0, 0] },
+      CFrame: { __type: 'CFrame', position: { x: 0, y: 1.5, z: 0 }, rotation: [0, 0, 0] },
     },
   });
   // Surface bands — two stripe parts wrap the egg horizontally, accent-colored.
-  for (const [bandName, yOff] of [['EggBandTop', 2.3], ['EggBandBot', 1.3]] as const) {
+  // For a 3-stud sphere centered at y=1.5, bands at y=1.95 / 1.05 sit ±0.45
+  // from center → comfortably inside the surface.
+  for (const [bandName, yOff] of [['EggBandTop', 1.95], ['EggBandBot', 1.05]] as const) {
     scene.push({
       id: uuidv4(),
       className: 'Part',
@@ -3690,7 +3716,10 @@ function buildBlockyPetManifest(
     name: 'HatchSound',
     parentId: eggBodyId,
     properties: {
-      SoundId: 'rbxasset://sounds/pop_mid_up.wav',
+      // Previously pop_mid_up.wav — Studio reported "Temp read failed",
+      // that path does not exist in the Roblox client. snap.wav ships with
+      // every install (crack/snap noise — perfect for hatch).
+      SoundId: 'rbxasset://sounds/snap.wav',
       Volume: 1.0,
       Looped: false,
       RollOffMaxDistance: 40,

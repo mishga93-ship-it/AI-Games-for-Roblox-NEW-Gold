@@ -3702,6 +3702,7 @@ if body then
     end
 end
 local attackPrompt = body and body:FindFirstChild("AttackPrompt")
+local feedPrompt = body and body:FindFirstChild("FeedPrompt")
 local attackBurst = snout and snout:FindFirstChild("AttackBurst")
 local auraParticle = body and body:FindFirstChild("AuraParticle")
 
@@ -3716,26 +3717,115 @@ local function safeStop(name)
     if s and s.IsPlaying then s:Stop() end
 end
 
--- Fire attack: enable AttackBurst for 0.4s, play AttackSound once, ramp
--- aura briefly, optional camera shake hint (set Attribute that a client
--- LocalScript could read).
+-- ── Leveling module (deferred require — module script runs in parallel) ──
+local leveling
+task.defer(function()
+    local mod = pet:FindFirstChild("PetLevelingModule")
+    if mod and mod:IsA("ModuleScript") then
+        local ok, result = pcall(require, mod)
+        if ok then leveling = result end
+    end
+end)
+
+-- ── BillboardGui name+level tag above the pet ──
+-- Anchored to HRP so it tracks the pet wherever it moves. Updates on
+-- Level / EvolutionStage changes; stage badge appears at Stage 2+ as a
+-- visible cue that evolution actually happened.
+local nameGui = Instance.new("BillboardGui")
+nameGui.Name = "PetNameTag"
+nameGui.Size = UDim2.new(6, 0, 1.4, 0)
+nameGui.StudsOffset = Vector3.new(0, 3.2, 0)
+nameGui.AlwaysOnTop = true
+nameGui.MaxDistance = 80
+nameGui.Parent = hrp
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Size = UDim2.new(1, 0, 1, 0)
+nameLabel.BackgroundTransparency = 1
+nameLabel.TextColor3 = Color3.new(1, 1, 1)
+nameLabel.TextStrokeTransparency = 0
+nameLabel.TextScaled = true
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.Parent = nameGui
+local function refreshNameTag()
+    local lvl = (cfg:FindFirstChild("Level") and cfg.Level.Value) or 1
+    local stage = (cfg:FindFirstChild("EvolutionStage") and cfg.EvolutionStage.Value) or 1
+    local stars = string.rep("⭐", math.max(stage - 1, 0))
+    nameLabel.Text = string.format("%s — Lv %d %s", pet.Name, lvl, stars)
+end
+refreshNameTag()
+if cfg:FindFirstChild("Level") then cfg.Level.Changed:Connect(refreshNameTag) end
+if cfg:FindFirstChild("EvolutionStage") then cfg.EvolutionStage.Changed:Connect(refreshNameTag) end
+
+-- ── Auto-XP gain task — passive +50 XP/sec while hatched and below cap. ──
+-- Without this the user would have to manually feed for ~88s to see Stage 2.
+-- With this, evolution happens automatically as the user keeps playing.
+task.spawn(function()
+    while pet.Parent do
+        task.wait(1)
+        if leveling and pet:GetAttribute("Hatched") and cfg.Level.Value < 50 then
+            leveling:GainXP(50)
+        end
+    end
+end)
+
+-- ── Fire attack: visual burst + sound + raycast damage ──
+-- The .Triggered signal passes the triggering player as the first arg.
+-- We raycast 20 studs forward from the player's HRP (player's facing
+-- direction = the natural "aim" since pet is at right shoulder, slightly
+-- behind the player). Hit Humanoid takes (20 + level*3) damage scaled by
+-- element. Element multipliers add flavor: Fire deals over time, Ice/Tech
+-- are flat, Light damages undead more, etc. We just print element flavor;
+-- raw damage value goes through TakeDamage.
+local ATTACK_BASE_DMG = 20
+local ATTACK_RANGE = 20
+local function performAttack(triggerPlayer)
+    if attackBurst and attackBurst:IsA("ParticleEmitter") then
+        attackBurst.Enabled = true
+        attackBurst:Emit(40)
+        task.delay(0.5, function() attackBurst.Enabled = false end)
+    end
+    local atk = sounds["AttackSound"]
+    if atk and atk.SoundId and atk.SoundId ~= "" then atk:Play() end
+    if auraParticle and auraParticle:IsA("ParticleEmitter") then
+        local prev = auraParticle.Rate
+        auraParticle.Rate = prev * 4
+        task.delay(0.6, function() auraParticle.Rate = prev end)
+    end
+    pet:SetAttribute("LastAttackTick", tick())
+
+    -- Damage raycast.
+    local ownerChar = triggerPlayer and triggerPlayer.Character
+    local ownerHrp = ownerChar and ownerChar:FindFirstChild("HumanoidRootPart")
+    if not ownerHrp then return end
+    local lookDir = ownerHrp.CFrame.LookVector
+    local raySrc = ownerHrp.Position + lookDir * 2  -- start just in front of player
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = { pet, ownerChar }
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local hit = workspace:Raycast(raySrc, lookDir * ATTACK_RANGE, params)
+    if not hit or not hit.Instance then return end
+    local target = hit.Instance.Parent
+    local hum = target and target:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health > 0 then
+        local lvl = cfg.Level.Value
+        local damage = ATTACK_BASE_DMG + lvl * 3
+        hum:TakeDamage(damage)
+        local elementName = (cfg:FindFirstChild("Element") and cfg.Element.Value) or "Neutral"
+        print(string.format("[BlockyPet] %s dealt %d %s damage to %s",
+            pet.Name, damage, elementName, target.Name))
+    end
+end
 if attackPrompt and attackPrompt:IsA("ProximityPrompt") then
-    attackPrompt.Triggered:Connect(function()
-        if attackBurst and attackBurst:IsA("ParticleEmitter") then
-            attackBurst.Enabled = true
-            -- Emit a one-shot burst + ramp down.
-            attackBurst:Emit(40)
-            task.delay(0.5, function() attackBurst.Enabled = false end)
-        end
-        local atk = sounds["AttackSound"]
-        if atk and atk.SoundId and atk.SoundId ~= "" then atk:Play() end
+    attackPrompt.Triggered:Connect(performAttack)
+end
+
+-- ── Feed prompt: +1000 XP per tap + brief aura burst. ──
+if feedPrompt and feedPrompt:IsA("ProximityPrompt") then
+    feedPrompt.Triggered:Connect(function()
+        if leveling then leveling:GainXP(1000) end
         if auraParticle and auraParticle:IsA("ParticleEmitter") then
-            local prev = auraParticle.Rate
-            auraParticle.Rate = prev * 4
-            task.delay(0.6, function() auraParticle.Rate = prev end)
+            auraParticle:Emit(20)
         end
-        -- Signal so client scripts (if any) can shake camera.
-        pet:SetAttribute("LastAttackTick", tick())
     end)
 end
 
@@ -3840,8 +3930,17 @@ local STAGE3_AT = 50
 local STAGE2_SCALE = 1.25
 local STAGE3_SCALE = 1.50
 
+-- XP curve. Previous (100 * 1.15^lvl) needed ~17k XP for lvl 25 and 710k
+-- for lvl 50 — far too steep for a testing/UX-iteration cycle. New curve
+-- (50 * 1.10^lvl) requires:
+--   lvl 25 → 4425 XP  (~88s passive at 50 XP/sec, or 5 feeds at 1000 XP)
+--   lvl 50 → 52500 XP (~17min passive, or 53 feeds)
+-- Game designers can override by writing to PetConfig.XPBase/.XPGrowth.
+local XP_BASE = (cfg:FindFirstChild("XPBase") and cfg.XPBase.Value) or 50
+local XP_GROWTH = (cfg:FindFirstChild("XPGrowth") and cfg.XPGrowth.Value) or 1.10
+
 function PetLeveling:XPRequired(level)
-    return math.floor(100 * 1.15 ^ (level - 1))
+    return math.floor(XP_BASE * XP_GROWTH ^ (level - 1))
 end
 
 function PetLeveling:GetLevel() return cfg.Level.Value end
@@ -3988,13 +4087,17 @@ local hatchPrompt = eggChild("HatchPrompt")
 local hatchSound  = eggChild("HatchSound")
 local hatchBurst  = eggChild("HatchBurst")
 
--- AttackPrompt must be disabled while the pet is inside the egg —
--- otherwise the user walks up, sees "Fire attack" instead of "Hatch egg"
--- and triggers the wrong action.
+-- AttackPrompt + FeedPrompt must both be disabled while the pet is
+-- inside the egg — otherwise the user walks up, sees "Fire attack" or
+-- "Feed pet" instead of "Tap to hatch" and triggers the wrong action.
 local body = pet:FindFirstChild("Body")
 local attackPrompt = body and body:FindFirstChild("AttackPrompt")
+local feedPrompt = body and body:FindFirstChild("FeedPrompt")
 if attackPrompt and attackPrompt:IsA("ProximityPrompt") then
     attackPrompt.Enabled = false
+end
+if feedPrompt and feedPrompt:IsA("ProximityPrompt") then
+    feedPrompt.Enabled = false
 end
 
 -- Hide non-egg pet parts so only the egg is visible until hatch.
@@ -4056,6 +4159,9 @@ local function doHatch()
         if outline and outlineWas ~= nil then outline.OutlineTransparency = outlineWas end
         if attackPrompt and attackPrompt:IsA("ProximityPrompt") then
             attackPrompt.Enabled = true
+        end
+        if feedPrompt and feedPrompt:IsA("ProximityPrompt") then
+            feedPrompt.Enabled = true
         end
     end)
 end
