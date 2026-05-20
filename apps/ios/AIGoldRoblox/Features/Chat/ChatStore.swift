@@ -1081,30 +1081,9 @@ final class ChatStore: ObservableObject {
         if normalized == "generate!" || normalized == "generate now"
             || normalized == "генерируй!" || normalized == "генерировать"
             || normalized == "всё супер, генерируй!" || normalized == "go" || normalized == "create it" {
-            // 2026-05-20: clothing chats must lock in a 2D/3D mode BEFORE generation
-            // fires. The LLM-prompt-driven final picker (promptCatalog.smartInterviewClothing)
-            // is unreliable — LLM sometimes falls back to plain "Generate!". So we
-            // intercept locally: when clothing && mode is nil AND the item has a
-            // 2D variant, show the 3-button picker right here. Items with no 2D
-            // analogue (Jacket/Sweater/Dress) pass through directly.
-            if contentSubcategory == "clothing" && draft.clothingMode == nil {
-                let ct = draft.clothingType ?? ""
-                let has2DVariant = ct == "classic_shirt" || ct == "classic_pants"
-                    || ct == "classic_outfit" || ct == "t_shirt"
-                if has2DVariant {
-                    messages.append(
-                        ChatMessage(
-                            id: UUID().uuidString,
-                            role: .assistant,
-                            content: "How should I produce it?\n\n• **2D Classic** — flat texture (585×559 wrap or 512×512 sticker), uploads to Roblox in seconds, sells via web Marketplace.\n• **3D Layered** — real 3D mesh accessory, takes 2-5 min for Meshy, finished in Studio Accessory Fitting Tool, needs UGC Program approval to publish.",
-                            quickReplies: ["✨ Generate as 2D Classic", "🧥 Generate as 3D Layered", "Decide for me"],
-                            gddRows: nil,
-                            createdAt: Date()
-                        )
-                    )
-                    return
-                }
-            }
+            // Clothing 2D/3D mode gate now lives inside generateFromCurrentPlan()
+            // so every entry point (Quick Generate button, confirmGeneration,
+            // retry/repair paths) routes through it. No inline check needed here.
             generateFromCurrentPlan()
             return
         }
@@ -1459,6 +1438,35 @@ final class ChatStore: ObservableObject {
 
     private var needsFurniturePathChoice: Bool {
         contentSubcategory == "furniture" && (draft.furnitureBuildMode == nil || draft.furnitureBuildMode?.isEmpty == true)
+    }
+
+    // 2026-05-20: clothing chat gate before generation — user must lock in a
+    // 2D Classic vs 3D Layered mode. Items with no 2D analogue (Jacket /
+    // Sweater / Dress map to layered_*) skip this picker because their mode
+    // is implicit. Items WITH both modes (T-Shirt is fixed 2D, Shirt / Pants /
+    // Outfit can be either) gate here.
+    private var needsClothingModeChoice: Bool {
+        guard contentSubcategory == "clothing" else { return false }
+        guard (draft.clothingMode ?? "").isEmpty else { return false }
+        let ct = draft.clothingType ?? ""
+        // Only Shirt / Pants / Outfit have both 2D classic AND 3D layered
+        // variants worth choosing between. T-Shirt is always classic_2d, and
+        // jackets/sweaters/dresses are layered-only (Roblox has no 2D versions
+        // of those AccessoryTypes).
+        return ct == "classic_shirt" || ct == "classic_pants" || ct == "classic_outfit"
+    }
+
+    private func appendClothingModeChoiceMessage() {
+        messages.append(
+            ChatMessage(
+                id: UUID().uuidString,
+                role: .assistant,
+                content: "How should I produce it?\n\n• **2D Classic** — flat 585×559 wrap template, uploads to Roblox in seconds via web Marketplace. Works today.\n• **3D Layered** — real 3D mesh accessory, 2-5 min via Meshy, finished in Studio Accessory Fitting Tool. Needs UGC Program approval to publish.",
+                quickReplies: ["✨ Generate as 2D Classic", "🧥 Generate as 3D Layered", "Decide for me"],
+                gddRows: nil,
+                createdAt: Date()
+            )
+        )
     }
 
     private func furniturePathChoiceReplies() -> [String] {
@@ -2968,6 +2976,17 @@ final class ChatStore: ObservableObject {
 
         if needsFurniturePathChoice {
             appendFurniturePathChoiceMessage()
+            return
+        }
+
+        // 2026-05-20: clothing chats must lock in a 2D Classic / 3D Layered mode
+        // BEFORE generation kicks off. The intercept was previously only inside
+        // sendQuickReply's "generate!" branch — but generateFromCurrentPlan() is
+        // called from 10+ other paths (bottom "Quick Generate" button,
+        // confirmGeneration(), various retry/repair paths). Move the gate here
+        // so EVERY entry point routes through it.
+        if needsClothingModeChoice {
+            appendClothingModeChoiceMessage()
             return
         }
 
