@@ -150,10 +150,19 @@ bash scripts/safe-deploy-functions.sh
 3. `git log --oneline -3` — проверь, не появились ли коммиты, которых ты не делал, с того момента как начал работу. Если да — твой `git log` уже не свежий, перечитай последние changelog'и и адаптируй план.
 4. Стажь только файлы своей задачи по имени (`git add path/to/file`), не `git add .` — иначе утащишь чужие правки в свой коммит.
 
+**Перед `xcodebuild` (или любой iOS-сборкой через CLI):**
+
+1. **НЕ запускай `xcodebuild` против `apps/ios/AIGoldRoblox.xcodeproj`, если пользовательский Xcode уже открыт на том же проекте.** DerivedData один, и `build.db` имеет SQLite-lock — параллельный билд получит `unable to attach DB: database is locked`, **и Xcode пользователя тоже сломается на этой же ошибке**.
+2. Проверка: `pgrep -fl "Xcode.app/Contents/MacOS/Xcode"` → если Xcode запущен, и он смотрит на этот проект (`osascript -e 'tell application "Xcode" to get path of active workspace document'`), **не запускай xcodebuild**.
+3. Альтернатива: попроси пользователя закрыть Xcode временно, или используй **отдельный** DerivedData: `xcodebuild ... -derivedDataPath /tmp/aigold-claude-build`. Тогда твой билд не лочит пользовательский кэш.
+4. После CLI-билда в `/tmp` — не забудь удалить временный DerivedData, чтобы не копить мусор.
+5. Если уже запустил xcodebuild и видишь lock-conflict — кильни **свой** процесс (`kill <PID>`), не пользовательский Xcode.
+
 **Перед самым первым действием в сессии** (preflight):
 
 - `git status --short --branch` → понять, чьи правки уже в working tree.
 - `ls -lat cursor/changelog-*.md | head -3` → если последний changelog моложе твоего старта на минуты — другая сессия активна, не лезь в её файлы без явного разрешения пользователя.
+- `pgrep -fl xcodebuild` → если активный CLI-билд работает, не запускай свой; жди или используй `-derivedDataPath /tmp/...`.
 
 Это правило в паре с §0.6 (commit перед deploy) убирает корень «по кругу»: параллельные сессии больше не перетирают чужие правки молча.
 
