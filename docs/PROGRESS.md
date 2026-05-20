@@ -29,8 +29,8 @@
   - `node smoke-vehicle-layer1.mjs` — roof color (0.04,0.045,0.05) ≠ body color (0.88,0.10,0.12), windshield T=0.38, steering diameter 1.3, 124 parts, все trim'ы на месте.
   - `node smoke-vehicle-layer2.mjs` — good manifest: mono=0.766, vRange=3.65, glassRatio=0.19, swVisible=true. Slab regression: mono=1.0, vRange=0, glassRatio=0, swVisible=false → all 4 flags trip.
   - `node smoke-vehicle-layer3.mjs` — good family sedan даёт читаемый силуэт: R сверху, G+S в среднем band (руль виден через лобовое!), B + W внизу.
-- **Deploy**: НЕ задеплоено — по §0.5 п.7 push/deploy ждёт явной команды пользователя.
-- **Известные ограничения**: пока deploy не сделан, prod продолжает отдавать build из `api-00929-ler`. После deploy fresh export должен показать читаемую машину с контрастным roof, видимым рулём через стекло, и любые регрессии будут перехвачены layer 2+3. Полноценный visual rendering (PNG → Claude vision) оставлен как next-step follow-up — текущая ASCII-проекция должна быть достаточной для Claude.
+- **Deploy**: `bash scripts/safe-deploy-functions.sh` ✅; `/api/health` ✅; live revision `api-00933-dis`, traffic 100%, function URL `https://api-z4yzt6dhjq-uc.a.run.app`.
+- **Известные ограничения**: старые скачанные `.rbxm` не меняются — пользователь должен сгенерировать fresh vehicle. Полноценный visual rendering (PNG → Claude vision) оставлен как next-step follow-up — текущая ASCII-проекция должна быть достаточной для Claude.
 
 ### ✅ [Vehicles Family Sedan Rebuild] Машина больше не строится поверх race-frame клина (2026-05-20, сессия 367)
 - **Проблема**: fresh `content-project-vehicle.rbxm` после session 366 всё ещё выглядел как длинный красный болид/клин с огромными чёрными колёсами, хотя технические markers (`FamilyCarBodyShell`, steering, rims) уже присутствовали.
