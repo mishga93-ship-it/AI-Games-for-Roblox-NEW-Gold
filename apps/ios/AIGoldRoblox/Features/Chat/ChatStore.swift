@@ -152,6 +152,26 @@ final class ChatStore: ObservableObject {
         )
     }
 
+    // 2026-05-20: concept-approval button label must reflect what actually
+    // happens after approval, not always "Start 3D". Pipeline diverges by mode:
+    //   - clothing classic_2d → composite 2D templates, no Meshy
+    //   - clothing layered_3d → Meshy multi-image-to-3d
+    //   - t_shirt → 512×512 decal upload, no 3D
+    //   - all other content kinds → 3D mesh (default)
+    // User was confused why "Start 3D" appeared when they picked 2D Classic.
+    var conceptApproveButtonLabel: String {
+        if contentSubcategory == "clothing" {
+            let ct = draft.clothingType ?? ""
+            if ct == "t_shirt" { return "Looks good — Build T-Shirt" }
+            switch draft.clothingMode ?? "" {
+            case "classic_2d": return "Looks good — Build 2D Classic"
+            case "layered_3d": return "Looks good — Start 3D Layered"
+            default: break
+            }
+        }
+        return "Looks good — Start 3D"
+    }
+
     private var draft: ProjectDraft
     private let voiceRecorder = VoiceRecorder()
     private var pendingVoiceSessionID: String?

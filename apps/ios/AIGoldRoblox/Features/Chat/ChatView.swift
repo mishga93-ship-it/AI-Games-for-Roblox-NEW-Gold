@@ -1246,6 +1246,7 @@ struct ChatView: View {
                     chatStore.regenerateConcept(feedback: feedback)
                 } : nil,
                 isProcessingConceptAction: chatStore.isProcessingConceptAction,
+                approveConceptButtonLabel: chatStore.conceptApproveButtonLabel,
                 heroConcepts: chatStore.heroConcepts,
                 onToggleHeroConcept: chatStore.isAwaitingHeroApproval ? { index in
                     chatStore.toggleHeroConceptApproval(at: index)

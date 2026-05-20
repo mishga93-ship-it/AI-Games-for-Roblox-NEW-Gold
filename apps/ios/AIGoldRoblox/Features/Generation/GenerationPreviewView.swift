@@ -16,6 +16,10 @@ struct GenerationPreviewView: View {
     let onApproveConcept: (() -> Void)?
     let onRegenerateConcept: ((String?) -> Void)?
     let isProcessingConceptAction: Bool
+    /// 2026-05-20: Label for the concept-approval primary button. Must reflect
+    /// the mode the user picked (Build 2D / Start 3D / Build T-Shirt) so the
+    /// button doesn't lie about what happens next. Default keeps old behavior.
+    var approveConceptButtonLabel: String = "Looks good — Start 3D"
     let heroConcepts: [AIWorkspaceAPI.HeroConcept]
     let onToggleHeroConcept: ((Int) -> Void)?
     let onApproveHeroConcepts: (() -> Void)?
@@ -616,7 +620,7 @@ struct GenerationPreviewView: View {
                                 Button(action: onApprove) {
                                     HStack(spacing: 8) {
                                         Image(systemName: "checkmark.circle.fill")
-                                        Text("Looks good — Start 3D")
+                                        Text(approveConceptButtonLabel)
                                     }
                                     .font(.appHeadline)
                                     .foregroundColor(.white)
