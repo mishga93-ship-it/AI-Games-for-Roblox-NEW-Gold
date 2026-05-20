@@ -1696,7 +1696,7 @@ function buildLayeredClothingManifest(
       name: `${args.title}-${accessoryTypeEnum}`,
       parentId: 'WorkspaceRoot',
       properties: {
-        AccessoryType: { __type: 'EnumItem', enum: 'AccessoryType', value: accessoryTypeEnum },
+        AccessoryType: { __type: 'Enum', enumType: 'AccessoryType', enumName: accessoryTypeEnum },
       },
     },
     {
@@ -1719,7 +1719,7 @@ function buildLayeredClothingManifest(
       properties: {
         Enabled: true,
         Order: 1,
-        AutoSkin: { __type: 'EnumItem', enum: 'WrapLayerAutoSkin', value: 'EnabledOverride' },
+        AutoSkin: { __type: 'Enum', enumType: 'WrapLayerAutoSkin', enumName: 'EnabledOverride' },
         ShrinkFactor: 0,
         Puffiness: 1,
         ...(innerCageUrl ? { ReferenceMeshId: innerCageUrl } : {}),
@@ -2206,7 +2206,43 @@ function buildVehicleModelManifest(
     },
   );
 
-  addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass, silver, repairBoost });
+  // Mesh-based body branch: when the upstream Meshy text-to-3D stage placed a
+  // GLB URL in metadata.vehicleMeshUrl, swap the procedural blocky body shell
+  // for a single MeshPart that displays the actual generated mesh. Wheels,
+  // seats, physics, sounds, effects all stay procedural (proven physics that
+  // drives) and are simply welded around the mesh body via ChassisRoot.
+  // Fallback: when the mesh URL is absent (Meshy failed, returned empty, or
+  // this is a vehicle type Meshy can't handle reliably), we emit the existing
+  // deterministic family-sedan / motorcycle / boat / etc. shell.
+  const vehicleMeshUrl = typeof metadata.vehicleMeshUrl === 'string' && metadata.vehicleMeshUrl.length > 0
+    ? metadata.vehicleMeshUrl
+    : undefined;
+  if (vehicleMeshUrl) {
+    const meshBodyId = addPart(
+      'VehicleMeshBody',
+      folders.body,
+      [width * 0.94, Math.max(1.0, height * 0.84), length * 0.92],
+      [0, rootY + height * 0.32, 0],
+      primary,
+      {
+        className: 'MeshPart',
+        material: 'SmoothPlastic',
+        canCollide: false,
+        massless: true,
+        extra: {
+          MeshId: vehicleMeshUrl,
+        },
+      },
+    );
+    weldToRoot(meshBodyId, 'VehicleMeshBodyWeld');
+    if (vehicleType === 'car') {
+      addBodyPart('MeshBodyFrontBumperTrim', [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10, -length * 0.49], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearBumperTrim',  [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10,  length * 0.49], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearLicensePlate', [width * 0.26, height * 0.09, 0.06], [0, rootY + height * 0.28, length * 0.50], silver, { material: 'Metal' });
+    }
+  } else {
+    addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass, silver, repairBoost });
+  }
   addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot });
   addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart });
   addVehicleEffects({ scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence });

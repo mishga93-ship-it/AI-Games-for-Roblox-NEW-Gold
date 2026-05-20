@@ -6025,6 +6025,7 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
 function createVehiclePipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
+    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body mesh (Meshy)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
   ];
@@ -10155,6 +10156,64 @@ async function runMeshyPetPassthrough(stagePrompt: string, input: Record<string,
     kind: 'pet_3d',
   });
   return { outputUrl: exec.outputUrl, mimeType: exec.mimeType };
+}
+
+// Vehicle Meshy passthrough — same dynamic-import pattern as the pet variant
+// above. Uses kind='vehicle_3d' so the providers layer applies vehicle-aware
+// negative prompts and topology defaults.
+async function runMeshyVehiclePassthrough(stagePrompt: string, input: Record<string, unknown>): Promise<{ outputUrl?: string; mimeType?: string }> {
+  const providersModule = await import('./providers.js');
+  const fn = (providersModule as unknown as { runMeshy?: (p: string, i: Record<string, unknown>) => Promise<{ outputUrl?: string; mimeType?: string }> }).runMeshy;
+  if (fn) return fn(stagePrompt, input);
+  const exec = await providersModule.executeProvider({
+    provider: 'meshy',
+    operation: 'generate-3d',
+    prompt: stagePrompt,
+    input: input as Record<string, unknown>,
+    kind: 'vehicle_3d',
+  });
+  return { outputUrl: exec.outputUrl, mimeType: exec.mimeType };
+}
+
+// Build a Meshy text-to-3d prompt for a vehicle body. The chassis (wheels,
+// DriveSeat, controller script) is procedural backend-side; the mesh is JUST
+// the body shell. Strong constraints on "no wheels, no characters, single
+// mesh" keep Meshy from generating an entire vehicle+rider scene that won't
+// fit the procedural drivetrain.
+function buildVehicleMeshyPrompt(args: {
+  prompt: string;
+  title: string;
+  vehicleType: string;
+  primaryHex?: string;
+  accentHex?: string;
+}): string {
+  const colorPhrase = args.primaryHex && args.accentHex
+    ? `body color ${args.primaryHex}, cabin/roof accent color ${args.accentHex}`
+    : args.primaryHex
+      ? `body color ${args.primaryHex}`
+      : '';
+  const vehicleNoun = (() => {
+    switch (args.vehicleType) {
+      case 'car': return 'sedan car body';
+      case 'motorcycle': return 'motorcycle frame and tank (no rider)';
+      case 'bicycle': return 'bicycle frame (no rider)';
+      case 'bus': return 'bus body';
+      case 'boat': return 'speedboat hull';
+      case 'plane': return 'low-poly airplane fuselage with wings';
+      case 'helicopter': return 'helicopter fuselage and tail boom';
+      case 'tank': return 'tank hull and turret';
+      case 'spaceship': return 'sci-fi spaceship hull';
+      default: return 'low-poly vehicle body';
+    }
+  })();
+  return [
+    `Low-poly Roblox-friendly ${vehicleNoun}.`,
+    args.prompt ? `Brief: ${args.prompt.slice(0, 220)}.` : '',
+    args.title ? `Title: ${args.title.slice(0, 100)}.` : '',
+    colorPhrase ? `Color: ${colorPhrase}.` : '',
+    'Single closed mesh. No wheels, no characters, no riders, no people. Clean low-poly stylized look. Front-facing.',
+    'Family-friendly, no blood, no weapons.',
+  ].filter(Boolean).join(' ');
 }
 
 async function processMapEnvironmentJob(jobId: string, job: GenerationJob): Promise<GenerationJob> {
@@ -26056,6 +26115,58 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         `Seats: ${seatCount}`,
         'Using canonical self-contained VehicleController template',
       ]);
+
+      // ── generate_vehicle_mesh: ask Meshy v6 text-to-3D for a low-poly body
+      // shell. The result GLB URL is stored in metadata.vehicleMeshUrl; the
+      // robloxWorker builder switches to a MeshPart body when this is set,
+      // otherwise falls back to the proven procedural family-sedan path.
+      await beginStage('generate_vehicle_mesh', 'Asking Meshy for a low-poly vehicle body');
+      try {
+        const titleStr = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
+        const primaryHex = typeof currentJob.metadata?.primaryColor === 'string' ? currentJob.metadata.primaryColor : undefined;
+        const accentHex = typeof currentJob.metadata?.accentColor === 'string' ? currentJob.metadata.accentColor : undefined;
+        const meshyPrompt = buildVehicleMeshyPrompt({
+          prompt: job.prompt,
+          title: titleStr,
+          vehicleType,
+          primaryHex,
+          accentHex,
+        });
+        const meshyInput: Record<string, unknown> = {
+          contentCategory: 'vehicle',
+          vehicleType,
+          driveMode,
+          title: titleStr,
+          requestedKind: 'vehicle_3d',
+        };
+        const meshResult = await runMeshyVehiclePassthrough(meshyPrompt, meshyInput);
+        const meshUrl = meshResult.outputUrl;
+        if (meshUrl) {
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              vehicleMeshUrl: meshUrl,
+              vehicleMeshMimeType: meshResult.mimeType ?? 'model/gltf-binary',
+              vehicleMeshProvider: 'meshy-v6',
+            },
+          };
+          await finishStage('generate_vehicle_mesh', 'completed', [], [
+            `Meshy returned a mesh for ${vehicleType}`,
+            `Prompt: ${meshyPrompt.slice(0, 140)}`,
+          ]);
+        } else {
+          await finishStage('generate_vehicle_mesh', 'completed', [], [
+            'Meshy returned no mesh URL — falling back to procedural body.',
+          ]);
+        }
+      } catch (meshErr) {
+        logger.warn('[Vehicle] Meshy mesh generation failed, falling back to procedural body', { error: errorMessage(meshErr), jobId });
+        await finishStage('generate_vehicle_mesh', 'completed', [], [
+          `Meshy unavailable: ${errorMessage(meshErr).slice(0, 200)}`,
+          'Falling back to deterministic procedural family-sedan body.',
+        ]);
+      }
     }
 
     // ── NPC character scripts generation ──
