@@ -3665,17 +3665,37 @@ for _, desc in ipairs(pet:GetDescendants()) do
 end
 
 local function followPositionFor(charHrp)
-    local angle = tick() * ORBIT_SPEED * 2 * math.pi
     local isFlying = cfg:FindFirstChild("IsFlying") and cfg.IsFlying.Value
     local heightOffset = isFlying and FLY_HEIGHT_OFFSET or STAND_HEIGHT_OFFSET
-    local offset = Vector3.new(
-        math.cos(angle) * FOLLOW_RADIUS,
-        heightOffset,
-        math.sin(angle) * FOLLOW_RADIUS
-    )
-    local desiredPos = charHrp.Position + offset
-    -- Face the player so head (built at -Z) points at them.
-    return CFrame.lookAt(desiredPos, charHrp.Position)
+
+    if isFlying then
+        -- Flying pets glide BEHIND the player (like a familiar). Position =
+        -- player.Position - player.LookVector * BEHIND_DIST + side bob + up.
+        -- This makes the pet feel like a follower rather than an orbiting
+        -- satellite. Pet always points the same direction the player faces.
+        local lookFlat = Vector3.new(charHrp.CFrame.LookVector.X, 0, charHrp.CFrame.LookVector.Z)
+        if lookFlat.Magnitude < 0.01 then lookFlat = Vector3.new(0, 0, -1) end
+        lookFlat = lookFlat.Unit
+        local rightFlat = Vector3.new(lookFlat.Z, 0, -lookFlat.X) -- 90° clockwise
+        -- Small sideways sway so the pet doesn't sit perfectly rigid behind.
+        local sway = math.sin(tick() * 0.8) * 1.5
+        local desiredPos = charHrp.Position
+            - lookFlat * FOLLOW_RADIUS       -- behind player
+            + rightFlat * sway               -- gentle side-to-side
+            + Vector3.new(0, heightOffset, 0)
+        -- Pet faces same direction as player (head points along lookFlat).
+        return CFrame.lookAt(desiredPos, desiredPos + lookFlat)
+    else
+        -- Walking pets orbit around the player (Pet Simulator X style).
+        local angle = tick() * ORBIT_SPEED * 2 * math.pi
+        local offset = Vector3.new(
+            math.cos(angle) * FOLLOW_RADIUS,
+            heightOffset,
+            math.sin(angle) * FOLLOW_RADIUS
+        )
+        local desiredPos = charHrp.Position + offset
+        return CFrame.lookAt(desiredPos, charHrp.Position)
+    end
 end
 
 -- Targeting state. snapped=false until we've teleported to player on first

@@ -3322,17 +3322,16 @@ function buildBlockyPetManifest(
     const isWedge = p.shape === 'Wedge' || p.shape === 'CornerWedge';
     const className = isWedge ? (p.shape === 'CornerWedge' ? 'CornerWedgePart' : 'WedgePart') : 'Part';
     const props: Record<string, unknown> = {
-      // Anchored=true on ALL parts (not just HRP). PetFollowScript uses
-      // Model:PivotTo() which moves anchored parts directly. Motor6D.Transform
-      // animations still work on anchored parts (they're a non-physics
-      // animation layer). Earlier unanchored attempt had pets invisible after
-      // Play — physics on Massless welded parts produced edge cases (parts
-      // drifting through floor, getting culled, or replication lag).
-      Anchored: true,
+      // CRITICAL: non-HRP parts MUST be Anchored=false so Motor6D.Transform
+      // can animate them (anchored parts ignore Motor6D — anchor wins). They
+      // stay attached to HRP via Motor6D welds. Massless+CanCollide=false
+      // means physics doesn't simulate them — they just inherit HRP's CFrame
+      // via the rigid Motor6D constraint. HRP itself is Anchored=true (set
+      // earlier in this builder) so PetFollowScript can PivotTo it without
+      // physics fighting back.
+      Anchored: false,
       CanCollide: false,
       Massless: true,
-      // Force visible — defensive against Lune defaulting transparency or any
-      // upstream property mass-write applying HRP's Transparency=1 here.
       Transparency: 0,
       Size: { __type: 'Vector3', x: p.size[0], y: p.size[1], z: p.size[2] },
       BrickColor: { __type: 'BrickColor', name: colorSlot(p.color) },
