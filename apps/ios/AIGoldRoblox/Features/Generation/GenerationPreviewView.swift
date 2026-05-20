@@ -96,6 +96,10 @@ struct GenerationPreviewView: View {
         case clothingPreview(shirtURL: URL?, pantsURL: URL?)
         case animationPreview(name: String, rig: String, keyframeCount: Int, looped: Bool, animationType: String, notes: [String], previewMediaURL: URL? = nil, previewIsVideo: Bool = false)
         case uiPreview(code: String, uiType: String, visualStyle: String, title: String)
+        /// 2026-05-20 (Track 3 Phase 2): interactive SceneKit reconstruction
+        /// of a blocky pet. Spec comes from the .rbxm artifact's
+        /// metadata.blockyPetSpecJSON; user can orbit / pinch-zoom.
+        case blockyPet3D(spec: BlockyPetSpecPayload, element: String, rarity: String, species: String, isFlying: Bool, notes: [String])
         case unavailable(String)
 
         var previewImageURLs: [URL] {
@@ -123,7 +127,7 @@ struct GenerationPreviewView: View {
                     if urls.count >= 2 { break }
                 }
                 return Array(urls.prefix(2))
-            case .code, .gdd, .text, .projectBundle, .robloxBinary, .model3D, .uiPreview, .unavailable:
+            case .code, .gdd, .text, .projectBundle, .robloxBinary, .model3D, .uiPreview, .unavailable, .blockyPet3D:
                 return []
             }
         }
@@ -300,6 +304,41 @@ struct GenerationPreviewView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.cardBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        case .blockyPet3D(let spec, let element, let rarity, let species, let isFlying, let notes):
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Image(systemName: "pawprint.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.textPrimary)
+                    Text(spec.name ?? "Pet")
+                        .font(.appHeadline)
+                        .foregroundColor(.textPrimary)
+                    Spacer()
+                    BlockyPetBadge(text: rarity, tint: BlockyPetPalette.rarityTint(rarity))
+                    BlockyPetBadge(text: element, tint: BlockyPetPalette.elementTint(element))
+                    if isFlying { BlockyPetBadge(text: "Flying", tint: .blue) }
+                }
+                Text(species.capitalized)
+                    .font(.appCallout)
+                    .foregroundColor(.textSecondary)
+                BlockyPet3DSceneView(spec: spec, element: element)
+                    .frame(height: 360)
+                    .background(Color.black.opacity(0.4))
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                Text("Drag to rotate · pinch to zoom · this is exactly how the pet looks in Roblox.")
+                    .font(.appCaption)
+                    .foregroundColor(.textSecondary)
+                    .multilineTextAlignment(.leading)
+                ForEach(notes, id: \.self) { note in
+                    Text(note)
+                        .font(.appCallout)
+                        .foregroundColor(.textSecondary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
             }
         case .media(let kind, let remoteURL):
@@ -1049,6 +1088,11 @@ struct GenerationPreviewView: View {
             ClothingPreview3DView(shirtTextureURL: shirtURL, pantsTextureURL: pantsURL)
                 .frame(height: 280)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
+        case .blockyPet3D(let spec, let element, _, _, _, _):
+            BlockyPet3DSceneView(spec: spec, element: element)
+                .frame(height: 280)
+                .background(Color.black.opacity(0.4))
+                .clipShape(RoundedRectangle(cornerRadius: 18))
         case .animationPreview(let name, let rig, let keyframeCount, let looped, let animationType, let notes, let previewMediaURL, let previewIsVideo):
             AnimationPreviewCard(
                 name: name,
@@ -1199,6 +1243,11 @@ struct GenerationPreviewView: View {
                         } else if case .media(let kind, _) = artifactType, kind == "audio" {
                             PrimaryButton(title: "Export RBXM (with Sound)", action: onExportRBXM, style: .outline)
                             Text("Drag into Workspace in Studio — audio is embedded")
+                                .font(.appCaption)
+                                .foregroundColor(.textTertiary)
+                        } else if case .media(let kind, _) = artifactType, kind == "vehicle_preview" {
+                            PrimaryButton(title: "Export Vehicle RBXM", action: onExportRBXM, style: .outline)
+                            Text("DriveSeat, interior, physics, sounds, and VFX — drag into Workspace")
                                 .font(.appCaption)
                                 .foregroundColor(.textTertiary)
                         } else if case .robloxBinary(let kind, _) = artifactType, kind.lowercased() == "rbxl" {
@@ -1645,6 +1694,54 @@ private struct StageProcessingLoader: View {
                     estimatedProgress = capped
                 }
             }
+        }
+    }
+
+}
+
+// MARK: - Blocky pet badges (rarity / element / flying chips)
+//
+// Free-standing helpers — defining these as instance methods on
+// GenerationPreviewView caused "cannot find petBadge in scope" inside
+// the @ViewBuilder `content` switch (Swift's result-builder lookup at
+// case sites doesn't always reach methods declared further down the
+// struct's body). Lifting them to top-level types sidesteps the issue.
+
+struct BlockyPetBadge: View {
+    let text: String
+    let tint: Color
+    var body: some View {
+        Text(text.capitalized)
+            .font(.appCaption.bold())
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.85))
+            .clipShape(Capsule())
+    }
+}
+
+enum BlockyPetPalette {
+    static func rarityTint(_ rarity: String) -> Color {
+        switch rarity.lowercased() {
+        case "mythic":    return Color(red: 1.00, green: 0.30, blue: 0.80)
+        case "legendary": return Color(red: 1.00, green: 0.65, blue: 0.05)
+        case "epic":      return Color(red: 0.65, green: 0.30, blue: 1.00)
+        case "rare":      return Color(red: 0.20, green: 0.55, blue: 1.00)
+        case "uncommon":  return Color(red: 0.30, green: 0.80, blue: 0.30)
+        default:          return Color(white: 0.55)  // Common
+        }
+    }
+
+    static func elementTint(_ element: String) -> Color {
+        switch element.lowercased() {
+        case "fire":   return Color(red: 1.00, green: 0.55, blue: 0.10)
+        case "ice":    return Color(red: 0.30, green: 0.70, blue: 1.00)
+        case "shadow": return Color(red: 0.35, green: 0.10, blue: 0.45)
+        case "light":  return Color(red: 0.95, green: 0.85, blue: 0.30)
+        case "nature": return Color(red: 0.40, green: 0.85, blue: 0.40)
+        case "tech":   return Color(red: 0.00, green: 0.75, blue: 0.95)
+        default:       return Color(white: 0.5)
         }
     }
 }

@@ -10103,7 +10103,20 @@ async function processBlockyPetJob(jobId: string, job: GenerationJob): Promise<G
         previewText: nativeBuild.summary,
         stageId: 'export_pet_rbxm' as GenerationStageId,
         artifactRole: 'export_binary',
-        metadata: { isBlockyPet: true, petBaseName: classification.baseName, isPetEvolution: false },
+        metadata: {
+          isBlockyPet: true,
+          petBaseName: classification.baseName,
+          isPetEvolution: false,
+          petRarity: classification.rarity,
+          petElement: classification.element,
+          petSpeciesType: classification.speciesType,
+          petIsFlying: classification.isFlying,
+          // 2026-05-20: iOS reads this JSON to reconstruct the pet as an
+          // interactive SceneKit 3D preview (BlockyPet3DSceneView) before
+          // the user downloads the .rbxm. Spec is small (~3-8KB) and ships
+          // alongside the binary artifact metadata.
+          blockyPetSpecJSON: JSON.stringify(spec),
+        },
       }));
     }
     currentJob = { ...currentJob, artifacts: [...currentJob.artifacts, ...exportArtifacts] };

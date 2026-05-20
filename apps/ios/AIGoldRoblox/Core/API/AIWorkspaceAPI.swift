@@ -625,6 +625,14 @@ enum AIWorkspaceAPI {
         let isBlockyAnimation: Bool?
         let isPetDecal: Bool?
         let trackName: String?
+        /// 2026-05-20 (Track 3 Phase 2): JSON-encoded BlockyPetSpec attached
+        /// to the .rbxm artifact metadata so iOS can render an interactive
+        /// 3D preview (BlockyPet3DSceneView) before download.
+        let blockyPetSpecJSON: String?
+        let petRarity: String?
+        let petElement: String?
+        let petSpeciesType: String?
+        let petIsFlying: Bool?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -656,6 +664,11 @@ enum AIWorkspaceAPI {
             isBlockyAnimation = try? container.decode(Bool.self, forKey: .isBlockyAnimation)
             isPetDecal = try? container.decode(Bool.self, forKey: .isPetDecal)
             trackName = try? container.decode(String.self, forKey: .trackName)
+            blockyPetSpecJSON = try? container.decode(String.self, forKey: .blockyPetSpecJSON)
+            petRarity = try? container.decode(String.self, forKey: .petRarity)
+            petElement = try? container.decode(String.self, forKey: .petElement)
+            petSpeciesType = try? container.decode(String.self, forKey: .petSpeciesType)
+            petIsFlying = try? container.decode(Bool.self, forKey: .petIsFlying)
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -666,6 +679,7 @@ enum AIWorkspaceAPI {
             case isPetMesh, isPetRiggedFbx, isPetEvolution, isPetConcept
             case petStageIndex, petBaseName, petStages
             case isBlockyPet, isBlockyPetSpec, isPetAnimation, isBlockyAnimation, isPetDecal, trackName
+            case blockyPetSpecJSON, petRarity, petElement, petSpeciesType, petIsFlying
         }
     }
 

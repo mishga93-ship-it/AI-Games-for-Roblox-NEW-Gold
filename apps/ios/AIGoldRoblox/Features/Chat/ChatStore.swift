@@ -5461,6 +5461,39 @@ final class ChatStore: ObservableObject {
                 descriptions.append(job.status == "awaiting_review" ? "Awaiting review before publication." : "Ready for Studio validation.")
                 return descriptions
             }()
+            // 2026-05-20 (Track 3 Phase 2): if the .rbxm carries a serialized
+            // BlockyPetSpec in its metadata, render an interactive 3D
+            // SceneKit preview instead of the generic robloxBinary text card.
+            // The spec was attached server-side in
+            // apps/functions/src/index.ts:processBlockyPetJob.
+            if let specJSON = nativeRobloxArtifact.metadata?.blockyPetSpecJSON,
+               let spec = BlockyPetSpecPayload.decode(from: specJSON) {
+                let element = nativeRobloxArtifact.metadata?.petElement ?? "Neutral"
+                let rarity = nativeRobloxArtifact.metadata?.petRarity ?? "Common"
+                let species = nativeRobloxArtifact.metadata?.petSpeciesType ?? "pet"
+                let isFlying = nativeRobloxArtifact.metadata?.petIsFlying ?? false
+                return PreviewPayload(
+                    title: "\(draft.title) — Pet Preview",
+                    artifactType: .blockyPet3D(
+                        spec: spec,
+                        element: element,
+                        rarity: rarity,
+                        species: species,
+                        isFlying: isFlying,
+                        notes: artifactDescriptions
+                    ),
+                    exportFileType: nativeRobloxArtifact.type,
+                    artifactIds: artifactIds,
+                    shareDescription: shareDescription,
+                    downloadURL: downloadURL,
+                    glbDownloadURL: glbDownloadURL,
+                    rbxmDownloadURL: rbxmDownloadURL,
+                    fbxDownloadURL: fbxDownloadURL,
+                    notes: artifactDescriptions,
+                    trendingShowcaseItems: trendingShowcaseItems,
+                    trendingShowcaseCategory: trendingShowcaseCategory
+                )
+            }
             return PreviewPayload(
                 title: "\(draft.title) \(nativeRobloxArtifact.type.uppercased())",
                 artifactType: .robloxBinary(
