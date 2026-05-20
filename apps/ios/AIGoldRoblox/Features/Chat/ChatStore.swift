@@ -5322,6 +5322,49 @@ final class ChatStore: ObservableObject {
             )
         }
 
+        // 2026-05-20 (Track 3 Phase 2): blocky-pet projects always have the
+        // .rbxm metadata.blockyPetSpecJSON. We want the user to see the
+        // interactive 3D pet AS THE PRIMARY PREVIEW — not buried inside a
+        // pipeline-stage list. So we intercept here, BEFORE the generic
+        // .pipeline branch, and return .blockyPet3D directly. The pipeline
+        // stage view (.pipeline case + pipelineArtifactType) still routes
+        // blocky pets to .blockyPet3D as a fallback if anything else surfaces
+        // them through that path.
+        if let nativeRobloxArtifact,
+           nativeRobloxArtifact.type == "rbxm",
+           let specJSON = nativeRobloxArtifact.metadata?.blockyPetSpecJSON,
+           let spec = BlockyPetSpecPayload.decode(from: specJSON) {
+            let element = nativeRobloxArtifact.metadata?.petElement ?? "Neutral"
+            let rarity = nativeRobloxArtifact.metadata?.petRarity ?? "Common"
+            let species = nativeRobloxArtifact.metadata?.petSpeciesType ?? "pet"
+            let isFlying = nativeRobloxArtifact.metadata?.petIsFlying ?? false
+            let notes: [String] = [
+                "\(rarity) \(element) \(species) — Lv 1 to start, evolves at Lv 25 and Lv 50.",
+                "Drag the .rbxm into Studio Workspace and press Play. Pet follows you, F = fire attack, T = feed."
+            ]
+            return PreviewPayload(
+                title: "\(draft.title) — Pet Preview",
+                artifactType: .blockyPet3D(
+                    spec: spec,
+                    element: element,
+                    rarity: rarity,
+                    species: species,
+                    isFlying: isFlying,
+                    notes: notes
+                ),
+                exportFileType: nativeRobloxArtifact.type,
+                artifactIds: artifactIds,
+                shareDescription: shareDescription,
+                downloadURL: downloadURL,
+                glbDownloadURL: glbDownloadURL,
+                rbxmDownloadURL: rbxmDownloadURL,
+                fbxDownloadURL: fbxDownloadURL,
+                notes: notes,
+                trendingShowcaseItems: trendingShowcaseItems,
+                trendingShowcaseCategory: trendingShowcaseCategory
+            )
+        }
+
         let pipelineStages = buildPipelineStages(from: job)
         if shows3D, !pipelineStages.isEmpty {
             return PreviewPayload(
@@ -5734,6 +5777,25 @@ final class ChatStore: ObservableObject {
     ) -> GenerationPreviewView.ArtifactType? {
         if let binaryArtifact = artifacts.first(where: { $0.type == "rbxm" || $0.type == "rbxl" }) {
             let notes = artifacts.compactMap(\.previewText) + [summary]
+            // 2026-05-20 (Track 3 Phase 2): blocky-pet rbxm carries a serialized
+            // BlockyPetSpec in metadata.blockyPetSpecJSON. Render the SceneKit
+            // 3D preview instead of the generic .robloxBinary text card so the
+            // user can rotate the pet right inside the pipeline-stage modal.
+            if let specJSON = binaryArtifact.metadata?.blockyPetSpecJSON,
+               let spec = BlockyPetSpecPayload.decode(from: specJSON) {
+                let element = binaryArtifact.metadata?.petElement ?? "Neutral"
+                let rarity = binaryArtifact.metadata?.petRarity ?? "Common"
+                let species = binaryArtifact.metadata?.petSpeciesType ?? "pet"
+                let isFlying = binaryArtifact.metadata?.petIsFlying ?? false
+                return .blockyPet3D(
+                    spec: spec,
+                    element: element,
+                    rarity: rarity,
+                    species: species,
+                    isFlying: isFlying,
+                    notes: notes
+                )
+            }
             return .robloxBinary(kind: binaryArtifact.type, notes: notes)
         }
 
