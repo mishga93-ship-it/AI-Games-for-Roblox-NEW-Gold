@@ -23691,11 +23691,27 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
   const isVehicle = job.kind === 'vehicle_3d' || job.metadata?.contentCategory === 'vehicle';
   const isItem = job.metadata?.contentCategory === 'item_tool';
   const isFurniture = job.metadata?.contentCategory === 'furniture_prop';
-  const isLayeredClothing = job.kind === 'clothing_3d'
-    || (typeof job.metadata?.clothingMode === 'string' && job.metadata.clothingMode === 'layered_3d');
   const explicitClothingType = typeof job.metadata?.clothingType === 'string'
     ? job.metadata.clothingType
     : undefined;
+  // 2026-05-20: T-Shirt is ALWAYS classic_2d (Roblox has no layered T-Shirt
+  // AccessoryType). The LLM was occasionally setting clothingMode="layered_3d"
+  // in GDD even for T-Shirt, which routed jobs into Meshy/3D. Hard-guard here so
+  // backend never trusts a bad clothingMode for T-Shirt. Also reflect this on
+  // job.metadata so downstream code sees consistent state.
+  if (explicitClothingType === 't_shirt' && job.metadata) {
+    if (job.metadata.clothingMode !== 'classic_2d') {
+      logger.warn('[processCharacter3DJob] T-Shirt arrived with non-classic_2d mode — forcing classic_2d', {
+        jobId,
+        receivedMode: job.metadata.clothingMode,
+      });
+      job.metadata.clothingMode = 'classic_2d';
+    }
+  }
+  const isLayeredClothing = (job.kind === 'clothing_3d' && explicitClothingType !== 't_shirt')
+    || (typeof job.metadata?.clothingMode === 'string'
+        && job.metadata.clothingMode === 'layered_3d'
+        && explicitClothingType !== 't_shirt');
   const isTShirt = !isWeapon && !isVehicle && !isItem && !isFurniture && !isLayeredClothing
     && explicitClothingType === 't_shirt';
   const isClothingTexture = !isWeapon && !isVehicle && !isItem && !isFurniture && !isLayeredClothing && !isTShirt

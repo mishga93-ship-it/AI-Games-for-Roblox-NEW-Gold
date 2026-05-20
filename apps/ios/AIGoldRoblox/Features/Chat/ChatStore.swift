@@ -4018,8 +4018,20 @@ final class ChatStore: ObservableObject {
         draft.scale = remoteGDD.scale.capitalized
         draft.style = remoteGDD.visualStyle ?? "Bright trending style"
         draft.monetization = (remoteGDD.monetization ?? ["VIP", "Boosts"]).joined(separator: ", ")
+        // 2026-05-20: T-Shirt is ALWAYS classic_2d — Roblox has no layered T-Shirt
+        // AccessoryType, so the welcome-picker hard-locks it. Never let the LLM
+        // override this via GDD (the model was hallucinating clothingMode="layered_3d"
+        // and routing T-Shirt jobs into the Meshy/3D pipeline). Same protection for
+        // any clothingType the user has already locked together with a mode — we
+        // only adopt LLM's clothingMode when nothing was set yet.
         if let mode = remoteGDD.clothingMode {
-            draft.clothingMode = mode
+            let lockedTShirt = draft.clothingType == "t_shirt"
+            let alreadyPicked = (draft.clothingMode?.isEmpty == false)
+            if lockedTShirt {
+                draft.clothingMode = "classic_2d"
+            } else if !alreadyPicked {
+                draft.clothingMode = mode
+            }
         }
 	        if contentSubcategory == "npcs" || contentSubcategory == "roast_npc" {
 	            draft.npcTheme = remoteGDD.theme
