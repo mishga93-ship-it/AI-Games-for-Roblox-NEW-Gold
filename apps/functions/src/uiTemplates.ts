@@ -3616,7 +3616,12 @@ end
 local FOLLOW_RADIUS = 5
 local ORBIT_SPEED = 0.25         -- revolutions per second
 local FLY_HEIGHT_OFFSET = 1      -- flying pets hover near player shoulder, not above head
-local STAND_HEIGHT_OFFSET = -2.5
+-- Standing pets: HRP needs to sit just above floor level. Default R15 player
+-- HRP is ~2 studs above feet; pet authored leg-bottoms are ~0.5 studs below
+-- HRP. So pet HRP should be ~1.5 studs below player HRP (= ~0.5 studs above
+-- player feet, which is roughly floor level for default baseplate). Earlier
+-- value of -2.5 dropped pet below floor — invisible from above.
+local STAND_HEIGHT_OFFSET = -1.5
 local LERP_ALPHA = 0.20          -- smoothing factor per Heartbeat
 local DEBUG = true               -- toggle to silence diagnostic prints
 
