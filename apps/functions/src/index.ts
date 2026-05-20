@@ -6483,7 +6483,7 @@ async function reviewVehicleManifestWithRepair(args: {
   buildManifest: (metadata: Record<string, unknown>) => RobloxBuildManifest;
   maxAttempts?: number;
 }): Promise<VehicleManifestReviewRun> {
-  const maxAttempts = Math.max(1, Math.min(args.maxAttempts ?? 2, 3));
+  const maxAttempts = Math.max(1, Math.min(args.maxAttempts ?? 3, 4));
   let metadata: Record<string, unknown> = {
     ...args.initialMetadata,
     vehicleQualityTier: 'premium_reviewed',
@@ -6514,34 +6514,54 @@ async function reviewVehicleManifestWithRepair(args: {
       manifest,
       previewPng,
     });
+    // Hard gate = deterministic only. LLM/vision verdict is advisory: it can
+    // surface reasons and repair actions, but cannot reject a build that the
+    // deterministic checks have already approved. This avoids the failure mode
+    // where the LLM/vision reviewer rejects perfectly fine cars and the user is
+    // stuck in an infinite retry loop with no clear path forward.
+    const llmAvailable = !!llmReview;
+    const llmRejected = llmReview?.status === 'rejected';
     const review: ObbyQualityReviewResult = llmReview
       ? {
           ...llmReview,
-          status: deterministic.status === 'rejected' || llmReview.status === 'rejected' || (llmReview.score ?? 0) < 72 ? 'rejected' : llmReview.status,
-          score: Math.min(deterministic.score, llmReview.score ?? deterministic.score),
+          // Only deterministic.status === 'rejected' actually blocks export.
+          // LLM "rejected" downgrades to warning when deterministic passes.
+          status: deterministic.status === 'rejected'
+            ? 'rejected'
+            : (llmRejected ? 'warning' : llmReview.status),
+          score: Math.round(((deterministic.score) + (llmReview.score ?? deterministic.score)) / 2),
           reviewer: 'deterministic+llm',
           reasons: [...deterministic.reasons, ...(llmReview.reasons ?? [])].slice(0, 10),
           repairActions: [...deterministic.repairActions, ...(llmReview.repairActions ?? [])].slice(0, 10),
+          userMessage: deterministic.status === 'rejected'
+            ? deterministic.userMessage
+            : (llmRejected
+                ? `Vehicle exported with an AI-flagged concern: ${llmReview.userMessage}. The deterministic safety checks all passed, so the model still ships.`
+                : llmReview.userMessage),
         }
       : {
+          // LLM provider failure no longer blocks the export. Deterministic
+          // verdict is authoritative when the LLM critic isn't reachable.
           ...deterministic,
-          status: 'rejected',
-          score: Math.min(deterministic.score, 60),
-          userMessage: deterministic.status === 'passed'
-            ? 'Vehicle export was stopped because the required AI reviewer was unavailable before download.'
-            : deterministic.userMessage,
+          status: deterministic.status,
+          score: deterministic.score,
+          reviewer: 'deterministic',
+          userMessage: deterministic.status === 'rejected'
+            ? deterministic.userMessage
+            : 'Vehicle passed deterministic QA checks. AI-vision reviewer was unavailable for this attempt, but the safety-critical signals all passed.',
           reasons: deterministic.status === 'passed'
-            ? [...deterministic.reasons, 'LLM reviewer unavailable or returned invalid JSON; required vehicle review did not complete.']
+            ? [...deterministic.reasons, 'LLM/vision reviewer unavailable; deterministic checks were sole gatekeeper.']
             : deterministic.reasons,
-          repairActions: deterministic.status === 'passed'
-            ? ['Retry AI vehicle QA before exporting the RBXM to the user.']
-            : deterministic.repairActions,
+          repairActions: deterministic.repairActions,
         };
     attempts.push(review);
     bestManifest = manifest;
     bestReview = review;
-    if (review.status !== 'rejected' && review.score >= 72) {
-      return { manifest, metadata: { ...metadata, vehicleQualityReviewAttemptCount: attempt }, review, attempts };
+    // Exit early once the deterministic checks pass. We don't gate on LLM
+    // score anymore; the deterministic battery already covers monochrome
+    // silhouette, vertical layering, glass area, and steering visibility.
+    if (deterministic.status !== 'rejected') {
+      return { manifest, metadata: { ...metadata, vehicleQualityReviewAttemptCount: attempt, vehicleQualityLlmAdvisory: llmAvailable ? llmReview?.status : 'unavailable' }, review, attempts };
     }
     metadata = {
       ...metadata,
@@ -26745,31 +26765,52 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             ...exportMetadata,
           },
         };
-        if (vehicleReviewRun.review.status === 'rejected' || vehicleReviewRun.review.score < 72) {
-          const reviewMessage = vehicleReviewRun.review.userMessage || 'Vehicle quality review rejected this export before download.';
+        // Hard block only on deterministic rejection. Score / LLM-vision verdict
+        // is advisory after `reviewVehicleManifestWithRepair`'s refactor: the
+        // deterministic battery (monochrome / vertical layers / glass / steering
+        // visible) already catches slab regressions objectively, so the LLM
+        // critic is no longer allowed to veto a build the deterministic checks
+        // accepted. The user kept hitting an infinite "Failed → Retry → Failed"
+        // loop when the LLM repeatedly flagged otherwise-acceptable cars.
+        if (vehicleReviewRun.review.status === 'rejected') {
+          const reasons = vehicleReviewRun.review.reasons.slice(0, 5);
+          const repairs = vehicleReviewRun.review.repairActions.slice(0, 5);
+          const baseMessage = vehicleReviewRun.review.userMessage
+            || 'Vehicle quality review rejected this export before download.';
+          // Build a human-readable multi-line error so iOS surfaces concrete
+          // reasons + repair actions instead of a generic "did not finish".
+          const detailedMessage = [
+            baseMessage,
+            reasons.length > 0 ? `\nReasons:\n• ${reasons.join('\n• ')}` : '',
+            repairs.length > 0 ? `\nNext-attempt fixes:\n• ${repairs.join('\n• ')}` : '',
+            `\n(QA score: ${vehicleReviewRun.review.score}/100, attempts: ${vehicleReviewRun.attempts.length})`,
+          ].filter(Boolean).join('');
           await finishStage('quality_review', 'failed', [], [
-            `Score ${vehicleReviewRun.review.score}/100 — ${reviewMessage}`,
-            ...vehicleReviewRun.review.reasons.slice(0, 5),
+            `Score ${vehicleReviewRun.review.score}/100 — ${baseMessage}`,
+            ...reasons,
             'Repair actions:',
-            ...vehicleReviewRun.review.repairActions.slice(0, 5),
-          ], reviewMessage);
-          await finishStage('export_rbxm', 'failed', [], ['Stopped before RBXM export because vehicle quality review rejected the model.'], reviewMessage);
+            ...repairs,
+          ], detailedMessage);
+          await finishStage('export_rbxm', 'failed', [], ['Stopped before RBXM export because deterministic vehicle QA rejected the model.'], detailedMessage);
           return {
             ...currentJob,
             status: 'failed',
             updatedAt: new Date().toISOString(),
-            errorMessage: reviewMessage,
-            resultText: 'Vehicle export was stopped by QA before download.',
+            errorMessage: detailedMessage,
+            resultText: detailedMessage,
             metadata: {
               ...(currentJob.metadata ?? {}),
               ...exportMetadata,
             },
           };
         }
-        await finishStage('quality_review', vehicleReviewRun.review.status === 'warning' ? 'completed' : 'completed', [], [
-          `Score ${vehicleReviewRun.review.score}/100 — ${vehicleReviewRun.review.userMessage}`,
+        await finishStage('quality_review', 'completed', [], [
+          `Score ${vehicleReviewRun.review.score}/100 — ${vehicleReviewRun.review.userMessage ?? 'OK'}`,
           ...vehicleReviewRun.review.reasons.slice(0, 5),
           `Attempts: ${vehicleReviewRun.attempts.length}`,
+          ...(vehicleReviewRun.review.status === 'warning'
+            ? ['AI critic flagged a concern, but deterministic safety checks passed — model still ships.']
+            : []),
         ]);
       }
       const acceptanceQualityGate = analyzeRobloxManifestAcceptance({
