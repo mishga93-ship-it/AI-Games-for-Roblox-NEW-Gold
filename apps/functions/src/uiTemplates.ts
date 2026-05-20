@@ -3613,12 +3613,15 @@ end
 -- (~2 studs above feet). To put pet feet on the floor at player feet
 -- level: STAND_HEIGHT_OFFSET ≈ -(player HRP→feet, ~2 studs). Empirically
 -- -2.5 places a 2.5-stud-tall pet so its leg bottoms touch player feet.
-local FOLLOW_RADIUS = 5
+local FOLLOW_RADIUS = 4
 local ORBIT_SPEED = 0.25         -- revolutions per second
--- Flying pets hover ~3 studs above player HRP — that puts the pet's body at
--- head/shoulder height (clearly visible flying companion). Combined with the
--- procedural wing-flap animation below, the pet reads as "actually flying".
-local FLY_HEIGHT_OFFSET = 3
+-- Flying pets hover ~1.5 studs above player HRP. Earlier attempts at +3 put
+-- the pet body above the player's head (out of default third-person FOV,
+-- which looks slightly down at the player's chest). 1.5 places the pet's
+-- body at player chest/shoulder height — well inside the FOV. Combined with
+-- the procedural wing-flap animation below, the pet reads as "actually
+-- flying companion right next to me".
+local FLY_HEIGHT_OFFSET = 1.5
 -- Standing pets: HRP needs to sit just above floor level. Default R15 player
 -- HRP is ~2 studs above feet; pet authored leg-bottoms are ~0.5 studs below
 -- HRP. So pet HRP should be ~1.5 studs below player HRP (= ~0.5 studs above
