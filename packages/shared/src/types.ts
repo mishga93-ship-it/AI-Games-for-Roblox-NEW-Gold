@@ -275,6 +275,7 @@ export type GenerationStageId =
   | 'generate_keyframes'
   | 'generate_decal_image'
   | 'generate_vehicle_scripts'
+  | 'generate_vehicle_mesh'
   | 'quality_review';
 
 export type GenerationStageStatus =
