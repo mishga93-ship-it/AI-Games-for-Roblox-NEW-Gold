@@ -6024,12 +6024,267 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
 function createVehiclePipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
-    { id: 'quality_review', title: 'Vehicle package QA', status: 'pending' },
+    { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
   ];
 }
 
 type VehicleTypeId = 'car' | 'motorcycle' | 'boat' | 'plane' | 'helicopter' | 'tank' | 'spaceship' | 'bicycle' | 'bus';
+
+interface VehicleManifestReviewFacts {
+  vehicleType: string;
+  driveMode: string;
+  partCount: number;
+  wheelCount: number;
+  seatCount: number;
+  hasDriveSeat: boolean;
+  hasController: boolean;
+  hasEngineSound: boolean;
+  hasVfx: boolean;
+  matchedMarkers: string[];
+  missingMarkers: string[];
+}
+
+interface VehicleManifestReviewRun {
+  manifest: RobloxBuildManifest;
+  metadata: Record<string, unknown>;
+  review: ObbyQualityReviewResult;
+  attempts: ObbyQualityReviewResult[];
+}
+
+function vehicleManifestSearchText(manifest: RobloxBuildManifest): string {
+  const sceneText = manifest.scene
+    .map((node) => `${node.className} ${node.name} ${node.properties ? JSON.stringify(node.properties).slice(0, 700) : ''}`)
+    .join('\n');
+  const scriptText = manifest.scripts.map((script) => `${script.name} ${script.scriptType} ${script.container}`).join('\n');
+  return `${sceneText}\n${scriptText}`.toLowerCase();
+}
+
+function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestReviewFacts {
+  const text = vehicleManifestSearchText(manifest);
+  const vehicleType = typeof manifest.metadata?.vehicleType === 'string' ? manifest.metadata.vehicleType : 'unknown';
+  const driveMode = typeof manifest.metadata?.driveMode === 'string' ? manifest.metadata.driveMode : 'unknown';
+  const partCount = manifest.scene.filter((node) => node.className === 'Part' || node.className === 'VehicleSeat' || node.className === 'Seat').length;
+  const wheelCount = manifest.scene.filter((node) => /^Wheel\d+$/i.test(node.name)).length;
+  const seatCount = manifest.scene.filter((node) => node.className === 'Seat' || node.className === 'VehicleSeat').length;
+  const hasDriveSeat = manifest.scene.some((node) => node.className === 'VehicleSeat' && /driveseat/i.test(node.name));
+  const hasController = manifest.scripts.some((script) => /vehiclecontroller/i.test(script.name)) || /vehiclecontroller/.test(text);
+  const hasEngineSound = manifest.scene.some((node) => node.className === 'Sound' && /engine/i.test(node.name));
+  const hasVfx = manifest.scene.some((node) => node.className === 'ParticleEmitter');
+  const requiredMarkers = vehicleType === 'car'
+    ? [
+        'FamilyCarBodyShell',
+        'FamilyCarRoofPanel',
+        'FamilyCarWindshieldLarge',
+        'FamilyCarFrontGrilleWide',
+        'FamilyCarSteeringWheelVisible',
+        'ChromeOuterRim',
+      ]
+    : (vehicleType === 'motorcycle' || vehicleType === 'bicycle')
+      ? [
+          'FuelTank',
+          'EngineBlock',
+          'FrontForkLeft',
+          'FrontForkRight',
+          'GaugeCluster',
+          'TwoWheelBalanceSkidLeft',
+          'TwoWheelBalanceSkidRight',
+          'BrakeDisc',
+        ]
+      : ['DriveSeat', 'VehicleController'];
+  const matchedMarkers = requiredMarkers.filter((marker) => text.includes(marker.toLowerCase()));
+  const missingMarkers = requiredMarkers.filter((marker) => !text.includes(marker.toLowerCase()));
+  return { vehicleType, driveMode, partCount, wheelCount, seatCount, hasDriveSeat, hasController, hasEngineSound, hasVfx, matchedMarkers, missingMarkers };
+}
+
+function deterministicVehicleReview(args: {
+  prompt: string;
+  manifest: RobloxBuildManifest;
+}): ObbyQualityReviewResult {
+  const facts = vehicleManifestFacts(args.manifest);
+  const issues: string[] = [];
+  const repairActions: string[] = [];
+  if (!facts.hasDriveSeat) issues.push('missing_drive_seat: vehicle has no VehicleSeat named DriveSeat.');
+  if (!facts.hasController) issues.push('missing_controller: vehicle has no VehicleController script.');
+  if (!facts.hasEngineSound) issues.push('missing_engine_sound: vehicle has no engine Sound marker.');
+  if (!facts.hasVfx) issues.push('missing_vfx: vehicle has no wheel/exhaust ParticleEmitter markers.');
+  if (facts.driveMode === 'land_wheels' && facts.wheelCount < 2) issues.push(`missing_wheels: land vehicle has only ${facts.wheelCount} wheel part(s).`);
+  if (facts.vehicleType === 'car') {
+    if (facts.partCount < 135) issues.push(`low_car_detail: car has ${facts.partCount} physical/seat parts; premium vehicle exports need at least 135.`);
+    if (facts.missingMarkers.length > 0) issues.push(`missing_family_car_markers: ${facts.missingMarkers.join(', ')}.`);
+    if (/family|семейн|low[-\s]*poly|cartoon|мульт|машин/i.test(args.prompt) && !facts.matchedMarkers.includes('FamilyCarBodyShell')) {
+      issues.push('prompt_mismatch_family_car: prompt asks for a readable family/cartoon car but manifest lacks FamilyCarBodyShell.');
+    }
+    repairActions.push('Rebuild as a boxy low-poly family car, not a race-frame wedge.');
+    repairActions.push('Add large readable body shell, doors, roof, windshield, grille, headlights, and visible steering wheel.');
+    repairActions.push('Add chrome wheel rings/spokes and sidewall detail for all four wheels.');
+  } else if (facts.vehicleType === 'motorcycle' || facts.vehicleType === 'bicycle') {
+    if (facts.partCount < 52) issues.push(`low_two_wheel_detail: ${facts.vehicleType} has ${facts.partCount} physical/seat parts; expected detailed tank/forks/engine/fenders/brakes.`);
+    if (facts.missingMarkers.length > 0) issues.push(`missing_two_wheel_markers: ${facts.missingMarkers.join(', ')}.`);
+    repairActions.push('Add tank, engine block, forks, fenders, brake discs, grips, gauge cluster, exhaust and visible seat stack.');
+    repairActions.push('Add two-wheel arcade stabilizer: balance skids plus upright controller so it does not fall sideways.');
+  }
+  if (repairActions.length === 0) repairActions.push('Keep DriveSeat, passenger seats, controller, engine sound, VFX and readable vehicle silhouette.');
+  const score = Math.max(5, 100 - issues.length * 18 - Math.max(0, facts.missingMarkers.length - 1) * 4);
+  return {
+    status: issues.length > 0 ? 'rejected' : 'passed',
+    score,
+    userMessage: issues.length > 0
+      ? `Vehicle QA rejected this export before download: ${issues[0]}`
+      : `Vehicle QA passed: ${facts.vehicleType} has ${facts.partCount} parts, ${facts.wheelCount} wheels, controller, sounds and VFX.`,
+    reasons: issues.length > 0
+      ? issues
+      : [
+          `vehicleType=${facts.vehicleType}; driveMode=${facts.driveMode}; parts=${facts.partCount}; wheels=${facts.wheelCount}; seats=${facts.seatCount}`,
+          `matched markers: ${facts.matchedMarkers.join(', ') || 'core vehicle markers'}`,
+        ],
+    repairActions,
+    reviewer: 'deterministic',
+  };
+}
+
+async function runVehicleLlmQualityReview(args: {
+  prompt: string;
+  title: string;
+  facts: VehicleManifestReviewFacts;
+  deterministic: ObbyQualityReviewResult;
+  manifest: RobloxBuildManifest;
+}): Promise<ObbyQualityReviewResult | null> {
+  const digest = {
+    vehicleType: args.facts.vehicleType,
+    driveMode: args.facts.driveMode,
+    partCount: args.facts.partCount,
+    wheelCount: args.facts.wheelCount,
+    seatCount: args.facts.seatCount,
+    hasDriveSeat: args.facts.hasDriveSeat,
+    hasController: args.facts.hasController,
+    hasEngineSound: args.facts.hasEngineSound,
+    hasVfx: args.facts.hasVfx,
+    matchedMarkers: args.facts.matchedMarkers,
+    missingMarkers: args.facts.missingMarkers,
+    prominentPartNames: args.manifest.scene
+      .filter((node) => /familycar|steering|wheel|rim|fender|hood|roof|door|windshield|fuel|engine|fork|balance|brake/i.test(node.name))
+      .map((node) => `${node.className}:${node.name}`)
+      .slice(0, 90),
+  };
+  const system = [
+    'You are a strict Roblox Vehicles QA reviewer.',
+    'Review factual manifest evidence before a .rbxm is exported to the user.',
+    'Reject if the model does not match the user brief, e.g. a family car looks like a flat race-frame wedge, no readable body, no visible steering wheel, no wheel details, or a motorcycle/bicycle can tip sideways.',
+    'Do not reward speed. A slower export is acceptable only if quality passes.',
+    'Output JSON only: {"status":"passed|warning|rejected","score":0-100,"userMessage":"short user-facing reason","reasons":["..."],"repairActions":["concrete fixes"]}.',
+  ].join('\n');
+  const user = JSON.stringify({
+    userPrompt: args.prompt.slice(0, 1600),
+    title: args.title,
+    manifestDigest: digest,
+    deterministicReview: {
+      status: args.deterministic.status,
+      score: args.deterministic.score,
+      reasons: args.deterministic.reasons,
+      repairActions: args.deterministic.repairActions,
+    },
+  }, null, 2);
+  const attempts: Array<{ provider: AIProvider; model?: string }> = [
+    { provider: 'anthropic', model: defaults.anthropicModel },
+    { provider: 'openai', model: defaults.chatModel },
+    { provider: 'gemini', model: defaults.geminiModel },
+  ];
+  for (const attempt of attempts) {
+    try {
+      const result = await runSingleChatProvider(attempt.provider, { system, user }, attempt.model, { timeoutMs: 75_000 });
+      const parsed = parseQualityReviewResponse(result.text ?? '');
+      if (!parsed?.status) {
+        logger.warn('[VehicleQualityReview] invalid LLM response', { provider: attempt.provider });
+        continue;
+      }
+      return {
+        status: parsed.status,
+        score: parsed.score ?? 0,
+        userMessage: parsed.userMessage ?? 'Vehicle quality review completed.',
+        reasons: parsed.reasons ?? [],
+        repairActions: parsed.repairActions ?? [],
+        reviewer: 'llm',
+        llmProvider: attempt.provider,
+      };
+    } catch (err) {
+      logger.warn('[VehicleQualityReview] provider failed', { provider: attempt.provider, error: errorMessage(err) });
+    }
+  }
+  return null;
+}
+
+async function reviewVehicleManifestWithRepair(args: {
+  prompt: string;
+  title: string;
+  initialMetadata: Record<string, unknown>;
+  buildManifest: (metadata: Record<string, unknown>) => RobloxBuildManifest;
+  maxAttempts?: number;
+}): Promise<VehicleManifestReviewRun> {
+  const maxAttempts = Math.max(1, Math.min(args.maxAttempts ?? 2, 3));
+  let metadata: Record<string, unknown> = {
+    ...args.initialMetadata,
+    vehicleQualityTier: 'premium_reviewed',
+    vehicleQualityReviewEnabled: true,
+  };
+  let bestManifest = args.buildManifest(metadata);
+  let bestReview = deterministicVehicleReview({ prompt: args.prompt, manifest: bestManifest });
+  const attempts: ObbyQualityReviewResult[] = [];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const manifest = args.buildManifest({
+      ...metadata,
+      vehicleQualityAttempt: attempt,
+    });
+    const deterministic = deterministicVehicleReview({ prompt: args.prompt, manifest });
+    const llmReview = await runVehicleLlmQualityReview({
+      prompt: args.prompt,
+      title: args.title,
+      facts: vehicleManifestFacts(manifest),
+      deterministic,
+      manifest,
+    });
+    const review: ObbyQualityReviewResult = llmReview
+      ? {
+          ...llmReview,
+          status: deterministic.status === 'rejected' || llmReview.status === 'rejected' || (llmReview.score ?? 0) < 72 ? 'rejected' : llmReview.status,
+          score: Math.min(deterministic.score, llmReview.score ?? deterministic.score),
+          reviewer: 'deterministic+llm',
+          reasons: [...deterministic.reasons, ...(llmReview.reasons ?? [])].slice(0, 10),
+          repairActions: [...deterministic.repairActions, ...(llmReview.repairActions ?? [])].slice(0, 10),
+        }
+      : {
+          ...deterministic,
+          status: 'rejected',
+          score: Math.min(deterministic.score, 60),
+          userMessage: deterministic.status === 'passed'
+            ? 'Vehicle export was stopped because the required AI reviewer was unavailable before download.'
+            : deterministic.userMessage,
+          reasons: deterministic.status === 'passed'
+            ? [...deterministic.reasons, 'LLM reviewer unavailable or returned invalid JSON; required vehicle review did not complete.']
+            : deterministic.reasons,
+          repairActions: deterministic.status === 'passed'
+            ? ['Retry AI vehicle QA before exporting the RBXM to the user.']
+            : deterministic.repairActions,
+        };
+    attempts.push(review);
+    bestManifest = manifest;
+    bestReview = review;
+    if (review.status !== 'rejected' && review.score >= 72) {
+      return { manifest, metadata: { ...metadata, vehicleQualityReviewAttemptCount: attempt }, review, attempts };
+    }
+    metadata = {
+      ...metadata,
+      vehicleQualityTier: 'premium_reviewed_retry',
+      vehicleQualityRepairActions: review.repairActions,
+      vehicleQualityPreviousReasons: review.reasons,
+      vehicleQualityReviewAttemptCount: attempt,
+      repairMode: 'vehicle_quality_review_retry',
+    };
+  }
+
+  return { manifest: bestManifest, metadata, review: bestReview, attempts };
+}
 
 function detectVehicleType(prompt: string, metadata?: Record<string, unknown>): VehicleTypeId {
   const raw = typeof metadata?.vehicleType === 'string' ? metadata.vehicleType.toLowerCase().trim() : '';
@@ -25347,12 +25602,6 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         `Seats: ${seatCount}`,
         'Using canonical self-contained VehicleController template',
       ]);
-
-      await beginStage('quality_review', 'Checking vehicle package requirements before export');
-      await finishStage('quality_review', 'completed', [], [
-        'Required package: DriveSeat, passenger Seats, ChassisRoot, physics controller, engine sounds, VFX markers.',
-        'Detailed class-level validation runs after manifest build in the worker smoke checks.',
-      ]);
     }
 
     // ── NPC character scripts generation ──
@@ -26034,7 +26283,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         };
         manifestMetadata = exportMetadata;
       }
-      const manifest = buildRobloxManifest({
+      let manifest = buildRobloxManifest({
         title,
         summary: exportSummary,
         target: 'model',
@@ -26042,6 +26291,81 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         starterScript,
         metadata: manifestMetadata,
       });
+      if (isVehicle) {
+        await beginStage('quality_review', 'AI is reviewing the vehicle manifest before export');
+        const vehicleReviewRun = await reviewVehicleManifestWithRepair({
+          prompt: job.prompt,
+          title,
+          initialMetadata: manifestMetadata,
+          buildManifest: (metadataForAttempt) => buildRobloxManifest({
+            title,
+            summary: exportSummary,
+            target: 'model',
+            prompt: job.prompt,
+            starterScript,
+            metadata: metadataForAttempt,
+          }),
+          maxAttempts: 2,
+        });
+        manifest = vehicleReviewRun.manifest;
+        manifestMetadata = {
+          ...manifestMetadata,
+          ...vehicleReviewRun.metadata,
+        };
+        exportMetadata = {
+          ...exportMetadata,
+          ...vehicleReviewRun.metadata,
+          vehicleQualityReviewStatus: vehicleReviewRun.review.status,
+          vehicleQualityReviewScore: vehicleReviewRun.review.score,
+          vehicleQualityReviewer: vehicleReviewRun.review.reviewer,
+          vehicleQualityReviewProvider: vehicleReviewRun.review.llmProvider,
+          vehicleQualityReviewMessage: vehicleReviewRun.review.userMessage,
+          vehicleQualityReviewReasons: vehicleReviewRun.review.reasons,
+          vehicleQualityRepairActions: vehicleReviewRun.review.repairActions,
+          vehicleQualityReviewAttempts: vehicleReviewRun.attempts.map((attempt, index) => ({
+            index: index + 1,
+            status: attempt.status,
+            score: attempt.score,
+            reviewer: attempt.reviewer,
+            provider: attempt.llmProvider,
+            message: attempt.userMessage,
+            reasons: attempt.reasons.slice(0, 6),
+          })),
+        };
+        currentJob = {
+          ...currentJob,
+          metadata: {
+            ...(currentJob.metadata ?? {}),
+            ...exportMetadata,
+          },
+        };
+        if (vehicleReviewRun.review.status === 'rejected' || vehicleReviewRun.review.score < 72) {
+          const reviewMessage = vehicleReviewRun.review.userMessage || 'Vehicle quality review rejected this export before download.';
+          await finishStage('quality_review', 'failed', [], [
+            `Score ${vehicleReviewRun.review.score}/100 — ${reviewMessage}`,
+            ...vehicleReviewRun.review.reasons.slice(0, 5),
+            'Repair actions:',
+            ...vehicleReviewRun.review.repairActions.slice(0, 5),
+          ], reviewMessage);
+          await finishStage('export_rbxm', 'failed', [], ['Stopped before RBXM export because vehicle quality review rejected the model.'], reviewMessage);
+          return {
+            ...currentJob,
+            status: 'failed',
+            updatedAt: new Date().toISOString(),
+            errorMessage: reviewMessage,
+            resultText: 'Vehicle export was stopped by QA before download.',
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              ...exportMetadata,
+            },
+          };
+        }
+        await finishStage('quality_review', vehicleReviewRun.review.status === 'warning' ? 'completed' : 'completed', [], [
+          `Score ${vehicleReviewRun.review.score}/100 — ${vehicleReviewRun.review.userMessage}`,
+          ...vehicleReviewRun.review.reasons.slice(0, 5),
+          `Attempts: ${vehicleReviewRun.attempts.length}`,
+        ]);
+      }
       const acceptanceQualityGate = analyzeRobloxManifestAcceptance({
         manifest,
         prompt: job.prompt,

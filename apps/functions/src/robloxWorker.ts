@@ -2060,6 +2060,9 @@ function buildVehicleModelManifest(
   const glow = color3(glowRgb.r, glowRgb.g, glowRgb.b);
   const dark = color3(0.04, 0.045, 0.05);
   const glass = color3(0.35, 0.75, 1.0);
+  const silver = color3(0.82, 0.84, 0.86);
+  const repairBoost = metadata.repairMode === 'vehicle_quality_review_retry'
+    || (typeof metadata.vehicleQualityAttempt === 'number' && metadata.vehicleQualityAttempt > 1);
   const scene: RobloxBuildSceneNode[] = [];
   const folders = {
     config: uuidv4(),
@@ -2187,7 +2190,7 @@ function buildVehicleModelManifest(
     },
   );
 
-  addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass });
+  addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass, silver, repairBoost });
   addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot });
   addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart });
   addVehicleEffects({ scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence });
@@ -2327,10 +2330,10 @@ function addVehicleBodyShell(
       className?: string; material?: string; shape?: 'Block' | 'Cylinder' | 'Ball'; rot?: [number, number, number]; canCollide?: boolean; transparency?: number; massless?: boolean; anchored?: boolean; extra?: Record<string, unknown>;
     }) => string;
     width: number; height: number; length: number; rootY: number;
-    primary: Record<string, unknown>; accent: Record<string, unknown>; glow: Record<string, unknown>; dark: Record<string, unknown>; glass: Record<string, unknown>;
+    primary: Record<string, unknown>; accent: Record<string, unknown>; glow: Record<string, unknown>; dark: Record<string, unknown>; glass: Record<string, unknown>; silver: Record<string, unknown>; repairBoost?: boolean;
   },
 ): void {
-  const { addBodyPart, width: w, height: h, length: l, rootY, primary, accent, glow, dark, glass } = ctx;
+  const { addBodyPart, width: w, height: h, length: l, rootY, primary, accent, glow, dark, glass, silver, repairBoost = false } = ctx;
   if (vehicleType === 'boat') {
     addBodyPart('Hull', [w, h * 0.72, l], [0, rootY + 0.2, 0], primary, { material: 'SmoothPlastic' });
     addBodyPart('Cabin', [w * 0.45, h * 0.5, l * 0.24], [0, rootY + h * 0.55, -l * 0.12], glass, { material: 'Glass', transparency: 0.25 });
@@ -2370,9 +2373,68 @@ function addVehicleBodyShell(
   }
   if (vehicleType === 'motorcycle' || vehicleType === 'bicycle') {
     addBodyPart('FrameBar', [w * 0.38, h * 0.16, l * 0.70], [0, rootY + 0.12, 0], primary, { material: vehicleType === 'bicycle' ? 'Metal' : 'SmoothPlastic' });
-    addBodyPart('SeatPad', [w * 0.55, 0.22, l * 0.24], [0, rootY + h * 0.42, l * 0.02], dark, { material: 'Fabric' });
-    addBodyPart('Handlebar', [w * 1.05, 0.14, 0.14], [0, rootY + h * 0.52, -l * 0.38], accent, { material: 'Metal' });
-    addBodyPart('HeadLamp', [0.38, 0.28, 0.18], [0, rootY + h * 0.38, -l * 0.48], glow, { material: 'Neon' });
+    addBodyPart('LowerFrameRail', [w * 0.22, h * 0.12, l * 0.62], [0, rootY - h * 0.02, 0], dark, { material: 'Metal' });
+    addBodyPart('FuelTank', [w * 0.62, h * 0.28, l * 0.22], [0, rootY + h * 0.38, -l * 0.12], primary, { material: 'SmoothPlastic' });
+    addBodyPart('EngineBlock', [w * 0.46, h * 0.28, l * 0.18], [0, rootY + h * 0.16, -l * 0.02], silver, { material: 'Metal' });
+    addBodyPart('EngineDarkCore', [w * 0.32, h * 0.18, l * 0.14], [0, rootY + h * 0.17, -l * 0.02], dark, { material: 'Metal' });
+    addBodyPart('FuelTankAccentStripe', [w * 0.5, h * 0.04, l * 0.07], [0, rootY + h * 0.54, -l * 0.14], accent, { material: 'Metal' });
+    addBodyPart('LeftBodySidePanel', [0.08, h * 0.26, l * 0.24], [-w * 0.27, rootY + h * 0.30, 0.03], primary, { material: 'SmoothPlastic' });
+    addBodyPart('RightBodySidePanel', [0.08, h * 0.26, l * 0.24], [w * 0.27, rootY + h * 0.30, 0.03], primary, { material: 'SmoothPlastic' });
+    addBodyPart('LeftFootPeg', [w * 0.28, 0.08, 0.08], [-w * 0.36, rootY + h * 0.12, -l * 0.02], silver, { material: 'Metal' });
+    addBodyPart('RightFootPeg', [w * 0.28, 0.08, 0.08], [w * 0.36, rootY + h * 0.12, -l * 0.02], silver, { material: 'Metal' });
+    addBodyPart('LeftRearShock', [0.08, h * 0.5, 0.08], [-w * 0.24, rootY + h * 0.28, l * 0.24], accent, { material: 'Metal', rot: [18, 0, 0] });
+    addBodyPart('RightRearShock', [0.08, h * 0.5, 0.08], [w * 0.24, rootY + h * 0.28, l * 0.24], accent, { material: 'Metal', rot: [18, 0, 0] });
+    for (let fin = 0; fin < 5; fin += 1) {
+      addBodyPart(`EngineCoolingFin${fin + 1}`, [w * 0.48, 0.035, l * 0.16], [0, rootY + h * (0.07 + fin * 0.045), -l * 0.015], dark, { material: 'Metal' });
+    }
+    addBodyPart('SeatPad', [w * 0.62, 0.24, l * 0.28], [0, rootY + h * 0.48, l * 0.08], dark, { material: 'Fabric' });
+    addBodyPart('RearSeatStep', [w * 0.48, 0.2, l * 0.16], [0, rootY + h * 0.56, l * 0.22], dark, { material: 'Fabric' });
+    addBodyPart('FrontFairing', [w * 0.56, h * 0.42, l * 0.16], [0, rootY + h * 0.42, -l * 0.36], primary, { material: 'SmoothPlastic' });
+    addBodyPart('WindDeflectorGlass', [w * 0.44, h * 0.28, 0.08], [0, rootY + h * 0.68, -l * 0.43], glass, { material: 'Glass', transparency: 0.2 });
+    addBodyPart('FrontForkLeft', [0.12, h * 0.62, 0.12], [-w * 0.16, rootY + h * 0.24, -l * 0.37], silver, { material: 'Metal' });
+    addBodyPart('FrontForkRight', [0.12, h * 0.62, 0.12], [w * 0.16, rootY + h * 0.24, -l * 0.37], silver, { material: 'Metal' });
+    addBodyPart('RearSwingArmLeft', [0.1, h * 0.12, l * 0.42], [-w * 0.22, rootY + h * 0.06, l * 0.22], silver, { material: 'Metal' });
+    addBodyPart('RearSwingArmRight', [0.1, h * 0.12, l * 0.42], [w * 0.22, rootY + h * 0.06, l * 0.22], silver, { material: 'Metal' });
+    addBodyPart('Handlebar', [w * 1.12, 0.14, 0.14], [0, rootY + h * 0.74, -l * 0.40], silver, { material: 'Metal' });
+    addBodyPart('LeftGrip', [w * 0.22, 0.16, 0.16], [-w * 0.64, rootY + h * 0.74, -l * 0.40], dark, { material: 'SmoothPlastic' });
+    addBodyPart('RightGrip', [w * 0.22, 0.16, 0.16], [w * 0.64, rootY + h * 0.74, -l * 0.40], dark, { material: 'SmoothPlastic' });
+    addBodyPart('LeftMirrorStem', [0.08, h * 0.22, 0.08], [-w * 0.46, rootY + h * 0.88, -l * 0.38], silver, { material: 'Metal', rot: [0, 0, -24] });
+    addBodyPart('RightMirrorStem', [0.08, h * 0.22, 0.08], [w * 0.46, rootY + h * 0.88, -l * 0.38], silver, { material: 'Metal', rot: [0, 0, 24] });
+    addBodyPart('LeftMirrorGlass', [w * 0.16, h * 0.1, 0.06], [-w * 0.56, rootY + h * 0.98, -l * 0.38], glass, { material: 'Glass', transparency: 0.18 });
+    addBodyPart('RightMirrorGlass', [w * 0.16, h * 0.1, 0.06], [w * 0.56, rootY + h * 0.98, -l * 0.38], glass, { material: 'Glass', transparency: 0.18 });
+    addBodyPart('LeftTurnSignalFront', [0.12, 0.12, 0.08], [-w * 0.28, rootY + h * 0.45, -l * 0.49], glow, { material: 'Neon' });
+    addBodyPart('RightTurnSignalFront', [0.12, 0.12, 0.08], [w * 0.28, rootY + h * 0.45, -l * 0.49], glow, { material: 'Neon' });
+    addBodyPart('LeftTurnSignalRear', [0.12, 0.12, 0.08], [-w * 0.28, rootY + h * 0.40, l * 0.48], glow, { material: 'Neon' });
+    addBodyPart('RightTurnSignalRear', [0.12, 0.12, 0.08], [w * 0.28, rootY + h * 0.40, l * 0.48], glow, { material: 'Neon' });
+    addBodyPart('GaugeCluster', [w * 0.28, h * 0.12, 0.08], [0, rootY + h * 0.64, -l * 0.36], glow, { material: 'Neon', transparency: 0.08 });
+    addBodyPart('HeadLamp', [0.46, 0.32, 0.18], [0, rootY + h * 0.45, -l * 0.48], glow, { material: 'Neon' });
+    addBodyPart('RearFender', [w * 0.54, h * 0.16, l * 0.24], [0, rootY + h * 0.30, l * 0.40], primary, { material: 'SmoothPlastic' });
+    addBodyPart('FrontFender', [w * 0.50, h * 0.12, l * 0.22], [0, rootY + h * 0.18, -l * 0.44], primary, { material: 'SmoothPlastic' });
+    addBodyPart('TailLight', [w * 0.34, h * 0.12, 0.08], [0, rootY + h * 0.43, l * 0.47], glow, { material: 'Neon' });
+    addBodyPart('ExhaustPipe', [w * 0.68, 0.12, 0.12], [w * 0.18, rootY + h * 0.16, l * 0.16], silver, { shape: 'Cylinder', rot: [0, 0, 0], material: 'Metal' });
+    addBodyPart('ExhaustTip', [0.16, 0.16, l * 0.16], [w * 0.44, rootY + h * 0.18, l * 0.34], dark, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
+    addBodyPart('Kickstand', [0.1, h * 0.5, 0.1], [-w * 0.34, rootY + h * 0.08, l * 0.10], silver, { material: 'Metal', rot: [0, 0, -18] });
+    addBodyPart('RearSprocket', [0.08, profile.wheelRadius * 0.76, profile.wheelRadius * 0.76], [-w * 0.15, profile.wheelRadius, l * 0.34], silver, { shape: 'Cylinder', material: 'Metal' });
+    addBodyPart('DriveChainTop', [0.08, 0.08, l * 0.46], [-w * 0.18, profile.wheelRadius + h * 0.18, l * 0.12], dark, { material: 'Metal' });
+    addBodyPart('DriveChainBottom', [0.08, 0.08, l * 0.46], [-w * 0.18, profile.wheelRadius + h * 0.04, l * 0.12], dark, { material: 'Metal' });
+    for (const z of [-l * 0.36, l * 0.34]) {
+      const wheelLabel = z < 0 ? 'Front' : 'Rear';
+      addBodyPart(`${wheelLabel}BrakeDisc`, [0.08, profile.wheelRadius * 1.22, profile.wheelRadius * 1.22], [w * 0.08, profile.wheelRadius, z], silver, { shape: 'Cylinder', material: 'Metal' });
+      addBodyPart(`${wheelLabel}WheelHubGlow`, [0.1, profile.wheelRadius * 0.38, profile.wheelRadius * 0.38], [w * 0.1, profile.wheelRadius, z], glow, { shape: 'Cylinder', material: 'Neon', transparency: 0.12 });
+      addBodyPart(`${wheelLabel}RimOuterRing`, [0.08, profile.wheelRadius * 1.55, profile.wheelRadius * 1.55], [-w * 0.02, profile.wheelRadius, z], silver, { shape: 'Cylinder', material: 'Metal' });
+      addBodyPart(`${wheelLabel}RimInnerRing`, [0.09, profile.wheelRadius * 0.95, profile.wheelRadius * 0.95], [-w * 0.01, profile.wheelRadius, z], dark, { shape: 'Cylinder', material: 'Metal' });
+      addBodyPart(`${wheelLabel}SpokeHorizontal`, [0.06, profile.wheelRadius * 1.25, 0.06], [0, profile.wheelRadius, z], silver, { material: 'Metal' });
+      addBodyPart(`${wheelLabel}SpokeVertical`, [0.06, 0.06, profile.wheelRadius * 1.25], [0, profile.wheelRadius, z], silver, { material: 'Metal' });
+      addBodyPart(`${wheelLabel}BrakeCaliper`, [0.12, profile.wheelRadius * 0.22, profile.wheelRadius * 0.34], [w * 0.14, profile.wheelRadius + profile.wheelRadius * 0.34, z], accent, { material: 'Metal' });
+    }
+    if (repairBoost) {
+      addBodyPart('QARepairMotorcycleCrashBarLeft', [0.08, h * 0.42, l * 0.22], [-w * 0.42, rootY + h * 0.20, -l * 0.04], silver, { material: 'Metal' });
+      addBodyPart('QARepairMotorcycleCrashBarRight', [0.08, h * 0.42, l * 0.22], [w * 0.42, rootY + h * 0.20, -l * 0.04], silver, { material: 'Metal' });
+      addBodyPart('QARepairMotorcycleForkBrace', [w * 0.42, 0.08, 0.08], [0, rootY + h * 0.36, -l * 0.37], silver, { material: 'Metal' });
+      addBodyPart('QARepairMotorcycleRearBrace', [w * 0.42, 0.08, 0.08], [0, rootY + h * 0.18, l * 0.28], silver, { material: 'Metal' });
+      addBodyPart('QARepairMotorcycleLicensePlate', [w * 0.32, h * 0.14, 0.06], [0, rootY + h * 0.30, l * 0.52], silver, { material: 'Metal' });
+      addBodyPart('QARepairMotorcycleSeatStitching', [w * 0.5, 0.035, l * 0.22], [0, rootY + h * 0.615, l * 0.10], accent, { material: 'Metal' });
+    }
     return;
   }
   if (vehicleType === 'bus') {
@@ -2443,8 +2505,36 @@ function addVehicleBodyShell(
   addBodyPart('RearWindowGlass', [w * 0.5, h * 0.28, 0.1], [0, rootY + h * 0.84, l * 0.17], glass, { material: 'Glass', transparency: 0.24 });
   addBodyPart('RearWindowFrameTop', [w * 0.56, h * 0.04, 0.12], [0, rootY + h * 0.98, l * 0.185], accent, { material: 'Metal' });
   addBodyPart('RearWindowFrameBottom', [w * 0.58, h * 0.04, 0.12], [0, rootY + h * 0.70, l * 0.185], accent, { material: 'Metal' });
+  addBodyPart('FamilyCarBodyShell', [w * 0.92, h * 0.36, l * 0.72], [0, rootY + h * 0.30, 0], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarHoodBlock', [w * 0.82, h * 0.18, l * 0.28], [0, rootY + h * 0.58, -l * 0.32], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarCabinBackPanel', [w * 0.72, h * 0.52, l * 0.08], [0, rootY + h * 0.78, l * 0.18], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarRoofPanel', [w * 0.78, h * 0.12, l * 0.48], [0, rootY + h * 1.15, -l * 0.02], primary, { material: 'SmoothPlastic' });
+  addBodyPart('FamilyCarRoofRackLeft', [0.1, h * 0.08, l * 0.46], [-w * 0.28, rootY + h * 1.24, -l * 0.02], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarRoofRackRight', [0.1, h * 0.08, l * 0.46], [w * 0.28, rootY + h * 1.24, -l * 0.02], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarRoofRackFront', [w * 0.62, h * 0.06, 0.08], [0, rootY + h * 1.25, -l * 0.22], silver, { material: 'Metal' });
+  addBodyPart('FamilyCarWindshieldLarge', [w * 0.62, h * 0.36, 0.1], [0, rootY + h * 0.86, -l * 0.27], glass, { material: 'Glass', transparency: 0.18 });
+  addBodyPart('FamilyCarRearGlassLarge', [w * 0.58, h * 0.30, 0.1], [0, rootY + h * 0.84, l * 0.28], glass, { material: 'Glass', transparency: 0.2 });
+  addBodyPart('FamilyCarFrontBumper', [w * 0.92, h * 0.16, 0.22], [0, rootY + h * 0.15, -l * 0.49], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarRearBumper', [w * 0.92, h * 0.16, 0.22], [0, rootY + h * 0.15, l * 0.49], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarFrontGrilleWide', [w * 0.58, h * 0.18, 0.1], [0, rootY + h * 0.35, -l * 0.50], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarLeftHeadlight', [w * 0.24, h * 0.12, 0.08], [-w * 0.28, rootY + h * 0.42, -l * 0.51], glow, { material: 'Neon' });
+  addBodyPart('FamilyCarRightHeadlight', [w * 0.24, h * 0.12, 0.08], [w * 0.28, rootY + h * 0.42, -l * 0.51], glow, { material: 'Neon' });
+  if (repairBoost) {
+    addBodyPart('QARepairCarFrontDoorSeamLeft', [0.08, h * 0.44, 0.08], [-w * 0.61, rootY + h * 0.50, -l * 0.18], dark, { material: 'Metal' });
+    addBodyPart('QARepairCarRearDoorSeamLeft', [0.08, h * 0.42, 0.08], [-w * 0.61, rootY + h * 0.50, l * 0.10], dark, { material: 'Metal' });
+    addBodyPart('QARepairCarFrontDoorSeamRight', [0.08, h * 0.44, 0.08], [w * 0.61, rootY + h * 0.50, -l * 0.18], dark, { material: 'Metal' });
+    addBodyPart('QARepairCarRearDoorSeamRight', [0.08, h * 0.42, 0.08], [w * 0.61, rootY + h * 0.50, l * 0.10], dark, { material: 'Metal' });
+    addBodyPart('QARepairCarLowerGrilleSlat1', [w * 0.48, h * 0.035, 0.08], [0, rootY + h * 0.27, -l * 0.515], silver, { material: 'Metal' });
+    addBodyPart('QARepairCarLowerGrilleSlat2', [w * 0.48, h * 0.035, 0.08], [0, rootY + h * 0.40, -l * 0.515], silver, { material: 'Metal' });
+    addBodyPart('QARepairCarSteeringBottomSpoke', [0.08, 0.58, 0.08], [-w * 0.395, steeringY - h * 0.22, steeringZ - 0.04], silver, { material: 'Metal' });
+  }
   for (const side of [-1, 1]) {
     const sideName = side < 0 ? 'Left' : 'Right';
+    addBodyPart(`${sideName}FamilyCarDoor`, [0.2, h * 0.48, l * 0.44], [side * w * 0.53, rootY + h * 0.48, -l * 0.03], primary, { material: 'SmoothPlastic' });
+    addBodyPart(`${sideName}FamilyCarSideWindow`, [0.12, h * 0.30, l * 0.30], [side * w * 0.56, rootY + h * 0.84, -l * 0.04], glass, { material: 'Glass', transparency: 0.2 });
+    addBodyPart(`${sideName}FamilyCarAPillar`, [0.14, h * 0.54, 0.12], [side * w * 0.39, rootY + h * 0.90, -l * 0.25], dark, { material: 'Metal' });
+    addBodyPart(`${sideName}FamilyCarBPillar`, [0.14, h * 0.50, 0.12], [side * w * 0.40, rootY + h * 0.86, l * 0.04], dark, { material: 'Metal' });
+    addBodyPart(`${sideName}FamilyCarMirror`, [0.2, h * 0.12, l * 0.08], [side * w * 0.65, rootY + h * 0.72, -l * 0.30], dark, { material: 'Metal' });
     addBodyPart(`${sideName}SideWindowFront`, [0.1, h * 0.27, l * 0.16], [side * w * 0.37, rootY + h * 0.76, -l * 0.08], glass, { material: 'Glass', transparency: 0.24 });
     addBodyPart(`${sideName}SideWindowRear`, [0.1, h * 0.24, l * 0.15], [side * w * 0.37, rootY + h * 0.74, l * 0.1], glass, { material: 'Glass', transparency: 0.26 });
     addBodyPart(`${sideName}DoorPanel`, [0.14, h * 0.38, l * 0.3], [side * w * 0.52, rootY + h * 0.37, -l * 0.03], primary, { material: 'SmoothPlastic' });
@@ -2474,6 +2564,8 @@ function addVehicleBodyShell(
   addBodyPart('SteeringWheelRightRim', [0.08, 0.78, 0.08], [driverX + 0.37, steeringY, steeringZ - 0.02], accent, { material: 'Metal' });
   addBodyPart('SteeringWheelLeftSpoke', [0.42, 0.06, 0.06], [driverX - 0.2, steeringY, steeringZ - 0.04], accent, { material: 'Metal' });
   addBodyPart('SteeringWheelRightSpoke', [0.42, 0.06, 0.06], [driverX + 0.2, steeringY, steeringZ - 0.04], accent, { material: 'Metal' });
+  addBodyPart('FamilyCarSteeringWheelVisible', [0.08, 1.08, 1.08], [-w * 0.38, steeringY - h * 0.02, steeringZ], dark, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
+  addBodyPart('FamilyCarSteeringHubVisible', [0.12, 0.32, 0.32], [-w * 0.395, steeringY - h * 0.02, steeringZ], silver, { shape: 'Cylinder', rot: [0, 90, 0], material: 'Metal' });
   for (const [seatName, x, z] of [
     ['Driver', -w * 0.18, -l * 0.05],
     ['FrontPassenger', w * 0.18, -l * 0.05],
@@ -2502,8 +2594,13 @@ function addVehicleBodyShell(
   addBodyPart('RearSpoilerRightPost', [w * 0.06, h * 0.34, l * 0.04], [w * 0.30, rootY + h * 0.70, l * 0.36], accent, { material: 'Metal' });
   for (const [sideName, side] of [['Left', -1], ['Right', 1]] as Array<[string, number]>) {
     for (const [axleName, z] of [['Front', -l * 0.34], ['Rear', l * 0.34]] as Array<[string, number]>) {
-      addBodyPart(`${sideName}${axleName}WheelRim`, [0.14, profile.wheelRadius * 0.95, profile.wheelRadius * 0.95], [side * w * 0.515, profile.wheelRadius, z], accent, { shape: 'Cylinder', material: 'Metal' });
-      addBodyPart(`${sideName}${axleName}WheelHub`, [0.16, profile.wheelRadius * 0.38, profile.wheelRadius * 0.38], [side * w * 0.53, profile.wheelRadius, z], glow, { shape: 'Cylinder', material: 'Neon', transparency: 0.1 });
+      const rimX = side * w * 0.535;
+      addBodyPart(`${sideName}${axleName}ChromeOuterRim`, [0.16, profile.wheelRadius * 1.05, profile.wheelRadius * 1.05], [rimX, profile.wheelRadius, z], silver, { shape: 'Cylinder', material: 'Metal' });
+      addBodyPart(`${sideName}${axleName}DarkInnerRim`, [0.18, profile.wheelRadius * 0.74, profile.wheelRadius * 0.74], [side * w * 0.548, profile.wheelRadius, z], dark, { shape: 'Cylinder', material: 'Metal' });
+      addBodyPart(`${sideName}${axleName}WheelHub`, [0.2, profile.wheelRadius * 0.34, profile.wheelRadius * 0.34], [side * w * 0.565, profile.wheelRadius, z], glow, { shape: 'Cylinder', material: 'Neon', transparency: 0.08 });
+      addBodyPart(`${sideName}${axleName}RimSpokeHorizontal`, [0.08, profile.wheelRadius * 0.95, 0.08], [side * w * 0.58, profile.wheelRadius, z], silver, { material: 'Metal' });
+      addBodyPart(`${sideName}${axleName}RimSpokeVertical`, [0.08, 0.08, profile.wheelRadius * 0.95], [side * w * 0.582, profile.wheelRadius, z], silver, { material: 'Metal' });
+      addBodyPart(`${sideName}${axleName}TireSidewallStripe`, [0.05, profile.wheelRadius * 1.58, profile.wheelRadius * 1.58], [side * w * 0.59, profile.wheelRadius, z], glow, { shape: 'Cylinder', material: 'Neon', transparency: 0.35 });
     }
   }
 }
@@ -2665,6 +2762,25 @@ function addVehiclePhysics(args: {
         wheelIndex += 1;
       }
     }
+    if (profile.type === 'motorcycle' || profile.type === 'bicycle') {
+      for (const [name, side] of [['Left', -1], ['Right', 1]] as Array<[string, number]>) {
+        const skidId = addPart(
+          `TwoWheelBalanceSkid${name}`,
+          folders.physics,
+          [0.22, 0.28, length * 0.58],
+          [side * width * 0.38, 0.18, -length * 0.01],
+          dark,
+          { material: 'Metal', canCollide: true, massless: false, transparency: 0.35 },
+        );
+        scene.push({
+          id: uuidv4(),
+          className: 'WeldConstraint',
+          name: `TwoWheelBalanceSkid${name}Weld`,
+          parentId: skidId,
+          properties: { Part0: ref(rootId), Part1: ref(skidId) },
+        });
+      }
+    }
   }
 
   scene.push(
@@ -2796,6 +2912,7 @@ local ACCEL = tonumber(cfg("Acceleration", 28)) or 28
 local TURN_RATE = tonumber(cfg("TurnRate", 2.0)) or 2.0
 local WHEEL_RADIUS = math.max(tonumber(cfg("WheelRadius", 0.8)) or 0.8, 0.2)
 local DIRECT_WHEEL_MODE = DRIVE_MODE == "land_wheels"
+local TWO_WHEEL_ARCADE = VEHICLE_TYPE == "motorcycle" or VEHICLE_TYPE == "bicycle"
 
 local engine = Root:FindFirstChild("EngineLoop")
 local boostSound = Root:FindFirstChild("BoostOrHorn")
@@ -2887,6 +3004,12 @@ RunService.Heartbeat:Connect(function(dt)
 \tlocal active = occupied and (math.abs(throttle) > 0.03 or speed > 1)
 \tlocal cf = Root.CFrame
 \tlocal forward = flatLook(cf)
+\tif TWO_WHEEL_ARCADE then
+\t\tlocal upright = CFrame.lookAt(Root.Position, Root.Position + forward, Vector3.new(0, 1, 0))
+\t\tRoot.CFrame = Root.CFrame:Lerp(upright, math.clamp(dt * 10, 0, 0.5))
+\t\tlocal angular = Root.AssemblyAngularVelocity
+\t\tRoot.AssemblyAngularVelocity = Vector3.new(0, angular.Y, 0)
+\tend
 
 \tfor _, hinge in ipairs(driveHinges) do
 \t\tif DIRECT_WHEEL_MODE then

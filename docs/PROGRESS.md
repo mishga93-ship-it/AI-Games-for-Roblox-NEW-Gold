@@ -18,6 +18,13 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Premium QA Gate] Кузов/руль/колёса усилены, мотоцикл стабилизирован, перед экспортом нужен LLM-review (2026-05-20, сессия 366)
+- **Проблема**: fresh Vehicles `.rbxm` всё ещё выглядел как простой красный race-frame без читаемого кузова/руля/детальных колёс; motorcycle имел те же проблемы и заваливался на бок; генерация выглядела слишком быстрой и не проходила реальную проверку перед выдачей.
+- **Root cause**: deterministic vehicle builder после сессии 365 уже добавлял части, но default silhouette всё ещё читался как открытое шасси; motorcycle part floor был слишком низким; `quality_review` stage был placeholder-ом до manifest build и не блокировал плохой `.rbxm`.
+- **Решение**: `apps/functions/src/robloxWorker.ts` — car получил family-car shell, roof/doors/windows/grille/bumpers/headlights, крупный visible steering wheel, chrome rims/spokes/sidewall detail. Motorcycle/bicycle получили tank, engine, side panels, forks, fenders, mirrors, turn signals, chain/sprocket, brake discs/calipers, wheel spokes/rings. Two-wheel vehicles получили `TwoWheelBalanceSkidLeft/Right` и upright-lock в `VehicleController`. Retry after QA rejection now uses `repairBoost` to add extra `QARepair...` detail parts. `apps/functions/src/index.ts` — added strict vehicle manifest review: deterministic facts + required LLM review before `.rbxm` export; rejected/low-score/no-LLM review stops before binary upload and records repair actions.
+- **Проверка**: `npm run build:functions` ✅; local manifest smoke: car `162` physical/seat parts with `FamilyCarBodyShell`, visible steering, chrome rims; motorcycle `67` parts with fuel tank, engine, brakes, chain, mirrors, balance skids; repair retry smoke: car `169`, motorcycle `73`, both with `QARepair...`; Lune built and inspected regular/retry `.rbxm` files under `/private/tmp`, controller scripts and collision bounds confirmed.
+- **Известные ограничения**: old downloaded `.rbxm` files do not change; user must generate a fresh Vehicles export after backend deploy. This remains procedural blocky Roblox geometry, not a marketplace mesh/union car.
+
 ### ✅ [Vehicles Full Body Visual Pass] Машина получила читаемый кузов, кабину и крупный руль (2026-05-19, сессия 365)
 - **Проблема**: свежий `content--vehicle.rbxm` после фикса физики всё ещё выглядел как открытая гоночная рама: пользователь не видел полноценный кузов, руль и салон; генерация казалась моментальной заготовкой.
 - **Root cause**: fresh RBXM уже содержал named parts (`Dashboard`, `SteeringWheel`, side panels), но `SteeringWheel` был всего `0.34` stud, а основная форма строилась вокруг узкого `CarCenterTunnel` и тонких side panels. В chase-camera это читалось как шасси без кузова.
