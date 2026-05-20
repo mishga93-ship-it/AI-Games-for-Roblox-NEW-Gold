@@ -6103,7 +6103,20 @@ function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestRev
       : ['DriveSeat', 'VehicleController'];
   const matchedMarkers = requiredMarkers.filter((marker) => text.includes(marker.toLowerCase()));
   const missingMarkers = requiredMarkers.filter((marker) => !text.includes(marker.toLowerCase()));
-  const hasRaceFrameMarkers = vehicleType === 'car' && /carcentertunnel|carrearenginecover|rearspoiler|cockpitrearbulkhead|roofairscoop/.test(text);
+  // Race-frame markers are EXACT names of parts emitted by the old (pre-
+  // session-367) sports-car builder. Substring matching used to false-
+  // positive on legitimate family-car trims (e.g. RearSpoilerTrim, which
+  // contains the substring "rearspoiler" even though it is a tiny chrome
+  // moulding). Switch to exact-name set lookup against scene nodes.
+  const OLD_RACE_FRAME_NAMES = new Set([
+    'CarCenterTunnel',
+    'CarRearEngineCover',
+    'RearSpoiler', 'RearSpoilerLeft', 'RearSpoilerRight',
+    'CockpitRearBulkhead',
+    'RoofAirScoop',
+  ]);
+  const hasRaceFrameMarkers = vehicleType === 'car'
+    && manifest.scene.some((node) => OLD_RACE_FRAME_NAMES.has(node.name));
   const visual = computeVehicleVisualFacts(manifest, vehicleType);
   return {
     vehicleType,
