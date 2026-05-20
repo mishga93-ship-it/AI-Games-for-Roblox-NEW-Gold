@@ -6418,6 +6418,8 @@ async function runVehicleLlmQualityReview(args: {
 
   // Try Claude vision first when we have a rendered PNG, so the LLM
   // critic actually looks at the image instead of judging by JSON alone.
+  // Tight 25s timeout: the critic is advisory now (deterministic gates
+  // export), so a slow Anthropic call must not stall the whole pipeline.
   if (hasImage && args.previewPng) {
     try {
       const result = await runAnthropicVisionStructured(
@@ -6427,7 +6429,7 @@ async function runVehicleLlmQualityReview(args: {
           images: [{ base64: args.previewPng.toString('base64'), mediaType: 'image/png' }],
         },
         defaults.anthropicModel,
-        90_000,
+        25_000,
       );
       const parsed = parseQualityReviewResponse(result.text ?? '');
       if (parsed?.status) {
@@ -6447,14 +6449,16 @@ async function runVehicleLlmQualityReview(args: {
     }
   }
 
-  const attempts: Array<{ provider: AIProvider; model?: string }> = [
-    { provider: 'anthropic', model: defaults.anthropicModel },
-    { provider: 'openai', model: defaults.chatModel },
-    { provider: 'gemini', model: defaults.geminiModel },
+  // Text-only fallback chain. Each provider gets a tight budget so the entire
+  // QA stage stays under ~60s in the worst case (25s vision + 20s+15s+10s text).
+  const attempts: Array<{ provider: AIProvider; model?: string; timeoutMs: number }> = [
+    { provider: 'anthropic', model: defaults.anthropicModel, timeoutMs: 20_000 },
+    { provider: 'openai', model: defaults.chatModel, timeoutMs: 15_000 },
+    { provider: 'gemini', model: defaults.geminiModel, timeoutMs: 10_000 },
   ];
   for (const attempt of attempts) {
     try {
-      const result = await runSingleChatProvider(attempt.provider, { system, user }, attempt.model, { timeoutMs: 75_000 });
+      const result = await runSingleChatProvider(attempt.provider, { system, user }, attempt.model, { timeoutMs: attempt.timeoutMs });
       const parsed = parseQualityReviewResponse(result.text ?? '');
       if (!parsed?.status) {
         logger.warn('[VehicleQualityReview] invalid LLM response', { provider: attempt.provider });
@@ -6483,7 +6487,7 @@ async function reviewVehicleManifestWithRepair(args: {
   buildManifest: (metadata: Record<string, unknown>) => RobloxBuildManifest;
   maxAttempts?: number;
 }): Promise<VehicleManifestReviewRun> {
-  const maxAttempts = Math.max(1, Math.min(args.maxAttempts ?? 3, 4));
+  const maxAttempts = Math.max(1, Math.min(args.maxAttempts ?? 2, 3));
   let metadata: Record<string, unknown> = {
     ...args.initialMetadata,
     vehicleQualityTier: 'premium_reviewed',
@@ -6499,21 +6503,30 @@ async function reviewVehicleManifestWithRepair(args: {
       vehicleQualityAttempt: attempt,
     });
     const deterministic = deterministicVehicleReview({ prompt: args.prompt, manifest });
-    let previewPng: Buffer | undefined;
-    try {
-      const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
-      previewPng = createFurniturePreviewPng(scene, args.title);
-    } catch (renderErr) {
-      logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
+    // Performance: when deterministic already passed, skip the LLM/vision
+    // critic entirely. It is advisory anyway (deterministic gates export),
+    // so calling Anthropic + 3 text fallbacks for a manifest we already
+    // accepted just burns 30-60s per attempt with no behavioural effect.
+    // Only invoke the LLM when deterministic flagged a real issue and we
+    // want a second opinion + repair guidance.
+    let llmReview: ObbyQualityReviewResult | null = null;
+    if (deterministic.status === 'rejected') {
+      let previewPng: Buffer | undefined;
+      try {
+        const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
+        previewPng = createFurniturePreviewPng(scene, args.title);
+      } catch (renderErr) {
+        logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
+      }
+      llmReview = await runVehicleLlmQualityReview({
+        prompt: args.prompt,
+        title: args.title,
+        facts: vehicleManifestFacts(manifest),
+        deterministic,
+        manifest,
+        previewPng,
+      });
     }
-    const llmReview = await runVehicleLlmQualityReview({
-      prompt: args.prompt,
-      title: args.title,
-      facts: vehicleManifestFacts(manifest),
-      deterministic,
-      manifest,
-      previewPng,
-    });
     // Hard gate = deterministic only. LLM/vision verdict is advisory: it can
     // surface reasons and repair actions, but cannot reject a build that the
     // deterministic checks have already approved. This avoids the failure mode
@@ -26757,6 +26770,20 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             message: attempt.userMessage,
             reasons: attempt.reasons.slice(0, 6),
           })),
+          // Generic-keyed mirrors so the iOS quality-rejection UI (which reads
+          // qualityRejectionMessage / qualityReviewMessage / qualityReviewReasons /
+          // qualityRepairActions) surfaces the real reasons + repair actions
+          // instead of falling through to the generic "did not finish" toast.
+          qualityRejectionMessage: vehicleReviewRun.review.status === 'rejected'
+            ? vehicleReviewRun.review.userMessage
+            : undefined,
+          qualityRejectionTitle: vehicleReviewRun.review.status === 'rejected'
+            ? 'Vehicle QA stopped this export'
+            : undefined,
+          qualityReviewMessage: vehicleReviewRun.review.userMessage,
+          qualityReviewScore: vehicleReviewRun.review.score,
+          qualityReviewReasons: vehicleReviewRun.review.reasons,
+          qualityRepairActions: vehicleReviewRun.review.repairActions,
         };
         currentJob = {
           ...currentJob,
