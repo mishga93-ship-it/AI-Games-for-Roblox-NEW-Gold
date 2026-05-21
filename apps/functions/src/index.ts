@@ -1591,6 +1591,31 @@ app.post('/api/content/jobs/:jobId/run-phase2', async (req: AuthedRequest, res) 
         error: errorMessage(e),
       }));
       res.json({ status: result.status, jobId });
+    } else if (job.kind === 'pet_3d') {
+      // 2026-05-21 pet_3d resume after concept approval. processPet3DJob
+      // reads metadata.pipelinePhase='pet_concept_approved' (stamped by
+      // /approve-concept above), restores the cached classification +
+      // approved concept URL, and runs mesh + rig + export. No separate
+      // continuePet3DPhase2 closure needed — the function is idempotent
+      // on resume.
+      const result = await processPet3DJob(jobId, job);
+      await docRef.update({
+        status: result.status,
+        artifacts: result.artifacts,
+        resultText: result.resultText ?? '',
+        metadata: result.metadata ?? {},
+        history: result.history,
+        stages: result.stages ?? [],
+        updatedAt: new Date().toISOString(),
+      }).catch((e) => logger.error('run-phase2: pet_3d persist failed', { error: errorMessage(e) }));
+      syncThreadProjectMemoryFromJob(result).catch((e) => logger.error('run-phase2: failed to sync thread project memory', { error: errorMessage(e) }));
+      logger.info('run-phase2: pet_3d Phase 2 completed', { jobId, status: result.status, artifactCount: result.artifacts.length });
+      sendGenerationTerminalPush(result).catch((e) => logger.error('run-phase2: failed to send terminal push', {
+        jobId,
+        status: result.status,
+        error: errorMessage(e),
+      }));
+      res.json({ status: result.status, jobId });
     } else {
       // Character 3D Phase 2 (existing NPC path)
       const result = await continueCharacter3DPhase2(jobId, job);
@@ -1659,9 +1684,17 @@ app.post('/api/content/jobs/:jobId/approve-concept', async (req: AuthedRequest, 
 
     if (approved) {
       // User approved → continue pipeline (Phase 2: 3D generation)
+      // 2026-05-21 (pet_3d): stamp pipelinePhase so processPet3DJob skips
+      // classify_pet + concept_stage1 on the next entry (Pet pipeline runs
+      // a full inner function rather than a separate Phase 2 closure).
+      const updatedMetadata: Record<string, unknown> = { ...(job.metadata ?? {}) };
+      if (job.kind === 'pet_3d') {
+        updatedMetadata.pipelinePhase = 'pet_concept_approved';
+      }
       const updatedJob: Partial<GenerationJob> = {
         status: 'processing',
         updatedAt: new Date().toISOString(),
+        metadata: updatedMetadata,
         stages: (job.stages ?? []).map((s) =>
           s.id === 'concept_image' || s.id === 'concept_approval'
             ? { ...s, status: 'completed' as const, completedAt: new Date().toISOString() }
@@ -5917,6 +5950,12 @@ function createPetEvolutionPipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'classify_pet' as GenerationStageId, title: 'Classify pet (species, rarity, evolution arc)', status: 'pending' },
     { id: 'concept_stage1' as GenerationStageId, title: 'Concept image — Stage 1 (baby)', status: 'pending' },
+    // 2026-05-21: concept_approval pauses the pet pipeline after the Stage 1
+    // baby concept image so the user can preview what Tripo will turn into a
+    // 3D mesh. iOS shows the image with Approve / Regenerate buttons —
+    // approve continues to mesh stages, regenerate produces a new image
+    // with optional feedback prompt.
+    { id: 'concept_approval' as GenerationStageId, title: 'Approve concept image before 3D generation', status: 'pending' },
     { id: 'mesh_stage1' as GenerationStageId, title: '3D mesh — Stage 1', status: 'pending' },
     { id: 'rig_stage1' as GenerationStageId, title: 'Rig + animate — Stage 1', status: 'pending' },
     { id: 'concept_stage2' as GenerationStageId, title: 'Concept image — Stage 2 (adult)', status: 'pending' },
@@ -6031,6 +6070,14 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
 
 function createVehiclePipelineStages(): GenerationStageProgress[] {
   return [
+    // Session 373: Phase 1 — 2D concept preview gate (same pattern as
+    // character / NPC / furniture-with-external-mesh). User approves the
+    // 2D concept before we spend $0.80 on Meshy 6 generation. Approved
+    // concept is also passed to Meshy as an image-to-3d reference for
+    // higher-quality mesh output than text-to-3d alone.
+    { id: 'concept_image', title: 'Concept image', status: 'pending' },
+    { id: 'concept_approval', title: 'Awaiting your approval', status: 'pending' },
+    // Phase 2 — runs after user approves the concept.
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
     { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Meshy 6)', status: 'pending' },
     { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
@@ -9647,6 +9694,12 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
   const metadata: Record<string, unknown> = { ...(job.metadata ?? {}), contentCategory: 'pet', requestedKind: 'pet_3d' };
   const title = typeof metadata.title === 'string' ? metadata.title : summarizeTitle(prompt);
   const requestedSpecies = typeof metadata.petSpecies === 'string' ? metadata.petSpecies : undefined;
+  // 2026-05-21 concept-approval gate state:
+  //   pipelinePhase === undefined → first run: classify + concept_stage1 + pause for approval
+  //   pipelinePhase === 'pet_concept_done' → still waiting for approval (shouldn't re-enter)
+  //   pipelinePhase === 'pet_concept_approved' → resume: skip classify + concept_stage1, use cached values
+  const resumePhase = typeof metadata.pipelinePhase === 'string' ? metadata.pipelinePhase : undefined;
+  const isResume = resumePhase === 'pet_concept_approved';
 
   let currentJob: GenerationJob = {
     ...job,
@@ -9654,7 +9707,9 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
     metadata,
     stages: job.stages && job.stages.length > 0 ? job.stages : createPetEvolutionPipelineStages(),
     artifacts: [...job.artifacts],
-    history: [...job.history, 'Pet 3D pipeline: classify → 3× (concept + mesh + rig) → validate → package → export'],
+    history: [...job.history, isResume
+      ? 'Pet 3D pipeline RESUMED after concept approval — running mesh + rig + export'
+      : 'Pet 3D pipeline: classify → concept → APPROVAL gate → 3× mesh + rig → validate → package → export'],
   };
 
   const beginStage = async (stageId: GenerationStageId, notes?: string[]) => {
@@ -9683,16 +9738,39 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
   };
 
   try {
-    // ── 1. classify_pet ─────────────────────────────────────────────────
-    await beginStage('classify_pet' as GenerationStageId, ['Classifying species / skeleton / rarity / evolution arc']);
-    const classification = await classifyPet(prompt, requestedSpecies);
-    await finishStage('classify_pet' as GenerationStageId, 'completed', [], [
-      `species=${classification.speciesType}`,
-      `skeleton=${classification.skeletonType}`,
-      `rarity=${classification.rarity}`,
-      `element=${classification.element}`,
-      `isFlying=${classification.isFlying}`,
-    ]);
+    // ── 1. classify_pet (cached on resume) ──────────────────────────────
+    // On the FIRST run of the pet job we call classifyPet (LLM) and stash
+    // the result in metadata.petClassificationCache. When the user approves
+    // the concept image and iOS calls /run-phase2, we re-enter this function
+    // with pipelinePhase='pet_concept_approved' — read the cached value
+    // instead of paying for another LLM call.
+    let classification: Awaited<ReturnType<typeof classifyPet>>;
+    const cachedClassification = isResume
+      && metadata.petClassificationCache
+      && typeof metadata.petClassificationCache === 'object'
+      ? metadata.petClassificationCache as Awaited<ReturnType<typeof classifyPet>>
+      : undefined;
+    if (cachedClassification) {
+      classification = cachedClassification;
+      await finishStage('classify_pet' as GenerationStageId, 'completed', [], [
+        `Restored from cache after concept approval: species=${classification.speciesType}, skeleton=${classification.skeletonType}, rarity=${classification.rarity}`,
+      ]);
+    } else {
+      await beginStage('classify_pet' as GenerationStageId, ['Classifying species / skeleton / rarity / evolution arc']);
+      classification = await classifyPet(prompt, requestedSpecies);
+      await finishStage('classify_pet' as GenerationStageId, 'completed', [], [
+        `species=${classification.speciesType}`,
+        `skeleton=${classification.skeletonType}`,
+        `rarity=${classification.rarity}`,
+        `element=${classification.element}`,
+        `isFlying=${classification.isFlying}`,
+      ]);
+      // Cache for future resume.
+      currentJob = {
+        ...currentJob,
+        metadata: { ...(currentJob.metadata ?? {}), petClassificationCache: classification },
+      };
+    }
     const routing = selectMeshProvider(classification.skeletonType);
     logger.info('Pet pipeline: provider routing', { mesh: routing.mesh, rig: routing.rig, skeleton: classification.skeletonType });
 
@@ -9732,29 +9810,74 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
       const bundle: StageArtifactBundle = { fbxFileName: `${classification.baseName}-stage${idx}.fbx` };
 
       // -------- concept_stageN (Flux/Gemini preview) --------
-      await beginStage(conceptStageId, [`Generating concept image for Stage ${idx}`]);
-      try {
-        const conceptUrl = await generatePreviewTexture(stagePrompt, 'roblox', 'character');
-        if (conceptUrl) {
-          bundle.conceptUrl = conceptUrl;
-          const conceptArt = await copyExternalArtifact(currentJob, conceptUrl, 'image/png', {
-            name: `${classification.baseName}-stage${idx}-concept.png`,
-            stageId: conceptStageId,
-            artifactRole: 'concept',
-            metadata: { petStageIndex: idx, isPetConcept: true },
-          });
-          currentJob.artifacts = [...currentJob.artifacts, conceptArt];
-          await finishStage(conceptStageId, 'completed', [conceptArt.id], [`Stage ${idx} concept ready`]);
-        } else {
-          await finishStage(conceptStageId, idx === 1 ? 'failed' : 'skipped', [], [`Concept generation returned no URL`]);
-          if (idx === 1) throw new Error('Stage 1 concept failed — cannot proceed without baseline image');
+      // On resume after approval, the Stage 1 concept URL is already in
+      // metadata.approvedPetConceptUrl — reuse it (no Flux call needed).
+      const cachedConceptForThisStage = (idx === 1 && isResume && typeof metadata.approvedPetConceptUrl === 'string')
+        ? metadata.approvedPetConceptUrl
+        : undefined;
+      if (cachedConceptForThisStage) {
+        bundle.conceptUrl = cachedConceptForThisStage;
+        await finishStage(conceptStageId, 'completed', [], [`Stage ${idx} concept restored from approved cache`]);
+      } else {
+        await beginStage(conceptStageId, [`Generating concept image for Stage ${idx}`]);
+        try {
+          const conceptUrl = await generatePreviewTexture(stagePrompt, 'roblox', 'character');
+          if (conceptUrl) {
+            bundle.conceptUrl = conceptUrl;
+            const conceptArt = await copyExternalArtifact(currentJob, conceptUrl, 'image/png', {
+              name: `${classification.baseName}-stage${idx}-concept.png`,
+              stageId: conceptStageId,
+              artifactRole: 'concept',
+              metadata: { petStageIndex: idx, isPetConcept: true },
+            });
+            currentJob.artifacts = [...currentJob.artifacts, conceptArt];
+            await finishStage(conceptStageId, 'completed', [conceptArt.id], [`Stage ${idx} concept ready`]);
+          } else {
+            await finishStage(conceptStageId, idx === 1 ? 'failed' : 'skipped', [], [`Concept generation returned no URL`]);
+            if (idx === 1) throw new Error('Stage 1 concept failed — cannot proceed without baseline image');
+            continue;
+          }
+        } catch (conceptErr) {
+          const msg = errorMessage(conceptErr);
+          await finishStage(conceptStageId, idx === 1 ? 'failed' : 'skipped', [], [`Stage ${idx} concept skipped: ${msg}`], msg);
+          if (idx === 1) throw conceptErr;
           continue;
         }
-      } catch (conceptErr) {
-        const msg = errorMessage(conceptErr);
-        await finishStage(conceptStageId, idx === 1 ? 'failed' : 'skipped', [], [`Stage ${idx} concept skipped: ${msg}`], msg);
-        if (idx === 1) throw conceptErr;
-        continue;
+      }
+
+      // -------- concept_approval gate (after Stage 1 only) --------
+      // 2026-05-21: pause the pipeline so the user previews the Stage 1
+      // baby concept image before we spend ~6 min running Tripo
+      // image-to-3d + animate_rig + animate_retarget across 3 stages.
+      // iOS picks up status='awaiting_review' + conceptPreviewUrl from
+      // metadata and shows the Approve / Regenerate UI (existing flow,
+      // shared with character_3d). On approve, /approve-concept stamps
+      // metadata.pipelinePhase='pet_concept_approved' and /run-phase2
+      // calls processPet3DJob again — this time isResume=true and we
+      // skip the gate.
+      if (idx === 1 && !isResume) {
+        await beginStage('concept_approval' as GenerationStageId, ['Waiting for your approval of the baby pet concept']);
+        currentJob = {
+          ...currentJob,
+          status: 'awaiting_review',
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            ...(currentJob.metadata ?? {}),
+            conceptPreviewUrl: bundle.conceptUrl,        // generic field iOS already reads
+            approvedPetConceptUrl: bundle.conceptUrl,    // cache for resume
+            awaitingApprovalSince: new Date().toISOString(),
+            pipelinePhase: 'pet_concept_done',
+          },
+          history: [...currentJob.history, 'Pet pipeline paused — awaiting concept image approval before Tripo generation'],
+        };
+        await persistJobSnapshot(jobId, currentJob);
+        logger.info('Pet pipeline paused for concept approval', { jobId, hasConceptImage: !!bundle.conceptUrl });
+        return currentJob; // EXIT — resumed by /approve-concept → /run-phase2
+      }
+      if (idx === 1 && isResume) {
+        // Mark concept_approval stage completed on resume so iOS UI doesn't
+        // show it pending forever.
+        await finishStage('concept_approval' as GenerationStageId, 'completed', [], ['User approved baby concept — continuing to mesh generation']);
       }
 
       // -------- mesh_stageN (Meshy or Tripo native) --------
@@ -24621,9 +24744,11 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
   // the 512x512 graphic directly from the prompt with no avatar reference. Without
   // this guard Phase 1 still ran generatePreviewTexture and emitted a full-character
   // concept (then the actual T-Shirt graphic ran inside the isTShirt branch).
+  // Session 373: vehicles NOW go through the concept gate — user previews the
+  // 2D Flux render before we spend $0.80 on Meshy 6. The approved concept is
+  // also fed to Meshy as an image-to-3d reference for better mesh quality.
   const needsConceptGate = !resumePhase2
     && !isTShirt
-    && !isVehicle
     && (!isFurniture || furnitureUsesExternalMesh)
     && (!isNpc || npcNeedsConceptApproval);
   const title = typeof job.metadata?.title === 'string' && job.metadata.title.trim()
@@ -26736,8 +26861,14 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         const titleStrForMesh = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
         const meshyBrief = [titleStrForMesh, job.prompt].filter(Boolean).join('. ');
         // runMeshy reads contentCategory / requestedKind to switch to its
-        // vehicle-specific negative_prompt + skip orbit-view generation (we
-        // have no concept image for vehicles — pure text-to-3d).
+        // vehicle-specific negative_prompt. If conceptImageUrl is present
+        // (Phase 2 after user approved the 2D concept), it switches to
+        // multi-image-to-3d for much higher-quality mesh output than pure
+        // text-to-3d. The orbit-view step generates side+back views from
+        // the front concept so Meshy gets 3 angles.
+        const approvedConceptUrl = typeof currentJob.metadata?.conceptPreviewUrl === 'string'
+          ? currentJob.metadata.conceptPreviewUrl as string
+          : '';
         const meshyInput: Record<string, unknown> = {
           ...(currentJob.metadata ?? {}),
           contentCategory: 'vehicle',
@@ -26745,6 +26876,10 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           requestedKind: 'vehicle_3d',
           vehicleType,
           title: titleStrForMesh,
+          // Alias for runMeshy which reads `conceptImageUrl` (set by furniture
+          // / character / etc. paths) — same shape, just renamed for the
+          // vehicle metadata field.
+          conceptImageUrl: approvedConceptUrl || undefined,
         };
         const meshyResult = await (await import('./providers.js')).runMeshy(meshyBrief, meshyInput);
         const meshyGlbUrl = typeof meshyResult.outputUrl === 'string' ? meshyResult.outputUrl : '';
@@ -26813,6 +26948,14 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                         jobId, meshId,
                       });
                     }
+                    // Capture the natural bbox of the mesh as Roblox imported
+                    // it. The builder uses this to scale MeshPart uniformly so
+                    // the car doesn't get squashed into a fixed [6.02, 3.40,
+                    // 8.46] envelope (which makes sports cars look flattened
+                    // and SUVs look stretched). Also lets the DriveSeat be
+                    // positioned inside the actual mesh silhouette instead of
+                    // a fixed Y, so the driver visually sits in the cabin.
+                    const naturalSize = extract?.meshSize;
                     currentJob = {
                       ...currentJob,
                       metadata: {
@@ -26822,6 +26965,9 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                         vehicleMeshThumbnailUrl: meshyThumbnailUrl,
                         vehicleMeshProvider: 'meshy-v6',
                         vehicleMeshOpenUse: meshGranted,
+                        vehicleMeshNaturalSize: naturalSize && naturalSize.x > 0 && naturalSize.y > 0 && naturalSize.z > 0
+                          ? { x: naturalSize.x, y: naturalSize.y, z: naturalSize.z }
+                          : undefined,
                       },
                     };
                     await finishStage('generate_vehicle_mesh', 'completed', [], [
@@ -26829,6 +26975,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                       `Roblox Model asset: ${resolvedModelAssetId}`,
                       `Inner MeshId: ${meshId}`,
                       `Mesh openUse: ${meshGranted ? 'granted' : 'FAILED — mesh may not render for non-owners'}`,
+                      naturalSize ? `Mesh natural size: ${naturalSize.x.toFixed(2)}×${naturalSize.y.toFixed(2)}×${naturalSize.z.toFixed(2)}` : 'Mesh natural size: unknown',
                     ]);
                   } else {
                     logger.warn('[Vehicle] extractMeshIdFromModel returned no meshId; falling back', {

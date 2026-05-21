@@ -3402,6 +3402,44 @@ if idleTrack then idleTrack:Play() end
 -- mesh travels with the invisible root.
 local bodyOffset = hrp.CFrame:Inverse() * mesh.CFrame
 
+-- 2026-05-21 visibility safety net.
+-- When Tripo's Open Cloud asset is still pending moderation OR the mesh's
+-- natural bounding box is tiny (auto_size sometimes outputs ~0.1 stud), the
+-- MeshPart renders empty/invisible and the user thinks the pet didn't spawn.
+-- We force a 5-stud minimum size at runtime AND attach a BillboardGui beacon
+-- above the HumanoidRootPart so the user can always locate the pet on the
+-- map even if the mesh failed to load.
+if mesh:IsA("MeshPart") then
+    pcall(function() mesh.Size = Vector3.new(5, 5, 5) end)
+end
+print(string.format(
+    "[PetFollowScript] Init %s: HRP@%s Mesh@%s MeshContent=%s Size=%s",
+    pet:GetFullName(),
+    tostring(hrp.Position),
+    tostring(mesh.Position),
+    tostring(mesh:IsA("MeshPart") and mesh.MeshContent or "n/a"),
+    tostring(mesh.Size)
+))
+
+do
+    local beacon = Instance.new("BillboardGui")
+    beacon.Name = "PetBeacon"
+    beacon.Size = UDim2.new(6, 0, 1.5, 0)
+    beacon.StudsOffset = Vector3.new(0, 4, 0)
+    beacon.AlwaysOnTop = true
+    beacon.MaxDistance = 200
+    beacon.Parent = hrp
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(1, 0.8, 0.2)
+    label.TextStrokeTransparency = 0
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBold
+    label.Text = "🐉 " .. pet.Name
+    label.Parent = beacon
+end
+
 -- Follow geometry: pet sits to the player's RIGHT shoulder, ~3 studs out and
 -- ~2 studs behind. Flying pets float higher; ground pets sit at HRP height.
 local SIDE_OFFSET = 4
