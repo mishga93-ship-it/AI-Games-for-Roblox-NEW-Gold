@@ -2206,40 +2206,58 @@ function buildVehicleModelManifest(
     },
   );
 
-  // Mesh-based body branch: when the upstream Meshy text-to-3D stage placed a
-  // GLB URL in metadata.vehicleMeshUrl, swap the procedural blocky body shell
-  // for a single MeshPart that displays the actual generated mesh. Wheels,
-  // seats, physics, sounds, effects all stay procedural (proven physics that
-  // drives) and are simply welded around the mesh body via ChassisRoot.
-  // Fallback: when the mesh URL is absent (Meshy failed, returned empty, or
-  // this is a vehicle type Meshy can't handle reliably), we emit the existing
-  // deterministic family-sedan / motorcycle / boat / etc. shell.
-  const vehicleMeshUrl = typeof metadata.vehicleMeshUrl === 'string' && metadata.vehicleMeshUrl.length > 0
-    ? metadata.vehicleMeshUrl
+  // BODY BRANCH PRIORITY (highest to lowest fallback):
+  //   1. LLM scene (metadata.vehicleScene JSON) — hybrid skeleton pattern
+  //      copied from furniture. The LLM composes body silhouette parts; the
+  //      backend emits them inside this folder. Wheels/DriveSeat/controller
+  //      stay procedural (added below). This is the path the user picked
+  //      after the Meshy remote-MeshId-URL incompatibility issue.
+  //   2. Procedural family-sedan (addVehicleBodyShell) — proven hardcoded
+  //      blocky body. Used when the LLM scene was rejected/unavailable.
+  const vehicleSceneRaw = typeof metadata.vehicleScene === 'string' && metadata.vehicleScene.length > 0
+    ? metadata.vehicleScene
     : undefined;
-  if (vehicleMeshUrl) {
-    const meshBodyId = addPart(
-      'VehicleMeshBody',
-      folders.body,
-      [width * 0.94, Math.max(1.0, height * 0.84), length * 0.92],
-      [0, rootY + height * 0.32, 0],
-      primary,
-      {
-        className: 'MeshPart',
-        material: 'SmoothPlastic',
-        canCollide: false,
-        massless: true,
-        extra: {
-          MeshId: vehicleMeshUrl,
-        },
-      },
-    );
-    weldToRoot(meshBodyId, 'VehicleMeshBodyWeld');
-    if (vehicleType === 'car') {
-      addBodyPart('MeshBodyFrontBumperTrim', [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10, -length * 0.49], dark, { material: 'Metal' });
-      addBodyPart('MeshBodyRearBumperTrim',  [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10,  length * 0.49], dark, { material: 'Metal' });
-      addBodyPart('MeshBodyRearLicensePlate', [width * 0.26, height * 0.09, 0.06], [0, rootY + height * 0.28, length * 0.50], silver, { material: 'Metal' });
+  let vehicleScene: { parts: Array<{ name: string; role: string; shape: string; size: [number, number, number]; position: [number, number, number]; rotation?: [number, number, number]; color: string; material: string; transparency?: number }> } | undefined;
+  if (vehicleSceneRaw) {
+    try {
+      const parsed = JSON.parse(vehicleSceneRaw);
+      if (parsed && Array.isArray(parsed.parts) && parsed.parts.length > 0) {
+        vehicleScene = parsed;
+      }
+    } catch {
+      // ignore — fallback to procedural
     }
+  }
+
+  if (vehicleScene) {
+    // LLM-composed body: emit each part as an addBodyPart call. The chassis
+    // is at world Y=0 with rootY ≈ 1.8; the LLM was told the origin is the
+    // chassis centre, so we translate Y by rootY. Wheels stay at Y=1.05
+    // (separate procedural addVehiclePhysics below).
+    for (const p of vehicleScene.parts) {
+      const colorRgb = hexToColor3(p.color) ?? defaultVehiclePalette(vehicleType as VehicleModelType).primary;
+      const partColor = color3(colorRgb.r, colorRgb.g, colorRgb.b);
+      // The LLM prompt told the model "origin (0,0,0) is the chassis centre,
+      // wheels are at radius 1.05 with top at Y=2.10." Our backend uses
+      // rootY=1.8 internally; the LLM coords already account for the wheel
+      // band, so we just use position[1] as-is (it's already absolute Y).
+      addBodyPart(
+        p.name,
+        [Math.max(0.1, p.size[0]), Math.max(0.1, p.size[1]), Math.max(0.1, p.size[2])],
+        [p.position[0], p.position[1], p.position[2]],
+        partColor,
+        {
+          shape: (p.shape === 'Cylinder' || p.shape === 'Ball' || p.shape === 'Block') ? p.shape : 'Block',
+          className: (p.shape === 'Wedge') ? 'WedgePart' : (p.shape === 'CornerWedge') ? 'CornerWedgePart' : undefined,
+          material: p.material,
+          rot: p.rotation,
+          transparency: typeof p.transparency === 'number' ? p.transparency : undefined,
+        },
+      );
+    }
+    // Marker part so downstream QA can recognise LLM-scene mode (analogous
+    // to VehicleMeshBody marker in the old mesh branch).
+    addBodyPart('VehicleSceneRoot', [0.1, 0.1, 0.1], [0, rootY, 0], dark, { material: 'Metal', transparency: 1 });
   } else {
     addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass, silver, repairBoost });
   }
@@ -14472,36 +14490,70 @@ function buildClothingAutoEquipScript(
   };
   const safeShirt = normalizeTemplate(shirtTemplateUrl);
   const safePants = normalizeTemplate(pantsTemplateUrl);
+  // Extract numeric IDs — HumanoidDescription.Shirt / .Pants take a raw
+  // number (the asset id), not the rbxassetid:// URI.
+  const shirtNumMatch = safeShirt.match(/\/\/(\d+)/);
+  const pantsNumMatch = safePants.match(/\/\/(\d+)/);
+  const shirtId = shirtNumMatch ? shirtNumMatch[1] : '0';
+  const pantsId = pantsNumMatch ? pantsNumMatch[1] : '0';
   return [
-    '-- AutoEquipClothing (clean minimal version)',
+    '-- AutoEquipClothing (HumanoidDescription path)',
+    '-- 2026-05-21: switched from Instance.new("Shirt") to HumanoidDescription.',
+    '-- Modern R15 avatars apply HumanoidDescription on character spawn, which',
+    '-- silently overwrites Shirt instances created via Instance.new. Setting',
+    '-- humanoid:ApplyDescription with HumanoidDescription.Shirt = <numeric id>',
+    '-- is the canonical, documented path. Same pattern as buildTShirtAutoEquipScript.',
     'local Players = game:GetService("Players")',
     '',
-    `local SHIRT_TEMPLATE = ${JSON.stringify(safeShirt)}`,
-    `local PANTS_TEMPLATE = ${JSON.stringify(safePants)}`,
+    `local SHIRT_ID = ${shirtId}`,
+    `local PANTS_ID = ${pantsId}`,
     '',
-    'print("[AIClothing] Started, shirt =", SHIRT_TEMPLATE, "pants =", PANTS_TEMPLATE)',
+    'print("[AIClothing] Started, shirt =", SHIRT_ID, "pants =", PANTS_ID)',
     '',
     'local function applyClothing(character)',
     '    task.wait(1)',
-    '',
-    '    if SHIRT_TEMPLATE ~= "" then',
-    '        for _, v in pairs(character:GetChildren()) do',
-    '            if v:IsA("Shirt") then v:Destroy() end',
-    '        end',
-    '        local shirt = Instance.new("Shirt")',
-    '        shirt.ShirtTemplate = SHIRT_TEMPLATE',
-    '        shirt.Parent = character',
-    '        print("[AIClothing] Shirt applied:", SHIRT_TEMPLATE)',
+    '    if SHIRT_ID == 0 and PANTS_ID == 0 then',
+    '        warn("[AIClothing] No asset ids available — nothing to apply")',
+    '        return',
     '    end',
-    '',
-    '    if PANTS_TEMPLATE ~= "" then',
-    '        for _, v in pairs(character:GetChildren()) do',
-    '            if v:IsA("Pants") then v:Destroy() end',
+    '    local humanoid = character:FindFirstChildOfClass("Humanoid")',
+    '    if not humanoid then',
+    '        humanoid = character:WaitForChild("Humanoid", 5)',
+    '    end',
+    '    if not humanoid then',
+    '        warn("[AIClothing] No Humanoid on character — cannot apply clothing")',
+    '        return',
+    '    end',
+    '    local ok, desc = pcall(function() return humanoid:GetAppliedDescription() end)',
+    '    if not ok or not desc then',
+    '        desc = Instance.new("HumanoidDescription")',
+    '    end',
+    '    if SHIRT_ID ~= 0 then desc.Shirt = SHIRT_ID end',
+    '    if PANTS_ID ~= 0 then desc.Pants = PANTS_ID end',
+    '    local applyOk, err = pcall(function() humanoid:ApplyDescription(desc) end)',
+    '    if applyOk then',
+    '        print("[AIClothing] HumanoidDescription applied — shirt:", SHIRT_ID, "pants:", PANTS_ID)',
+    '    else',
+    '        warn("[AIClothing] ApplyDescription failed:", err)',
+    '        -- Fallback: legacy Shirt / Pants instances (works in Edit mode + some games)',
+    '        if SHIRT_ID ~= 0 then',
+    '            for _, v in pairs(character:GetChildren()) do',
+    '                if v:IsA("Shirt") then v:Destroy() end',
+    '            end',
+    '            local shirt = Instance.new("Shirt")',
+    '            shirt.ShirtTemplate = "rbxassetid://" .. SHIRT_ID',
+    '            shirt.Parent = character',
+    '            print("[AIClothing] Fallback Shirt instance applied")',
     '        end',
-    '        local pants = Instance.new("Pants")',
-    '        pants.PantsTemplate = PANTS_TEMPLATE',
-    '        pants.Parent = character',
-    '        print("[AIClothing] Pants applied:", PANTS_TEMPLATE)',
+    '        if PANTS_ID ~= 0 then',
+    '            for _, v in pairs(character:GetChildren()) do',
+    '                if v:IsA("Pants") then v:Destroy() end',
+    '            end',
+    '            local pants = Instance.new("Pants")',
+    '            pants.PantsTemplate = "rbxassetid://" .. PANTS_ID',
+    '            pants.Parent = character',
+    '            print("[AIClothing] Fallback Pants instance applied")',
+    '        end',
     '    end',
     'end',
     '',
