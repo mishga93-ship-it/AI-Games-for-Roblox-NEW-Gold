@@ -177,8 +177,10 @@ end
 
 local CONTENT_PROPERTIES = {
 	MeshId = true,
+	MeshContent = true,        -- 2024+ replacement for MeshId on MeshPart (Content type)
 	TextureID = true,
 	TextureId = true,
+	TextureContent = true,     -- 2024+ replacement for TextureID on MeshPart (Content type)
 	SoundId = true,
 	Texture = true,
 	Image = true,

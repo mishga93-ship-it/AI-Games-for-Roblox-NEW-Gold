@@ -171,6 +171,7 @@ import {
   prepareSkinnedMeshFromSource,
   uploadAssetToRoblox,
   pollRobloxOperation,
+  grantAssetOpenUse,
   createRobloxGamePass,
   createRobloxDevProduct,
   validateRobloxAssetId,
@@ -26755,6 +26756,27 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                   const extract = await extractMeshIdFromModel(resolvedModelAssetId);
                   const meshId = extract?.meshId;
                   if (meshId && meshId > 0) {
+                    // CRITICAL: Open Cloud upload of a Model creates an inner
+                    // Mesh asset that defaults to "restricted" privacy — even
+                    // when the parent Model is uploaded as openUse. Without
+                    // grantAssetOpenUse on the inner mesh, non-owner Roblox
+                    // accounts get HTTP 403 when fetching the mesh and Studio
+                    // renders MeshPart as a default flat cube (exactly the
+                    // "блочная машина" symptom from session 373). Mirrors the
+                    // grantAssetOpenUse pattern used elsewhere for Decals.
+                    let meshGranted = false;
+                    try {
+                      meshGranted = await grantAssetOpenUse({ apiKey, assetId: meshId });
+                    } catch (grantErr) {
+                      logger.warn('[Vehicle] grantAssetOpenUse on inner mesh threw', {
+                        jobId, meshId, error: errorMessage(grantErr),
+                      });
+                    }
+                    if (!meshGranted) {
+                      logger.warn('[Vehicle] grantAssetOpenUse returned false — mesh may be invisible to non-owner Studio sessions', {
+                        jobId, meshId,
+                      });
+                    }
                     currentJob = {
                       ...currentJob,
                       metadata: {
@@ -26763,12 +26785,14 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                         vehicleMeshModelAssetId: resolvedModelAssetId,
                         vehicleMeshThumbnailUrl: meshyThumbnailUrl,
                         vehicleMeshProvider: 'meshy-v6',
+                        vehicleMeshOpenUse: meshGranted,
                       },
                     };
                     await finishStage('generate_vehicle_mesh', 'completed', [], [
                       'Meshy 6 text-to-3d success',
                       `Roblox Model asset: ${resolvedModelAssetId}`,
                       `Inner MeshId: ${meshId}`,
+                      `Mesh openUse: ${meshGranted ? 'granted' : 'FAILED — mesh may not render for non-owners'}`,
                     ]);
                   } else {
                     logger.warn('[Vehicle] extractMeshIdFromModel returned no meshId; falling back', {
