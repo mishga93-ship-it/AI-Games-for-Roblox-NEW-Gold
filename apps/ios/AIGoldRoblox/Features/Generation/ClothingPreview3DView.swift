@@ -374,14 +374,31 @@ struct ClothingPreview3DView: UIViewRepresentable {
                 for node in nodes {
                     guard let geometry = node.geometry else { continue }
                     let materialCount = max(1, geometry.materials.count)
-                    if let texture, let faces, materialCount == faces.count {
-                        // Per-face Roblox-UV crop.
-                        geometry.materials = faces.map { region in
-                            let cropped = cropImage(texture, region: region)
-                            return materialForRegion(cropped, fallback: self.skinColor)
+                    if let texture {
+                        // 2026-05-21: never fall back to skinColor when a
+                        // shirt/pants texture exists — the previous code
+                        // silently rendered a bare mannequin when materialCount
+                        // didn't equal faces.count (e.g. imported SCN models
+                        // have 1 material), making the preview look broken.
+                        // Now we always show the texture; per-face crop is the
+                        // preferred path, full-texture stretch is the safety
+                        // net.
+                        if let faces, materialCount == faces.count {
+                            geometry.materials = faces.map { region in
+                                let cropped = cropImage(texture, region: region) ?? texture
+                                return materialForRegion(cropped, fallback: self.skinColor)
+                            }
+                        } else {
+                            // Material count doesn't match expected 6 — fall back
+                            // to stretching the full texture so the user at
+                            // least sees the design (UV-incorrect but visible).
+                            geometry.materials = (0..<materialCount).map { _ in
+                                materialForRegion(texture, fallback: self.skinColor)
+                            }
                         }
                     } else {
-                        // Head / no-texture path: solid skin colour everywhere.
+                        // No texture for this group (head, or no pants supplied):
+                        // solid skin colour on every face.
                         geometry.materials = (0..<materialCount).map { _ in
                             materialForRegion(nil, fallback: self.skinColor)
                         }
