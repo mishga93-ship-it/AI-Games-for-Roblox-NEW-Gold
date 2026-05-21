@@ -3011,7 +3011,7 @@ async function generateGarmentOrbitViewsForMesh(
   return { side, back };
 }
 
-async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResult> {
+export async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResult> {
   const apiKey = requireValue(FAL_API_KEY.value(), 'FAL_API_KEY');
   const rawCleanPrompt = build3DPrompt(prompt, input);
   // Translate non-ASCII prompts to English — Meshy text-to-3d struggles with non-Latin text
