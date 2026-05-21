@@ -266,11 +266,102 @@ struct ClothingPreview3DView: UIViewRepresentable {
             }
         }
 
-        /// Applies clothing templates to body-part groups.
-        /// Matches AvatarSceneView.applyFullTemplateToMappedGroups:
-        /// NO vFlipTransform, just clamp wrapping. The model's UVs are
-        /// designed to sample correct regions from the 585×559 template.
+        /// 2026-05-21 — accurate UV-region mapping that mirrors Roblox's
+        /// classic shirt template. The old code stretched the whole 585×559
+        /// PNG onto each face of every SCNBox, which produced the "design
+        /// only on one arm + skin everywhere else" preview the user
+        /// complained about — SceneKit's default per-face UV unwrap does
+        /// not match Roblox's classic UV.
+        ///
+        /// SCNBox material order: [+Z front, +X right, -Z back, -X left,
+        /// +Y top, -Y bottom]. For each body part we now crop the
+        /// SHIRT_REGIONS / PANTS_REGIONS slice of the 585×559 texture that
+        /// Roblox would render on that face, and assign it to the matching
+        /// material slot. Result: the iOS preview matches what the avatar
+        /// actually looks like in Studio.
         private func applyClothingTextures(shirt: UIImage?, pants: UIImage?) {
+            // Roblox classic shirt 585×559 UV regions — mirror of
+            // SHIRT_REGIONS in apps/functions/src/clothingCompositor.ts.
+            // (x, y, w, h) in pixels.
+            struct Region {
+                let x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat
+            }
+            // SCNBox face order: [front +Z, right +X, back -Z, left -X, top +Y, bottom -Y]
+            let torsoFaces: [Region] = [
+                Region(x:  64, y:  44, w: 128, h: 128), // front
+                Region(x: 192, y:  44, w:  64, h: 128), // right
+                Region(x: 256, y:  44, w: 128, h: 128), // back
+                Region(x:   0, y:  44, w:  64, h: 128), // left
+                Region(x:  64, y:   0, w: 128, h:  44), // top
+                Region(x:  64, y: 172, w: 128, h:  44), // bottom
+            ]
+            let leftArmFaces: [Region] = [
+                Region(x:  64, y: 284, w:  64, h: 128), // front
+                Region(x: 128, y: 284, w:  64, h: 128), // right
+                Region(x: 192, y: 284, w:  64, h: 128), // back
+                Region(x:   0, y: 284, w:  64, h: 128), // left
+                Region(x:  64, y: 240, w:  64, h:  44), // top
+                Region(x:  64, y: 412, w:  64, h:  44), // bottom
+            ]
+            let rightArmFaces: [Region] = [
+                Region(x: 384, y: 284, w:  64, h: 128), // front
+                Region(x: 448, y: 284, w:  64, h: 128), // right
+                Region(x: 512, y: 284, w:  64, h: 128), // back
+                Region(x: 320, y: 284, w:  64, h: 128), // left
+                Region(x: 384, y: 240, w:  64, h:  44), // top
+                Region(x: 384, y: 412, w:  64, h:  44), // bottom
+            ]
+            // Pants regions — mirror of PANTS_REGIONS in clothingCompositor.ts.
+            let leftLegFaces: [Region] = [
+                Region(x:  64, y: 284, w:  64, h: 128), // front
+                Region(x: 128, y: 284, w:  64, h: 128), // right
+                Region(x: 192, y: 284, w:  64, h: 128), // back
+                Region(x:   0, y: 284, w:  64, h: 128), // left
+                Region(x:  64, y: 240, w:  64, h:  44), // top
+                Region(x:  64, y: 412, w:  64, h:  44), // bottom
+            ]
+            let rightLegFaces: [Region] = [
+                Region(x: 384, y: 284, w:  64, h: 128), // front
+                Region(x: 448, y: 284, w:  64, h: 128), // right
+                Region(x: 512, y: 284, w:  64, h: 128), // back
+                Region(x: 320, y: 284, w:  64, h: 128), // left
+                Region(x: 384, y: 240, w:  64, h:  44), // top
+                Region(x: 384, y: 412, w:  64, h:  44), // bottom
+            ]
+
+            func cropImage(_ src: UIImage, region: Region, templateW: CGFloat = 585, templateH: CGFloat = 559) -> UIImage? {
+                guard let cg = src.cgImage else { return nil }
+                let scaleX = CGFloat(cg.width) / templateW
+                let scaleY = CGFloat(cg.height) / templateH
+                let rect = CGRect(
+                    x: region.x * scaleX,
+                    y: region.y * scaleY,
+                    width: region.w * scaleX,
+                    height: region.h * scaleY,
+                )
+                guard let cropped = cg.cropping(to: rect) else { return nil }
+                return UIImage(cgImage: cropped)
+            }
+
+            func materialForRegion(_ regionImage: UIImage?, fallback: UIColor) -> SCNMaterial {
+                let mat = SCNMaterial()
+                mat.diffuse.contents = regionImage ?? fallback
+                mat.diffuse.wrapS = .clamp
+                mat.diffuse.wrapT = .clamp
+                mat.isDoubleSided = true
+                mat.lightingModel = .physicallyBased
+                mat.roughness.contents = 0.72
+                mat.metalness.contents = 0.0
+                return mat
+            }
+
+            let groupToFaces: [String: [Region]] = [
+                "torso": torsoFaces,
+                "leftArm": leftArmFaces,
+                "rightArm": rightArmFaces,
+                "leftLeg": leftLegFaces,
+                "rightLeg": rightLegFaces,
+            ]
             let shirtGroups: Set<String> = ["torso", "leftArm", "rightArm"]
             let pantsGroups: Set<String> = ["leftLeg", "rightLeg"]
 
@@ -278,24 +369,22 @@ struct ClothingPreview3DView: UIViewRepresentable {
                 let useShirt = shirtGroups.contains(group)
                 let usePants = pantsGroups.contains(group)
                 let texture: UIImage? = useShirt ? shirt : (usePants ? pants : nil)
+                let faces = groupToFaces[group]
 
                 for node in nodes {
                     guard let geometry = node.geometry else { continue }
                     let materialCount = max(1, geometry.materials.count)
-                    geometry.materials = (0..<materialCount).map { _ in
-                        let mat = SCNMaterial()
-                        if let texture {
-                            mat.diffuse.contents = texture
-                        } else {
-                            mat.diffuse.contents = self.skinColor
+                    if let texture, let faces, materialCount == faces.count {
+                        // Per-face Roblox-UV crop.
+                        geometry.materials = faces.map { region in
+                            let cropped = cropImage(texture, region: region)
+                            return materialForRegion(cropped, fallback: self.skinColor)
                         }
-                        mat.diffuse.wrapS = .clamp
-                        mat.diffuse.wrapT = .clamp
-                        mat.isDoubleSided = true
-                        mat.lightingModel = .physicallyBased
-                        mat.roughness.contents = 0.72
-                        mat.metalness.contents = 0.0
-                        return mat
+                    } else {
+                        // Head / no-texture path: solid skin colour everywhere.
+                        geometry.materials = (0..<materialCount).map { _ in
+                            materialForRegion(nil, fallback: self.skinColor)
+                        }
                     }
                 }
             }
