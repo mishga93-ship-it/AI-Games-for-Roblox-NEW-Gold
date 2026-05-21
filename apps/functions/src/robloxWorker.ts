@@ -5581,6 +5581,58 @@ function buildFurnitureModelManifest(
   // and restrict the LLM to additive accent roles. The cylinder rotation math from
   // session 353 is reused unchanged.
   const shapeValues: Record<'Block' | 'Ball' | 'Cylinder', number> = { Ball: 0, Block: 1, Cylinder: 2 };
+
+  // 2026-05-20 — preview parts collector for iOS interactive 3D preview.
+  // We mirror EVERY part that lands in the final scene (deterministic
+  // skeleton + filtered LLM accents) into a normalized list with explicit
+  // cylinderAxis so iOS doesn't have to re-derive rotation heuristically.
+  // The iOS SceneKit view reads this via metadata.furnitureSpecJSON and
+  // renders the exact same geometry that ships in the .rbxm.
+  type FurniturePreviewPart = {
+    name: string;
+    kind: 'Part' | 'Seat';
+    shape: 'Block' | 'Ball' | 'Cylinder';
+    size: [number, number, number];        // WORLD size (pre-permutation)
+    position: [number, number, number];
+    cylinderAxis?: 0 | 1 | 2;              // pickCylinderAxis result, only when shape=Cylinder
+    color: string;                          // hex like "#A57B53"
+    material: string;
+    transparency?: number;
+  };
+  const previewParts: FurniturePreviewPart[] = [];
+  const toHexColor = (c: Record<string, unknown>): string => {
+    const r = typeof c.r === 'number' ? c.r : 0;
+    const g = typeof c.g === 'number' ? c.g : 0;
+    const b = typeof c.b === 'number' ? c.b : 0;
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const toByte = (v: number) => Math.round(clamp01(v) * 255).toString(16).padStart(2, '0');
+    return `#${toByte(r)}${toByte(g)}${toByte(b)}`;
+  };
+  const recordPreviewPart = (
+    name: string,
+    kind: 'Part' | 'Seat',
+    shape: 'Block' | 'Ball' | 'Cylinder',
+    sizeWorld: [number, number, number],
+    position: [number, number, number],
+    color: Record<string, unknown>,
+    material: string,
+    transparency: number,
+  ): void => {
+    const entry: FurniturePreviewPart = {
+      name,
+      kind,
+      shape,
+      size: [sizeWorld[0], sizeWorld[1], sizeWorld[2]],
+      position: [position[0], position[1], position[2]],
+      color: toHexColor(color),
+      material,
+    };
+    if (shape === 'Cylinder') {
+      entry.cylinderAxis = pickCylinderAxis(sizeWorld);
+    }
+    if (transparency > 0) entry.transparency = transparency;
+    previewParts.push(entry);
+  };
   const pushFallbackPart = (
     suffix: string,
     size: [number, number, number],
@@ -5635,6 +5687,19 @@ function buildFurnitureModelManifest(
         ...(options.extra ?? {}),
       },
     });
+    // Mirror into the preview list — when the baked AI mesh is present we
+    // still record fallback skeleton parts (their transparency=1 will be
+    // honored by the iOS renderer).
+    recordPreviewPart(
+      `Fallback${suffix}`,
+      options.className === 'Seat' ? 'Seat' : 'Part',
+      shapeName,
+      size,
+      position,
+      color,
+      materialName,
+      hideForBakedMesh ? 1 : (options.transparency ?? 0),
+    );
     return id;
   };
 
@@ -5924,6 +5989,19 @@ function buildFurnitureModelManifest(
           ...(p.kind === 'Seat' ? { Disabled: false } : {}),
         },
       });
+      // Mirror into iOS preview list. Use the ORIGINAL world size (before
+      // any cylinder permutation) so the iOS renderer can derive its own
+      // SCNCylinder height/radius via cylinderAxis.
+      recordPreviewPart(
+        (p.name || `LLMPart${scene.length}`).slice(0, 40),
+        p.kind === 'Seat' ? 'Seat' : 'Part',
+        shapeName,
+        [worldX, worldY, worldZ],
+        [worldPosX, worldPosY, worldPosZ],
+        color3(partRgb.r, partRgb.g, partRgb.b) as unknown as Record<string, unknown>,
+        matKey,
+        typeof p.transparency === 'number' ? Math.max(0, Math.min(1, p.transparency)) : 0,
+      );
     }
   } else {
     // No LLM scene parsed — fall back to deterministic skeleton only.
@@ -6083,6 +6161,14 @@ task.spawn(loadAiMesh)
     scene,
     scripts,
     assets: [],
+    // 2026-05-20 — iOS interactive 3D preview payload. Same final-scene
+    // parts list that ships in the .rbxm (deterministic skeleton + filtered
+    // LLM accents) with explicit cylinderAxis so iOS doesn't have to
+    // re-derive rotation. Consumed by processFurniture export step.
+    metadata: {
+      furniturePreviewParts: previewParts,
+      furnitureType,
+    },
   };
 }
 

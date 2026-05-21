@@ -6535,16 +6535,42 @@ async function reviewVehicleManifestWithRepair(args: {
       vehicleQualityAttempt: attempt,
     });
     const deterministic = deterministicVehicleReview({ prompt: args.prompt, manifest });
-    // ALWAYS render the preview PNG and run the LLM/vision critic on it.
-    // The user explicitly asked for "LLM looks at the rendered model before
-    // delivering the file" — skipping the vision step when deterministic
-    // passes silently turned the review into a text-only gate again.
+    // Preview image for the vision critic. In MESH MODE we must use Meshy's
+    // own thumbnail of the generated GLB — our blocky-renderer
+    // (createFurniturePreviewPng) cannot render MeshPart with a remote GLB
+    // URL, so it would feed the reviewer black rectangles and trigger false
+    // rejections like "rendered image shows abstract black rectangles".
+    // In procedural fallback mode (no mesh URL) the blocky renderer is the
+    // right choice — the manifest is 100% Block parts which it renders well.
+    const meshThumbnailUrl = typeof (manifest.metadata?.vehicleMeshThumbnailUrl) === 'string'
+      ? (manifest.metadata.vehicleMeshThumbnailUrl as string)
+      : '';
+    const hasMeshBody = manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
     let previewPng: Buffer | undefined;
-    try {
-      const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
-      previewPng = createFurniturePreviewPng(scene, args.title);
-    } catch (renderErr) {
-      logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
+    if (hasMeshBody && meshThumbnailUrl) {
+      try {
+        const thumbResp = await fetch(meshThumbnailUrl);
+        if (thumbResp.ok) {
+          const arrayBuf = await thumbResp.arrayBuffer();
+          previewPng = Buffer.from(arrayBuf);
+        } else {
+          logger.warn('[VehicleQualityReview] Meshy thumbnail fetch non-OK', { status: thumbResp.status, meshThumbnailUrl });
+        }
+      } catch (thumbErr) {
+        logger.warn('[VehicleQualityReview] Meshy thumbnail fetch failed', { error: errorMessage(thumbErr) });
+      }
+    }
+    if (!previewPng) {
+      // Procedural fallback path OR mesh-mode without working thumbnail —
+      // fall back to the blocky-renderer. In mesh mode this preview will be
+      // imperfect, but the reviewer prompt below already explains that the
+      // body is a MeshPart so it can be lenient about empty preview regions.
+      try {
+        const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
+        previewPng = createFurniturePreviewPng(scene, args.title);
+      } catch (renderErr) {
+        logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
+      }
     }
     const llmReview = await runVehicleLlmQualityReview({
       prompt: args.prompt,
@@ -10192,10 +10218,14 @@ async function runMeshyPetPassthrough(stagePrompt: string, input: Record<string,
 // Vehicle Meshy passthrough — same dynamic-import pattern as the pet variant
 // above. Uses kind='vehicle_3d' so the providers layer applies vehicle-aware
 // negative prompts and topology defaults.
-async function runMeshyVehiclePassthrough(stagePrompt: string, input: Record<string, unknown>): Promise<{ outputUrl?: string; mimeType?: string }> {
+async function runMeshyVehiclePassthrough(stagePrompt: string, input: Record<string, unknown>): Promise<{ outputUrl?: string; mimeType?: string; thumbnailUrl?: string }> {
   const providersModule = await import('./providers.js');
-  const fn = (providersModule as unknown as { runMeshy?: (p: string, i: Record<string, unknown>) => Promise<{ outputUrl?: string; mimeType?: string }> }).runMeshy;
-  if (fn) return fn(stagePrompt, input);
+  const fn = (providersModule as unknown as { runMeshy?: (p: string, i: Record<string, unknown>) => Promise<{ outputUrl?: string; mimeType?: string; raw?: Record<string, unknown> }> }).runMeshy;
+  if (fn) {
+    const result = await fn(stagePrompt, input);
+    const thumbnailUrl = typeof result.raw?.thumbnailUrl === 'string' ? result.raw.thumbnailUrl : undefined;
+    return { outputUrl: result.outputUrl, mimeType: result.mimeType, thumbnailUrl };
+  }
   const exec = await providersModule.executeProvider({
     provider: 'meshy',
     operation: 'generate-3d',
@@ -26180,6 +26210,10 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               vehicleMeshUrl: meshUrl,
               vehicleMeshMimeType: meshResult.mimeType ?? 'model/gltf-binary',
               vehicleMeshProvider: 'meshy-v6',
+              // Meshy's own rendered thumbnail of the GLB it produced. Used
+              // downstream as the vision-review image input because our
+              // procedural blocky-renderer can't display MeshPart at all.
+              vehicleMeshThumbnailUrl: meshResult.thumbnailUrl ?? '',
             },
           };
           await finishStage('generate_vehicle_mesh', 'completed', [], [
@@ -27127,21 +27161,30 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       const nativeBuild = await maybeBuildRobloxBinary(manifest);
       if (nativeBuild?.bufferBase64) {
         // 2026-05-20 (Track 3 Phase 2): if this is a blocky-furniture job,
-        // attach the LLM scene JSON to the artifact metadata so iOS can
-        // render the interactive 3D preview (BlockyFurniture3DSceneView).
-        // Same pattern as blockyPetSpecJSON. Furniture types: chair, table,
-        // lamp, plant, sign, decor, etc.
-        const furnitureSceneRaw = typeof (currentJob.metadata as Record<string, unknown> | undefined)?.furnitureLLMScene === 'string'
-          ? (currentJob.metadata as Record<string, unknown>).furnitureLLMScene as string
+        // ship the FINAL scene parts (deterministic skeleton + filtered LLM
+        // accents) collected by the manifest builder, NOT the raw LLM
+        // scene. Hybrid-skeleton types (chair/table/lamp/shelf/...) emit
+        // ~5–15 parts deterministically and only let the LLM add small
+        // accents — sending only the LLM scene meant iOS rendered just the
+        // accents and missed the entire table top / 4 legs / etc. The
+        // builder now stashes the merged parts list on
+        // manifest.metadata.furniturePreviewParts.
+        const previewPartsAny = (manifest.metadata as Record<string, unknown> | undefined)?.furniturePreviewParts;
+        const furnitureTypeFromManifest = typeof (manifest.metadata as Record<string, unknown> | undefined)?.furnitureType === 'string'
+          ? (manifest.metadata as Record<string, unknown>).furnitureType as string
           : undefined;
-        const furnitureTypeForArtifact = typeof (currentJob.metadata as Record<string, unknown> | undefined)?.furnitureType === 'string'
+        const furnitureTypeFromJob = typeof (currentJob.metadata as Record<string, unknown> | undefined)?.furnitureType === 'string'
           ? (currentJob.metadata as Record<string, unknown>).furnitureType as string
           : undefined;
-        const blockyFurnitureExtras = (isFurniture && furnitureSceneRaw)
+        const furnitureTypeForArtifact = furnitureTypeFromManifest ?? furnitureTypeFromJob ?? 'decor';
+        const previewPartsJSON = (isFurniture && Array.isArray(previewPartsAny) && previewPartsAny.length > 0)
+          ? JSON.stringify({ parts: previewPartsAny, furnitureType: furnitureTypeForArtifact })
+          : undefined;
+        const blockyFurnitureExtras = (isFurniture && previewPartsJSON)
           ? {
               isBlockyFurniture: true,
-              furnitureSpecJSON: furnitureSceneRaw,
-              furnitureType: furnitureTypeForArtifact ?? 'decor',
+              furnitureSpecJSON: previewPartsJSON,
+              furnitureType: furnitureTypeForArtifact,
             }
           : {};
         exportArtifacts.push(await uploadBinaryArtifact(job, Buffer.from(nativeBuild.bufferBase64, 'base64'), {

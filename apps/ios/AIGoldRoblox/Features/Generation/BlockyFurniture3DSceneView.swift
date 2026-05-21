@@ -16,11 +16,16 @@ struct FurnitureSpecPayload: Decodable {
         let role: String?              // optional — base/post/shade/seat/etc
         let shape: String?             // "Block" | "Cylinder" | "Ball" (default Block)
         let position: [Double]         // [x, y, z]
-        let size: [Double]             // [x, y, z]
+        let size: [Double]             // [x, y, z] — WORLD size (pre-permutation)
         let color: String              // hex like "#A57B53" or "F0E0D0"
         let material: String?
         let transparency: Double?
         let canCollide: Bool?
+        /// 2026-05-20: backend's pickCylinderAxis result for Cylinder parts.
+        /// 0 = long along world-X, 1 = long along world-Y, 2 = long along
+        /// world-Z. iOS uses this instead of the old longest-axis heuristic
+        /// which mis-fired on flat discs ([1.2, 0.18, 1.2] → axis Y).
+        let cylinderAxis: Int?
     }
 
     static func decode(from jsonString: String) -> FurnitureSpecPayload? {
@@ -138,12 +143,23 @@ struct BlockyFurniture3DSceneView: UIViewRepresentable {
                 let node = SCNNode(geometry: makeGeometry(part: part))
                 node.name = part.name ?? "Part"
                 node.position = SCNVector3(part.position[0], part.position[1], part.position[2])
-                // Robust: if a Cylinder reads as Y-up (height in Y > XZ), don't
-                // rotate. If X is the longest, rotate Z by 90° (Roblox stores
-                // Cylinder long-axis = X). We mirror the rotation logic the
-                // backend uses in robloxWorker.ts:pickCylinderAxis.
-                if (part.shape ?? "Block") == "Cylinder" {
-                    applyCylinderRotation(node: node, size: part.size)
+                // For cylinders, the backend already ran pickCylinderAxis and
+                // shipped the result. Apply the matching SceneKit rotation:
+                //   axis=0 (long along world-X) → rotate Z by 90°
+                //   axis=1 (long along world-Y) → no rotation (SCNCylinder
+                //          default orientation, height = Y)
+                //   axis=2 (long along world-Z) → rotate X by 90°
+                if (part.shape ?? "Block") == "Cylinder", let axis = part.cylinderAxis {
+                    switch axis {
+                    case 0: node.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
+                    case 2: node.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+                    default: break
+                    }
+                } else if (part.shape ?? "Block") == "Cylinder" {
+                    // Legacy fallback for jobs created before cylinderAxis
+                    // was attached server-side. Use the most-equal-other-pair
+                    // heuristic that mirrors backend pickCylinderAxis.
+                    applyLegacyCylinderRotation(node: node, size: part.size)
                 }
                 root.addChildNode(node)
             }
@@ -155,27 +171,28 @@ struct BlockyFurniture3DSceneView: UIViewRepresentable {
             root.runAction(spin, forKey: "idle_spin")
         }
 
-        private func applyCylinderRotation(node: SCNNode, size: [Double]) {
-            // Pick the axis with the most-equal "other two" — that's the
-            // intended long axis. SCNCylinder defaults to standing along Y,
-            // so if X is the long axis we rotate Z by 90° (X becomes vertical
-            // for the cylinder mesh, then we re-rotate to lay it flat along
-            // world X). Same for Z.
-            // size = [X, Y, Z]
+        /// Legacy fallback when cylinderAxis isn't shipped in the spec.
+        /// Mirrors the backend's pickCylinderAxis: picks the axis whose
+        /// OTHER two dimensions are most equal (= where the circular
+        /// cross-section lives).
+        private func applyLegacyCylinderRotation(node: SCNNode, size: [Double]) {
             let sx = size[0], sy = size[1], sz = size[2]
-            // Find the most-different axis (the long one). If two are
-            // approximately equal and one stands out → that's the axis.
-            let longestIdx: Int
-            if sx >= sy && sx >= sz { longestIdx = 0 }
-            else if sz >= sx && sz >= sy { longestIdx = 2 }
-            else { longestIdx = 1 }
-            switch longestIdx {
-            case 0:  // long along X
-                node.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-            case 2:  // long along Z
-                node.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
-            default:
-                break // default Y-up cylinder, no rotation
+            // For each candidate axis, compute the ratio of min/max of the
+            // OTHER two dims. The axis with the highest ratio (most equal)
+            // is the chosen one. Tie-break: prefer the longest length.
+            let candidates: [(axis: Int, ratio: Double, len: Double)] = [
+                (0, min(sy, sz) / max(sy, sz), sx),
+                (1, min(sx, sz) / max(sx, sz), sy),
+                (2, min(sx, sy) / max(sx, sy), sz),
+            ]
+            let best = candidates.max(by: { (a, b) in
+                if a.ratio != b.ratio { return a.ratio < b.ratio }
+                return a.len < b.len
+            })!
+            switch best.axis {
+            case 0: node.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
+            case 2: node.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+            default: break
             }
         }
 
@@ -190,13 +207,24 @@ struct BlockyFurniture3DSceneView: UIViewRepresentable {
             case "Ball":
                 geometry = SCNSphere(radius: min(sx, sy, sz) / 2)
             case "Cylinder":
-                // After the rotation in applyCylinderRotation, the cylinder's
-                // local Y aligns with the world long axis. So height = longest
-                // dim, radius = (mean of the other two) / 2.
-                let dims = [sx, sy, sz]
-                let sorted = dims.sorted(by: >)
-                let height = sorted[0]
-                let radius = (sorted[1] + sorted[2]) / 4
+                // After cylinderAxis-driven rotation above, SCNCylinder's
+                // local Y aligns with the world long axis. Height comes from
+                // the long-axis world dimension; radius comes from the mean
+                // of the OTHER two world dimensions (which should be ≈ equal
+                // — pickCylinderAxis literally picks the axis where they are).
+                let axis = part.cylinderAxis ?? -1
+                let height: CGFloat
+                let radius: CGFloat
+                switch axis {
+                case 0: height = sx; radius = (sy + sz) / 4
+                case 1: height = sy; radius = (sx + sz) / 4
+                case 2: height = sz; radius = (sx + sy) / 4
+                default:
+                    // Legacy: cylinderAxis missing → use longest dim as long axis.
+                    let sorted = [sx, sy, sz].sorted(by: >)
+                    height = sorted[0]
+                    radius = (sorted[1] + sorted[2]) / 4
+                }
                 geometry = SCNCylinder(radius: radius, height: height)
             default: // Block
                 geometry = SCNBox(width: sx, height: sy, length: sz, chamferRadius: 0.02)
