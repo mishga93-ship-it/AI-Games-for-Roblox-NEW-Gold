@@ -6091,12 +6091,14 @@ function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestRev
   // markers do not exist. QA must accept the mesh-mode car as a different
   // structural shape rather than rejecting it for "missing FamilyCarBodyShell".
   const hasMeshBody = manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
-  const hasLlmScene = manifest.scene.some((node) => /VehicleSceneRoot/i.test(node.name));
+  // Session 373: VehicleSceneRoot marker is now ONLY a debug breadcrumb that
+  // the LLM contributed accents on top of the procedural baseline. The body
+  // shell is always procedural (FamilyCar*), so required-marker logic stays
+  // on the FamilyCar checks. We do NOT short-circuit to ['VehicleSceneRoot',…]
+  // because that would skip the actual car structure validation.
   const requiredMarkers = hasMeshBody
     ? ['VehicleMeshBody', 'DriveSeat', 'VehicleController']
-    : hasLlmScene
-      ? ['VehicleSceneRoot', 'DriveSeat', 'VehicleController']
-      : vehicleType === 'car'
+    : vehicleType === 'car'
     ? [
         'FamilyCarBodyShell',
         'FamilyCarCabinShell',
@@ -6282,8 +6284,11 @@ function deterministicVehicleReview(args: {
   // glass-area / steering-visible heuristics applicable — the body is one
   // mesh, not a stack of Blocks — so those car-specific checks are skipped.
   const hasMeshBody = args.manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
-  const hasLlmScene = args.manifest.scene.some((node) => /VehicleSceneRoot/i.test(node.name));
-  const isCustomBody = hasMeshBody || hasLlmScene;
+  // Session 373: LLM scene is now ACCENT-ONLY on top of the procedural
+  // baseline — `VehicleSceneRoot` marker only signals that accents were
+  // contributed, not that the body itself is custom. Heuristics must still
+  // validate the FamilyCar* baseline. Only a real MeshPart body skips them.
+  const isCustomBody = hasMeshBody;
   if (facts.vehicleType === 'car' && !isCustomBody) {
     if (facts.partCount < 105) issues.push(`low_car_detail: car has ${facts.partCount} physical/seat parts; premium vehicle exports need at least 105.`);
     if (facts.hasRaceFrameMarkers) issues.push('race_frame_silhouette: car still contains sports/race-frame body markers instead of the boxy family-car shell.');
@@ -6565,8 +6570,11 @@ async function reviewVehicleManifestWithRepair(args: {
       ? (manifest.metadata.vehicleMeshThumbnailUrl as string)
       : '';
     const hasMeshBody = manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
-    const hasLlmScene = manifest.scene.some((node) => /VehicleSceneRoot/i.test(node.name));
-    const isCustomBody = hasMeshBody || hasLlmScene;
+    // Session 373: VehicleSceneRoot is now an LLM-accent debug breadcrumb,
+    // NOT a marker that the body is custom. The body remains the procedural
+    // FamilyCar* baseline, so the visual heuristics + LLM critic should run
+    // and validate it. Only a real MeshPart body skips them.
+    const isCustomBody = hasMeshBody;
     let previewPng: Buffer | undefined;
     let llmReview: ObbyQualityReviewResult | null = null;
     // SIMPLIFIED REVIEW: skip the LLM/vision critic entirely when the body is

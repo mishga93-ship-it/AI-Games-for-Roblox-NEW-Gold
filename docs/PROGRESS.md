@@ -18,6 +18,21 @@
 
 ## Выполненные задачи
 
+### ✅ [Vehicles Hybrid Skeleton] Машины перестали быть плоскими коробками — procedural baseline + LLM accent-only (2026-05-21, сессия 373)
+- **Проблема**: пользователь прислал `~/Downloads/content-project-vehicle.rbxm` и скрин Studio с тремя «машинами», которые выглядели как плоские прямоугольные коробки на колёсах. Физика рабочая, проблема только в визуале.
+- **Root cause**: builder vehicle pipeline отдавал приоритет LLM-scene composer (`vehicleScene` metadata) над procedural family-sedan baseline. LLM (Gemini 2.5 Flash) генерировал ~10 простых Block-частей без WedgePart/CornerWedgePart — флэт-боксы. Прокачанный baseline (120+ парт с WedgePart hood/trunk, наклонными стёклами 22°/-22°, отдельной крышей/кабиной) **никогда не задействовался**, потому что был последним fallback'ом.
+- **Решение**:
+  - **Шаг 1 (`apps/functions/src/robloxWorker.ts:2264-2295`)**: ветка `vehicleScene` теперь ADDITIVE — `addVehicleBodyShell(...)` вызывается ВСЕГДА (baseline даёт структуру), а из `vehicleScene.parts` пропускаются только accent-роли `{trim, spoiler, mirror, headlight, taillight}` с префиксом `LLMAccent_`. Структурные роли (body/cabin/roof/hood/trunk/door/windshield/fender/wheel_arch/grille/bumper) тихо дропаются. Hybrid-skeleton pattern из memory `feedback_hybrid_skeleton_for_unreliable_llm.md` — уже применённый для furniture.
+  - **Шаг 2 (silhouette upgrades в `addVehicleBodyShell` car-ветке)**: (a) underbody разбит на `MidTuck` (w*0.62, между осями) + `FrontAxleBlock` / `RearAxleBlock` (w*0.86, на осях) → колёса выглядывают между осями; (b) FrontHood WedgePart h*0.26 → h*0.32 + RearCargoBlock WedgePart h*0.34 → h*0.38 → наклон капота/багажника заметнее; (c) 4 `CornerWedgePart` по углам roof (FL/FR/RR/RL с rot=[0,0/90/180/270,0]) + 4 на углах fenders → закругление силуэта.
+  - **Шаг 3 (`apps/functions/src/index.ts:10357-10455`)**: `validateVehicleScene` больше не требует body/cabin/roof/windshield — baseline даёт их сам. `buildVehicleSceneLLMPrompt` переписан в accent-designer режиме (4-8 stripes/spoiler/mirror/headlight/taillight вместо «12 парт всего тела»).
+  - **Шаг 4 (`addPart` helper)**: `Shape` теперь выставляется только для className=`Part`, не для WedgePart/CornerWedgePart/MeshPart — убирает Lune warning noise.
+- **Проверка**:
+  - `npm run build --workspace apps/functions` ✅
+  - 7 smoke PASS: `smoke-vehicle-cornerwedge.mjs` (новый — 8 CornerWedgePart, hood h=1.30, mid-tuck 3.97 < axle 5.50), `smoke-vehicle-llm-scene.mjs` (обновлён под additive контракт), `smoke-vehicle-mesh.mjs` (fix vehicleMeshUrl → vehicleMeshAssetId), `smoke-vehicle-layer1/2/3.mjs`, `smoke-vehicle-colors.mjs` — нерегрессирующие.
+  - Локальный Lune build `/tmp/vehicle-373.rbxm` (18 KB): 162 BasePart (148 Part + 2 WedgePart + 8 CornerWedgePart + VehicleSeat + 3 Seat), FamilyCar Y-range 1.05..6.30. CornerWedgePart на roof corners Y=5.97 X=±1.98 + fender corners Y=3.54 X=±2.94. Clean Lune output без warning.
+- **Deploy**: НЕ выполнен — пользователь явно не просил, по правилу §0.5 п.7 требуется отдельная команда. Готово к `bash scripts/safe-deploy-functions.sh`.
+- **Известные ограничения**: пользователь должен перегенерировать машину после deploy чтобы увидеть baseline. Tripo prod-логи не проверены (Шаг 3 плана отложен — диагностика без кода). Если после деплоя машины всё равно плохо — переход с Tripo на Meshy 6 (native Roblox Bridge) отдельной задачей.
+
 ### ✅ [Vehicles Visual Self-QA] Машина проходит 3-слойную самопроверку перед отдачей файла (2026-05-20, сессия 368)
 - **Проблема**: после session 367 deploy fresh `content--vehicle.rbxm` (`/Users/test/Downloads/content--vehicle.rbxm`, 13:23) всё ещё выглядел в Studio как красный плоский «бутерброд» с 4 чёрными колёсами — без читаемого кузова, видимого руля, окон. Все required `FamilyCar*` markers были на месте, поэтому deterministic QA и LLM-text-critic пропускали файл.
 - **Root cause**: (1) builder красил cabin/roof/cargoblock/hood одним `primary` цветом → крупные коплоанарные red панели сливались визуально в один объём; (2) руль `FamilyCarSteeringWheelVisible` 0.88 stud был внутри opaque cabin (windshield transparency 0.16, окна 0.18) — снаружи не виден; (3) LLM-критик был слеп — видел JSON-дайджест с правильными именами и пропускал слаб.
