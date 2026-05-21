@@ -84,13 +84,17 @@ struct ClothingPreview3DView: UIViewRepresentable {
             let root = SCNNode()
             root.name = "clothingPreviewRoot"
 
-            if let bundled = loadBundledModel() {
-                root.addChildNode(bundled)
-            } else {
-                usesProceduralAvatar = true
-                let procedural = buildProceduralR15()
-                root.addChildNode(procedural)
-            }
+            // 2026-05-21: force procedural R15. Bundled basic.obj/.scn was
+            // returning a single-mesh or oddly-proportioned avatar where
+            // mapBodyGroups misclassified the legs as "torso" (relY > 0.35
+            // doesn't always separate them), so shirt textures bled onto
+            // the legs. Procedural builds six discrete SCNBox nodes with
+            // explicit group labels — head / torso / leftArm / rightArm /
+            // leftLeg / rightLeg — so the per-face UV crop in
+            // applyClothingTextures has unambiguous targets.
+            usesProceduralAvatar = true
+            let procedural = buildProceduralR15()
+            root.addChildNode(procedural)
 
             let spin = SCNAction.repeatForever(
                 SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 14)
