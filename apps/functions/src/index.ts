@@ -6025,7 +6025,7 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
 function createVehiclePipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
-    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body mesh (Meshy)', status: 'pending' },
+    { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
   ];
@@ -6084,9 +6084,12 @@ function vehicleManifestFacts(manifest: RobloxBuildManifest): VehicleManifestRev
   // markers do not exist. QA must accept the mesh-mode car as a different
   // structural shape rather than rejecting it for "missing FamilyCarBodyShell".
   const hasMeshBody = manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
+  const hasLlmScene = manifest.scene.some((node) => /VehicleSceneRoot/i.test(node.name));
   const requiredMarkers = hasMeshBody
     ? ['VehicleMeshBody', 'DriveSeat', 'VehicleController']
-    : vehicleType === 'car'
+    : hasLlmScene
+      ? ['VehicleSceneRoot', 'DriveSeat', 'VehicleController']
+      : vehicleType === 'car'
     ? [
         'FamilyCarBodyShell',
         'FamilyCarCabinShell',
@@ -6272,7 +6275,9 @@ function deterministicVehicleReview(args: {
   // glass-area / steering-visible heuristics applicable — the body is one
   // mesh, not a stack of Blocks — so those car-specific checks are skipped.
   const hasMeshBody = args.manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
-  if (facts.vehicleType === 'car' && !hasMeshBody) {
+  const hasLlmScene = args.manifest.scene.some((node) => /VehicleSceneRoot/i.test(node.name));
+  const isCustomBody = hasMeshBody || hasLlmScene;
+  if (facts.vehicleType === 'car' && !isCustomBody) {
     if (facts.partCount < 105) issues.push(`low_car_detail: car has ${facts.partCount} physical/seat parts; premium vehicle exports need at least 105.`);
     if (facts.hasRaceFrameMarkers) issues.push('race_frame_silhouette: car still contains sports/race-frame body markers instead of the boxy family-car shell.');
     if (facts.missingMarkers.length > 0) issues.push(`missing_family_car_markers: ${facts.missingMarkers.join(', ')}.`);
@@ -6298,11 +6303,12 @@ function deterministicVehicleReview(args: {
     repairActions.push('Rebuild as a boxy low-poly family car, not a race-frame wedge.');
     repairActions.push('Add large readable body shell, doors, roof, windshield, grille, headlights, and visible steering wheel.');
     repairActions.push('Add chrome wheel rings/spokes and sidewall detail for all four wheels.');
-  } else if (facts.vehicleType === 'car' && hasMeshBody) {
-    // Mesh-mode car: only structural checks (DriveSeat / wheels / controller
-    // are already covered above). Trust the mesh body — its visual quality is
-    // Meshy's responsibility, not the deterministic heuristic battery's.
-    if (facts.missingMarkers.length > 0) issues.push(`missing_mesh_car_markers: ${facts.missingMarkers.join(', ')}.`);
+  } else if (facts.vehicleType === 'car' && isCustomBody) {
+    // Custom-body car (Meshy MeshPart or LLM-scene): only structural checks
+    // (DriveSeat / wheels / controller already covered above). Trust the body
+    // — its visual quality is the LLM/Meshy's responsibility, not the
+    // deterministic family-sedan heuristic battery's.
+    if (facts.missingMarkers.length > 0) issues.push(`missing_custom_car_markers: ${facts.missingMarkers.join(', ')}.`);
   } else if (facts.vehicleType === 'motorcycle' || facts.vehicleType === 'bicycle') {
     if (facts.partCount < 52) issues.push(`low_two_wheel_detail: ${facts.vehicleType} has ${facts.partCount} physical/seat parts; expected detailed tank/forks/engine/fenders/brakes.`);
     if (facts.missingMarkers.length > 0) issues.push(`missing_two_wheel_markers: ${facts.missingMarkers.join(', ')}.`);
@@ -10240,6 +10246,254 @@ async function runMeshyVehiclePassthrough(stagePrompt: string, input: Record<str
     kind: 'vehicle_3d',
   });
   return { outputUrl: exec.outputUrl, mimeType: exec.mimeType };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Vehicle Scene LLM composer (Track 2 vehicle hybrid-skeleton pattern).
+//
+// Backend emits a deterministic chassis (wheels, DriveSeat, controller,
+// physics, sounds, VFX). The LLM emits ONLY the body silhouette — a list of
+// Roblox Parts above the chassis with positions, sizes, colours, materials.
+// Validator constrains parts to the bounding box, enforces vertical layering
+// (body below cabin below roof for sedans), and rejects slivers.
+//
+// Up to maxAttempts iterations; each rejection feeds repair feedback into
+// the next prompt (same retry pattern as furniture/blocky pet).
+// ─────────────────────────────────────────────────────────────────────────
+
+type VehicleScenePart = {
+  name: string;
+  role: 'body' | 'hood' | 'cabin' | 'roof' | 'trunk' | 'fender' | 'door' | 'windshield' | 'side_window' | 'rear_window' | 'headlight' | 'taillight' | 'grille' | 'bumper' | 'mirror' | 'spoiler' | 'trim' | 'wheel_arch';
+  shape: 'Block' | 'Wedge' | 'Cylinder' | 'Ball' | 'CornerWedge';
+  size: [number, number, number];
+  position: [number, number, number];
+  rotation?: [number, number, number];
+  color: string;
+  material: 'SmoothPlastic' | 'Metal' | 'Glass' | 'Neon' | 'Plastic';
+  transparency?: number;
+};
+
+export type VehicleScene = {
+  vehicleType: string;
+  bodyStyle: string;
+  parts: VehicleScenePart[];
+};
+
+const ALLOWED_VEHICLE_ROLES = new Set<VehicleScenePart['role']>([
+  'body', 'hood', 'cabin', 'roof', 'trunk', 'fender', 'door',
+  'windshield', 'side_window', 'rear_window',
+  'headlight', 'taillight', 'grille', 'bumper', 'mirror', 'spoiler', 'trim', 'wheel_arch',
+]);
+const ALLOWED_VEHICLE_SHAPES = new Set<VehicleScenePart['shape']>(['Block', 'Wedge', 'Cylinder', 'Ball', 'CornerWedge']);
+const ALLOWED_VEHICLE_MATERIALS = new Set<VehicleScenePart['material']>(['SmoothPlastic', 'Metal', 'Glass', 'Neon', 'Plastic']);
+
+function parseVehicleSceneJson(raw: string): VehicleScene | null {
+  if (!raw) return null;
+  // Strip code fences / preamble
+  const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  const match = trimmed.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    const obj = JSON.parse(match[0]) as Record<string, unknown>;
+    if (!Array.isArray(obj.parts)) return null;
+    const parts: VehicleScenePart[] = [];
+    for (const raw of obj.parts as Record<string, unknown>[]) {
+      if (!raw || typeof raw !== 'object') continue;
+      const role = typeof raw.role === 'string' ? raw.role.toLowerCase().trim() : '';
+      const shape = typeof raw.shape === 'string' ? raw.shape : 'Block';
+      const material = typeof raw.material === 'string' ? raw.material : 'SmoothPlastic';
+      const size = Array.isArray(raw.size) && raw.size.length === 3 ? raw.size.map((n) => Number(n)) as [number, number, number] : null;
+      const position = Array.isArray(raw.position) && raw.position.length === 3 ? raw.position.map((n) => Number(n)) as [number, number, number] : null;
+      const rotation = Array.isArray(raw.rotation) && raw.rotation.length === 3 ? raw.rotation.map((n) => Number(n)) as [number, number, number] : undefined;
+      const color = typeof raw.color === 'string' ? raw.color : '#888888';
+      const name = typeof raw.name === 'string' ? raw.name.trim() : `Part${parts.length}`;
+      const transparency = typeof raw.transparency === 'number' ? raw.transparency : undefined;
+      if (!size || !position) continue;
+      if (!ALLOWED_VEHICLE_ROLES.has(role as VehicleScenePart['role'])) continue;
+      const finalShape = ALLOWED_VEHICLE_SHAPES.has(shape as VehicleScenePart['shape']) ? shape as VehicleScenePart['shape'] : 'Block';
+      const finalMaterial = ALLOWED_VEHICLE_MATERIALS.has(material as VehicleScenePart['material']) ? material as VehicleScenePart['material'] : 'SmoothPlastic';
+      parts.push({
+        name: name.replace(/[^A-Za-z0-9_]/g, '').slice(0, 48) || `Part${parts.length}`,
+        role: role as VehicleScenePart['role'],
+        shape: finalShape,
+        size,
+        position,
+        rotation,
+        color,
+        material: finalMaterial,
+        transparency,
+      });
+    }
+    if (parts.length === 0) return null;
+    return {
+      vehicleType: typeof obj.vehicleType === 'string' ? obj.vehicleType : 'car',
+      bodyStyle: typeof obj.bodyStyle === 'string' ? obj.bodyStyle : 'sedan',
+      parts,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function validateVehicleScene(scene: VehicleScene, vehicleType: string): { ok: boolean; issues: string[]; repairActions: string[] } {
+  const issues: string[] = [];
+  const repairActions: string[] = [];
+  // Approximate chassis envelope: car ~6.4w x 4.0h x 9.2l. Allow some
+  // overshoot but reject parts way outside the envelope (clip into ground
+  // or stick out wildly past the wheels).
+  const W_HALF = 4.0;   // 6.4/2 + slack
+  const Y_MAX = 7.0;    // ~roof height + slack
+  const L_HALF = 5.5;   // 9.2/2 + slack
+  let bodyCount = 0;
+  let cabinCount = 0;
+  let windshieldCount = 0;
+  let minSize = Infinity;
+  let maxY = -Infinity;
+  for (const p of scene.parts) {
+    if (p.role === 'body' || p.role === 'hood' || p.role === 'trunk') bodyCount += 1;
+    if (p.role === 'cabin' || p.role === 'roof') cabinCount += 1;
+    if (p.role === 'windshield') windshieldCount += 1;
+    const partMinSize = Math.min(p.size[0], p.size[1], p.size[2]);
+    if (partMinSize < minSize) minSize = partMinSize;
+    const partTop = p.position[1] + p.size[1] / 2;
+    if (partTop > maxY) maxY = partTop;
+    if (Math.abs(p.position[0]) > W_HALF) issues.push(`Part ${p.name} X=${p.position[0].toFixed(2)} outside body envelope ±${W_HALF}`);
+    if (p.position[1] < 0.0 || p.position[1] > Y_MAX) issues.push(`Part ${p.name} Y=${p.position[1].toFixed(2)} outside [0, ${Y_MAX}]`);
+    if (Math.abs(p.position[2]) > L_HALF) issues.push(`Part ${p.name} Z=${p.position[2].toFixed(2)} outside body envelope ±${L_HALF}`);
+    if (partMinSize < 0.1) issues.push(`Part ${p.name} has a dimension < 0.1 stud — will render as invisible sliver`);
+  }
+  if (scene.parts.length < 5) issues.push(`Only ${scene.parts.length} parts — body needs at least 5 parts for a readable silhouette`);
+  if (bodyCount < 1) issues.push('No body / hood / trunk parts — body shell missing');
+  if (vehicleType === 'car' && cabinCount < 1) {
+    issues.push('Car has no cabin or roof parts — silhouette will read as a flatbed');
+    repairActions.push('Add a cabin part (role="cabin") and a roof part (role="roof") above the body.');
+  }
+  if (vehicleType === 'car' && windshieldCount < 1) {
+    issues.push('Car has no windshield — front of cabin will be opaque');
+    repairActions.push('Add a windshield part (role="windshield", material="Glass", transparency~0.4) at the front of the cabin.');
+  }
+  if (maxY < 2.5) {
+    issues.push(`Highest body part top is only Y=${maxY.toFixed(2)} — too flat`);
+    repairActions.push('Raise roof / cabin parts so the silhouette has real vertical extent.');
+  }
+  if (issues.length > 0) {
+    repairActions.push('Keep size positive (min 0.1), positions within the envelope, and ensure body / cabin / roof are layered vertically.');
+  }
+  return { ok: issues.length === 0, issues, repairActions };
+}
+
+function buildVehicleSceneLLMPrompt(args: {
+  brief: string;
+  title: string;
+  vehicleType: string;
+  primaryHex: string;
+  accentHex: string;
+  glowHex: string;
+  repairFeedback?: string[];
+}): string {
+  const repairBlock = (args.repairFeedback && args.repairFeedback.length > 0)
+    ? `\nPrevious attempt was REJECTED. Fix exactly these issues:\n- ${args.repairFeedback.slice(0, 6).join('\n- ')}\n`
+    : '';
+  return [
+    `You are a Roblox vehicle body designer. Compose the BODY SHELL of a low-poly Roblox ${args.vehicleType} as a JSON scene.`,
+    'The backend will add wheels, the driver seat, the controller script, sounds and VFX procedurally — do NOT include those.',
+    'Only design the BODY parts that sit on top of the chassis: hood, cabin, roof, doors, windshield, side windows, headlights, taillights, grille, bumpers, mirrors, fenders, trims, spoilers.',
+    '',
+    'COORDINATE SYSTEM:',
+    '- Origin (0,0,0) is the centre of the chassis. Wheels sit at the four corners with radius ~1.05 stud, top at Y=2.10.',
+    '- +X is right, +Y is up, +Z is rear. Hood/grille/headlights are at -Z (front); trunk/taillights are at +Z (rear).',
+    '- Body envelope: X in [-3.5, 3.5], Y in [0.5, 6.0], Z in [-4.8, 4.8]. Stay inside.',
+    '- DriveSeat sits at approximately (-1.15, 3.18, -0.55) — do NOT place opaque parts overlapping that voxel.',
+    '',
+    `USER BRIEF: ${args.brief.slice(0, 800)}`,
+    `TITLE: ${args.title}`,
+    `VEHICLE TYPE: ${args.vehicleType}`,
+    `COLOURS: body=${args.primaryHex}, accent=${args.accentHex}, glow=${args.glowHex}`,
+    '',
+    'SHAPE: Use Block as default. Use Wedge for sloping hoods or rear decks. Use Cylinder for exhaust pipes. Use Ball for round headlights.',
+    'MATERIAL: SmoothPlastic for body, Metal for trim, Glass for windows (transparency 0.35-0.55), Neon for lights.',
+    '',
+    'Output STRICT JSON only (no markdown fences, no commentary):',
+    '{',
+    '  "vehicleType": "car",',
+    '  "bodyStyle": "sports_coupe | sedan | jeep | pickup | sci_fi | etc.",',
+    '  "parts": [',
+    '    {"name":"FrontHood","role":"hood","shape":"Wedge","size":[5.5,0.7,2.5],"position":[0,3.0,-3.0],"rotation":[8,0,0],"color":"#E03A2E","material":"SmoothPlastic"},',
+    '    {"name":"BodyShell","role":"body","shape":"Block","size":[5.9,1.4,6.6],"position":[0,2.7,0],"color":"#E03A2E","material":"SmoothPlastic"},',
+    '    {"name":"CabinShell","role":"cabin","shape":"Block","size":[4.8,1.8,3.8],"position":[0,4.5,-0.2],"color":"#15161A","material":"SmoothPlastic"},',
+    '    {"name":"RoofPanel","role":"roof","shape":"Block","size":[5.0,0.5,4.4],"position":[0,5.6,-0.1],"color":"#15161A","material":"Metal"},',
+    '    {"name":"WindshieldLarge","role":"windshield","shape":"Block","size":[3.7,1.4,0.15],"position":[0,4.7,-2.3],"rotation":[18,0,0],"color":"#7FC8FF","material":"Glass","transparency":0.45}',
+    '  ]',
+    '}',
+    '',
+    'REQUIREMENTS:',
+    `- At least 12 parts. Recognizable ${args.vehicleType} silhouette (sports cars are low/wide/wedge; sedans are 3-box; jeeps are tall/boxy; pickups have a separate bed).`,
+    '- Body / cabin / roof layered vertically. Cabin sits ABOVE body. Roof sits ABOVE cabin.',
+    '- Windshield is Glass with transparency 0.35-0.55 and is in front of the cabin (negative Z).',
+    '- Headlights at front (-Z), taillights at rear (+Z), both Neon.',
+    '- Do NOT emit roles "wheel" or "seat" — the chassis handles those.',
+    repairBlock,
+  ].filter(Boolean).join('\n');
+}
+
+async function runVehicleSceneWithRetry(args: {
+  brief: string;
+  title: string;
+  vehicleType: string;
+  primaryHex: string;
+  accentHex: string;
+  glowHex: string;
+  metadata: Record<string, unknown>;
+  maxAttempts?: number;
+}): Promise<{ scene: VehicleScene | null; provider: string; attempts: number; reasons: string[]; error?: string }> {
+  const maxAttempts = Math.max(1, Math.min(args.maxAttempts ?? 2, 3));
+  const providerCandidates = [
+    typeof args.metadata.chatProvider === 'string' ? args.metadata.chatProvider : '',
+    typeof args.metadata.bodyProvider === 'string' ? args.metadata.bodyProvider : '',
+  ].map((s) => s.toLowerCase());
+  const chatProvider: AIProvider = (providerCandidates.find((p) => ['openai', 'anthropic', 'gemini'].includes(p)) || 'gemini') as AIProvider;
+  const modelHint = chatProvider === 'gemini' ? 'gemini-2.5-flash' : undefined;
+  let repairFeedback: string[] | undefined;
+  let lastError: string | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const prompt = buildVehicleSceneLLMPrompt({
+      brief: args.brief,
+      title: args.title,
+      vehicleType: args.vehicleType,
+      primaryHex: args.primaryHex,
+      accentHex: args.accentHex,
+      glowHex: args.glowHex,
+      repairFeedback,
+    });
+    try {
+      const result = await Promise.race([
+        runSingleChatProvider(chatProvider, prompt, modelHint, { timeoutMs: 25_000 }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Vehicle scene LLM timeout (25s)')), 25_000)),
+      ]);
+      const raw = (result as Awaited<ReturnType<typeof runSingleChatProvider>>).text ?? '';
+      const scene = parseVehicleSceneJson(raw);
+      if (!scene) {
+        lastError = `Attempt ${attempt}: LLM did not return a valid scene JSON`;
+        repairFeedback = ['Return STRICT JSON only with a "parts" array. No markdown fences, no commentary.'];
+        continue;
+      }
+      const validation = validateVehicleScene(scene, args.vehicleType);
+      if (validation.ok) {
+        return {
+          scene,
+          provider: chatProvider,
+          attempts: attempt,
+          reasons: [`Body style: ${scene.bodyStyle}`, `${scene.parts.length} body parts emitted`],
+        };
+      }
+      repairFeedback = [...validation.issues.slice(0, 4), ...validation.repairActions.slice(0, 3)];
+      lastError = `Attempt ${attempt} rejected: ${validation.issues.slice(0, 2).join('; ')}`;
+    } catch (err) {
+      lastError = `Attempt ${attempt}: ${errorMessage(err)}`;
+      repairFeedback = ['LLM call failed or timed out; keep output very short (under 1.5 KB of JSON).'];
+    }
+  }
+  return { scene: null, provider: chatProvider, attempts: maxAttempts, reasons: [], error: lastError };
 }
 
 // Build a Meshy text-to-3d prompt for a vehicle body. The chassis (wheels,
@@ -26183,58 +26437,56 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         'Using canonical self-contained VehicleController template',
       ]);
 
-      // ── generate_vehicle_mesh: ask Meshy v6 text-to-3D for a low-poly body
-      // shell. The result GLB URL is stored in metadata.vehicleMeshUrl; the
-      // robloxWorker builder switches to a MeshPart body when this is set,
-      // otherwise falls back to the proven procedural family-sedan path.
-      await beginStage('generate_vehicle_mesh', 'Asking Meshy for a low-poly vehicle body');
+      // ── generate_vehicle_scene: ask the LLM to compose a brief-driven
+      // body silhouette (parts list with positions/sizes/colors). The chassis
+      // (wheels, DriveSeat, controller, physics) is procedural and untouched;
+      // only the body shell shape is creative. This is the "hybrid skeleton"
+      // pattern used by furniture (chair/table/lamp/etc.) — the LLM decides
+      // the look, the backend guarantees the physics.
+      await beginStage('generate_vehicle_scene', 'LLM is designing the vehicle body from the brief');
       try {
         const titleStr = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
-        const primaryHex = typeof currentJob.metadata?.primaryColor === 'string' ? currentJob.metadata.primaryColor : undefined;
-        const accentHex = typeof currentJob.metadata?.accentColor === 'string' ? currentJob.metadata.accentColor : undefined;
-        const meshyPrompt = buildVehicleMeshyPrompt({
-          prompt: job.prompt,
+        const primaryHex = typeof currentJob.metadata?.primaryColor === 'string' ? currentJob.metadata.primaryColor : '#E03A2E';
+        const accentHex = typeof currentJob.metadata?.accentColor === 'string' ? currentJob.metadata.accentColor : '#15161A';
+        const glowHex = typeof currentJob.metadata?.glowColor === 'string' ? currentJob.metadata.glowColor : '#FFD24A';
+        const sceneRun = await runVehicleSceneWithRetry({
+          brief: job.prompt,
           title: titleStr,
           vehicleType,
           primaryHex,
           accentHex,
+          glowHex,
+          metadata: currentJob.metadata ?? {},
+          maxAttempts: 2,
         });
-        const meshyInput: Record<string, unknown> = {
-          contentCategory: 'vehicle',
-          vehicleType,
-          driveMode,
-          title: titleStr,
-          requestedKind: 'vehicle_3d',
-        };
-        const meshResult = await runMeshyVehiclePassthrough(meshyPrompt, meshyInput);
-        const meshUrl = meshResult.outputUrl;
-        if (meshUrl) {
+        if (sceneRun.scene) {
+          // Cap the scene JSON at ~30 KB so it stays well below Firestore's
+          // 1 MB doc limit and never bloats the manifest metadata.
+          const sceneJson = JSON.stringify(sceneRun.scene).slice(0, 30000);
           currentJob = {
             ...currentJob,
             metadata: {
               ...(currentJob.metadata ?? {}),
-              vehicleMeshUrl: meshUrl,
-              vehicleMeshMimeType: meshResult.mimeType ?? 'model/gltf-binary',
-              vehicleMeshProvider: 'meshy-v6',
-              // Meshy's own rendered thumbnail of the GLB it produced. Used
-              // downstream as the vision-review image input because our
-              // procedural blocky-renderer can't display MeshPart at all.
-              vehicleMeshThumbnailUrl: meshResult.thumbnailUrl ?? '',
+              vehicleScene: sceneJson,
+              vehicleSceneProvider: sceneRun.provider,
+              vehicleSceneAttempts: sceneRun.attempts,
             },
           };
-          await finishStage('generate_vehicle_mesh', 'completed', [], [
-            `Meshy returned a mesh for ${vehicleType}`,
-            `Prompt: ${meshyPrompt.slice(0, 140)}`,
+          await finishStage('generate_vehicle_scene', 'completed', [], [
+            `LLM composed ${sceneRun.scene.parts.length} body parts for ${vehicleType}`,
+            `Attempts: ${sceneRun.attempts}`,
+            ...sceneRun.reasons.slice(0, 4),
           ]);
         } else {
-          await finishStage('generate_vehicle_mesh', 'completed', [], [
-            'Meshy returned no mesh URL — falling back to procedural body.',
+          await finishStage('generate_vehicle_scene', 'completed', [], [
+            `LLM scene composer did not produce a usable scene: ${sceneRun.error ?? 'unknown error'}`,
+            'Falling back to deterministic procedural family-sedan body.',
           ]);
         }
-      } catch (meshErr) {
-        logger.warn('[Vehicle] Meshy mesh generation failed, falling back to procedural body', { error: errorMessage(meshErr), jobId });
-        await finishStage('generate_vehicle_mesh', 'completed', [], [
-          `Meshy unavailable: ${errorMessage(meshErr).slice(0, 200)}`,
+      } catch (sceneErr) {
+        logger.warn('[Vehicle] LLM scene composition failed, falling back to procedural body', { error: errorMessage(sceneErr), jobId });
+        await finishStage('generate_vehicle_scene', 'completed', [], [
+          `Scene LLM unavailable: ${errorMessage(sceneErr).slice(0, 200)}`,
           'Falling back to deterministic procedural family-sedan body.',
         ]);
       }

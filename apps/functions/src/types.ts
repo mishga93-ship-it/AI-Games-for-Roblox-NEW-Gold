@@ -246,6 +246,7 @@ export type GenerationStageId =
   | 'generate_weapon_scripts'
   | 'generate_vehicle_scripts'
   | 'generate_vehicle_mesh'
+  | 'generate_vehicle_scene'
   | 'generate_item_scripts'
   | 'generate_building_scene'
   | 'generate_building_scripts'
