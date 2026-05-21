@@ -5204,8 +5204,7 @@ final class ChatStore: ObservableObject {
             && (job.status == "completed" || job.status == "partial")
             && thumbnailArtifact != nil
 
-        if isFurniturePartsPreview,
-           let previewImageURL = (thumbnailArtifact?.downloadUrl ?? thumbnailArtifact?.url).flatMap(URL.init(string:)) {
+        if isFurniturePartsPreview {
             let qualityScore = job.metadata?.qualityReviewScore
             let qualityMessage = job.metadata?.qualityReviewMessage
             var notes: [String] = []
@@ -5217,18 +5216,46 @@ final class ChatStore: ObservableObject {
             }
             notes.append("Blocky scene built from primitive Roblox Parts — what you see is what Studio gets.")
             notes.append("Tap Export RBXM and drag the file into Workspace.")
-            return PreviewPayload(
-                title: draft.title.isEmpty ? "Furniture" : draft.title,
-                artifactType: .media(kind: "png", remoteURL: previewImageURL),
-                exportFileType: "rbxm",
-                artifactIds: artifactIds,
-                shareDescription: shareDescription,
-                downloadURL: rbxmDownloadURL ?? downloadURL,
-                glbDownloadURL: nil,
-                rbxmDownloadURL: rbxmDownloadURL,
-                fbxDownloadURL: nil,
-                notes: notes
-            )
+
+            // 2026-05-20: Prefer interactive SceneKit 3D over the 2D PNG preview
+            // when the backend attached the furnitureSpecJSON (post the deploy
+            // that added it). Falls back to PNG for older jobs and jobs where
+            // the LLM scene wasn't produced.
+            if let rbxmArtifact = nativeRobloxArtifact,
+               let furnSpecJSON = rbxmArtifact.metadata?.furnitureSpecJSON,
+               let furnSpec = FurnitureSpecPayload.decode(from: furnSpecJSON) {
+                let furnType = rbxmArtifact.metadata?.furnitureType ?? furnSpec.furnitureType ?? "prop"
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Furniture" : "\(draft.title) — \(furnType.capitalized) Preview",
+                    artifactType: .blockyFurniture3D(spec: furnSpec, furnitureType: furnType, notes: notes),
+                    exportFileType: "rbxm",
+                    artifactIds: artifactIds,
+                    shareDescription: shareDescription,
+                    downloadURL: rbxmDownloadURL ?? downloadURL,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: rbxmDownloadURL,
+                    fbxDownloadURL: nil,
+                    notes: notes
+                )
+            }
+
+            // Legacy fallback — no spec JSON in metadata (job pre-dates the
+            // 2026-05-20 furnitureSpecJSON deploy). Show the PNG render the
+            // backend rendered server-side.
+            if let previewImageURL = (thumbnailArtifact?.downloadUrl ?? thumbnailArtifact?.url).flatMap(URL.init(string:)) {
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Furniture" : draft.title,
+                    artifactType: .media(kind: "png", remoteURL: previewImageURL),
+                    exportFileType: "rbxm",
+                    artifactIds: artifactIds,
+                    shareDescription: shareDescription,
+                    downloadURL: rbxmDownloadURL ?? downloadURL,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: rbxmDownloadURL,
+                    fbxDownloadURL: nil,
+                    notes: notes
+                )
+            }
         }
 
         if isVehicleProject, let nativeRobloxArtifact {
