@@ -1808,12 +1808,29 @@ export async function generateFlatShirtMockup(
   }
 }
 
-// 2026-05-21: Slice a flat front-view shirt photo into the 585×559 UV template.
-// The cropped chest area (centre of the flat mockup) becomes the front-torso
-// UV region. Primary + secondary colours from the mockup paint the back,
-// wrap-edges, and sleeves. No transparent BG / rembg step — we're using the
-// raw shirt image as-is, the way Roblox classic uploaders cut a flat design
-// into the canonical template regions.
+// 2026-05-21: Slice a flat front-view shirt photo into all the 585×559 UV
+// template regions — chest, both sleeves, and back. The Roblox classic
+// template wraps these regions onto the avatar's torso + arms; by cutting
+// the SAME flat mockup the user approved into matching slices, the design
+// preserved wherever Flux drew it (chest, shoulders, sleeves) shows up on
+// the right body part of the avatar.
+//
+// Heuristic slice layout (assumes the shirt is centred and laid flat):
+//
+//   x:   0% ─── 30% ─── 70% ─── 100%
+//        │ left │ chest  │ right │
+//        │sleeve│  body  │sleeve │
+//   y: 10% (above this = collar / negative space)
+//      85% (below this = hem / negative space)
+//
+// Each slice gets resized to a square and handed to compositeShirtTemplate.
+// User's comment that triggered this refactor:
+//   "проблема в том что я хочу футболку и я ее должен увидеть на персе
+//    которые мы апрувнули … покропать картинку которую апрувнули … как
+//    будто б мне нравится больше"
+// — i.e. the avatar should look like the approved image, with the design
+// landing on the same body parts (e.g. floral on shoulders → on avatar's
+// sleeves, not lost).
 export async function cropFlatShirtToTemplate(
   mockup: FlatShirtMockupResult,
 ): Promise<ClothingTextureUploadResult | undefined> {
@@ -1822,20 +1839,46 @@ export async function cropFlatShirtToTemplate(
     const meta = await sharpImg.metadata();
     const W = meta.width ?? 1024;
     const H = meta.height ?? 1024;
-    // Crop a roughly square chest area from the centre of the mockup.
-    // Tuned so the print on the shirt's chest lands in the centre of the
-    // 128×128 torsoFront UV when wrapped on R15.
-    const chestSize = Math.round(Math.min(W, H) * 0.32);
-    const chestLeft = Math.round((W - chestSize) / 2);
-    const chestTop = Math.round(H * 0.30);
-    const chestBuf = await sharpImg
-      .clone()
-      .extract({ left: chestLeft, top: chestTop, width: chestSize, height: chestSize })
-      .resize(512, 512, { fit: 'cover' })
+
+    // Vertical band where the actual garment lives (skip collar / hem).
+    const bandTop = Math.round(H * 0.10);
+    const bandBottom = Math.round(H * 0.85);
+    const bandHeight = bandBottom - bandTop;
+
+    // Horizontal slices.
+    const leftSleeveX = 0;
+    const leftSleeveW = Math.round(W * 0.30);
+    const chestX = leftSleeveW;
+    const chestW = Math.round(W * 0.40);
+    const rightSleeveX = chestX + chestW;
+    const rightSleeveW = W - rightSleeveX;
+
+    const sliceTo = async (left: number, top: number, width: number, height: number, out: number) =>
+      sharp(mockup.mockupBuffer)
+        .extract({ left, top, width, height })
+        .resize(out, out, { fit: 'cover' })
+        .png()
+        .toBuffer();
+
+    const [chestBuf, leftSleeveBuf, rightSleeveBuf] = await Promise.all([
+      sliceTo(chestX, bandTop, chestW, bandHeight, 512),
+      sliceTo(leftSleeveX, bandTop, leftSleeveW, bandHeight, 256),
+      sliceTo(rightSleeveX, bandTop, rightSleeveW, bandHeight, 256),
+    ]);
+
+    // Back: mirror the chest so the back has the same design feel without
+    // showing buttons/seams. (Pro UGC creators would do something more
+    // intentional here, but mirroring is a clean v1.)
+    const backBuf = await sharp(chestBuf)
+      .flop()
       .png()
       .toBuffer();
+
     const composed = await compositeShirtTemplate({
       frontTorso: chestBuf,
+      backTorso: backBuf,
+      leftSleeve: leftSleeveBuf,
+      rightSleeve: rightSleeveBuf,
       primaryColorHex: mockup.primaryColor,
       secondaryColorHex: mockup.secondaryColor,
     });

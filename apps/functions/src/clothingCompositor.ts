@@ -155,25 +155,37 @@ export async function compositeShirtTemplate(patches: ShirtTemplatePatches): Pro
   // The old code stamped the SAME AI design into all 18 UV regions, which
   // is what produced the "tiled repeating logo everywhere" look the user
   // complained about.
+  // 2026-05-21: respect leftSleeve/rightSleeve buffers when provided —
+  // the flat-shirt slicer ([cropFlatShirtToTemplate] in providers.ts) feeds
+  // actual sleeve crops from the user-approved mockup, so the print Flux
+  // put on the shirt's shoulders/sleeves lands on the avatar's sleeves
+  // instead of getting overwritten with a flat accent colour.
   const accent = patches.secondaryColorHex ?? patches.primaryColorHex;
+  const leftSleeveOverlay = async (region: TextureRegion): Promise<{ input: Buffer; left: number; top: number }> =>
+    patches.leftSleeve
+      ? patchForRegion(patches.leftSleeve, region)
+      : { input: await solidRegion(region, accent), left: region.x, top: region.y };
+  const rightSleeveOverlay = async (region: TextureRegion): Promise<{ input: Buffer; left: number; top: number }> =>
+    patches.rightSleeve
+      ? patchForRegion(patches.rightSleeve, region)
+      : { input: await solidRegion(region, accent), left: region.x, top: region.y };
   const overlays = await Promise.all([
     patchForRegion(patches.frontTorso, SHIRT_REGIONS.torsoFront),
     patches.backTorso
       ? patchForRegion(patches.backTorso, SHIRT_REGIONS.torsoBack)
       : { input: await solidRegion(SHIRT_REGIONS.torsoBack, patches.primaryColorHex), left: SHIRT_REGIONS.torsoBack.x, top: SHIRT_REGIONS.torsoBack.y },
-    // Sleeves: solid accent color across every face.
-    { input: await solidRegion(SHIRT_REGIONS.leftArmLeft, accent),   left: SHIRT_REGIONS.leftArmLeft.x,   top: SHIRT_REGIONS.leftArmLeft.y },
-    { input: await solidRegion(SHIRT_REGIONS.leftArmFront, accent),  left: SHIRT_REGIONS.leftArmFront.x,  top: SHIRT_REGIONS.leftArmFront.y },
-    { input: await solidRegion(SHIRT_REGIONS.leftArmRight, accent),  left: SHIRT_REGIONS.leftArmRight.x,  top: SHIRT_REGIONS.leftArmRight.y },
-    { input: await solidRegion(SHIRT_REGIONS.leftArmBack, accent),   left: SHIRT_REGIONS.leftArmBack.x,   top: SHIRT_REGIONS.leftArmBack.y },
-    { input: await solidRegion(SHIRT_REGIONS.leftArmUp, accent),     left: SHIRT_REGIONS.leftArmUp.x,     top: SHIRT_REGIONS.leftArmUp.y },
-    { input: await solidRegion(SHIRT_REGIONS.leftArmDown, accent),   left: SHIRT_REGIONS.leftArmDown.x,   top: SHIRT_REGIONS.leftArmDown.y },
-    { input: await solidRegion(SHIRT_REGIONS.rightArmLeft, accent),  left: SHIRT_REGIONS.rightArmLeft.x,  top: SHIRT_REGIONS.rightArmLeft.y },
-    { input: await solidRegion(SHIRT_REGIONS.rightArmFront, accent), left: SHIRT_REGIONS.rightArmFront.x, top: SHIRT_REGIONS.rightArmFront.y },
-    { input: await solidRegion(SHIRT_REGIONS.rightArmRight, accent), left: SHIRT_REGIONS.rightArmRight.x, top: SHIRT_REGIONS.rightArmRight.y },
-    { input: await solidRegion(SHIRT_REGIONS.rightArmBack, accent),  left: SHIRT_REGIONS.rightArmBack.x,  top: SHIRT_REGIONS.rightArmBack.y },
-    { input: await solidRegion(SHIRT_REGIONS.rightArmUp, accent),    left: SHIRT_REGIONS.rightArmUp.x,    top: SHIRT_REGIONS.rightArmUp.y },
-    { input: await solidRegion(SHIRT_REGIONS.rightArmDown, accent),  left: SHIRT_REGIONS.rightArmDown.x,  top: SHIRT_REGIONS.rightArmDown.y },
+    leftSleeveOverlay(SHIRT_REGIONS.leftArmLeft),
+    leftSleeveOverlay(SHIRT_REGIONS.leftArmFront),
+    leftSleeveOverlay(SHIRT_REGIONS.leftArmRight),
+    leftSleeveOverlay(SHIRT_REGIONS.leftArmBack),
+    leftSleeveOverlay(SHIRT_REGIONS.leftArmUp),
+    leftSleeveOverlay(SHIRT_REGIONS.leftArmDown),
+    rightSleeveOverlay(SHIRT_REGIONS.rightArmLeft),
+    rightSleeveOverlay(SHIRT_REGIONS.rightArmFront),
+    rightSleeveOverlay(SHIRT_REGIONS.rightArmRight),
+    rightSleeveOverlay(SHIRT_REGIONS.rightArmBack),
+    rightSleeveOverlay(SHIRT_REGIONS.rightArmUp),
+    rightSleeveOverlay(SHIRT_REGIONS.rightArmDown),
     // torsoUp/Down/Left/Right are intentionally NOT overlaid — the base
     // canvas (primaryColorHex) shows through cleanly on those strips.
   ]);
