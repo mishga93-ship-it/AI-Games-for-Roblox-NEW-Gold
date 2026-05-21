@@ -169,6 +169,10 @@ final class ChatStore: ObservableObject {
             default: break
             }
         }
+        // Session 373: vehicle concept-approve flow — clarify what comes next.
+        if contentSubcategory == "vehicles" {
+            return "Looks good — Build 3D Vehicle"
+        }
         return "Looks good — Start 3D"
     }
 
