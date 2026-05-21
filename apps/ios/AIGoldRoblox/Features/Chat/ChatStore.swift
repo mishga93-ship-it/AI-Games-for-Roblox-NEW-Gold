@@ -1098,6 +1098,9 @@ final class ChatStore: ObservableObject {
         if handleFurniturePathChoice(normalized) {
             return
         }
+        if handlePetPathChoice(normalized) {
+            return
+        }
         if normalized == "generate!" || normalized == "generate now"
             || normalized == "генерируй!" || normalized == "генерировать"
             || normalized == "всё супер, генерируй!" || normalized == "go" || normalized == "create it" {
@@ -1532,6 +1535,97 @@ final class ChatStore: ObservableObject {
                 localImageKey: message.localImageKey,
                 weaponColors: message.weaponColors
             )
+        }
+    }
+
+    // ── Pet build-path picker (Track 3) ───────────────────────────────
+    // Mirrors the furniture path-choice flow. After the user finishes the
+    // interview and taps Generate, we present TWO options:
+    //   • Blocky Parts (fast)   — current default, primitive Roblox Parts,
+    //                              ~30-60s, free, native Roblox look
+    //   • 3D Mesh (Tripo)        — image-to-3d + animate_rig + retarget,
+    //                              ~5-9 min, photoreal mesh + skeletal
+    //                              animation (idle/walk), requires
+    //                              TRIPO_API_KEY on the backend.
+    // Users who picked a species chip (🎲 Dog / 🐾 3D Dog) bypass the
+    // picker because petMode is already set on the draft.
+
+    private var needsPetPathChoice: Bool {
+        contentSubcategory == "pets" && (draft.petMode == nil || draft.petMode?.isEmpty == true)
+    }
+
+    private func petPathChoiceReplies() -> [String] {
+        ["🎲 Blocky Parts (fast preview)", "🐾 3D Mesh (Tripo, premium)"]
+    }
+
+    private func appendPetPathChoiceMessage() {
+        let isRu = preferredResponseLanguageCode() == "ru"
+        messages.append(
+            ChatMessage(
+                id: UUID().uuidString,
+                role: .assistant,
+                content: isRu
+                    ? "Выбери путь сборки пета.\n\n• **🎲 Blocky Parts (быстро)** — собирается из примитивов Roblox: 30-60с, бесплатно, native Roblox look, видишь интерактивное 3D-превью до экспорта.\n• **🐾 3D Mesh (Tripo)** — реальный 3D-меш с текстурами + скелетный риг от Tripo (quadruped/biped/avian/serpentine/aquatic) + запечённые анимации idle/walk: 5-9 минут, premium pipeline."
+                    : "Choose the pet build path.\n\n• **🎲 Blocky Parts (fast)** — assembled from primitive Roblox Parts: 30-60s, free, native Roblox look, interactive 3D preview before export.\n• **🐾 3D Mesh (Tripo)** — real 3D mesh with PBR textures + skeletal rig from Tripo (quadruped/biped/avian/serpentine/aquatic) + baked idle/walk animations: 5-9 min, premium pipeline.",
+                quickReplies: petPathChoiceReplies(),
+                gddRows: nil,
+                createdAt: Date()
+            )
+        )
+    }
+
+    private func clearPetPathChoiceQuickReplies() {
+        let choiceReplies = Set(petPathChoiceReplies().map { $0.lowercased() })
+        messages = messages.map { message in
+            guard
+                message.role == .assistant,
+                let quickReplies = message.quickReplies,
+                !quickReplies.isEmpty,
+                quickReplies.allSatisfy({ choiceReplies.contains($0.lowercased()) })
+            else {
+                return message
+            }
+            return ChatMessage(
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                quickReplies: nil,
+                gddRows: message.gddRowTuples,
+                createdAt: message.createdAt,
+                audioURL: message.audioURL,
+                imageURL: message.imageURL,
+                localImageKey: message.localImageKey,
+                weaponColors: message.weaponColors
+            )
+        }
+    }
+
+    private func handlePetPathChoice(_ normalized: String) -> Bool {
+        guard contentSubcategory == "pets" else { return false }
+        guard draft.petMode == nil || draft.petMode?.isEmpty == true else { return false }
+        switch normalized {
+        case "🎲 blocky parts (fast preview)", "🎲 blocky parts", "blocky parts (fast preview)",
+             "blocky parts", "blocky", "blocky pet", "fast", "fast preview",
+             "блочный", "блоки", "блочные части", "блочный путь", "быстро":
+            draft.petMode = "blocky"
+            clearPetPathChoiceQuickReplies()
+            appendAssistantMessage(preferredResponseLanguageCode() == "ru"
+                ? "Зафиксировал: Blocky Parts. Сейчас соберу пета из примитивных Roblox Parts с Motor6D-анимацией. Превью покажу через минуту."
+                : "Locked: Blocky Parts. I'll assemble the pet from primitive Roblox Parts with Motor6D animation. Preview ready in a minute.")
+            generateFromCurrentPlan()
+            return true
+        case "🐾 3d mesh (tripo, premium)", "🐾 3d mesh", "3d mesh (tripo, premium)",
+             "3d mesh", "tripo", "tripo mesh", "premium", "premium pet",
+             "3д меш", "меш", "трипо", "премиум":
+            draft.petMode = "evolution_3d"
+            clearPetPathChoiceQuickReplies()
+            appendAssistantMessage(preferredResponseLanguageCode() == "ru"
+                ? "Зафиксировал: 3D Mesh через Tripo. Сейчас: 1) сгенерю concept-картинку, 2) Tripo превратит её в 3D-меш, 3) добавит скелет под твой вид (quadruped/biped/avian/...), 4) запечёт idle+walk анимации, 5) соберу .rbxm. Ожидание ~5-9 минут."
+                : "Locked: 3D Mesh via Tripo. Now: 1) generate concept image, 2) Tripo turns it into a 3D mesh, 3) adds a skeleton matching your species (quadruped/biped/avian/...), 4) bakes idle+walk animations, 5) assembles the .rbxm. ETA ~5-9 min.")
+            generateFromCurrentPlan()
+            return true
+        default:
+            return false
         }
     }
 
@@ -2999,6 +3093,15 @@ final class ChatStore: ObservableObject {
             return
         }
 
+        // Track 3 — pet build-path picker. Same gate as furniture: when the
+        // user finishes the interview without having tapped a species chip
+        // (which sets petMode directly), prompt them to choose Blocky Parts
+        // vs 3D Mesh (Tripo) before kicking off generation.
+        if needsPetPathChoice {
+            appendPetPathChoiceMessage()
+            return
+        }
+
         // 2026-05-20: clothing chats must lock in a 2D Classic / 3D Layered mode
         // BEFORE generation kicks off. The intercept was previously only inside
         // sendQuickReply's "generate!" branch — but generateFromCurrentPlan() is
@@ -4005,6 +4108,10 @@ final class ChatStore: ObservableObject {
                 }
                 if needsFurniturePathChoice {
                     appendFurniturePathChoiceMessage()
+                    return
+                }
+                if needsPetPathChoice {
+                    appendPetPathChoiceMessage()
                     return
                 }
                 generateFromCurrentPlan()
