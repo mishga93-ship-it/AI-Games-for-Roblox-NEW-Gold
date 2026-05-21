@@ -2207,13 +2207,17 @@ function buildVehicleModelManifest(
   );
 
   // BODY BRANCH PRIORITY (highest to lowest fallback):
-  //   1. LLM scene (metadata.vehicleScene JSON) — hybrid skeleton pattern
-  //      copied from furniture. The LLM composes body silhouette parts; the
-  //      backend emits them inside this folder. Wheels/DriveSeat/controller
-  //      stay procedural (added below). This is the path the user picked
-  //      after the Meshy remote-MeshId-URL incompatibility issue.
-  //   2. Procedural family-sedan (addVehicleBodyShell) — proven hardcoded
-  //      blocky body. Used when the LLM scene was rejected/unavailable.
+  //   1. Tripo / Meshy mesh asset (metadata.vehicleMeshAssetId) — a Roblox
+  //      asset ID produced by uploading the GLB to Roblox Open Cloud. Emits
+  //      a single MeshPart with rbxassetid:// MeshContent — actually renders
+  //      in Roblox runtime (raw https:// URLs do not).
+  //   2. LLM scene (metadata.vehicleScene JSON) — hybrid skeleton pattern
+  //      copied from furniture. The LLM composes body silhouette parts.
+  //   3. Procedural family-sedan (addVehicleBodyShell) — proven hardcoded
+  //      blocky body. Used when nothing else was available.
+  const vehicleMeshAssetId = typeof metadata.vehicleMeshAssetId === 'number' && metadata.vehicleMeshAssetId > 0
+    ? metadata.vehicleMeshAssetId
+    : undefined;
   const vehicleSceneRaw = typeof metadata.vehicleScene === 'string' && metadata.vehicleScene.length > 0
     ? metadata.vehicleScene
     : undefined;
@@ -2229,7 +2233,35 @@ function buildVehicleModelManifest(
     }
   }
 
-  if (vehicleScene) {
+  if (vehicleMeshAssetId) {
+    // Tripo / Meshy mesh body: single MeshPart with rbxassetid:// MeshContent
+    // — the GLB was already uploaded to Roblox Open Cloud by the pipeline.
+    // Wheels, DriveSeat, controller, sounds stay procedural and are welded
+    // around this mesh via ChassisRoot.
+    const meshBodyId = addPart(
+      'VehicleMeshBody',
+      folders.body,
+      [width * 0.94, Math.max(1.0, height * 0.84), length * 0.92],
+      [0, rootY + height * 0.32, 0],
+      primary,
+      {
+        className: 'MeshPart',
+        material: 'SmoothPlastic',
+        canCollide: false,
+        massless: true,
+        extra: {
+          MeshContent: `rbxassetid://${vehicleMeshAssetId}`,
+          MeshId: `rbxassetid://${vehicleMeshAssetId}`,
+        },
+      },
+    );
+    weldToRoot(meshBodyId, 'VehicleMeshBodyWeld');
+    if (vehicleType === 'car') {
+      addBodyPart('MeshBodyFrontBumperTrim', [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10, -length * 0.49], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearBumperTrim',  [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10,  length * 0.49], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearLicensePlate', [width * 0.26, height * 0.09, 0.06], [0, rootY + height * 0.28, length * 0.50], silver, { material: 'Metal' });
+    }
+  } else if (vehicleScene) {
     // LLM-composed body: emit each part as an addBodyPart call. The chassis
     // is at world Y=0 with rootY ≈ 1.8; the LLM was told the origin is the
     // chassis centre, so we translate Y by rootY. Wheels stay at Y=1.05

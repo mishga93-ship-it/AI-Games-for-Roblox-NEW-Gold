@@ -6031,6 +6031,7 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
 function createVehiclePipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
+    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Tripo v2.5)', status: 'pending' },
     { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
@@ -26559,12 +26560,132 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         'Using canonical self-contained VehicleController template',
       ]);
 
+      // ── generate_vehicle_mesh: Tripo v2.5 text-to-3d for a proper vehicle
+      // mesh. Tripo has dedicated vehicle training data, so it produces
+      // recognisable car silhouettes that procedural Blocks cannot match.
+      // On success we download the GLB, upload to Roblox Open Cloud as a
+      // Model asset, extract the inner MeshPart's MeshId, and stash both in
+      // metadata. The builder branches on metadata.vehicleMeshAssetId and
+      // emits a single MeshPart 'VehicleMeshBody' with rbxassetid://
+      // MeshContent — that actually renders in the Roblox runtime, unlike
+      // raw https:// URLs.
+      await beginStage('generate_vehicle_mesh', 'Tripo v2.5 is generating a 3D vehicle body');
+      try {
+        const titleStrForTripo = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
+        const primaryHexForTripo = typeof currentJob.metadata?.primaryColor === 'string' ? currentJob.metadata.primaryColor : undefined;
+        const accentHexForTripo = typeof currentJob.metadata?.accentColor === 'string' ? currentJob.metadata.accentColor : undefined;
+        const tripoBrief = [titleStrForTripo, job.prompt].filter(Boolean).join('. ');
+        const tripoResult = await (await import('./providers.js')).runTripoVehicleText({
+          prompt: tripoBrief,
+          vehicleType,
+          primaryHex: primaryHexForTripo,
+          accentHex: accentHexForTripo,
+        });
+        if (tripoResult.modelUrl) {
+          // Download Tripo GLB → upload to Roblox Open Cloud → extract MeshId.
+          const apiKey = getRobloxOpenCloudApiKey();
+          const creatorId = getRobloxCreatorId();
+          if (apiKey && creatorId) {
+            try {
+              const glbResp = await fetch(tripoResult.modelUrl);
+              if (glbResp.ok) {
+                const glbBuf = Buffer.from(await glbResp.arrayBuffer());
+                const upload = await uploadAssetToRoblox({
+                  apiKey,
+                  creatorId,
+                  creatorType: 'User',
+                  assetType: 'Model',
+                  name: `Vehicle ${vehicleType} ${titleStrForTripo.slice(0, 30)}`.slice(0, 50),
+                  description: `AI-generated ${vehicleType} body from Tripo v2.5`,
+                  fileContent: glbBuf,
+                  contentType: 'model/gltf-binary',
+                  assetPrivacy: 'openUse',
+                });
+                if (upload?.assetId) {
+                  const extract = await extractMeshIdFromModel(upload.assetId);
+                  const meshId = extract?.meshId;
+                  if (meshId && meshId > 0) {
+                    currentJob = {
+                      ...currentJob,
+                      metadata: {
+                        ...(currentJob.metadata ?? {}),
+                        vehicleMeshAssetId: meshId,
+                        vehicleMeshModelAssetId: upload.assetId,
+                        vehicleMeshThumbnailUrl: tripoResult.thumbnailUrl ?? '',
+                        vehicleMeshProvider: 'tripo-v2.5',
+                        vehicleMeshTripoTaskId: tripoResult.taskId,
+                      },
+                    };
+                    await finishStage('generate_vehicle_mesh', 'completed', [], [
+                      `Tripo text_to_model success (taskId=${tripoResult.taskId ?? '?'})`,
+                      `Roblox Model asset: ${upload.assetId}`,
+                      `Inner MeshId: ${meshId}`,
+                    ]);
+                  } else {
+                    logger.warn('[Vehicle] extractMeshIdFromModel returned no meshId; falling back', {
+                      jobId, modelAssetId: upload.assetId, extractState: extract?.state, extractError: extract?.error,
+                    });
+                    await finishStage('generate_vehicle_mesh', 'completed', [], [
+                      `Roblox uploaded Model ${upload.assetId} but inner MeshId extraction failed: ${extract?.error ?? extract?.state ?? 'unknown'}`,
+                      'Falling back to LLM-scene composer.',
+                    ]);
+                  }
+                } else {
+                  await finishStage('generate_vehicle_mesh', 'completed', [], [
+                    'Roblox Open Cloud asset upload returned no assetId — falling back to LLM-scene.',
+                  ]);
+                }
+              } else {
+                await finishStage('generate_vehicle_mesh', 'completed', [], [
+                  `Failed to download Tripo GLB (HTTP ${glbResp.status}) — falling back to LLM-scene.`,
+                ]);
+              }
+            } catch (uploadErr) {
+              logger.warn('[Vehicle] Roblox Open Cloud upload failed', { jobId, error: errorMessage(uploadErr) });
+              await finishStage('generate_vehicle_mesh', 'completed', [], [
+                `Open Cloud upload failed: ${errorMessage(uploadErr).slice(0, 200)}`,
+                'Falling back to LLM-scene composer.',
+              ]);
+            }
+          } else {
+            await finishStage('generate_vehicle_mesh', 'completed', [], [
+              'Roblox Open Cloud API key / creator id missing — Tripo GLB cannot be made into a MeshPart.',
+              'Falling back to LLM-scene composer.',
+            ]);
+          }
+        } else {
+          await finishStage('generate_vehicle_mesh', 'completed', [], [
+            `Tripo did not return a model: ${tripoResult.skipReason ?? 'unknown reason'}`,
+            'Falling back to LLM-scene composer.',
+          ]);
+        }
+      } catch (tripoErr) {
+        logger.warn('[Vehicle] Tripo text_to_model failed', { jobId, error: errorMessage(tripoErr) });
+        await finishStage('generate_vehicle_mesh', 'completed', [], [
+          `Tripo unavailable: ${errorMessage(tripoErr).slice(0, 200)}`,
+          'Falling back to LLM-scene composer.',
+        ]);
+      }
+
       // ── generate_vehicle_scene: ask the LLM to compose a brief-driven
       // body silhouette (parts list with positions/sizes/colors). The chassis
       // (wheels, DriveSeat, controller, physics) is procedural and untouched;
       // only the body shell shape is creative. This is the "hybrid skeleton"
       // pattern used by furniture (chair/table/lamp/etc.) — the LLM decides
       // the look, the backend guarantees the physics.
+      //
+      // SKIP this stage entirely when Tripo already produced a usable mesh
+      // asset id (the previous stage stored it in metadata.vehicleMeshAssetId).
+      // The builder gives mesh-asset top priority and ignores vehicleScene
+      // when both exist, so running the LLM composer would just burn tokens.
+      const hadTripoMeshAlready = typeof currentJob.metadata?.vehicleMeshAssetId === 'number'
+        && (currentJob.metadata.vehicleMeshAssetId as number) > 0;
+      if (hadTripoMeshAlready) {
+        await beginStage('generate_vehicle_scene', 'Skipping LLM scene — Tripo mesh already available');
+        await finishStage('generate_vehicle_scene', 'completed', [], [
+          'Tripo mesh already produced — LLM scene composer skipped.',
+        ]);
+      } else {
       await beginStage('generate_vehicle_scene', 'LLM is designing the vehicle body from the brief');
       try {
         const titleStr = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
@@ -26611,6 +26732,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           `Scene LLM unavailable: ${errorMessage(sceneErr).slice(0, 200)}`,
           'Falling back to deterministic procedural family-sedan body.',
         ]);
+      }
       }
     }
 

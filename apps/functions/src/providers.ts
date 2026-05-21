@@ -3698,6 +3698,89 @@ export async function runTripo(prompt: string, input: JsonRecord): Promise<Provi
 }
 
 /**
+ * Tripo `text_to_model` for vehicles. No concept image needed — Tripo takes a
+ * short text brief and returns a GLB. Tripo's vehicle category gives much
+ * better automotive silhouettes than Meshy's generic text-to-3d because the
+ * underlying model has dedicated vehicle training data.
+ *
+ * Returns { taskId, modelUrl, thumbnailUrl } or { skipped: true } on failure.
+ * Caller decides whether to fall back to LLM-scene/procedural.
+ */
+export async function runTripoVehicleText(args: {
+  prompt: string;
+  vehicleType: string;
+  primaryHex?: string;
+  accentHex?: string;
+  timeoutMs?: number;
+}): Promise<{ taskId?: string; modelUrl?: string; thumbnailUrl?: string; skipped?: boolean; skipReason?: string }> {
+  const apiKey = TRIPO_API_KEY.value();
+  if (!apiKey) {
+    return { skipped: true, skipReason: 'TRIPO_API_KEY not configured' };
+  }
+
+  // Compose a short, vehicle-only prompt. Tripo's text-to-model works best on
+  // ~150-300 char prompts with concrete nouns. Strip conversation context.
+  const colorBits: string[] = [];
+  if (args.primaryHex) colorBits.push(`body color ${args.primaryHex}`);
+  if (args.accentHex && args.accentHex !== args.primaryHex) colorBits.push(`accent color ${args.accentHex}`);
+  const colorPhrase = colorBits.length > 0 ? `, ${colorBits.join(', ')}` : '';
+  const cleanedBrief = args.prompt
+    .replace(/Full conversation context[\s\S]*/i, '')
+    .replace(/Latest user intent[\s\S]*/i, '')
+    .replace(/Existing project context[\s\S]*/i, '')
+    .trim()
+    .slice(0, 200);
+  const finalPrompt = [
+    `Low-poly stylized Roblox ${args.vehicleType} body${colorPhrase}.`,
+    cleanedBrief,
+    'Single closed mesh. No wheels, no driver, no characters, no background, no ground. Front-facing reference render. Family-friendly.',
+  ].filter(Boolean).join(' ').slice(0, 500);
+
+  const result = await submitAndPollTripoTask({
+    body: {
+      type: 'text_to_model',
+      // Use the latest Tripo model version available (their text-to-3d v2.5).
+      model_version: 'v2.5-20250123',
+      prompt: finalPrompt,
+      face_count: 20_000,
+      texture: true,
+      pbr: true,
+      auto_size: true,
+    },
+    apiKey,
+    logLabel: `text_to_model vehicle=${args.vehicleType}`,
+    timeoutMs: args.timeoutMs ?? 4 * 60 * 1000,
+  });
+
+  if (result.skipped || !result.modelUrl) {
+    logger.warn('runTripoVehicleText failed', { skipReason: result.skipReason, vehicleType: args.vehicleType });
+    return { skipped: true, skipReason: result.skipReason };
+  }
+
+  // Tripo's status payload may include a `rendered_image` thumbnail URL inside
+  // the rawJson.output object. Used downstream as the vision-QA preview.
+  const rawJsonObj = (result.rawJson ?? {}) as Record<string, unknown>;
+  const rawOutput = ((rawJsonObj.output as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
+  const thumbnailUrl = typeof rawOutput.rendered_image === 'string'
+    ? rawOutput.rendered_image
+    : (typeof rawOutput.preview === 'string' ? rawOutput.preview : undefined);
+
+  logger.info('Tripo text_to_model vehicle success', {
+    taskId: result.taskId,
+    modelUrlPrefix: result.modelUrl.slice(0, 80),
+    vehicleType: args.vehicleType,
+    hasThumbnail: !!thumbnailUrl,
+    promptPreview: finalPrompt.slice(0, 120),
+  });
+
+  return {
+    taskId: result.taskId,
+    modelUrl: result.modelUrl,
+    thumbnailUrl,
+  };
+}
+
+/**
  * Run Tripo `animate_rig` task — adds skeleton + skin weights to a mesh that
  * was produced by an earlier Tripo task. Requires `meshTaskId` (NOT a URL —
  * Tripo binds rigging by task reference). Returns the rigged FBX/GLB url and
