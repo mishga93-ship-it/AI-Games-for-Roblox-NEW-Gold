@@ -6031,7 +6031,7 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
 function createVehiclePipelineStages(): GenerationStageProgress[] {
   return [
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
-    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Tripo v2.5)', status: 'pending' },
+    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Meshy 6)', status: 'pending' },
     { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
