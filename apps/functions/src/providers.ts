@@ -1668,6 +1668,150 @@ export async function generateTShirtGraphic(
   }
 }
 
+// 2026-05-21: "Approve-what-you-get" flat-shirt mockup generator.
+// Generates a Roblox-style FLAT product shot of the garment (no character,
+// no mannequin, no perspective) so the user can approve the actual shirt
+// they'll receive. The same image is then cropped into UV regions for the
+// 585×559 template — no second AI generation, no design drift between
+// "what I approved" and "what got uploaded".
+//
+// Returns:
+//   - mockupBuffer:  the raw Flux PNG (~1024×1024) — shown to user as concept
+//   - mockupUrl:     uploaded preview URL (for the concept_image artifact)
+//   - primaryColor:  dominant shirt color (used as primary on the UV template)
+//   - secondaryColor: accent color sampled from a side strip (used on sleeves)
+export interface FlatShirtMockupResult {
+  mockupBuffer: Buffer;
+  mockupUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
+export async function generateFlatShirtMockup(
+  garmentDescription: string,
+  garmentKind: 'shirt' | 'pants' = 'shirt',
+): Promise<FlatShirtMockupResult | undefined> {
+  const cleanDesc = garmentDescription.trim().slice(0, 1000);
+  const garmentNoun = garmentKind === 'pants' ? 'pants' : 'oversized shirt';
+  const prompt =
+    `Front-view product photography of a ${garmentNoun}: ${cleanDesc}. ` +
+    'CRITICAL: the garment is laid COMPLETELY FLAT against a clean white background. ' +
+    'ABSOLUTELY DO NOT include: a character, a body, a mannequin, a person, a torso, ' +
+    'hangers, hands, head, legs, or 3D perspective. Just the flat garment, front view only. ' +
+    'The design/print is clearly visible and CENTERED on the chest area. ' +
+    'Sleeves extend symmetrically to the left and right. ' +
+    'Roblox cartoon style: bold colors, simple shapes, high contrast, readable at a glance. ' +
+    'Professional flat-lay e-commerce catalog look. ' +
+    'No real-world brand logos (Nike, Adidas, Supreme, etc), no copyrighted characters, ' +
+    'no profanity, no text/letters unless explicitly requested in the description. ' +
+    'Square 1024×1024 composition, garment fills ~70-80% of the canvas with breathing room.';
+  try {
+    const result = await runFal('flux-pro/v1.1', {
+      endpoint: 'fal-ai/flux-pro/v1.1',
+      payload: {
+        prompt,
+        image_size: { width: 1024, height: 1024 },
+        num_inference_steps: 28,
+        num_images: 1,
+        guidance_scale: 5.5,
+        safety_tolerance: '5',
+      },
+    });
+    if (!result.outputUrl) {
+      logger.warn('[generateFlatShirtMockup] Flux returned no URL');
+      return undefined;
+    }
+    const resp = await fetch(result.outputUrl);
+    if (!resp.ok) {
+      logger.warn('[generateFlatShirtMockup] failed to download Flux output', { status: resp.status });
+      return undefined;
+    }
+    const mockupBuffer = Buffer.from(await resp.arrayBuffer());
+    // Sample colours from the flat mockup:
+    //   - primary: ~mid-chest (center of image, away from the print sticker
+    //     so we read the shirt fabric colour, not the design)
+    //   - secondary: ~sleeve area (left strip, vertical middle of image)
+    const sharpImg = sharp(mockupBuffer);
+    const meta = await sharpImg.metadata();
+    const W = meta.width ?? 1024;
+    const H = meta.height ?? 1024;
+    const sampleMid = await sharpImg
+      .clone()
+      .extract({
+        // Upper-shoulder strip — usually solid shirt colour above the chest print.
+        left: Math.round(W * 0.40),
+        top: Math.round(H * 0.20),
+        width: Math.round(W * 0.20),
+        height: Math.round(H * 0.05),
+      })
+      .resize(1, 1, { fit: 'cover' })
+      .raw()
+      .toBuffer();
+    const sampleSleeve = await sharpImg
+      .clone()
+      .extract({
+        left: Math.round(W * 0.10),
+        top: Math.round(H * 0.40),
+        width: Math.round(W * 0.10),
+        height: Math.round(H * 0.10),
+      })
+      .resize(1, 1, { fit: 'cover' })
+      .raw()
+      .toBuffer();
+    const rgbToHex = (buf: Buffer) =>
+      `#${buf[0].toString(16).padStart(2, '0')}${buf[1].toString(16).padStart(2, '0')}${buf[2].toString(16).padStart(2, '0')}`;
+    const primaryColor = rgbToHex(sampleMid);
+    const secondaryColor = rgbToHex(sampleSleeve);
+    return {
+      mockupBuffer,
+      mockupUrl: result.outputUrl,
+      primaryColor,
+      secondaryColor,
+    };
+  } catch (err) {
+    logger.warn('[generateFlatShirtMockup] threw', { error: (err as Error).message });
+    return undefined;
+  }
+}
+
+// 2026-05-21: Slice a flat front-view shirt photo into the 585×559 UV template.
+// The cropped chest area (centre of the flat mockup) becomes the front-torso
+// UV region. Primary + secondary colours from the mockup paint the back,
+// wrap-edges, and sleeves. No transparent BG / rembg step — we're using the
+// raw shirt image as-is, the way Roblox classic uploaders cut a flat design
+// into the canonical template regions.
+export async function cropFlatShirtToTemplate(
+  mockup: FlatShirtMockupResult,
+): Promise<ClothingTextureUploadResult | undefined> {
+  try {
+    const sharpImg = sharp(mockup.mockupBuffer);
+    const meta = await sharpImg.metadata();
+    const W = meta.width ?? 1024;
+    const H = meta.height ?? 1024;
+    // Crop a roughly square chest area from the centre of the mockup.
+    // Tuned so the print on the shirt's chest lands in the centre of the
+    // 128×128 torsoFront UV when wrapped on R15.
+    const chestSize = Math.round(Math.min(W, H) * 0.32);
+    const chestLeft = Math.round((W - chestSize) / 2);
+    const chestTop = Math.round(H * 0.30);
+    const chestBuf = await sharpImg
+      .clone()
+      .extract({ left: chestLeft, top: chestTop, width: chestSize, height: chestSize })
+      .resize(512, 512, { fit: 'cover' })
+      .png()
+      .toBuffer();
+    const composed = await compositeShirtTemplate({
+      frontTorso: chestBuf,
+      primaryColorHex: mockup.primaryColor,
+      secondaryColorHex: mockup.secondaryColor,
+    });
+    return await uploadGeneratedClothingTexture(composed, 'shirts');
+  } catch (err) {
+    logger.warn('[cropFlatShirtToTemplate] threw', { error: (err as Error).message });
+    return undefined;
+  }
+}
+
 export async function generateShirtTexture(
   conceptImageUrl: string,
   characterDescription: string,

@@ -131,6 +131,8 @@ import {
   generateShirtTexture,
   generatePantsTexture,
   generateTShirtGraphic,
+  generateFlatShirtMockup,
+  cropFlatShirtToTemplate,
   runFalAudio,
   classifyPet,
   selectMeshProvider,
@@ -5847,9 +5849,13 @@ function createNpcPipelineStages(mode: NpcVisualPipelineMode = resolveNpcVisualP
 }
 
 function createClothingPipelineStages(): GenerationStageProgress[] {
+  // 2026-05-21 approve-what-you-get: flat shirt mockup IS the concept,
+  // user approves the EXACT image we'll upload. New 4-stage pipeline:
+  //   shirt preview → approval gate → cut + upload to Roblox → export RBXM.
   return [
-    { id: 'concept_image', title: 'Concept image', status: 'pending' },
-    { id: 'clothing_texture', title: 'Clothing texture', status: 'pending' },
+    { id: 'concept_image', title: 'Shirt preview', status: 'pending' },
+    { id: 'concept_approval', title: 'Awaiting approval', status: 'pending' },
+    { id: 'clothing_texture', title: 'Upload to Roblox', status: 'pending' },
     { id: 'export_rbxm', title: 'Export RBXM', status: 'pending' },
   ];
 }
@@ -24601,6 +24607,78 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     // use the image as visual input.
     if (needsConceptGate) {
       await beginStage('concept_image', 'Starting concept image generation');
+
+      // 2026-05-21 — Clothing 2D Classic: "approve-what-you-get" via flat
+      // shirt mockup. Instead of generating a stylized character concept
+      // and then RE-GENERATING the actual shirt design separately (two AI
+      // calls that drift apart), we generate ONE flat product-shot image
+      // of the garment itself. That image IS the concept the user
+      // approves, and after approval we crop its chest into the 585×559
+      // UV template. What you see = what gets uploaded.
+      let flatMockupHandled = false;
+      if (isClothingTexture && !isLayeredClothing) {
+        logger.info('[FlatShirtMockup] clothing 2D Classic — generating flat product-shot concept', { jobId });
+        try {
+          const flatMockup = await generateFlatShirtMockup(job.prompt, 'shirt');
+          if (flatMockup) {
+            // Moderate the mockup before showing.
+            try {
+              const mockupModeration = await moderateImage(flatMockup.mockupUrl);
+              if (mockupModeration.severity === 'blocked') {
+                logger.warn('[FlatShirtMockup] mockup BLOCKED by moderation, falling back to character concept', {
+                  jobId,
+                  reason: mockupModeration.reason,
+                });
+              } else {
+                // Upload the flat mockup as the SOLE concept_image artifact.
+                const mockupArt = await uploadBinaryArtifact(currentJob, flatMockup.mockupBuffer, {
+                  type: 'png',
+                  extension: 'png',
+                  mimeType: 'image/png',
+                  name: `${title}-flat-shirt.png`,
+                  previewText: 'Flat shirt preview — Approve to publish to Roblox',
+                  stageId: 'concept_image',
+                  artifactRole: 'concept',
+                  metadata: {
+                    isFlatShirtMockup: true,
+                    primaryColor: flatMockup.primaryColor,
+                    secondaryColor: flatMockup.secondaryColor,
+                  },
+                });
+                conceptPreviewUrl = mockupArt.downloadUrl ?? mockupArt.url ?? flatMockup.mockupUrl;
+                currentJob = {
+                  ...currentJob,
+                  artifacts: [...currentJob.artifacts, mockupArt],
+                  metadata: {
+                    ...(currentJob.metadata ?? {}),
+                    flatShirtMockupUrl: mockupArt.downloadUrl ?? mockupArt.url ?? flatMockup.mockupUrl,
+                    flatShirtPrimaryColor: flatMockup.primaryColor,
+                    flatShirtSecondaryColor: flatMockup.secondaryColor,
+                    flatShirtMockupPrepared: true,
+                  },
+                };
+                await finishStage('concept_image', 'completed', [mockupArt.id], ['Flat shirt preview ready for approval']);
+                logger.info('[FlatShirtMockup] flat mockup ready, awaiting user approval', {
+                  jobId,
+                  primaryColor: flatMockup.primaryColor,
+                  secondaryColor: flatMockup.secondaryColor,
+                });
+                flatMockupHandled = true;
+              }
+            } catch (modErr) {
+              logger.warn('[FlatShirtMockup] moderation check threw, falling back', { error: errorMessage(modErr) });
+            }
+          } else {
+            logger.warn('[FlatShirtMockup] generator returned undefined, falling back to character concept', { jobId });
+          }
+        } catch (flatErr) {
+          logger.warn('[FlatShirtMockup] threw, falling back to character concept', { jobId, error: errorMessage(flatErr) });
+        }
+      }
+
+      if (flatMockupHandled) {
+        // Skip the character-concept path entirely for clothing 2D Classic.
+      } else {
       // Session 207: weapons / items / furniture render as a prop (no character holding it).
       // The 'prop' preview style explicitly tells the image model "no people or characters",
       // matching what the user expects for a standalone weapon/item/furniture concept.
@@ -24677,6 +24755,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           logger.warn('Body colour extraction failed, continuing without colours', { error: errorMessage(colorErr) });
         }
       }
+      } // end of "flatMockupHandled else" block (character-concept path)
 
     } // end Phase 1 concept generation
 
@@ -24689,7 +24768,10 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     // with a user-friendly errorMessage instead of pausing for approval with
     // no image to approve — otherwise the user is stuck on a frozen pipeline
     // without any UI feedback (Approve buttons require a concept artifact).
-    if (!isClothingTexture && !isTShirt && needsConceptGate && !conceptPreviewUrl) {
+    // 2026-05-21: clothing 2D Classic also waits for approval now —
+    // the flat shirt mockup is the EXACT image we'll cut into UV regions,
+    // so user approves what they get.
+    if (!isTShirt && needsConceptGate && !conceptPreviewUrl) {
       const conceptStage = currentJob.stages?.find((s) => s.id === 'concept_image');
       const stageError = conceptStage?.errorMessage ?? '';
       const isAuthIssue = /\b(401|403)\b/.test(stageError)
@@ -24716,7 +24798,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       await persistJobSnapshot(jobId, currentJob);
       return currentJob;
     }
-    if (!isClothingTexture && !isTShirt && needsConceptGate) {
+    if (!isTShirt && needsConceptGate) {
       await beginStage('concept_approval', 'Waiting for your approval');
       currentJob = {
         ...currentJob,
@@ -24746,18 +24828,46 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     if (conceptPreviewUrl && isClothingTexture && !isLayeredClothing) {
       const clothingStageId = isClothingTexture ? 'clothing_texture' : undefined;
       if (clothingStageId) {
-        await beginStage('clothing_texture', 'Generating clothing textures from concept image');
+        await beginStage('clothing_texture', 'Cutting approved shirt into Roblox UV regions');
       }
       try {
         const clothingType = detectClothingType(job.prompt);
-        [shirtResult, pantsResult] = await Promise.all([
-          clothingType !== 'pants_only'
-            ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
-            : Promise.resolve(undefined),
-          clothingType !== 'shirt_only'
-            ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
-            : Promise.resolve(undefined),
-        ]);
+        // 2026-05-21: If a flat-shirt mockup was prepared and approved during
+        // concept stage, slice IT into UV regions (no new AI generation).
+        // What the user approved = what gets uploaded.
+        const flatShirtPrepared = currentJob.metadata?.flatShirtMockupPrepared === true
+          && typeof currentJob.metadata?.flatShirtMockupUrl === 'string';
+        if (flatShirtPrepared) {
+          const mockupUrl = currentJob.metadata!.flatShirtMockupUrl as string;
+          const primaryColor = (currentJob.metadata?.flatShirtPrimaryColor as string) ?? '#888888';
+          const secondaryColor = (currentJob.metadata?.flatShirtSecondaryColor as string) ?? primaryColor;
+          logger.info('[FlatShirtMockup] slicing approved mockup into UV template', { jobId, mockupUrl, primaryColor, secondaryColor });
+          try {
+            const mockupResp = await fetch(mockupUrl);
+            if (!mockupResp.ok) throw new Error(`mockup fetch ${mockupResp.status}`);
+            const mockupBuf = Buffer.from(await mockupResp.arrayBuffer());
+            shirtResult = await cropFlatShirtToTemplate({
+              mockupBuffer: mockupBuf,
+              mockupUrl,
+              primaryColor,
+              secondaryColor,
+            });
+            pantsResult = undefined; // flat-shirt mockup is shirt-only; pants stays optional
+          } catch (cropErr) {
+            logger.warn('[FlatShirtMockup] crop failed, falling back to AI design generation', { jobId, error: errorMessage(cropErr) });
+            shirtResult = await generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt);
+            pantsResult = undefined;
+          }
+        } else {
+          [shirtResult, pantsResult] = await Promise.all([
+            clothingType !== 'pants_only'
+              ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
+              : Promise.resolve(undefined),
+            clothingType !== 'shirt_only'
+              ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
+              : Promise.resolve(undefined),
+          ]);
+        }
         const shirtFallbackPng = shirtResult?.fallbackPngUrl;
         const pantsFallbackPng = pantsResult?.fallbackPngUrl;
         if (shirtFallbackPng || pantsFallbackPng) {
