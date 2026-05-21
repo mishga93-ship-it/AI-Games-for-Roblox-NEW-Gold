@@ -2222,6 +2222,17 @@ const FURNITURE_STYLE_HINT =
   'NO additional furniture, NO chairs around the table, NO objects on top, NO scene, NO room, NO floor, NO walls, NO shadow plane, NO grouped sets, NO multiple variants, NO accessories. ' +
   'No character, no person, no hands, no body. Front 3/4 view, centered composition, game-ready 3D furniture asset reference for Roblox.';
 
+// Session 373: 2D concept reference for vehicles. The image is shown to the
+// user as preview ("approve / try again") AND fed into Meshy 6 multi-image-to-
+// 3d, which produces a much higher-quality car mesh than text-to-3d alone.
+// Key constraints: no driver, no environment, no wheels (the chassis adds
+// wheels procedurally — Meshy duplicating them creates 8-wheel monsters).
+const VEHICLE_STYLE_HINT =
+  'ONE single isolated stylized 3D vehicle, centered on a plain white background. Low-poly cartoon Roblox-game-ready aesthetic, vibrant readable colors, clean geometric shapes, simple PBR materials. ' +
+  'Show the FULL vehicle from a 3/4 front view so the front bumper, hood, cabin, roof, and side doors are all visible. The cabin and roof must be clearly raised above the body — NOT a flat skateboard silhouette. ' +
+  'NO driver, NO passenger, NO character, NO person, NO hands, NO body. NO wheels (the engine adds wheels separately — a vehicle drawn with no tires reads correctly). NO ground, NO road, NO scene, NO environment, NO shadow plane. ' +
+  'STRICTLY ONE vehicle only — no second car in the frame, no toy display row, no garage. Front-3/4 reference render, game-ready 3D vehicle body shell asset reference for Roblox.';
+
 const CLOTHING_KEYWORDS = /jacket|shirt|pants|dress|coat|hat|helmet|crown|cape|armor|shoe|boot|glove|hoodie|sweater|skirt|vest|scarf|mask|glasses|backpack|wing/i;
 
 // Track 3 (3D Pet pipeline) — keyword maps for fast regex fallback when LLM
@@ -2851,11 +2862,13 @@ export function buildConceptImagePrompt(rawPrompt: string, input: Record<string,
       ? ITEM_STYLE_HINT
       : isFurnitureProp
         ? FURNITURE_STYLE_HINT
-        : isClothingItem
-          ? CLOTHING_STYLE_HINT
-          : isNpcContent
-            ? NPC_CONCEPT_IMAGE_STYLE_HINT
-            : CONCEPT_IMAGE_STYLE_HINT;
+        : isVehicleItem
+          ? VEHICLE_STYLE_HINT
+          : isClothingItem
+            ? CLOTHING_STYLE_HINT
+            : isNpcContent
+              ? NPC_CONCEPT_IMAGE_STYLE_HINT
+              : CONCEPT_IMAGE_STYLE_HINT;
 
   const conversationMatch = rawPrompt.match(/Full conversation context[^:]*:\s*([\s\S]+)/i);
   const chatContext = conversationMatch?.[1]?.trim() ?? '';
@@ -2882,7 +2895,7 @@ export function buildConceptImagePrompt(rawPrompt: string, input: Record<string,
   // AI image models follow positive descriptions better than negative prohibitions.
   // Items (item_tool) are standalone objects — do NOT add clothing enforcement (otherwise
   // the model draws a dressed character holding/wearing the item).
-  const clothingEnforcement = (!isWeaponItem && !isItemTool && !isFurnitureProp && !isClothingItem)
+  const clothingEnforcement = (!isWeaponItem && !isItemTool && !isFurnitureProp && !isVehicleItem && !isClothingItem)
     ? ' Wearing a fully closed long-sleeve outfit and long pants.'
     : '';
 
@@ -2896,6 +2909,18 @@ export function buildConceptImagePrompt(rawPrompt: string, input: Record<string,
     if (material) furnitureColorBits.push(`made of ${material}`);
     if (primaryColor) furnitureColorBits.push(`primary colour ${primaryColor}`);
     if (accentColor && accentColor !== primaryColor) furnitureColorBits.push(`accent colour ${accentColor}`);
+  }
+  // Vehicles: same injection — pass body / roof / accent colours into Flux so
+  // the concept matches the metadata picked from prompt parsing. Without this
+  // Flux defaults to "blue sedan" regardless of the user's "red sport car"
+  // request.
+  if (isVehicleItem) {
+    const primaryColor = typeof input.primaryColor === 'string' ? input.primaryColor : '';
+    const accentColor = typeof input.accentColor === 'string' ? input.accentColor : '';
+    const vehicleType = typeof input.vehicleType === 'string' ? input.vehicleType : '';
+    if (vehicleType) furnitureColorBits.push(`vehicle type: ${vehicleType}`);
+    if (primaryColor) furnitureColorBits.push(`body colour ${primaryColor}`);
+    if (accentColor && accentColor !== primaryColor) furnitureColorBits.push(`roof / accent colour ${accentColor}`);
   }
   const furnitureColorContext = furnitureColorBits.length > 0 ? ` ${furnitureColorBits.join(', ')}.` : '';
   const npcPremiumColorContext = isNpcContent

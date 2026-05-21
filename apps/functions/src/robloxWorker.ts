@@ -2281,19 +2281,60 @@ function buildVehicleModelManifest(
   }
 
   if (vehicleMeshAssetId) {
-    // Tripo / Meshy mesh body: single MeshPart with rbxassetid:// MeshContent
-    // — the GLB was already uploaded to Roblox Open Cloud by the pipeline.
-    // Wheels, DriveSeat, controller, sounds stay procedural and are welded
-    // around this mesh via ChassisRoot.
+    // Meshy mesh body: single MeshPart with rbxassetid:// MeshContent — the
+    // GLB was already uploaded to Roblox Open Cloud by the pipeline and the
+    // inner mesh asset granted openUse permission so non-owner Studios can
+    // load it. Wheels, DriveSeat, controller, sounds stay procedural and are
+    // welded around this mesh via ChassisRoot.
+    //
+    // Session 373: instead of a fixed envelope [width*0.94, height*0.84,
+    // length*0.92] (which squashed sports cars / stretched SUVs), we read the
+    // mesh's natural bbox from metadata.vehicleMeshNaturalSize (populated by
+    // extractMeshIdFromModel) and scale UNIFORMLY so the chassis length fits
+    // the target chassis length while preserving the mesh's natural width/
+    // height ratio. If Meshy aligned the car along world-X instead of world-Z
+    // (which it sometimes does — GLB convention varies), we rotate the
+    // MeshPart 90° around Y so the mesh's forward direction matches Roblox's
+    // chassis forward (-Z).
+    const naturalSizeRaw = metadata.vehicleMeshNaturalSize as { x?: number; y?: number; z?: number } | undefined;
+    const natural = naturalSizeRaw && typeof naturalSizeRaw.x === 'number' && typeof naturalSizeRaw.y === 'number' && typeof naturalSizeRaw.z === 'number'
+      && naturalSizeRaw.x > 0 && naturalSizeRaw.y > 0 && naturalSizeRaw.z > 0
+      ? { x: naturalSizeRaw.x, y: naturalSizeRaw.y, z: naturalSizeRaw.z }
+      : { x: 1, y: 0.3, z: 1 }; // fallback: cars are wider than tall, mesh roughly 1:0.3:1 ratio
+    // Forward axis detection: the horizontal dimension with the larger extent
+    // is the mesh's "length" direction. Cars are always longer than they are
+    // wide.
+    const forwardIsX = natural.x > natural.z;
+    const mLong = Math.max(natural.x, natural.z);   // mesh-length
+    const mShort = Math.min(natural.x, natural.z);  // mesh-width
+    const mTall = natural.y;                         // mesh-height
+    // Uniform scale so longest horizontal dim matches chassis length.
+    const targetLength = length * 0.94;
+    const scale = targetLength / mLong;
+    const finalLength = mLong * scale;     // becomes Z (Roblox forward axis)
+    const finalWidth = mShort * scale;     // becomes X
+    const finalHeight = mTall * scale;     // becomes Y (up)
+    // MeshPart.Size — if mesh native forward is X, we swap Size.X/Z and rotate
+    // 90° around Y so the mesh visually faces -Z (Roblox forward / chassis
+    // driving direction).
+    const meshSize: [number, number, number] = forwardIsX
+      ? [finalLength, finalHeight, finalWidth] // mesh-native: long along X, then we rotate
+      : [finalWidth, finalHeight, finalLength];
+    const meshRot: [number, number, number] = forwardIsX ? [0, 90, 0] : [0, 0, 0];
+    // Position mesh so its bottom touches the chassis underbody (rootY level),
+    // i.e. mesh center Y = rootY + half-height. That way wheels stick out from
+    // the bottom of the mesh as expected (not floating inside).
+    const meshCenterY = rootY + finalHeight * 0.5;
     const meshBodyId = addPart(
       'VehicleMeshBody',
       folders.body,
-      [width * 0.94, Math.max(1.0, height * 0.84), length * 0.92],
-      [0, rootY + height * 0.32, 0],
+      meshSize,
+      [0, meshCenterY, 0],
       primary,
       {
         className: 'MeshPart',
         material: 'SmoothPlastic',
+        rot: meshRot,
         canCollide: false,
         massless: true,
         extra: {
@@ -2303,10 +2344,17 @@ function buildVehicleModelManifest(
       },
     );
     weldToRoot(meshBodyId, 'VehicleMeshBodyWeld');
+    // Stash mesh-fit metrics so addVehicleSeats can position DriveSeat inside
+    // the actual mesh silhouette (cabin, not floating above bumper).
+    (metadata as Record<string, unknown>).vehicleMeshFitTopY = rootY + finalHeight;
+    (metadata as Record<string, unknown>).vehicleMeshFitHeight = finalHeight;
     if (vehicleType === 'car') {
-      addBodyPart('MeshBodyFrontBumperTrim', [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10, -length * 0.49], dark, { material: 'Metal' });
-      addBodyPart('MeshBodyRearBumperTrim',  [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10,  length * 0.49], dark, { material: 'Metal' });
-      addBodyPart('MeshBodyRearLicensePlate', [width * 0.26, height * 0.09, 0.06], [0, rootY + height * 0.28, length * 0.50], silver, { material: 'Metal' });
+      // Sized relative to actual mesh extent, not the fixed [width*0.92, ...].
+      const trimWidth = finalWidth * 0.92;
+      const trimLengthHalf = finalLength * 0.50;
+      addBodyPart('MeshBodyFrontBumperTrim', [trimWidth, finalHeight * 0.10, 0.18], [0, rootY + finalHeight * 0.10, -trimLengthHalf], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearBumperTrim',  [trimWidth, finalHeight * 0.10, 0.18], [0, rootY + finalHeight * 0.10,  trimLengthHalf], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearLicensePlate', [finalWidth * 0.26, finalHeight * 0.09, 0.06], [0, rootY + finalHeight * 0.28, trimLengthHalf + 0.01], silver, { material: 'Metal' });
     }
   } else {
     // Procedural family-sedan baseline ALWAYS runs (proven WedgePart hood/
@@ -2341,7 +2389,16 @@ function buildVehicleModelManifest(
       addBodyPart('VehicleSceneRoot', [0.1, 0.1, 0.1], [0, rootY, 0], dark, { material: 'Metal', transparency: 1 });
     }
   }
-  addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot });
+  // Session 373: when the mesh-body branch ran, it stashed meshFitTopY/Height
+  // in metadata so we can sit the DriveSeat inside the actual mesh silhouette
+  // instead of a fixed Y based on profile.size[1].
+  const meshFitTopY = typeof (metadata as Record<string, unknown>).vehicleMeshFitTopY === 'number'
+    ? (metadata as Record<string, number>).vehicleMeshFitTopY
+    : undefined;
+  const meshFitHeight = typeof (metadata as Record<string, unknown>).vehicleMeshFitHeight === 'number'
+    ? (metadata as Record<string, number>).vehicleMeshFitHeight
+    : undefined;
+  addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot, meshFitTopY, meshFitHeight });
   addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart });
   addVehicleEffects({ scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence });
 
@@ -2937,17 +2994,36 @@ function addVehicleSeats(args: {
   cf: (x: number, y: number, z: number, rot?: [number, number, number]) => Record<string, unknown>;
   ref: (id: string) => Record<string, unknown>;
   weldToRoot: (partId: string, name: string) => void;
+  meshFitTopY?: number;
+  meshFitHeight?: number;
 }): void {
-  const { scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot } = args;
+  const { scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot, meshFitTopY, meshFitHeight } = args;
   const driveSeatId = uuidv4();
   const physicalSeatTransparency = 1;
-  const seatY = profile.type === 'bus'
-    ? rootY + profile.size[1] * 0.36
-    : profile.type === 'car'
-      ? rootY + profile.size[1] * 0.34
-      : rootY + Math.min(0.62, profile.size[1] * 0.24);
+  // Session 373: when an external mesh body is loaded (Meshy v6), the chassis
+  // height no longer matches profile.size[1] — use the actual mesh fit height
+  // so the DriveSeat sits inside the cabin (otherwise the driver floats above
+  // a low sports-car mesh or sinks into a tall SUV).
+  // Driver cabin Y ≈ 70% up the mesh body (above floor pan, below roof).
+  const meshSeatY = (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
+    ? rootY + meshFitHeight * 0.55
+    : undefined;
+  const seatY = meshSeatY ?? (
+    profile.type === 'bus'
+      ? rootY + profile.size[1] * 0.36
+      : profile.type === 'car'
+        ? rootY + profile.size[1] * 0.34
+        : rootY + Math.min(0.62, profile.size[1] * 0.24)
+  );
   const driverX = (profile.type === 'car' || profile.type === 'bus') ? -Math.min(width * 0.18, 1.25) : 0;
-  const driverZ = profile.type === 'bus' ? -length * 0.28 : profile.type === 'car' ? -length * 0.06 : -length * 0.14;
+  // Position driver SLIGHTLY rearward of front bumper but ahead of car centre
+  // (typical cabin position). For mesh-body cars Meshy's natural cabin is
+  // near Z=0 → Z=-0.15*length, slightly forward of centre.
+  const driverZ = profile.type === 'bus'
+    ? -length * 0.28
+    : profile.type === 'car'
+      ? (meshFitHeight !== undefined ? -length * 0.05 : -length * 0.06)
+      : -length * 0.14;
   scene.push({
     id: driveSeatId,
     className: 'VehicleSeat',
