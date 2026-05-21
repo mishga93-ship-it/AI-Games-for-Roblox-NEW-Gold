@@ -5849,13 +5849,12 @@ function createNpcPipelineStages(mode: NpcVisualPipelineMode = resolveNpcVisualP
 }
 
 function createClothingPipelineStages(): GenerationStageProgress[] {
-  // 2026-05-21 approve-what-you-get: flat shirt mockup IS the concept,
-  // user approves the EXACT image we'll upload. New 4-stage pipeline:
-  //   shirt preview → approval gate → cut + upload to Roblox → export RBXM.
+  // 2026-05-21 Phase 1 auto-flow: no approval gate. Flat shirt mockup is
+  // generated, sliced into UV template, uploaded to Roblox, and packaged
+  // into .rbxm — all without user intervention.
   return [
-    { id: 'concept_image', title: 'Shirt preview', status: 'pending' },
-    { id: 'concept_approval', title: 'Awaiting approval', status: 'pending' },
-    { id: 'clothing_texture', title: 'Upload to Roblox', status: 'pending' },
+    { id: 'concept_image', title: 'Designing shirt', status: 'pending' },
+    { id: 'clothing_texture', title: 'Slicing + uploading to Roblox', status: 'pending' },
     { id: 'export_rbxm', title: 'Export RBXM', status: 'pending' },
   ];
 }
@@ -9922,17 +9921,34 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
           contentType,
           assetPrivacy: 'openUse',
         });
-        if (!upload?.assetId) {
-          conversionNotes.push(`Stage ${i + 1}: Open Cloud upload returned no assetId`);
+        if (!upload) {
+          conversionNotes.push(`Stage ${i + 1}: Open Cloud upload returned null`);
           continue;
         }
-        b.modelAssetId = upload.assetId;
-        const extract = await extractMeshIdFromModel(upload.assetId);
+        // Roblox Open Cloud uploads are ASYNC. POST returns
+        // {path: "operations/<id>", operationId, done: false}
+        // immediately, and the real assetId only becomes available after
+        // polling the operation to done=true. The 2026-05-20 first cut of
+        // this code read upload.assetId directly (always 0 on first response)
+        // → manifest wrote rbxassetid://0 → dragon was invisible.
+        let resolvedModelAssetId = upload.assetId;
+        if ((!resolvedModelAssetId || resolvedModelAssetId <= 0) && upload.operationId) {
+          const polled = await pollRobloxOperation(ocApiKey, upload.operationId, 'api-key');
+          if (polled && polled > 0) {
+            resolvedModelAssetId = polled;
+          }
+        }
+        if (!resolvedModelAssetId || resolvedModelAssetId <= 0) {
+          conversionNotes.push(`Stage ${i + 1}: Open Cloud poll returned no final assetId (operationId=${upload.operationId ?? 'none'})`);
+          continue;
+        }
+        b.modelAssetId = resolvedModelAssetId;
+        const extract = await extractMeshIdFromModel(resolvedModelAssetId);
         if (extract?.meshId && extract.meshId > 0) {
           b.meshAssetId = extract.meshId;
-          conversionNotes.push(`Stage ${i + 1}: Model ${upload.assetId} → MeshId ${extract.meshId}`);
+          conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} → MeshId ${extract.meshId}`);
         } else {
-          conversionNotes.push(`Stage ${i + 1}: Model ${upload.assetId} uploaded but MeshId extraction failed (state=${extract?.state ?? 'unknown'}). Use ModelAssetId to InsertService:LoadAsset.`);
+          conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} uploaded but MeshId extraction failed (state=${extract?.state ?? 'unknown'}). Use ModelAssetId to InsertService:LoadAsset.`);
         }
       } catch (err) {
         conversionNotes.push(`Stage ${i + 1}: upload error — ${errorMessage(err).slice(0, 160)}`);
@@ -24834,10 +24850,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     // with a user-friendly errorMessage instead of pausing for approval with
     // no image to approve — otherwise the user is stuck on a frozen pipeline
     // without any UI feedback (Approve buttons require a concept artifact).
-    // 2026-05-21: clothing 2D Classic also waits for approval now —
-    // the flat shirt mockup is the EXACT image we'll cut into UV regions,
-    // so user approves what they get.
-    if (!isTShirt && needsConceptGate && !conceptPreviewUrl) {
+    // 2026-05-21 Phase 1 of approve-removal plan: clothing 2D Classic now
+    // runs end-to-end automatically. The flat mockup approve gate was
+    // creating false expectations (user approves flat shirt, then UV-wrap
+    // distorts it differently on the avatar). Remove the gate; pipeline
+    // goes flat-mockup → slice → upload → .rbxm in one pass.
+    if (!isTShirt && !isClothingTexture && needsConceptGate && !conceptPreviewUrl) {
       const conceptStage = currentJob.stages?.find((s) => s.id === 'concept_image');
       const stageError = conceptStage?.errorMessage ?? '';
       const isAuthIssue = /\b(401|403)\b/.test(stageError)
@@ -24864,7 +24882,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       await persistJobSnapshot(jobId, currentJob);
       return currentJob;
     }
-    if (!isTShirt && needsConceptGate) {
+    if (!isTShirt && !isClothingTexture && needsConceptGate) {
       await beginStage('concept_approval', 'Waiting for your approval');
       currentJob = {
         ...currentJob,
