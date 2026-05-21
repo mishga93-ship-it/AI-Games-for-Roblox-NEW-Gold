@@ -1784,7 +1784,7 @@ function buildPetEvolutionManifest(
   const rarity = typeof metadata.petRarity === 'string' ? metadata.petRarity : 'Rare';
   const element = typeof metadata.petElement === 'string' ? metadata.petElement : 'Neutral';
   const isFlying = !!metadata.petIsFlying;
-  const stageMeshes = (metadata.petStageMeshes as Array<{ meshUrl?: string; fbxFileName?: string; idleAnimUrl?: string; walkAnimUrl?: string; flyAnimUrl?: string }> | undefined) ?? [];
+  const stageMeshes = (metadata.petStageMeshes as Array<{ meshUrl?: string; meshAssetId?: number; modelAssetId?: number; fbxFileName?: string; idleAnimUrl?: string; walkAnimUrl?: string; flyAnimUrl?: string }> | undefined) ?? [];
   const coinBonusBase = rarityCoinBonus(rarity);
 
   const petModelId = uuidv4();
@@ -1860,7 +1860,18 @@ function buildPetEvolutionManifest(
         name: 'Body',
         parentId: stageModelId,
         properties: {
-          MeshId: stageData.meshUrl ?? 'rbxassetid://0',
+          // 2026-05-20: prefer rbxassetid:// (set after Open Cloud upload in
+          // processPet3DJob convert_pet_fbx step). Raw Tripo HTTPS URLs do
+          // NOT render in the live Roblox client even though Studio's 3D
+          // Importer accepts them. Falls back to rbxassetid://0 (placeholder
+          // — user must paste a real MeshId via Studio after manual import)
+          // when Open Cloud upload failed or wasn't configured.
+          MeshId: (stageData.meshAssetId && stageData.meshAssetId > 0)
+            ? `rbxassetid://${stageData.meshAssetId}`
+            : 'rbxassetid://0',
+          MeshContent: (stageData.meshAssetId && stageData.meshAssetId > 0)
+            ? `rbxassetid://${stageData.meshAssetId}`
+            : 'rbxassetid://0',
           Size: { __type: 'Vector3', x: 3, y: 3, z: 3 },
           CanCollide: false,
           Anchored: false,
@@ -2133,9 +2144,14 @@ function buildVehicleModelManifest(
     } = {},
   ): string => {
     const id = uuidv4();
+    const finalClassName = options.className ?? 'Part';
+    // Shape is only valid on BasePart `Part` — WedgePart / CornerWedgePart /
+    // MeshPart / TrussPart don't expose it and Lune logs a warning if we set
+    // it. Keep it off the property bag for those classes.
+    const supportsShape = finalClassName === 'Part';
     scene.push({
       id,
-      className: options.className ?? 'Part',
+      className: finalClassName,
       name,
       parentId,
       properties: {
@@ -2146,7 +2162,7 @@ function buildVehicleModelManifest(
         Massless: options.massless ?? true,
         Color: color,
         Material: enumValue('Material', options.material ?? 'SmoothPlastic'),
-        Shape: enumValue('PartType', options.shape ?? 'Block'),
+        ...(supportsShape ? { Shape: enumValue('PartType', options.shape ?? 'Block') } : {}),
         ...(options.transparency !== undefined ? { Transparency: options.transparency } : {}),
         ...(options.extra ?? {}),
       },
@@ -2211,10 +2227,15 @@ function buildVehicleModelManifest(
   //      asset ID produced by uploading the GLB to Roblox Open Cloud. Emits
   //      a single MeshPart with rbxassetid:// MeshContent — actually renders
   //      in Roblox runtime (raw https:// URLs do not).
-  //   2. LLM scene (metadata.vehicleScene JSON) — hybrid skeleton pattern
-  //      copied from furniture. The LLM composes body silhouette parts.
-  //   3. Procedural family-sedan (addVehicleBodyShell) — proven hardcoded
-  //      blocky body. Used when nothing else was available.
+  //   2. Procedural family-sedan (addVehicleBodyShell) ALWAYS provides the
+  //      structural body shell (proven 120+ parts with WedgePart hood/trunk
+  //      and sloped windshield/rear glass). The LLM scene (metadata.vehicleScene
+  //      JSON) is now ADDITIVE — only accent roles (trim/spoiler/mirror/
+  //      headlight/taillight) get emitted on top of the baseline. Structural
+  //      LLM roles (body/cabin/roof/hood/trunk/door/windshield/fender/
+  //      wheel_arch/grille/bumper) are dropped because the LLM repeatedly
+  //      produced flat-box silhouettes — see hybrid-skeleton pattern in
+  //      memory/feedback_hybrid_skeleton_for_unreliable_llm.md.
   const vehicleMeshAssetId = typeof metadata.vehicleMeshAssetId === 'number' && metadata.vehicleMeshAssetId > 0
     ? metadata.vehicleMeshAssetId
     : undefined;
@@ -2261,37 +2282,38 @@ function buildVehicleModelManifest(
       addBodyPart('MeshBodyRearBumperTrim',  [width * 0.92, height * 0.10, 0.18], [0, rootY + height * 0.10,  length * 0.49], dark, { material: 'Metal' });
       addBodyPart('MeshBodyRearLicensePlate', [width * 0.26, height * 0.09, 0.06], [0, rootY + height * 0.28, length * 0.50], silver, { material: 'Metal' });
     }
-  } else if (vehicleScene) {
-    // LLM-composed body: emit each part as an addBodyPart call. The chassis
-    // is at world Y=0 with rootY ≈ 1.8; the LLM was told the origin is the
-    // chassis centre, so we translate Y by rootY. Wheels stay at Y=1.05
-    // (separate procedural addVehiclePhysics below).
-    for (const p of vehicleScene.parts) {
-      const colorRgb = hexToColor3(p.color) ?? defaultVehiclePalette(vehicleType as VehicleModelType).primary;
-      const partColor = color3(colorRgb.r, colorRgb.g, colorRgb.b);
-      // The LLM prompt told the model "origin (0,0,0) is the chassis centre,
-      // wheels are at radius 1.05 with top at Y=2.10." Our backend uses
-      // rootY=1.8 internally; the LLM coords already account for the wheel
-      // band, so we just use position[1] as-is (it's already absolute Y).
-      addBodyPart(
-        p.name,
-        [Math.max(0.1, p.size[0]), Math.max(0.1, p.size[1]), Math.max(0.1, p.size[2])],
-        [p.position[0], p.position[1], p.position[2]],
-        partColor,
-        {
-          shape: (p.shape === 'Cylinder' || p.shape === 'Ball' || p.shape === 'Block') ? p.shape : 'Block',
-          className: (p.shape === 'Wedge') ? 'WedgePart' : (p.shape === 'CornerWedge') ? 'CornerWedgePart' : undefined,
-          material: p.material,
-          rot: p.rotation,
-          transparency: typeof p.transparency === 'number' ? p.transparency : undefined,
-        },
-      );
-    }
-    // Marker part so downstream QA can recognise LLM-scene mode (analogous
-    // to VehicleMeshBody marker in the old mesh branch).
-    addBodyPart('VehicleSceneRoot', [0.1, 0.1, 0.1], [0, rootY, 0], dark, { material: 'Metal', transparency: 1 });
   } else {
+    // Procedural family-sedan baseline ALWAYS runs (proven WedgePart hood/
+    // trunk + sloped windshield + CornerWedgePart roof/hood corners + narrow
+    // mid-chassis). If the LLM scene composer produced an `vehicleScene` JSON,
+    // we layer ONLY accent-decoration roles on top — structural roles are
+    // dropped because the LLM repeatedly emitted flat boxes that overrode
+    // the proper baseline. Marker is added unconditionally so downstream
+    // QA can detect "LLM contributed accents".
     addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass, silver, repairBoost });
+    if (vehicleScene) {
+      const ACCENT_ROLES = new Set(['trim', 'spoiler', 'mirror', 'headlight', 'taillight']);
+      for (const p of vehicleScene.parts) {
+        if (typeof p.role !== 'string' || !ACCENT_ROLES.has(p.role)) continue;
+        const colorRgb = hexToColor3(p.color) ?? defaultVehiclePalette(vehicleType as VehicleModelType).primary;
+        const partColor = color3(colorRgb.r, colorRgb.g, colorRgb.b);
+        addBodyPart(
+          `LLMAccent_${p.name}`,
+          [Math.max(0.1, p.size[0]), Math.max(0.1, p.size[1]), Math.max(0.1, p.size[2])],
+          [p.position[0], p.position[1], p.position[2]],
+          partColor,
+          {
+            shape: (p.shape === 'Cylinder' || p.shape === 'Ball' || p.shape === 'Block') ? p.shape : 'Block',
+            className: (p.shape === 'Wedge') ? 'WedgePart' : (p.shape === 'CornerWedge') ? 'CornerWedgePart' : undefined,
+            material: p.material,
+            rot: p.rotation,
+            transparency: typeof p.transparency === 'number' ? p.transparency : undefined,
+          },
+        );
+      }
+      // Marker so downstream tooling can recognise LLM-accent contribution.
+      addBodyPart('VehicleSceneRoot', [0.1, 0.1, 0.1], [0, rootY, 0], dark, { material: 'Metal', transparency: 1 });
+    }
   }
   addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot });
   addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart });
@@ -2576,29 +2598,57 @@ function addVehicleBodyShell(
   const cabinY = rootY + h * 0.68;
   const roofY = rootY + h * 0.93;
 
-  addBodyPart('FamilyCarUnderbody', [w * 0.86, h * 0.16, l * 0.72], [0, rootY + h * 0.03, 0], dark, { material: 'Metal' });
+  // Mid-chassis "tuck": between front and rear axles the underbody is
+  // narrower than the wheel track so wheels visually stick out — the
+  // cartoon-car silhouette rule. Outboard underbody chunks fill the full
+  // chassis width at the wheel-arch zones so the wheels look attached.
+  addBodyPart('FamilyCarUnderbodyMidTuck', [w * 0.62, h * 0.16, l * 0.36], [0, rootY + h * 0.03, 0], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarUnderbodyFrontAxleBlock', [w * 0.86, h * 0.16, l * 0.20], [0, rootY + h * 0.03, -l * 0.30], dark, { material: 'Metal' });
+  addBodyPart('FamilyCarUnderbodyRearAxleBlock',  [w * 0.86, h * 0.16, l * 0.20], [0, rootY + h * 0.03,  l * 0.30], dark, { material: 'Metal' });
   addBodyPart('FamilyCarBodyShell', [w * 0.92, h * 0.36, l * 0.72], [0, lowerY, 0], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarLowerBeltDark', [w * 0.94, h * 0.08, l * 0.76], [0, rootY + h * 0.08, 0], dark, { material: 'Metal' });
   // Sloped hood (WedgePart): default Roblox WedgePart slopes from full height
   // at +Z down to zero at -Z. Place the wedge so its high edge meets the cabin
   // (+Z end of hood) and its low edge meets the grille (-Z end of hood). The
   // result reads as a real car bonnet from any side / 3-4 angle, not a flat
-  // plank. Slightly taller than the old Block so the slope is visible.
-  addBodyPart('FamilyCarFrontHood', [w * 0.78, h * 0.26, l * 0.28], [0, rootY + h * 0.38, -l * 0.32], primary, { className: 'WedgePart', material: 'SmoothPlastic' });
+  // plank. Height raised h*0.26 → h*0.32 (session 373) so the slope reads
+  // clearly from chase camera instead of looking like a flat plank.
+  addBodyPart('FamilyCarFrontHood', [w * 0.78, h * 0.32, l * 0.28], [0, rootY + h * 0.40, -l * 0.32], primary, { className: 'WedgePart', material: 'SmoothPlastic' });
   // Flat hood base sits flush with body top, fills under the wedge so the
   // hood doesn't show "air" from the side.
   addBodyPart('FamilyCarFrontHoodBase', [w * 0.78, h * 0.10, l * 0.28], [0, rootY + h * 0.30, -l * 0.32], primary, { material: 'SmoothPlastic' });
-  addBodyPart('FamilyCarHoodToWindshieldTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, -l * 0.20], accent, { material: 'Metal' });
+  addBodyPart('FamilyCarHoodToWindshieldTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.56, -l * 0.20], accent, { material: 'Metal' });
   // Sloped trunk lid (WedgePart): rotated 180° around Y so the high edge
   // meets the cabin (now at -Z of trunk after rotation) and the low edge
-  // meets the rear bumper (+Z end of trunk). Creates a real boot-lid slope.
-  addBodyPart('FamilyCarRearCargoBlock', [w * 0.80, h * 0.34, l * 0.24], [0, rootY + h * 0.36, l * 0.33], primary, { className: 'WedgePart', material: 'SmoothPlastic', rot: [0, 180, 0] });
+  // meets the rear bumper (+Z end of trunk). Height raised h*0.34 → h*0.38
+  // (session 373) for a more pronounced fastback line.
+  addBodyPart('FamilyCarRearCargoBlock', [w * 0.80, h * 0.38, l * 0.24], [0, rootY + h * 0.38, l * 0.33], primary, { className: 'WedgePart', material: 'SmoothPlastic', rot: [0, 180, 0] });
   addBodyPart('FamilyCarRearCargoBlockBase', [w * 0.80, h * 0.10, l * 0.24], [0, rootY + h * 0.28, l * 0.33], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarCargoToRearGlassTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, l * 0.20], accent, { material: 'Metal' });
   addBodyPart('FamilyCarCabinShell', [w * 0.76, h * 0.44, l * 0.42], [0, cabinY, -l * 0.02], accent, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarCabinBackPanel', [w * 0.72, h * 0.42, 0.12], [0, cabinY, l * 0.22], accent, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarRoofPanel', [w * 0.78, h * 0.12, l * 0.48], [0, roofY, -l * 0.01], accent, { material: 'Metal' });
   addBodyPart('FamilyCarRoofEdgeTrim', [w * 0.80, h * 0.04, l * 0.50], [0, roofY - h * 0.06, -l * 0.01], silver, { material: 'Metal' });
+  // CornerWedgeParts on the 4 roof corners (session 373): rounds off the box
+  // silhouette of the roof. Default CornerWedgePart slopes from full height
+  // at the (-X, -Z) corner down to 0 at the opposite. We rotate around Y by
+  // 0/90/180/270 to place one on each corner sloping outward+downward.
+  // Sits ON TOP of the roof so it acts as a chamfer ridge.
+  const roofCornerSize: [number, number, number] = [w * 0.16, h * 0.08, l * 0.14];
+  const roofCornerY = roofY + h * 0.06 + h * 0.04;
+  addBodyPart('FamilyCarRoofCornerFL', roofCornerSize, [-w * 0.31,  roofCornerY, -l * 0.18], accent, { className: 'CornerWedgePart', material: 'Metal', rot: [0,   0, 0] });
+  addBodyPart('FamilyCarRoofCornerFR', roofCornerSize, [ w * 0.31,  roofCornerY, -l * 0.18], accent, { className: 'CornerWedgePart', material: 'Metal', rot: [0,  90, 0] });
+  addBodyPart('FamilyCarRoofCornerRR', roofCornerSize, [ w * 0.31,  roofCornerY,  l * 0.17], accent, { className: 'CornerWedgePart', material: 'Metal', rot: [0, 180, 0] });
+  addBodyPart('FamilyCarRoofCornerRL', roofCornerSize, [-w * 0.31,  roofCornerY,  l * 0.17], accent, { className: 'CornerWedgePart', material: 'Metal', rot: [0, 270, 0] });
+  // CornerWedgePart fender-top corners: chamfer the boxy edges where front
+  // and rear fenders meet the hood/trunk. Placed above the existing fender
+  // blocks (which sit at side * w * 0.54, top ~rootY + h*0.38).
+  const fenderCornerSize: [number, number, number] = [w * 0.14, h * 0.10, l * 0.16];
+  const fenderCornerY = rootY + h * 0.43;
+  addBodyPart('FamilyCarFenderCornerFL', fenderCornerSize, [-w * 0.46, fenderCornerY, -l * 0.34], primary, { className: 'CornerWedgePart', material: 'SmoothPlastic', rot: [0,   0, 0] });
+  addBodyPart('FamilyCarFenderCornerFR', fenderCornerSize, [ w * 0.46, fenderCornerY, -l * 0.34], primary, { className: 'CornerWedgePart', material: 'SmoothPlastic', rot: [0,  90, 0] });
+  addBodyPart('FamilyCarFenderCornerRR', fenderCornerSize, [ w * 0.46, fenderCornerY,  l * 0.34], primary, { className: 'CornerWedgePart', material: 'SmoothPlastic', rot: [0, 180, 0] });
+  addBodyPart('FamilyCarFenderCornerRL', fenderCornerSize, [-w * 0.46, fenderCornerY,  l * 0.34], primary, { className: 'CornerWedgePart', material: 'SmoothPlastic', rot: [0, 270, 0] });
   addBodyPart('FamilyCarRoofRackLeft', [0.1, h * 0.06, l * 0.42], [-w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackRight', [0.1, h * 0.06, l * 0.42], [w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackFront', [w * 0.52, h * 0.05, 0.08], [0, roofY + h * 0.07, -l * 0.21], silver, { material: 'Metal' });

@@ -9704,6 +9704,14 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
       flyAnimUrl?: string;
       skippedReason?: string;
       fbxFileName: string;
+      // 2026-05-20: Roblox MeshPart.MeshContent ONLY accepts rbxassetid://N
+      // (Tripo CDN URLs render as empty meshes). Set these after uploading the
+      // GLB/FBX through Open Cloud's Models API: modelAssetId is the wrapping
+      // Model asset; meshAssetId is the inner MeshPart asset extracted via
+      // extractMeshIdFromModel. The builder uses rbxassetid://meshAssetId for
+      // the actual MeshContent property.
+      modelAssetId?: number;
+      meshAssetId?: number;
     };
     const stageBundles: StageArtifactBundle[] = [];
 
@@ -9861,13 +9869,68 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
       stageBundles.push(bundle);
     }
 
-    // ── 11. convert_pet_fbx ─────────────────────────────────────────────
-    await beginStage('convert_pet_fbx' as GenerationStageId, ['Conversion handled inside Tripo rig output where available; non-rigged stages remain .glb']);
-    const conversionNotes: string[] = stageBundles.map((b, i) =>
-      b.fbxUrl
-        ? `Stage ${i + 1}: FBX from Tripo rig`
-        : `Stage ${i + 1}: GLB only — drag into Studio 3D Importer to import as MeshPart`,
-    );
+    // ── 11. convert_pet_fbx + Open Cloud upload ───────────────────────────
+    // Roblox MeshPart.MeshContent does NOT render arbitrary HTTPS URLs at
+    // runtime — even though Studio 3D Importer can ingest them, the live game
+    // client refuses anything that isn't rbxassetid://N. So for every stage
+    // bundle we upload the best-available mesh (rigged+animated FBX > raw
+    // GLB) to Open Cloud as a Model asset, then drill into the inner
+    // MeshPart's asset id. The builder consumes meshAssetId and emits
+    // rbxassetid://meshAssetId — that's what makes the dragon actually
+    // appear in-game. Without this step the .rbxm ships with a Tripo CDN
+    // URL in MeshContent and the MeshPart renders empty (user-reported
+    // 2026-05-20: "дракона нет ни до ни после Play").
+    await beginStage('convert_pet_fbx' as GenerationStageId, ['Uploading meshes to Roblox Open Cloud so MeshPart actually renders']);
+    const conversionNotes: string[] = [];
+    const ocApiKey = getRobloxOpenCloudApiKey();
+    const ocCreatorId = getRobloxCreatorId();
+    for (let i = 0; i < stageBundles.length; i += 1) {
+      const b = stageBundles[i];
+      const sourceUrl = b.fbxUrl ?? b.meshUrl;
+      if (!sourceUrl) {
+        conversionNotes.push(`Stage ${i + 1}: no mesh URL — skipped`);
+        continue;
+      }
+      if (!ocApiKey || !ocCreatorId) {
+        conversionNotes.push(`Stage ${i + 1}: Open Cloud not configured — mesh ships as raw URL (MeshPart will not render until user re-uploads via Studio 3D Importer)`);
+        continue;
+      }
+      try {
+        const resp = await fetch(sourceUrl);
+        if (!resp.ok) {
+          conversionNotes.push(`Stage ${i + 1}: failed to download mesh (${resp.status})`);
+          continue;
+        }
+        const fileBuf = Buffer.from(await resp.arrayBuffer());
+        const contentType = b.fbxUrl ? 'model/fbx' : 'model/gltf-binary';
+        const upload = await uploadAssetToRoblox({
+          apiKey: ocApiKey,
+          creatorId: ocCreatorId,
+          creatorType: 'User',
+          assetType: 'Model',
+          name: `Pet ${classification.baseName} Stage ${i + 1}`.slice(0, 50),
+          description: `AI-generated ${classification.rarity} ${classification.element} ${classification.speciesType} mesh — stage ${i + 1}`.slice(0, 1000),
+          fileContent: fileBuf,
+          contentType,
+          assetPrivacy: 'openUse',
+        });
+        if (!upload?.assetId) {
+          conversionNotes.push(`Stage ${i + 1}: Open Cloud upload returned no assetId`);
+          continue;
+        }
+        b.modelAssetId = upload.assetId;
+        const extract = await extractMeshIdFromModel(upload.assetId);
+        if (extract?.meshId && extract.meshId > 0) {
+          b.meshAssetId = extract.meshId;
+          conversionNotes.push(`Stage ${i + 1}: Model ${upload.assetId} → MeshId ${extract.meshId}`);
+        } else {
+          conversionNotes.push(`Stage ${i + 1}: Model ${upload.assetId} uploaded but MeshId extraction failed (state=${extract?.state ?? 'unknown'}). Use ModelAssetId to InsertService:LoadAsset.`);
+        }
+      } catch (err) {
+        conversionNotes.push(`Stage ${i + 1}: upload error — ${errorMessage(err).slice(0, 160)}`);
+        logger.warn('[Pet 3D] mesh upload error', { jobId, idx: i, error: errorMessage(err) });
+      }
+    }
     await finishStage('convert_pet_fbx' as GenerationStageId, 'completed', [], conversionNotes);
 
     // ── 12. validate_pet (lightweight size heuristic) ───────────────────
@@ -9902,6 +9965,8 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
       petIsFlying: classification.isFlying,
       petStageMeshes: stageBundles.map((b) => ({
         meshUrl: b.fbxUrl ?? b.meshUrl ?? '',
+        meshAssetId: b.meshAssetId ?? 0,
+        modelAssetId: b.modelAssetId ?? 0,
         fbxFileName: b.fbxFileName,
         idleAnimUrl: b.idleAnimUrl ?? '',
         walkAnimUrl: b.walkAnimUrl ?? '',
@@ -10355,49 +10420,36 @@ function parseVehicleSceneJson(raw: string): VehicleScene | null {
 }
 
 function validateVehicleScene(scene: VehicleScene, vehicleType: string): { ok: boolean; issues: string[]; repairActions: string[] } {
+  // Session 373: scene is now ACCENT-ONLY on top of the procedural family-sedan
+  // baseline. We no longer require body/cabin/roof/windshield — those are
+  // emitted by the builder regardless. We only validate that accent parts
+  // (if any) live within a sane envelope so they don't fly off the car.
   const issues: string[] = [];
   const repairActions: string[] = [];
-  // Approximate chassis envelope: car ~6.4w x 4.0h x 9.2l. Allow some
-  // overshoot but reject parts way outside the envelope (clip into ground
-  // or stick out wildly past the wheels).
-  const W_HALF = 4.0;   // 6.4/2 + slack
-  const Y_MAX = 7.0;    // ~roof height + slack
-  const L_HALF = 5.5;   // 9.2/2 + slack
-  let bodyCount = 0;
-  let cabinCount = 0;
-  let windshieldCount = 0;
-  let minSize = Infinity;
-  let maxY = -Infinity;
+  const W_HALF = 4.0;
+  const Y_MAX = 7.0;
+  const L_HALF = 5.5;
+  const ACCENT_ROLES = new Set(['trim', 'spoiler', 'mirror', 'headlight', 'taillight']);
+  let accentCount = 0;
   for (const p of scene.parts) {
-    if (p.role === 'body' || p.role === 'hood' || p.role === 'trunk') bodyCount += 1;
-    if (p.role === 'cabin' || p.role === 'roof') cabinCount += 1;
-    if (p.role === 'windshield') windshieldCount += 1;
+    if (ACCENT_ROLES.has(p.role)) accentCount += 1;
     const partMinSize = Math.min(p.size[0], p.size[1], p.size[2]);
-    if (partMinSize < minSize) minSize = partMinSize;
-    const partTop = p.position[1] + p.size[1] / 2;
-    if (partTop > maxY) maxY = partTop;
     if (Math.abs(p.position[0]) > W_HALF) issues.push(`Part ${p.name} X=${p.position[0].toFixed(2)} outside body envelope ±${W_HALF}`);
     if (p.position[1] < 0.0 || p.position[1] > Y_MAX) issues.push(`Part ${p.name} Y=${p.position[1].toFixed(2)} outside [0, ${Y_MAX}]`);
     if (Math.abs(p.position[2]) > L_HALF) issues.push(`Part ${p.name} Z=${p.position[2].toFixed(2)} outside body envelope ±${L_HALF}`);
     if (partMinSize < 0.1) issues.push(`Part ${p.name} has a dimension < 0.1 stud — will render as invisible sliver`);
   }
-  if (scene.parts.length < 5) issues.push(`Only ${scene.parts.length} parts — body needs at least 5 parts for a readable silhouette`);
-  if (bodyCount < 1) issues.push('No body / hood / trunk parts — body shell missing');
-  if (vehicleType === 'car' && cabinCount < 1) {
-    issues.push('Car has no cabin or roof parts — silhouette will read as a flatbed');
-    repairActions.push('Add a cabin part (role="cabin") and a roof part (role="roof") above the body.');
-  }
-  if (vehicleType === 'car' && windshieldCount < 1) {
-    issues.push('Car has no windshield — front of cabin will be opaque');
-    repairActions.push('Add a windshield part (role="windshield", material="Glass", transparency~0.4) at the front of the cabin.');
-  }
-  if (maxY < 2.5) {
-    issues.push(`Highest body part top is only Y=${maxY.toFixed(2)} — too flat`);
-    repairActions.push('Raise roof / cabin parts so the silhouette has real vertical extent.');
+  if (scene.parts.length < 1) issues.push('Empty scene — at least one accent part required');
+  if (accentCount < 1 && scene.parts.length > 0) {
+    // Tolerate but flag: LLM returned parts but none with accent roles. They
+    // will all be dropped by the builder. Not a hard reject — we want the
+    // baseline to still ship.
+    repairActions.push('Emit at least one accent role (trim/spoiler/mirror/headlight/taillight); structural roles are now ignored.');
   }
   if (issues.length > 0) {
-    repairActions.push('Keep size positive (min 0.1), positions within the envelope, and ensure body / cabin / roof are layered vertically.');
+    repairActions.push('Keep size positive (min 0.1) and positions within the body envelope.');
   }
+  void vehicleType;
   return { ok: issues.length === 0, issues, repairActions };
 }
 
@@ -10413,44 +10465,49 @@ function buildVehicleSceneLLMPrompt(args: {
   const repairBlock = (args.repairFeedback && args.repairFeedback.length > 0)
     ? `\nPrevious attempt was REJECTED. Fix exactly these issues:\n- ${args.repairFeedback.slice(0, 6).join('\n- ')}\n`
     : '';
+  // Session 373: LLM is now ACCENT-DECORATOR only. The structural body shell
+  // (hood/cabin/roof/doors/windshield/fenders/grille/bumpers/wheel arches) is
+  // emitted procedurally by the backend in robloxWorker.ts. The LLM adds
+  // brand-specific flourishes ONLY: stripes, spoiler, mirrors, headlights,
+  // taillights. Anything else (structural roles) is dropped by the builder.
   return [
-    `You are a Roblox vehicle body designer. Compose the BODY SHELL of a low-poly Roblox ${args.vehicleType} as a JSON scene.`,
-    'The backend will add wheels, the driver seat, the controller script, sounds and VFX procedurally — do NOT include those.',
-    'Only design the BODY parts that sit on top of the chassis: hood, cabin, roof, doors, windshield, side windows, headlights, taillights, grille, bumpers, mirrors, fenders, trims, spoilers.',
+    `You are a Roblox vehicle accent designer. The backend has already built a low-poly ${args.vehicleType} body — your job is to add 4-8 small DECORATIVE accents on top of it.`,
+    'The backend handles the body shell, cabin, roof, doors, windshield, fenders, grille, bumpers, wheels, driver seat, controller, sounds and VFX. Do NOT redesign those.',
+    'Only emit accent parts: racing stripes (trim), spoiler, side mirrors, headlight glow accents, taillight glow accents.',
     '',
     'COORDINATE SYSTEM:',
     '- Origin (0,0,0) is the centre of the chassis. Wheels sit at the four corners with radius ~1.05 stud, top at Y=2.10.',
-    '- +X is right, +Y is up, +Z is rear. Hood/grille/headlights are at -Z (front); trunk/taillights are at +Z (rear).',
+    '- +X is right, +Y is up, +Z is rear. Hood/headlights are at -Z (front); trunk/taillights are at +Z (rear).',
     '- Body envelope: X in [-3.5, 3.5], Y in [0.5, 6.0], Z in [-4.8, 4.8]. Stay inside.',
-    '- DriveSeat sits at approximately (-1.15, 3.18, -0.55) — do NOT place opaque parts overlapping that voxel.',
+    '- The hood top is around Y=2.8, the roof around Y=4.5, the bumpers around Y=1.3.',
     '',
     `USER BRIEF: ${args.brief.slice(0, 800)}`,
     `TITLE: ${args.title}`,
     `VEHICLE TYPE: ${args.vehicleType}`,
     `COLOURS: body=${args.primaryHex}, accent=${args.accentHex}, glow=${args.glowHex}`,
     '',
-    'SHAPE: Use Block as default. Use Wedge for sloping hoods or rear decks. Use Cylinder for exhaust pipes. Use Ball for round headlights.',
-    'MATERIAL: SmoothPlastic for body, Metal for trim, Glass for windows (transparency 0.35-0.55), Neon for lights.',
+    'ALLOWED ROLES (anything else is dropped): trim, spoiler, mirror, headlight, taillight.',
+    'SHAPE: Use Block as default. Use Cylinder for round badges/lamps. Use Ball for round headlights.',
+    'MATERIAL: Metal for trim/spoiler, SmoothPlastic for plastic accents, Neon for glow accents (headlights/taillights).',
     '',
     'Output STRICT JSON only (no markdown fences, no commentary):',
     '{',
     '  "vehicleType": "car",',
     '  "bodyStyle": "sports_coupe | sedan | jeep | pickup | sci_fi | etc.",',
     '  "parts": [',
-    '    {"name":"FrontHood","role":"hood","shape":"Wedge","size":[5.5,0.7,2.5],"position":[0,3.0,-3.0],"rotation":[8,0,0],"color":"#E03A2E","material":"SmoothPlastic"},',
-    '    {"name":"BodyShell","role":"body","shape":"Block","size":[5.9,1.4,6.6],"position":[0,2.7,0],"color":"#E03A2E","material":"SmoothPlastic"},',
-    '    {"name":"CabinShell","role":"cabin","shape":"Block","size":[4.8,1.8,3.8],"position":[0,4.5,-0.2],"color":"#15161A","material":"SmoothPlastic"},',
-    '    {"name":"RoofPanel","role":"roof","shape":"Block","size":[5.0,0.5,4.4],"position":[0,5.6,-0.1],"color":"#15161A","material":"Metal"},',
-    '    {"name":"WindshieldLarge","role":"windshield","shape":"Block","size":[3.7,1.4,0.15],"position":[0,4.7,-2.3],"rotation":[18,0,0],"color":"#7FC8FF","material":"Glass","transparency":0.45}',
+    '    {"name":"HoodRacingStripeCenter","role":"trim","shape":"Block","size":[0.4,0.05,2.4],"position":[0,2.9,-2.8],"color":"#FFFFFF","material":"Metal"},',
+    '    {"name":"RoofRacingStripeCenter","role":"trim","shape":"Block","size":[0.4,0.05,3.8],"position":[0,4.65,0.0],"color":"#FFFFFF","material":"Metal"},',
+    '    {"name":"RearSpoilerLip","role":"spoiler","shape":"Block","size":[4.4,0.18,0.55],"position":[0,3.6,4.0],"color":"#15161A","material":"Metal"},',
+    '    {"name":"HeadlightGlowLeft","role":"headlight","shape":"Ball","size":[0.45,0.45,0.45],"position":[-1.5,2.0,-4.5],"color":"#FFE08A","material":"Neon"},',
+    '    {"name":"TaillightStripCenter","role":"taillight","shape":"Block","size":[3.8,0.12,0.06],"position":[0,2.5,4.55],"color":"#FF2A2A","material":"Neon"}',
     '  ]',
     '}',
     '',
     'REQUIREMENTS:',
-    `- At least 12 parts. Recognizable ${args.vehicleType} silhouette (sports cars are low/wide/wedge; sedans are 3-box; jeeps are tall/boxy; pickups have a separate bed).`,
-    '- Body / cabin / roof layered vertically. Cabin sits ABOVE body. Roof sits ABOVE cabin.',
-    '- Windshield is Glass with transparency 0.35-0.55 and is in front of the cabin (negative Z).',
-    '- Headlights at front (-Z), taillights at rear (+Z), both Neon.',
-    '- Do NOT emit roles "wheel" or "seat" — the chassis handles those.',
+    '- 4-8 parts. ALL parts must use one of the allowed accent roles. No structural roles.',
+    '- Stripes go ON TOP of the hood, roof, or rear deck.',
+    '- Spoiler goes on the rear deck (Z near +4).',
+    '- Headlights/taillights are small Neon shapes near -Z/+Z bumpers.',
     repairBlock,
   ].filter(Boolean).join('\n');
 }
