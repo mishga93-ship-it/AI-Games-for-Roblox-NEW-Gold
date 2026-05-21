@@ -15956,6 +15956,38 @@ export async function uploadClassicClothing(args: {
   const { name, description, imageBuffer, assetType, groupId, roblosecurity } = args;
   const useGroup = !!(groupId && groupId.trim());
 
+  // 2026-05-20 CRITICAL FIX — root cause of "shirt не отображается на персе"
+  // and "Avatar Items → Clothing пусто":
+  //
+  // The Open Cloud Assets API at apis.roblox.com/assets/user-auth/v1/assets
+  // DOES NOT support Classic Shirt/Pants/TShirt as asset types — its enum is
+  // limited to Decal, Audio, Model, Mesh, Animation (confirmed via Roblox
+  // DevForum "Open Cloud Upload Support for More Asset Types" Oct 2025).
+  // Our previous code POSTed there with `assetType: 'Shirt'`, got a successful
+  // operationId and assetId back, but Roblox silently classified the upload
+  // as a generic Image/Decal. Studio's Shirt.ShirtTemplate then refused to
+  // render an Image asset, so the avatar showed default white shirt.
+  //
+  // Correct endpoint (used by Roblox's own Creator Dashboard web UI and by
+  // working community uploaders like Adaaks/Roblox-Clothing-Bot):
+  //
+  //   POST https://itemconfiguration.roblox.com/v1/avatar-assets/{N}/upload
+  //
+  // where N is the AssetType enum *number*: TShirt=2, Shirt=11, Pants=12.
+  //
+  // Multipart form data with two file fields:
+  //   - media:  the 585×559 PNG (or 512×512 for T-Shirt)
+  //   - config: JSON file with { name, description, creatorTargetId, creatorType }
+  //
+  // Response on 200: { assetId, robuxAmountPaid } — NO polling needed.
+
+  const ASSET_TYPE_ID: Record<typeof assetType, number> = {
+    TShirt: 2,
+    Shirt: 11,
+    Pants: 12,
+  };
+  const assetTypeId = ASSET_TYPE_ID[assetType];
+
   // Step 1: Get CSRF token
   // 2026-05-19: Roblox deprecated auth.roblox.com/ as CSRF source (returns 404 now).
   // Use accountsettings.roblox.com/v1/email — verified to return 403 + x-csrf-token
@@ -15979,49 +16011,49 @@ export async function uploadClassicClothing(args: {
   }
 
   // Step 2: Resolve creator — group (from env) OR authenticated user (from cookie).
-  // Session 001 (2026-05-19): when ROBLOX_GROUP_ID is unset, derive userId from
-  // the cookie via /v1/users/authenticated and upload under the user's personal
-  // Premium balance. Removes the "fund the community with Robux" friction.
-  let creator: { groupId: string } | { userId: number };
+  let creatorTargetId: string;
+  let creatorType: 'User' | 'Group';
   if (useGroup) {
-    creator = { groupId: groupId! };
-    console.log(`[uploadClassicClothing] Uploading as GROUP ${groupId}`);
+    creatorTargetId = groupId!.trim();
+    creatorType = 'Group';
+    console.log(`[uploadClassicClothing] Uploading as GROUP ${creatorTargetId}`);
   } else {
     const userId = await fetchAuthenticatedRobloxUserId(roblosecurity);
     if (!userId) {
       console.error('[uploadClassicClothing] No groupId and could not fetch authenticated user id — cookie invalid?');
       return null;
     }
-    creator = { userId };
-    console.log(`[uploadClassicClothing] Uploading as USER ${userId} (personal Premium balance)`);
+    creatorTargetId = String(userId);
+    creatorType = 'User';
+    console.log(`[uploadClassicClothing] Uploading as USER ${creatorTargetId} (personal Premium balance)`);
   }
 
-  const requestJson = JSON.stringify({
-    displayName: name.slice(0, 50),
+  // Build multipart body: two file parts (media + config).
+  const configJson = JSON.stringify({
+    name: name.slice(0, 50),
     description: (description ?? 'AI-generated clothing').slice(0, 1000),
-    assetType,
-    creationContext: {
-      creator,
-      expectedPrice: 10,
-    },
+    creatorTargetId,
+    creatorType,
   });
 
   const boundary = `----ClothingUpload${Date.now()}`;
-  const bodyParts = [
-    `--${boundary}\r\n`,
-    'Content-Disposition: form-data; name="request"\r\n',
-    'Content-Type: application/json\r\n\r\n',
-    requestJson,
-    `\r\n--${boundary}\r\n`,
-    `Content-Disposition: form-data; name="fileContent"; filename="clothing.png"\r\n`,
-    'Content-Type: image/png\r\n\r\n',
-  ];
-  const prefix = Buffer.from(bodyParts.join(''));
+  const mediaHeader = Buffer.from(
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="media"; filename="clothing.png"\r\n` +
+    `Content-Type: image/png\r\n\r\n`,
+  );
+  const configPart = Buffer.from(
+    `\r\n--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="config"; filename="config.json"\r\n` +
+    `Content-Type: application/json\r\n\r\n` +
+    configJson,
+  );
   const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
-  const body = Buffer.concat([prefix, imageBuffer, suffix]);
+  const body = Buffer.concat([mediaHeader, imageBuffer, configPart, suffix]);
 
+  const uploadUrl = `https://itemconfiguration.roblox.com/v1/avatar-assets/${assetTypeId}/upload`;
   try {
-    const uploadResp = await fetch('https://apis.roblox.com/assets/user-auth/v1/assets', {
+    const uploadResp = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
         Cookie: `.ROBLOSECURITY=${roblosecurity}`,
@@ -16033,60 +16065,28 @@ export async function uploadClassicClothing(args: {
 
     if (!uploadResp.ok) {
       const errText = await uploadResp.text();
-      console.error(`[uploadClassicClothing] Upload failed ${uploadResp.status}: ${errText.slice(0, 300)}`);
+      console.error(`[uploadClassicClothing] ${assetType} upload failed ${uploadResp.status}: ${errText.slice(0, 400)}`);
       return null;
     }
 
     const uploadResult = await uploadResp.json() as Record<string, unknown>;
-    console.log('[uploadClassicClothing] Upload response:', JSON.stringify(uploadResult).slice(0, 300));
+    console.log('[uploadClassicClothing] Upload response:', JSON.stringify(uploadResult).slice(0, 400));
 
-    const operationId = typeof uploadResult.operationId === 'string'
-      ? uploadResult.operationId
-      : undefined;
+    // Response shape: { assetId, robuxAmountPaid }
+    const rawAssetId = uploadResult.assetId ?? (uploadResult as { id?: unknown }).id;
+    const assetId = typeof rawAssetId === 'number'
+      ? rawAssetId
+      : typeof rawAssetId === 'string' && /^\d+$/.test(rawAssetId)
+        ? parseInt(rawAssetId, 10)
+        : undefined;
 
-    if (!operationId) {
-      console.error('[uploadClassicClothing] No operationId in response');
+    if (!assetId) {
+      console.error('[uploadClassicClothing] No assetId in response');
       return null;
     }
 
-    // Step 3: Poll for asset ID
-    const maxAttempts = 15;
-    const delayMs = 4000;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-      try {
-        const pollResp = await fetch(
-          `https://apis.roblox.com/assets/user-auth/v1/operations/${encodeURIComponent(operationId)}`,
-          {
-            headers: {
-              Cookie: `.ROBLOSECURITY=${roblosecurity}`,
-              'X-CSRF-Token': csrfToken,
-            },
-          },
-        );
-        if (!pollResp.ok) {
-          console.warn(`[uploadClassicClothing] Poll ${attempt} failed: ${pollResp.status}`);
-          continue;
-        }
-        const pollResult = await pollResp.json() as Record<string, unknown>;
-        const text = JSON.stringify(pollResult);
-
-        const assetIdMatch = text.match(/"assetId"\s*:\s*"?(\d+)"?/);
-        if (assetIdMatch && assetIdMatch[1]) {
-          const assetId = parseInt(assetIdMatch[1], 10);
-          console.log(`[uploadClassicClothing] ${assetType} uploaded! assetId = ${assetId}`);
-          return { assetId };
-        }
-        console.log(`[uploadClassicClothing] Poll ${attempt}: waiting for assetId...`);
-      } catch (pollErr) {
-        console.warn('[uploadClassicClothing] Poll error:', pollErr);
-      }
-    }
-
-    console.error('[uploadClassicClothing] Timed out waiting for assetId');
-    return null;
+    console.log(`[uploadClassicClothing] ${assetType} uploaded as PROPER Classic asset (type ${assetTypeId})! assetId = ${assetId}`);
+    return { assetId };
   } catch (err) {
     console.error('[uploadClassicClothing] Upload request failed:', err);
     return null;
