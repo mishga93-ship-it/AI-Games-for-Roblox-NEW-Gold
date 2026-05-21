@@ -3375,7 +3375,12 @@ end
 
 local alignPos = activeStage:FindFirstChild("FollowPos")
 local alignRot = activeStage:FindFirstChild("FollowRot")
-local anchorAttach = activeStage:FindFirstChild("FollowAnchor")
+-- 2026-05-21: FollowAnchor is an Attachment parented INSIDE HumanoidRootPart
+-- (per Roblox API constraint — Attachments must live on a BasePart). The
+-- previous lookup activeStage:FindFirstChild("FollowAnchor") returned nil
+-- because Stage is a Model, not a Part. With Attachment0=nil the
+-- AlignPosition silently does nothing and the pet stays at spawn forever.
+local anchorAttach = hrp:FindFirstChild("FollowAnchor")
 
 if alignPos then
     alignPos.MaxForce = 10000

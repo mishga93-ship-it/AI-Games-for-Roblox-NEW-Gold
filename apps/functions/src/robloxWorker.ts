@@ -1886,6 +1886,24 @@ function buildPetEvolutionManifest(
         parentId: bodyId,
         properties: { Value: stageData.fbxFileName ?? `stage${i}.fbx` },
       },
+      // 2026-05-21: weld Body MeshPart to HumanoidRootPart. Without this
+      // the Body is unanchored AND not physically attached to anything
+      // (HRP is held by AlignPosition, but Body is its own assembly that
+      // just sits at the spawn point). WeldConstraint makes Body+HRP
+      // one rigid assembly so AlignPosition's pull on HRP carries the
+      // visible mesh with it. Roblox docs:
+      //   https://create.roblox.com/docs/reference/engine/classes/WeldConstraint
+      {
+        id: uuidv4(),
+        className: 'WeldConstraint',
+        name: 'BodyWeld',
+        parentId: bodyId,
+        properties: {
+          Part0: { __type: 'InstanceRef', refId: bodyId },
+          Part1: { __type: 'InstanceRef', refId: hrpId },
+          Enabled: true,
+        },
+      },
       {
         id: acId,
         className: 'AnimationController',
