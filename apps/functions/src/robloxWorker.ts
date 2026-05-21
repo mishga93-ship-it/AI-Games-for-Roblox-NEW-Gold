@@ -1847,8 +1847,11 @@ function buildPetEvolutionManifest(
         name: 'HumanoidRootPart',
         parentId: stageModelId,
         properties: {
+          // 2026-05-21: anchored. PetFollowScript drives this part's CFrame
+          // directly each Heartbeat (mirror of buildBlockyPetFollowScript's
+          // proven pattern). AlignPosition + Massless physics was unreliable.
           Transparency: 1,
-          Anchored: false,
+          Anchored: true,
           CanCollide: false,
           Massless: true,
           Size: { __type: 'Vector3', x: 2, y: 2, z: 2 },
@@ -1874,7 +1877,12 @@ function buildPetEvolutionManifest(
             : 'rbxassetid://0',
           Size: { __type: 'Vector3', x: 3, y: 3, z: 3 },
           CanCollide: false,
-          Anchored: false,
+          // 2026-05-21: anchored. The visible mesh is driven directly each
+          // Heartbeat via Body.CFrame = HRP.CFrame * authoredOffset. With both
+          // HRP and Body anchored, skeletal animation (bones inside the
+          // SkinnedMesh) still plays via AnimationController — anchoring
+          // suppresses RIGID-body physics, not GPU-side bone deformation.
+          Anchored: true,
           Massless: true,
         },
       },
