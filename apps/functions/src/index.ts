@@ -5847,13 +5847,9 @@ function createNpcPipelineStages(mode: NpcVisualPipelineMode = resolveNpcVisualP
 }
 
 function createClothingPipelineStages(): GenerationStageProgress[] {
-  // 2026-05-21: added concept_approval gate — user reviews the mannequin
-  // preview of the EXACT shirt that will be uploaded and approves it
-  // before the Roblox upload + RBXM build runs.
   return [
-    { id: 'concept_image', title: 'Shirt preview', status: 'pending' },
-    { id: 'concept_approval', title: 'Awaiting approval', status: 'pending' },
-    { id: 'clothing_texture', title: 'Upload to Roblox', status: 'pending' },
+    { id: 'concept_image', title: 'Concept image', status: 'pending' },
+    { id: 'clothing_texture', title: 'Clothing texture', status: 'pending' },
     { id: 'export_rbxm', title: 'Export RBXM', status: 'pending' },
   ];
 }
@@ -24682,86 +24678,6 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         }
       }
 
-      // 2026-05-21 Clothing 2D Classic: "approve-what-you-get" flow.
-      // Old: concept = full character with outfit on; user approved that, then
-      //   we re-generated the print + composited template AFTER approval, so
-      //   what you approved was NOT what you got (user complaint: "в превью
-      //   есть принт а на футболке нет").
-      // New: still generate the character concept above (used internally for
-      //   analyzeOutfit colour extraction), but ALSO compose the actual 585×559
-      //   template + render the mannequin preview RIGHT NOW. Replace the
-      //   concept_image artifact with the mannequin preview so the user
-      //   approves the EXACT image that will be uploaded to Roblox. Texture
-      //   URLs go into job.metadata, and the post-approval clothing_texture
-      //   block detects clothingTexturesPrepared=true and skips regeneration.
-      if (conceptPreviewUrl && isClothingTexture && !isLayeredClothing) {
-        try {
-          logger.info('[ClothingApprovePreview] composing real shirt/pants textures during concept stage', { jobId });
-          const clothingTypeDetected = detectClothingType(job.prompt);
-          const [shirtTextureResult, pantsTextureResult] = await Promise.all([
-            clothingTypeDetected !== 'pants_only'
-              ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
-              : Promise.resolve(undefined),
-            clothingTypeDetected !== 'shirt_only'
-              ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
-              : Promise.resolve(undefined),
-          ]);
-          const shirtBuf = shirtTextureResult?.textureBuffer;
-          const pantsBuf = pantsTextureResult?.textureBuffer;
-          if (shirtBuf || pantsBuf) {
-            const mannequinBuf = await generateClothingPreviewImage(shirtBuf, pantsBuf);
-            const mannequinArt = await uploadBinaryArtifact(currentJob, mannequinBuf, {
-              type: 'png',
-              extension: 'png',
-              mimeType: 'image/png',
-              name: `${title}-shirt-preview.png`,
-              previewText: 'Your shirt on R15 avatar — Approve to publish to Roblox',
-              stageId: 'concept_image',
-              artifactRole: 'concept',
-              metadata: {
-                isClothingPreview: true,
-                shirtTextureUrl: shirtTextureResult?.fallbackPngUrl,
-                pantsTextureUrl: pantsTextureResult?.fallbackPngUrl,
-              },
-            });
-            // Use mannequin preview as the concept artifact (what the user sees & approves).
-            conceptPreviewUrl = mannequinArt.downloadUrl ?? mannequinArt.url ?? conceptPreviewUrl;
-            currentJob = {
-              ...currentJob,
-              artifacts: [...currentJob.artifacts, mannequinArt],
-              metadata: {
-                ...(currentJob.metadata ?? {}),
-                ...(shirtTextureResult?.fallbackPngUrl ? {
-                  shirtFallbackPng: shirtTextureResult.fallbackPngUrl,
-                  shirtTexturePng: shirtTextureResult.fallbackPngUrl,
-                  shirtTextureUrl: shirtTextureResult.fallbackPngUrl,
-                } : {}),
-                ...(pantsTextureResult?.fallbackPngUrl ? {
-                  pantsFallbackPng: pantsTextureResult.fallbackPngUrl,
-                  pantsTexturePng: pantsTextureResult.fallbackPngUrl,
-                  pantsTextureUrl: pantsTextureResult.fallbackPngUrl,
-                } : {}),
-                clothingTexturesPrepared: true,
-              },
-            };
-            logger.info('[ClothingApprovePreview] mannequin preview ready, awaiting user approval', {
-              jobId,
-              hasShirt: !!shirtBuf,
-              hasPants: !!pantsBuf,
-              shirtTextureUrl: shirtTextureResult?.fallbackPngUrl,
-              pantsTextureUrl: pantsTextureResult?.fallbackPngUrl,
-            });
-          } else {
-            logger.warn('[ClothingApprovePreview] no texture buffers produced, falling back to character concept for approval', { jobId });
-          }
-        } catch (clothingPreviewErr) {
-          logger.warn('[ClothingApprovePreview] failed to build mannequin preview, keeping character concept', {
-            jobId,
-            error: errorMessage(clothingPreviewErr),
-          });
-        }
-      }
-
     } // end Phase 1 concept generation
 
     // ── PHASE 1 COMPLETE: Pause pipeline for user approval ──
@@ -24773,11 +24689,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
     // with a user-friendly errorMessage instead of pausing for approval with
     // no image to approve — otherwise the user is stuck on a frozen pipeline
     // without any UI feedback (Approve buttons require a concept artifact).
-    // 2026-05-21: clothing 2D Classic now also waits for user approval — the
-    // mannequin preview built above is the EXACT image we'll upload, so the
-    // user approves what they get (instead of approving a character concept
-    // and then being surprised by the result).
-    if (!isTShirt && needsConceptGate && !conceptPreviewUrl) {
+    if (!isClothingTexture && !isTShirt && needsConceptGate && !conceptPreviewUrl) {
       const conceptStage = currentJob.stages?.find((s) => s.id === 'concept_image');
       const stageError = conceptStage?.errorMessage ?? '';
       const isAuthIssue = /\b(401|403)\b/.test(stageError)
@@ -24804,7 +24716,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       await persistJobSnapshot(jobId, currentJob);
       return currentJob;
     }
-    if (!isTShirt && needsConceptGate) {
+    if (!isClothingTexture && !isTShirt && needsConceptGate) {
       await beginStage('concept_approval', 'Waiting for your approval');
       currentJob = {
         ...currentJob,
@@ -24837,36 +24749,15 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         await beginStage('clothing_texture', 'Generating clothing textures from concept image');
       }
       try {
-        // 2026-05-21: If textures were composed during the concept stage
-        // (approve-what-you-get flow), skip regeneration — use the exact
-        // URLs the user approved. Otherwise fall back to the original
-        // post-approval generation.
-        const texturesAlreadyPrepared = currentJob.metadata?.clothingTexturesPrepared === true
-          && (
-            typeof currentJob.metadata?.shirtTexturePng === 'string'
-            || typeof currentJob.metadata?.pantsTexturePng === 'string'
-          );
         const clothingType = detectClothingType(job.prompt);
-        if (texturesAlreadyPrepared) {
-          logger.info('[ClothingApprovePreview] textures already prepared during concept stage, skipping regeneration', {
-            jobId,
-            shirtTexturePng: currentJob.metadata?.shirtTexturePng,
-            pantsTexturePng: currentJob.metadata?.pantsTexturePng,
-          });
-          const shirtUrl = typeof currentJob.metadata?.shirtTexturePng === 'string' ? currentJob.metadata.shirtTexturePng : undefined;
-          const pantsUrl = typeof currentJob.metadata?.pantsTexturePng === 'string' ? currentJob.metadata.pantsTexturePng : undefined;
-          shirtResult = shirtUrl ? { fallbackPngUrl: shirtUrl } : undefined;
-          pantsResult = pantsUrl ? { fallbackPngUrl: pantsUrl } : undefined;
-        } else {
-          [shirtResult, pantsResult] = await Promise.all([
-            clothingType !== 'pants_only'
-              ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
-              : Promise.resolve(undefined),
-            clothingType !== 'shirt_only'
-              ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
-              : Promise.resolve(undefined),
-          ]);
-        }
+        [shirtResult, pantsResult] = await Promise.all([
+          clothingType !== 'pants_only'
+            ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
+            : Promise.resolve(undefined),
+          clothingType !== 'shirt_only'
+            ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
+            : Promise.resolve(undefined),
+        ]);
         const shirtFallbackPng = shirtResult?.fallbackPngUrl;
         const pantsFallbackPng = pantsResult?.fallbackPngUrl;
         if (shirtFallbackPng || pantsFallbackPng) {
