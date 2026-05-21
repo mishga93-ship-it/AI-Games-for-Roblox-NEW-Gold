@@ -24917,13 +24917,35 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       }
       try {
         const clothingType = detectClothingType(job.prompt);
-        // 2026-05-21 Phase 2: try the Roblox-native UV LoRA first. It was
-        // trained on actual 585×559 templates so the output goes straight
-        // to upload without any slicing/compositing. If LoRA fails (model
-        // down, moderation, weird output), fall back to flat-mockup-slice
-        // (Phase 1), and then to the legacy character-concept path.
-        logger.info('[Phase2-LoRA] attempting Roblox-native UV template via fal-ai/lora', { jobId });
-        shirtResult = await generateRobloxNativeShirtTemplate(job.prompt);
+        // 2026-05-21 hybrid LoRA / Flux routing.
+        //
+        // The CivitAI Roblox-shirt LoRA is a narrow SDXL fine-tune — it
+        // knows generic clothing vocabulary ("red oversized hoodie",
+        // "denim jacket") but has zero awareness of 2024-2026 brainrot /
+        // gen-z meme vocabulary (skibidi, ohio, rizz, sigma, gyatt, fanum,
+        // mewing, sahur, tralalero, bombardiro, gigachad). When the user
+        // asks for "ohio shirt" or "skibidi shirt", the LoRA produces a
+        // bland generic garment that has nothing to do with the requested
+        // meme — user reported this twice in a row.
+        //
+        // Flux Pro is a much larger general model that understands those
+        // meme references. So for meme prompts we route to the Flux
+        // flat-mockup → slice path (Phase 1) instead of the LoRA path
+        // (Phase 2). For descriptive non-meme prompts the LoRA still
+        // wins because it natively produces a UV-aware 585×559 layout
+        // with no slicing artefacts.
+        const memePattern = /\b(skibidi|ohio|rizz|sigma|gyatt|brainrot|fanum(?:\s*tax)?|tralalero|bombardiro|capybara|tung\s*sahur|sahur|mewing|gigachad|delulu|delusional|sus|cap|no\s*cap|cooked|cooking|aura|gooning|gooner|mango|pluh|baddie|alpha|beta|w\s*rizz|l\s*rizz|chad|simp|npc|6\s*7|sixseven|six\s*seven|brain\s*rot|meme|viral|tiktok|kai\s*cenat|skibidi\s*toilet|sigma\s*boy|sigma\s*male)\b/i;
+        const isMemePrompt = memePattern.test(job.prompt);
+        if (isMemePrompt) {
+          logger.info('[ClothingRouter] meme keywords detected — skipping LoRA, going straight to Flux flat-mockup slice', {
+            jobId,
+            match: job.prompt.match(memePattern)?.[0],
+          });
+          shirtResult = undefined; // force fallback chain below
+        } else {
+          logger.info('[Phase2-LoRA] attempting Roblox-native UV template via fal-ai/lora', { jobId });
+          shirtResult = await generateRobloxNativeShirtTemplate(job.prompt);
+        }
         pantsResult = undefined;
         if (shirtResult?.fallbackPngUrl) {
           logger.info('[Phase2-LoRA] LoRA produced UV-ready 585×559 template — skipping flat-mockup slice', {
@@ -26711,8 +26733,26 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                   contentType: 'model/gltf-binary',
                   assetPrivacy: 'openUse',
                 });
-                if (upload?.assetId) {
-                  const extract = await extractMeshIdFromModel(upload.assetId);
+                // Roblox Open Cloud uploads are ASYNC. POST returns
+                // {path: "operations/<id>", operationId, done: false} immediately,
+                // and the real assetId only becomes available after polling
+                // the operation to done=true. Without polling, upload.assetId
+                // is 0 / placeholder → manifest writes rbxassetid://<placeholder>
+                // → MeshPart loads as default flat cube in Studio (which is
+                // exactly what session 373's first Meshy-on-prod test produced).
+                // Mirrors the pet 3D pipeline's pollRobloxOperation step.
+                let resolvedModelAssetId = upload?.assetId;
+                if (upload && (!resolvedModelAssetId || resolvedModelAssetId <= 0) && upload.operationId) {
+                  const polled = await pollRobloxOperation(apiKey, upload.operationId, 'api-key');
+                  if (polled && polled > 0) {
+                    resolvedModelAssetId = polled;
+                    logger.info('[Vehicle] Open Cloud operation resolved', {
+                      jobId, operationId: upload.operationId, resolvedModelAssetId,
+                    });
+                  }
+                }
+                if (resolvedModelAssetId && resolvedModelAssetId > 0) {
+                  const extract = await extractMeshIdFromModel(resolvedModelAssetId);
                   const meshId = extract?.meshId;
                   if (meshId && meshId > 0) {
                     currentJob = {
@@ -26720,28 +26760,28 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                       metadata: {
                         ...(currentJob.metadata ?? {}),
                         vehicleMeshAssetId: meshId,
-                        vehicleMeshModelAssetId: upload.assetId,
+                        vehicleMeshModelAssetId: resolvedModelAssetId,
                         vehicleMeshThumbnailUrl: meshyThumbnailUrl,
                         vehicleMeshProvider: 'meshy-v6',
                       },
                     };
                     await finishStage('generate_vehicle_mesh', 'completed', [], [
                       'Meshy 6 text-to-3d success',
-                      `Roblox Model asset: ${upload.assetId}`,
+                      `Roblox Model asset: ${resolvedModelAssetId}`,
                       `Inner MeshId: ${meshId}`,
                     ]);
                   } else {
                     logger.warn('[Vehicle] extractMeshIdFromModel returned no meshId; falling back', {
-                      jobId, modelAssetId: upload.assetId, extractState: extract?.state, extractError: extract?.error,
+                      jobId, modelAssetId: resolvedModelAssetId, extractState: extract?.state, extractError: extract?.error,
                     });
                     await finishStage('generate_vehicle_mesh', 'completed', [], [
-                      `Roblox uploaded Model ${upload.assetId} but inner MeshId extraction failed: ${extract?.error ?? extract?.state ?? 'unknown'}`,
+                      `Roblox uploaded Model ${resolvedModelAssetId} but inner MeshId extraction failed: ${extract?.error ?? extract?.state ?? 'unknown'}`,
                       'Falling back to procedural baseline + LLM accents.',
                     ]);
                   }
                 } else {
                   await finishStage('generate_vehicle_mesh', 'completed', [], [
-                    'Roblox Open Cloud asset upload returned no assetId — falling back to procedural baseline.',
+                    `Roblox Open Cloud asset upload returned no resolved assetId (operationId=${upload?.operationId ?? 'none'}) — falling back to procedural baseline.`,
                   ]);
                 }
               } else {
