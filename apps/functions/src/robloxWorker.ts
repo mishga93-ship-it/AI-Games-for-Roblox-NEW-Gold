@@ -2547,9 +2547,21 @@ function addVehicleBodyShell(
   addBodyPart('FamilyCarUnderbody', [w * 0.86, h * 0.16, l * 0.72], [0, rootY + h * 0.03, 0], dark, { material: 'Metal' });
   addBodyPart('FamilyCarBodyShell', [w * 0.92, h * 0.36, l * 0.72], [0, lowerY, 0], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarLowerBeltDark', [w * 0.94, h * 0.08, l * 0.76], [0, rootY + h * 0.08, 0], dark, { material: 'Metal' });
-  addBodyPart('FamilyCarFrontHood', [w * 0.78, h * 0.20, l * 0.28], [0, rootY + h * 0.42, -l * 0.32], primary, { material: 'SmoothPlastic' });
+  // Sloped hood (WedgePart): default Roblox WedgePart slopes from full height
+  // at +Z down to zero at -Z. Place the wedge so its high edge meets the cabin
+  // (+Z end of hood) and its low edge meets the grille (-Z end of hood). The
+  // result reads as a real car bonnet from any side / 3-4 angle, not a flat
+  // plank. Slightly taller than the old Block so the slope is visible.
+  addBodyPart('FamilyCarFrontHood', [w * 0.78, h * 0.26, l * 0.28], [0, rootY + h * 0.38, -l * 0.32], primary, { className: 'WedgePart', material: 'SmoothPlastic' });
+  // Flat hood base sits flush with body top, fills under the wedge so the
+  // hood doesn't show "air" from the side.
+  addBodyPart('FamilyCarFrontHoodBase', [w * 0.78, h * 0.10, l * 0.28], [0, rootY + h * 0.30, -l * 0.32], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarHoodToWindshieldTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, -l * 0.20], accent, { material: 'Metal' });
-  addBodyPart('FamilyCarRearCargoBlock', [w * 0.80, h * 0.28, l * 0.24], [0, rootY + h * 0.40, l * 0.33], primary, { material: 'SmoothPlastic' });
+  // Sloped trunk lid (WedgePart): rotated 180° around Y so the high edge
+  // meets the cabin (now at -Z of trunk after rotation) and the low edge
+  // meets the rear bumper (+Z end of trunk). Creates a real boot-lid slope.
+  addBodyPart('FamilyCarRearCargoBlock', [w * 0.80, h * 0.34, l * 0.24], [0, rootY + h * 0.36, l * 0.33], primary, { className: 'WedgePart', material: 'SmoothPlastic', rot: [0, 180, 0] });
+  addBodyPart('FamilyCarRearCargoBlockBase', [w * 0.80, h * 0.10, l * 0.24], [0, rootY + h * 0.28, l * 0.33], primary, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarCargoToRearGlassTrim', [w * 0.74, h * 0.04, 0.08], [0, rootY + h * 0.54, l * 0.20], accent, { material: 'Metal' });
   addBodyPart('FamilyCarCabinShell', [w * 0.76, h * 0.44, l * 0.42], [0, cabinY, -l * 0.02], accent, { material: 'SmoothPlastic' });
   addBodyPart('FamilyCarCabinBackPanel', [w * 0.72, h * 0.42, 0.12], [0, cabinY, l * 0.22], accent, { material: 'SmoothPlastic' });
@@ -2558,8 +2570,13 @@ function addVehicleBodyShell(
   addBodyPart('FamilyCarRoofRackLeft', [0.1, h * 0.06, l * 0.42], [-w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackRight', [0.1, h * 0.06, l * 0.42], [w * 0.24, roofY + h * 0.06, -l * 0.01], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRoofRackFront', [w * 0.52, h * 0.05, 0.08], [0, roofY + h * 0.07, -l * 0.21], silver, { material: 'Metal' });
-  addBodyPart('FamilyCarWindshieldLarge', [w * 0.58, h * 0.34, 0.12], [0, cabinY + h * 0.03, -l * 0.25], glass, { material: 'Glass', transparency: 0.38 });
-  addBodyPart('FamilyCarRearGlassLarge', [w * 0.52, h * 0.30, 0.12], [0, cabinY + h * 0.02, l * 0.25], glass, { material: 'Glass', transparency: 0.40 });
+  // Windshield tilted ~22° back (top edge toward rear) for real-car slope.
+  // Rotation on X axis: positive value rotates the part so the top tips
+  // toward +Z (back of car). Without this the glass reads as a vertical
+  // wall like a bus or a van.
+  addBodyPart('FamilyCarWindshieldLarge', [w * 0.58, h * 0.34, 0.12], [0, cabinY + h * 0.03, -l * 0.25], glass, { material: 'Glass', transparency: 0.38, rot: [22, 0, 0] });
+  // Rear glass tilted forward (top edge toward front) — classic fastback line.
+  addBodyPart('FamilyCarRearGlassLarge', [w * 0.52, h * 0.30, 0.12], [0, cabinY + h * 0.02, l * 0.25], glass, { material: 'Glass', transparency: 0.40, rot: [-22, 0, 0] });
   addBodyPart('FamilyCarFrontBeltLineSegment', [w * 0.92, h * 0.045, 0.08], [0, rootY + h * 0.57, -l * 0.355], silver, { material: 'Metal' });
   addBodyPart('FamilyCarRearBeltLineSegment', [w * 0.92, h * 0.045, 0.08], [0, rootY + h * 0.57, l * 0.355], silver, { material: 'Metal' });
   addBodyPart('FamilyCarFrontBumper', [w * 0.92, h * 0.15, 0.22], [0, rootY + h * 0.12, -l * 0.47], dark, { material: 'Metal' });
