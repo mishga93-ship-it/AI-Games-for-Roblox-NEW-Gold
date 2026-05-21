@@ -1691,25 +1691,50 @@ export async function generateFlatShirtMockup(
   garmentDescription: string,
   garmentKind: 'shirt' | 'pants' = 'shirt',
 ): Promise<FlatShirtMockupResult | undefined> {
-  const cleanDesc = garmentDescription.trim().slice(0, 1000);
+  // 2026-05-21: sanitise the user description — words like "logo emblem",
+  // "streetwear", "adidas-style" trigger Flux to draw real-world brand
+  // marks (Adidas Trefoil etc.) which the moderation pipeline blocks.
+  // Replace risky words with safer synonyms so we get a clean original
+  // design, not a Nike/Adidas/Supreme clone.
+  const sanitisedDesc = garmentDescription
+    .trim()
+    .slice(0, 1000)
+    .replace(/\b(adidas|nike|supreme|off[\s-]?white|puma|champion|gucci|prada|louis vuitton|balenciaga|yeezy|trefoil|swoosh|jumpman)\b/gi, '')
+    .replace(/\blogo emblem\b/gi, 'simple original graphic')
+    .replace(/\bbrand logo\b/gi, 'original graphic')
+    .replace(/\b(emblem|crest|badge)\b/gi, 'simple shape')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const cleanDesc = sanitisedDesc || 'a simple colorful design';
   const garmentNoun = garmentKind === 'pants' ? 'pants' : 'oversized shirt';
+  // Positive prompt — "subject first" Flux 2 pattern, with explicit
+  // "empty / no one is wearing it" wording.
   const prompt =
-    `Front-view product photography of a ${garmentNoun}: ${cleanDesc}. ` +
-    'CRITICAL: the garment is laid COMPLETELY FLAT against a clean white background. ' +
-    'ABSOLUTELY DO NOT include: a character, a body, a mannequin, a person, a torso, ' +
-    'hangers, hands, head, legs, or 3D perspective. Just the flat garment, front view only. ' +
-    'The design/print is clearly visible and CENTERED on the chest area. ' +
-    'Sleeves extend symmetrically to the left and right. ' +
-    'Roblox cartoon style: bold colors, simple shapes, high contrast, readable at a glance. ' +
-    'Professional flat-lay e-commerce catalog look. ' +
-    'No real-world brand logos (Nike, Adidas, Supreme, etc), no copyrighted characters, ' +
-    'no profanity, no text/letters unless explicitly requested in the description. ' +
-    'Square 1024×1024 composition, garment fills ~70-80% of the canvas with breathing room.';
-  try {
+    `An EMPTY ${garmentNoun} laid completely flat on a pure white background, top-down product photography. ` +
+    `The ${garmentNoun} has: ${cleanDesc}. ` +
+    'The garment is empty — nobody is wearing it, nobody is inside, the sleeves are empty and flat. ' +
+    'Catalog-style flat-lay product shot, front view, garment laid out symmetrically with sleeves extended. ' +
+    'The print/design is clearly visible and CENTERED on the chest area. ' +
+    'Roblox cartoon style: bold colors, simple shapes, high contrast, no real-world brand marks. ' +
+    'Square 1024×1024 composition, garment fills ~70-80% of the canvas, soft drop shadow under the fabric.';
+  // Negative prompt — explicit list of things Flux must NOT draw.
+  // Critical: include character/body/face words AND brand-name words.
+  const negativePrompt =
+    'person, people, character, human, model, mannequin, dummy, body, torso, chest, ' +
+    'face, head, hair, eyes, mouth, hands, fingers, arms inside sleeves, legs, feet, shoes, ' +
+    'hanger, coat hanger, rack, clothes rack, ' +
+    '3D perspective, side view, back view, angled view, isometric, tilted, ' +
+    'realistic photo, photograph, photorealism, ' +
+    'brand logo, logos, copyrighted, trademark, ' +
+    'Adidas, Nike, Supreme, Off-White, Puma, Champion, Gucci, Prada, Yeezy, Trefoil, Swoosh, Jumpman, ' +
+    'text on garment unless explicitly requested';
+  const generateOnce = async (extraNegative: string = ''): Promise<Buffer | undefined> => {
+    const fullNegative = extraNegative ? `${negativePrompt}, ${extraNegative}` : negativePrompt;
     const result = await runFal('flux-pro/v1.1', {
       endpoint: 'fal-ai/flux-pro/v1.1',
       payload: {
         prompt,
+        negative_prompt: fullNegative,
         image_size: { width: 1024, height: 1024 },
         num_inference_steps: 28,
         num_images: 1,
@@ -1717,16 +1742,21 @@ export async function generateFlatShirtMockup(
         safety_tolerance: '5',
       },
     });
-    if (!result.outputUrl) {
-      logger.warn('[generateFlatShirtMockup] Flux returned no URL');
-      return undefined;
-    }
+    if (!result.outputUrl) return undefined;
     const resp = await fetch(result.outputUrl);
-    if (!resp.ok) {
-      logger.warn('[generateFlatShirtMockup] failed to download Flux output', { status: resp.status });
+    if (!resp.ok) return undefined;
+    return Buffer.from(await resp.arrayBuffer());
+  };
+  try {
+    // 2026-05-21: caller (index.ts) handles moderation + fallback to
+    // character-concept path when the mockup is blocked. Provider here
+    // does ONE attempt with strict prompt + strong negative_prompt;
+    // sanitised description already removed the worst brand triggers.
+    const mockupBuffer = await generateOnce();
+    if (!mockupBuffer) {
+      logger.warn('[generateFlatShirtMockup] flux produced no buffer');
       return undefined;
     }
-    const mockupBuffer = Buffer.from(await resp.arrayBuffer());
     // Sample colours from the flat mockup:
     //   - primary: ~mid-chest (center of image, away from the print sticker
     //     so we read the shirt fabric colour, not the design)
@@ -1762,9 +1792,13 @@ export async function generateFlatShirtMockup(
       `#${buf[0].toString(16).padStart(2, '0')}${buf[1].toString(16).padStart(2, '0')}${buf[2].toString(16).padStart(2, '0')}`;
     const primaryColor = rgbToHex(sampleMid);
     const secondaryColor = rgbToHex(sampleSleeve);
+    // mockupUrl is filled by the caller (uploadBinaryArtifact) — the original
+    // Fal output URL is no longer relevant since we may have used the retry
+    // buffer instead. Leaving as empty string; caller derives the URL from
+    // the artifact it uploads.
     return {
       mockupBuffer,
-      mockupUrl: result.outputUrl,
+      mockupUrl: '',
       primaryColor,
       secondaryColor,
     };
