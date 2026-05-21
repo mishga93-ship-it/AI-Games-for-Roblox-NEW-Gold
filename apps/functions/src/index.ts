@@ -24918,6 +24918,30 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       }
       try {
         const clothingType = detectClothingType(job.prompt);
+        // 2026-05-21 — Honour user's iOS welcome-picker choice: shirt vs
+        // pants vs outfit. The previous Phase 2 build always generated a
+        // shirt regardless of what was picked, so the user's "Classic
+        // Pants" or "Full Outfit" came out as a shirt. Use the explicit
+        // metadata.clothingType the iOS picker writes, fall back to the
+        // prompt-heuristic detectClothingType() when the metadata is
+        // absent (raw text flow).
+        const explicitClothingType = typeof job.metadata?.clothingType === 'string'
+          ? job.metadata.clothingType
+          : '';
+        const wantsShirt = explicitClothingType === 'classic_shirt'
+          || explicitClothingType === 'classic_outfit'
+          || (!explicitClothingType && clothingType !== 'pants_only');
+        const wantsPants = explicitClothingType === 'classic_pants'
+          || explicitClothingType === 'classic_outfit'
+          || (!explicitClothingType && clothingType !== 'shirt_only');
+        logger.info('[ClothingRouter] routing by clothingType', {
+          jobId,
+          explicitClothingType,
+          promptHeuristic: clothingType,
+          wantsShirt,
+          wantsPants,
+        });
+
         // 2026-05-21 hybrid LoRA / Flux routing.
         //
         // The CivitAI Roblox-shirt LoRA is a narrow SDXL fine-tune — it
@@ -24937,18 +24961,35 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         // with no slicing artefacts.
         const memePattern = /\b(skibidi|ohio|rizz|sigma|gyatt|brainrot|fanum(?:\s*tax)?|tralalero|bombardiro|capybara|tung\s*sahur|sahur|mewing|gigachad|delulu|delusional|sus|cap|no\s*cap|cooked|cooking|aura|gooning|gooner|mango|pluh|baddie|alpha|beta|w\s*rizz|l\s*rizz|chad|simp|npc|6\s*7|sixseven|six\s*seven|brain\s*rot|meme|viral|tiktok|kai\s*cenat|skibidi\s*toilet|sigma\s*boy|sigma\s*male)\b/i;
         const isMemePrompt = memePattern.test(job.prompt);
-        if (isMemePrompt) {
-          logger.info('[ClothingRouter] meme keywords detected — skipping LoRA, going straight to Flux flat-mockup slice', {
-            jobId,
-            match: job.prompt.match(memePattern)?.[0],
-          });
-          shirtResult = undefined; // force fallback chain below
-        } else {
+        // LoRA path only runs for SHIRT. Pants always go via Flux
+        // (generatePantsTexture) because there's no Roblox-Pants LoRA.
+        if (wantsShirt && !isMemePrompt) {
           logger.info('[Phase2-LoRA] attempting Roblox-native UV template via fal-ai/lora', { jobId });
           shirtResult = await generateRobloxNativeShirtTemplate(job.prompt);
+        } else {
+          if (wantsShirt) {
+            logger.info('[ClothingRouter] meme keywords detected — skipping LoRA, going straight to Flux flat-mockup slice', {
+              jobId,
+              match: job.prompt.match(memePattern)?.[0],
+            });
+          }
+          shirtResult = undefined; // force fallback chain below
         }
         pantsResult = undefined;
-        if (shirtResult?.fallbackPngUrl) {
+        // Pants always via the legacy Flux character-concept path; LoRA
+        // doesn't cover pants UV layouts.
+        if (wantsPants) {
+          logger.info('[ClothingRouter] generating pants via Flux character-concept path', { jobId });
+          try {
+            pantsResult = await generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt);
+          } catch (pantsErr) {
+            logger.warn('[ClothingRouter] pants generation failed', { jobId, error: errorMessage(pantsErr) });
+          }
+        }
+        if (!wantsShirt) {
+          // Pants-only — skip the shirt fallback chain entirely.
+          logger.info('[ClothingRouter] pants-only request, skipping shirt fallback chain', { jobId });
+        } else if (shirtResult?.fallbackPngUrl) {
           logger.info('[Phase2-LoRA] LoRA produced UV-ready 585×559 template — skipping flat-mockup slice', {
             jobId,
             url: shirtResult.fallbackPngUrl,
@@ -24978,15 +25019,10 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               shirtResult = await generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt);
             }
           } else {
-            // Legacy Phase 0 fallback — character concept + analyzeOutfit + generateClothingDesign.
-            [shirtResult, pantsResult] = await Promise.all([
-              clothingType !== 'pants_only'
-                ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
-                : Promise.resolve(undefined),
-              clothingType !== 'shirt_only'
-                ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
-                : Promise.resolve(undefined),
-            ]);
+            // Legacy Phase 0 fallback — character concept + analyzeOutfit +
+            // generateClothingDesign. We only regenerate shirt here; pants
+            // was already generated above (line 24984) if requested.
+            shirtResult = await generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt);
           }
         }
         const shirtFallbackPng = shirtResult?.fallbackPngUrl;
