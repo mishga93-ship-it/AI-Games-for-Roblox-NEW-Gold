@@ -2529,7 +2529,10 @@ export function buildConceptImagePrompt(rawPrompt: string, input: Record<string,
   const isWeaponItem = contentCategory === 'weapon';
   const isItemTool = contentCategory === 'item_tool';
   const isFurnitureProp = contentCategory === 'furniture_prop' || contentCategory === 'prop';
-  const isClothingItem = !isWeaponItem && !isItemTool && !isFurnitureProp && !isCharacterContent && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
+  const isVehicleItem = contentCategory === 'vehicle'
+    || contentSubcategory === 'vehicles'
+    || input.requestedKind === 'vehicle_3d';
+  const isClothingItem = !isWeaponItem && !isItemTool && !isFurnitureProp && !isCharacterContent && !isVehicleItem && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
     || CLOTHING_KEYWORDS.test(rawPrompt)
     || CLOTHING_KEYWORDS.test(title));
   const styleHint = isWeaponItem
@@ -2678,6 +2681,19 @@ const ITEM_3D_SUFFIX =
   'Single standalone 3D game item/tool, no character, no person, no hands, no body, no background. ' +
   'Low-poly stylized pickup asset (key, potion bottle, coin, medkit, ore, flask, etc.), clean topology, bright flat colors, game-ready, under 8000 polygons.';
 
+// Vehicles (Release 2): low-poly drivable vehicle body shell. The chassis,
+// wheels, DriveSeat and controller are added procedurally by the backend
+// AFTER the mesh — so the Meshy mesh must be JUST the body (no wheels, no
+// driver, no environment). Aspect ratio is critical: cars/trucks are wider
+// and longer than they are tall; planes are very long; helicopters have a
+// boom; bikes have a frame with a fuel tank — let the brief drive the shape
+// and keep the polycount low so the runtime stays smooth.
+const VEHICLE_3D_SUFFIX =
+  'Single isolated low-poly Roblox vehicle body shell, no character, no driver, no passenger, no rider, no person, no background, no ground, no scene. ' +
+  'No wheels, no tires (wheels are added separately by the engine). ' +
+  'Clean low-poly stylized look, simple PBR-ready materials, bright readable colors, game-ready, under 8000 polygons. ' +
+  'Front-facing render, full vehicle body visible.';
+
 export function build3DPrompt(rawPrompt: string, input: Record<string, unknown>): string {
   const title = typeof input.title === 'string' ? input.title.trim() : '';
   const genre = typeof input.genre === 'string' ? input.genre.trim() : '';
@@ -2697,7 +2713,10 @@ export function build3DPrompt(rawPrompt: string, input: Record<string, unknown>)
   const isWeaponItem = contentCategory === 'weapon';
   const isItemTool = contentCategory === 'item_tool';
   const isPropItem = contentCategory === 'furniture_prop' || contentCategory === 'prop';
-  const isClothingItem = !isWeaponItem && !isItemTool && !isPropItem && !isCharacterContent && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
+  const isVehicleItem = contentCategory === 'vehicle'
+    || contentSubcategory === 'vehicles'
+    || input.requestedKind === 'vehicle_3d';
+  const isClothingItem = !isWeaponItem && !isItemTool && !isPropItem && !isCharacterContent && !isVehicleItem && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
     || CLOTHING_KEYWORDS.test(rawPrompt)
     || CLOTHING_KEYWORDS.test(title));
 
@@ -2725,9 +2744,30 @@ export function build3DPrompt(rawPrompt: string, input: Record<string, unknown>)
       ? ITEM_3D_SUFFIX
       : isWeaponItem
         ? WEAPON_3D_SUFFIX
-        : isClothingItem
-          ? CLOTHING_3D_SUFFIX
-          : pick3DSuffix(allText);
+        : isVehicleItem
+          ? VEHICLE_3D_SUFFIX
+          : isClothingItem
+            ? CLOTHING_3D_SUFFIX
+            : pick3DSuffix(allText);
+
+  // Vehicles (Release 2): same fast/focused branch as Prop/Item — title-led
+  // prompt + colour bits + vehicle suffix, no character-context heuristics.
+  if (isVehicleItem) {
+    const cleanedRaw = rawPrompt
+      .replace(/Full conversation context[\s\S]*/i, '')
+      .replace(/Latest user intent[\s\S]*/i, '')
+      .replace(/Existing project context[\s\S]*/i, '')
+      .trim()
+      .slice(0, 320);
+    const primaryColor = typeof input.primaryColor === 'string' ? input.primaryColor : '';
+    const accentColor = typeof input.accentColor === 'string' ? input.accentColor : '';
+    const colorBits: string[] = [];
+    if (primaryColor) colorBits.push(`primary body color ${primaryColor}`);
+    if (accentColor && accentColor !== primaryColor) colorBits.push(`accent / roof color ${accentColor}`);
+    const colorContext = colorBits.length > 0 ? `. ${colorBits.join(', ')}` : '';
+    const titleBit = title ? `${title}. ` : '';
+    return `${titleBit}${cleanedRaw}${colorContext}. ${suffix}`;
+  }
 
   // Prop items (hero tycoon/obby decorations) should stay short & focused.
   // Skip the character-context heuristics and return a clean prompt < 500 chars.
@@ -2998,7 +3038,10 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
   const isPetContent = contentCategory === 'pet'
     || input.requestedKind === 'pet_3d'
     || input.petMode === 'evolution_3d';
-  const isClothingItem = !isWeaponItem && !isItemTool && !isCharacterContent && !isPetContent && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
+  const isVehicleContent = contentCategory === 'vehicle'
+    || contentSubcategory === 'vehicles'
+    || input.requestedKind === 'vehicle_3d';
+  const isClothingItem = !isWeaponItem && !isItemTool && !isCharacterContent && !isPetContent && !isVehicleContent && (['ugc_clothing', 'ugc_accessory'].includes(contentCategory)
     || CLOTHING_KEYWORDS.test(prompt)
     || CLOTHING_KEYWORDS.test(typeof input.title === 'string' ? input.title : ''));
   const isPropContent = contentCategory === 'furniture_prop' || contentCategory === 'prop';
@@ -3006,15 +3049,17 @@ async function runMeshy(prompt: string, input: JsonRecord): Promise<ProviderResu
     ? input.negativePrompt
     : isPetContent
       ? 'human, person, mannequin, clothing, garment, hat, weapon, hands, background scene, multiple creatures, action pose, running, jumping, fighting, low quality, blurry, broken anatomy, floating parts'
-      : isWeaponItem
-        ? 'human body, person, hands, character, low quality, blurry, broken geometry, floating parts'
-        : isItemTool
-          ? 'human body, person, character, hands holding, body, face, mannequin, background scene, low quality, blurry, broken geometry, floating parts'
-          : isClothingItem
-            ? 'human body, person, mannequin, hanger, stand, rack, legs, arms, head, face, low quality, blurry'
-            : isPropContent
-              ? 'human, person, character, body, face, hands, feet, mannequin, low quality, blurry, broken geometry, floating parts'
-              : 'nude, naked, shirtless, bare chest, exposed skin, nsfw, underwear, open jacket, unbuttoned shirt, open shirt, v-neck showing chest, visible torso, bare torso, low quality, blurry, broken anatomy, noisy topology, floating parts, action pose, dynamic pose, crossed arms, overlapping limbs, running, jumping, fighting';
+      : isVehicleContent
+        ? 'human, person, driver, passenger, rider, character, hands, body, face, wheels, tires, environment, ground, road, scene, low quality, blurry, broken geometry, floating parts'
+        : isWeaponItem
+          ? 'human body, person, hands, character, low quality, blurry, broken geometry, floating parts'
+          : isItemTool
+            ? 'human body, person, character, hands holding, body, face, mannequin, background scene, low quality, blurry, broken geometry, floating parts'
+            : isClothingItem
+              ? 'human body, person, mannequin, hanger, stand, rack, legs, arms, head, face, low quality, blurry'
+              : isPropContent
+                ? 'human, person, character, body, face, hands, feet, mannequin, low quality, blurry, broken geometry, floating parts'
+                : 'nude, naked, shirtless, bare chest, exposed skin, nsfw, underwear, open jacket, unbuttoned shirt, open shirt, v-neck showing chest, visible torso, bare torso, low quality, blurry, broken anatomy, noisy topology, floating parts, action pose, dynamic pose, crossed arms, overlapping limbs, running, jumping, fighting';
 
   const conceptImageUrl = typeof input.conceptImageUrl === 'string' && input.conceptImageUrl.trim()
     ? input.conceptImageUrl.trim()
