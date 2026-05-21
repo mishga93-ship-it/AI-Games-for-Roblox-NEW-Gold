@@ -6558,40 +6558,52 @@ async function reviewVehicleManifestWithRepair(args: {
       ? (manifest.metadata.vehicleMeshThumbnailUrl as string)
       : '';
     const hasMeshBody = manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
+    const hasLlmScene = manifest.scene.some((node) => /VehicleSceneRoot/i.test(node.name));
+    const isCustomBody = hasMeshBody || hasLlmScene;
     let previewPng: Buffer | undefined;
-    if (hasMeshBody && meshThumbnailUrl) {
-      try {
-        const thumbResp = await fetch(meshThumbnailUrl);
-        if (thumbResp.ok) {
-          const arrayBuf = await thumbResp.arrayBuffer();
-          previewPng = Buffer.from(arrayBuf);
-        } else {
-          logger.warn('[VehicleQualityReview] Meshy thumbnail fetch non-OK', { status: thumbResp.status, meshThumbnailUrl });
+    let llmReview: ObbyQualityReviewResult | null = null;
+    // SIMPLIFIED REVIEW: skip the LLM/vision critic entirely when the body is
+    // already custom-composed (mesh from Meshy OR LLM-scene from gemini). Two
+    // reasons:
+    //   1. The composer already validated the scene at creation time
+    //      (validateVehicleScene) — adding a second LLM review on top creates
+    //      false-positive reject loops the user can't escape.
+    //   2. The procedural visual heuristics (monochromeBodyShare,
+    //      bodyVerticalLayerRange, glassToBodyAreaRatio, steeringWheelVisible
+    //      ThroughWindshield) all measure FamilyCar* Block geometry that does
+    //      not exist in custom-body mode — they always read as 0/1.0, which
+    //      the LLM reviewer kept parroting as defects.
+    // The deterministic gate (which only enforces DriveSeat / wheels /
+    // controller in custom-body mode) is the sole authoritative blocker.
+    if (!isCustomBody) {
+      if (hasMeshBody && meshThumbnailUrl) {
+        try {
+          const thumbResp = await fetch(meshThumbnailUrl);
+          if (thumbResp.ok) {
+            const arrayBuf = await thumbResp.arrayBuffer();
+            previewPng = Buffer.from(arrayBuf);
+          }
+        } catch (thumbErr) {
+          logger.warn('[VehicleQualityReview] Meshy thumbnail fetch failed', { error: errorMessage(thumbErr) });
         }
-      } catch (thumbErr) {
-        logger.warn('[VehicleQualityReview] Meshy thumbnail fetch failed', { error: errorMessage(thumbErr) });
       }
-    }
-    if (!previewPng) {
-      // Procedural fallback path OR mesh-mode without working thumbnail —
-      // fall back to the blocky-renderer. In mesh mode this preview will be
-      // imperfect, but the reviewer prompt below already explains that the
-      // body is a MeshPart so it can be lenient about empty preview regions.
-      try {
-        const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
-        previewPng = createFurniturePreviewPng(scene, args.title);
-      } catch (renderErr) {
-        logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
+      if (!previewPng) {
+        try {
+          const scene = createVehiclePreviewSceneFromManifest(manifest, args.title);
+          previewPng = createFurniturePreviewPng(scene, args.title);
+        } catch (renderErr) {
+          logger.warn('[VehicleQualityReview] preview render failed; text-only critic', { error: errorMessage(renderErr) });
+        }
       }
+      llmReview = await runVehicleLlmQualityReview({
+        prompt: args.prompt,
+        title: args.title,
+        facts: vehicleManifestFacts(manifest),
+        deterministic,
+        manifest,
+        previewPng,
+      });
     }
-    const llmReview = await runVehicleLlmQualityReview({
-      prompt: args.prompt,
-      title: args.title,
-      facts: vehicleManifestFacts(manifest),
-      deterministic,
-      manifest,
-      previewPng,
-    });
     // BOTH the deterministic battery AND the LLM/vision critic can block the
     // export. Deterministic catches measurable structural failures
     // (monochrome / flat layers / no glass / hidden steering); vision catches
