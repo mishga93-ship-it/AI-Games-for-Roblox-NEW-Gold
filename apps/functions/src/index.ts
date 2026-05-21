@@ -133,6 +133,7 @@ import {
   generateTShirtGraphic,
   generateFlatShirtMockup,
   cropFlatShirtToTemplate,
+  generateRobloxNativeShirtTemplate,
   runFalAudio,
   classifyPet,
   selectMeshProvider,
@@ -24916,41 +24917,54 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       }
       try {
         const clothingType = detectClothingType(job.prompt);
-        // 2026-05-21: If a flat-shirt mockup was prepared and approved during
-        // concept stage, slice IT into UV regions (no new AI generation).
-        // What the user approved = what gets uploaded.
-        const flatShirtPrepared = currentJob.metadata?.flatShirtMockupPrepared === true
-          && typeof currentJob.metadata?.flatShirtMockupUrl === 'string';
-        if (flatShirtPrepared) {
-          const mockupUrl = currentJob.metadata!.flatShirtMockupUrl as string;
-          const primaryColor = (currentJob.metadata?.flatShirtPrimaryColor as string) ?? '#888888';
-          const secondaryColor = (currentJob.metadata?.flatShirtSecondaryColor as string) ?? primaryColor;
-          logger.info('[FlatShirtMockup] slicing approved mockup into UV template', { jobId, mockupUrl, primaryColor, secondaryColor });
-          try {
-            const mockupResp = await fetch(mockupUrl);
-            if (!mockupResp.ok) throw new Error(`mockup fetch ${mockupResp.status}`);
-            const mockupBuf = Buffer.from(await mockupResp.arrayBuffer());
-            shirtResult = await cropFlatShirtToTemplate({
-              mockupBuffer: mockupBuf,
-              mockupUrl,
-              primaryColor,
-              secondaryColor,
-            });
-            pantsResult = undefined; // flat-shirt mockup is shirt-only; pants stays optional
-          } catch (cropErr) {
-            logger.warn('[FlatShirtMockup] crop failed, falling back to AI design generation', { jobId, error: errorMessage(cropErr) });
-            shirtResult = await generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt);
-            pantsResult = undefined;
-          }
+        // 2026-05-21 Phase 2: try the Roblox-native UV LoRA first. It was
+        // trained on actual 585×559 templates so the output goes straight
+        // to upload without any slicing/compositing. If LoRA fails (model
+        // down, moderation, weird output), fall back to flat-mockup-slice
+        // (Phase 1), and then to the legacy character-concept path.
+        logger.info('[Phase2-LoRA] attempting Roblox-native UV template via fal-ai/lora', { jobId });
+        shirtResult = await generateRobloxNativeShirtTemplate(job.prompt);
+        pantsResult = undefined;
+        if (shirtResult?.fallbackPngUrl) {
+          logger.info('[Phase2-LoRA] LoRA produced UV-ready 585×559 template — skipping flat-mockup slice', {
+            jobId,
+            url: shirtResult.fallbackPngUrl,
+          });
         } else {
-          [shirtResult, pantsResult] = await Promise.all([
-            clothingType !== 'pants_only'
-              ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
-              : Promise.resolve(undefined),
-            clothingType !== 'shirt_only'
-              ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
-              : Promise.resolve(undefined),
-          ]);
+          logger.warn('[Phase2-LoRA] LoRA produced no result, falling back to flat-mockup slice path', { jobId });
+          // Phase 1 fallback: flat shirt mockup + 3-band slice.
+          const flatShirtPrepared = currentJob.metadata?.flatShirtMockupPrepared === true
+            && typeof currentJob.metadata?.flatShirtMockupUrl === 'string';
+          if (flatShirtPrepared) {
+            const mockupUrl = currentJob.metadata!.flatShirtMockupUrl as string;
+            const primaryColor = (currentJob.metadata?.flatShirtPrimaryColor as string) ?? '#888888';
+            const secondaryColor = (currentJob.metadata?.flatShirtSecondaryColor as string) ?? primaryColor;
+            logger.info('[FlatShirtMockup-fallback] slicing flat mockup into UV template', { jobId, mockupUrl, primaryColor, secondaryColor });
+            try {
+              const mockupResp = await fetch(mockupUrl);
+              if (!mockupResp.ok) throw new Error(`mockup fetch ${mockupResp.status}`);
+              const mockupBuf = Buffer.from(await mockupResp.arrayBuffer());
+              shirtResult = await cropFlatShirtToTemplate({
+                mockupBuffer: mockupBuf,
+                mockupUrl,
+                primaryColor,
+                secondaryColor,
+              });
+            } catch (cropErr) {
+              logger.warn('[FlatShirtMockup-fallback] crop failed, falling back to character-concept generation', { jobId, error: errorMessage(cropErr) });
+              shirtResult = await generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt);
+            }
+          } else {
+            // Legacy Phase 0 fallback — character concept + analyzeOutfit + generateClothingDesign.
+            [shirtResult, pantsResult] = await Promise.all([
+              clothingType !== 'pants_only'
+                ? generateShirtTexture(conceptPreviewUrl, alignedConceptPrompt)
+                : Promise.resolve(undefined),
+              clothingType !== 'shirt_only'
+                ? generatePantsTexture(conceptPreviewUrl, alignedConceptPrompt)
+                : Promise.resolve(undefined),
+            ]);
+          }
         }
         const shirtFallbackPng = shirtResult?.fallbackPngUrl;
         const pantsFallbackPng = pantsResult?.fallbackPngUrl;
@@ -26643,34 +26657,47 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         'Using canonical self-contained VehicleController template',
       ]);
 
-      // ── generate_vehicle_mesh: Tripo v2.5 text-to-3d for a proper vehicle
-      // mesh. Tripo has dedicated vehicle training data, so it produces
-      // recognisable car silhouettes that procedural Blocks cannot match.
-      // On success we download the GLB, upload to Roblox Open Cloud as a
-      // Model asset, extract the inner MeshPart's MeshId, and stash both in
-      // metadata. The builder branches on metadata.vehicleMeshAssetId and
-      // emits a single MeshPart 'VehicleMeshBody' with rbxassetid://
-      // MeshContent — that actually renders in the Roblox runtime, unlike
-      // raw https:// URLs.
-      await beginStage('generate_vehicle_mesh', 'Tripo v2.5 is generating a 3D vehicle body');
+      // ── generate_vehicle_mesh: Meshy 6 text-to-3d via fal.ai. Session 373
+      // switched from Tripo v2.5 → Meshy 6 because Tripo's car generation is
+      // weak (Trustpilot/Reddit reports) and our prod Tripo path was silently
+      // failing too often, leaving every car on the procedural-block fallback.
+      // Meshy 6 has better topology + PBR maps + native Roblox import path
+      // (fal.ai blog 2025-10-16). On success we download the GLB, upload to
+      // Roblox Open Cloud as a Model asset, extract the inner MeshPart's
+      // MeshId, and stash both in metadata. The builder branches on
+      // metadata.vehicleMeshAssetId and emits a single MeshPart 'VehicleMeshBody'
+      // with rbxassetid:// MeshContent — that actually renders in the Roblox
+      // runtime, unlike raw https:// URLs.
+      //
+      // Falls back to the procedural family-sedan baseline (always emitted by
+      // robloxWorker.ts:addVehicleBodyShell) + the LLM accent-decorator path
+      // when Meshy or the Open Cloud upload fails.
+      await beginStage('generate_vehicle_mesh', 'Meshy 6 is generating a 3D vehicle body');
       try {
-        const titleStrForTripo = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
-        const primaryHexForTripo = typeof currentJob.metadata?.primaryColor === 'string' ? currentJob.metadata.primaryColor : undefined;
-        const accentHexForTripo = typeof currentJob.metadata?.accentColor === 'string' ? currentJob.metadata.accentColor : undefined;
-        const tripoBrief = [titleStrForTripo, job.prompt].filter(Boolean).join('. ');
-        const tripoResult = await (await import('./providers.js')).runTripoVehicleText({
-          prompt: tripoBrief,
+        const titleStrForMesh = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
+        const meshyBrief = [titleStrForMesh, job.prompt].filter(Boolean).join('. ');
+        // runMeshy reads contentCategory / requestedKind to switch to its
+        // vehicle-specific negative_prompt + skip orbit-view generation (we
+        // have no concept image for vehicles — pure text-to-3d).
+        const meshyInput: Record<string, unknown> = {
+          ...(currentJob.metadata ?? {}),
+          contentCategory: 'vehicle',
+          contentSubcategory: 'vehicles',
+          requestedKind: 'vehicle_3d',
           vehicleType,
-          primaryHex: primaryHexForTripo,
-          accentHex: accentHexForTripo,
-        });
-        if (tripoResult.modelUrl) {
-          // Download Tripo GLB → upload to Roblox Open Cloud → extract MeshId.
+          title: titleStrForMesh,
+        };
+        const meshyResult = await (await import('./providers.js')).runMeshy(meshyBrief, meshyInput);
+        const meshyGlbUrl = typeof meshyResult.outputUrl === 'string' ? meshyResult.outputUrl : '';
+        const meshyRaw = (meshyResult.raw ?? {}) as Record<string, unknown>;
+        const meshyThumbnailUrl = typeof meshyRaw.thumbnailUrl === 'string' ? meshyRaw.thumbnailUrl : '';
+        if (meshyGlbUrl) {
+          // Download Meshy GLB → upload to Roblox Open Cloud → extract MeshId.
           const apiKey = getRobloxOpenCloudApiKey();
           const creatorId = getRobloxCreatorId();
           if (apiKey && creatorId) {
             try {
-              const glbResp = await fetch(tripoResult.modelUrl);
+              const glbResp = await fetch(meshyGlbUrl);
               if (glbResp.ok) {
                 const glbBuf = Buffer.from(await glbResp.arrayBuffer());
                 const upload = await uploadAssetToRoblox({
@@ -26678,8 +26705,8 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                   creatorId,
                   creatorType: 'User',
                   assetType: 'Model',
-                  name: `Vehicle ${vehicleType} ${titleStrForTripo.slice(0, 30)}`.slice(0, 50),
-                  description: `AI-generated ${vehicleType} body from Tripo v2.5`,
+                  name: `Vehicle ${vehicleType} ${titleStrForMesh.slice(0, 30)}`.slice(0, 50),
+                  description: `AI-generated ${vehicleType} body from Meshy 6`,
                   fileContent: glbBuf,
                   contentType: 'model/gltf-binary',
                   assetPrivacy: 'openUse',
@@ -26694,13 +26721,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                         ...(currentJob.metadata ?? {}),
                         vehicleMeshAssetId: meshId,
                         vehicleMeshModelAssetId: upload.assetId,
-                        vehicleMeshThumbnailUrl: tripoResult.thumbnailUrl ?? '',
-                        vehicleMeshProvider: 'tripo-v2.5',
-                        vehicleMeshTripoTaskId: tripoResult.taskId,
+                        vehicleMeshThumbnailUrl: meshyThumbnailUrl,
+                        vehicleMeshProvider: 'meshy-v6',
                       },
                     };
                     await finishStage('generate_vehicle_mesh', 'completed', [], [
-                      `Tripo text_to_model success (taskId=${tripoResult.taskId ?? '?'})`,
+                      'Meshy 6 text-to-3d success',
                       `Roblox Model asset: ${upload.assetId}`,
                       `Inner MeshId: ${meshId}`,
                     ]);
@@ -26710,43 +26736,42 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                     });
                     await finishStage('generate_vehicle_mesh', 'completed', [], [
                       `Roblox uploaded Model ${upload.assetId} but inner MeshId extraction failed: ${extract?.error ?? extract?.state ?? 'unknown'}`,
-                      'Falling back to LLM-scene composer.',
+                      'Falling back to procedural baseline + LLM accents.',
                     ]);
                   }
                 } else {
                   await finishStage('generate_vehicle_mesh', 'completed', [], [
-                    'Roblox Open Cloud asset upload returned no assetId — falling back to LLM-scene.',
+                    'Roblox Open Cloud asset upload returned no assetId — falling back to procedural baseline.',
                   ]);
                 }
               } else {
                 await finishStage('generate_vehicle_mesh', 'completed', [], [
-                  `Failed to download Tripo GLB (HTTP ${glbResp.status}) — falling back to LLM-scene.`,
+                  `Failed to download Meshy GLB (HTTP ${glbResp.status}) — falling back to procedural baseline.`,
                 ]);
               }
             } catch (uploadErr) {
               logger.warn('[Vehicle] Roblox Open Cloud upload failed', { jobId, error: errorMessage(uploadErr) });
               await finishStage('generate_vehicle_mesh', 'completed', [], [
                 `Open Cloud upload failed: ${errorMessage(uploadErr).slice(0, 200)}`,
-                'Falling back to LLM-scene composer.',
+                'Falling back to procedural baseline + LLM accents.',
               ]);
             }
           } else {
             await finishStage('generate_vehicle_mesh', 'completed', [], [
-              'Roblox Open Cloud API key / creator id missing — Tripo GLB cannot be made into a MeshPart.',
-              'Falling back to LLM-scene composer.',
+              'Roblox Open Cloud API key / creator id missing — Meshy GLB cannot be made into a MeshPart.',
+              'Falling back to procedural baseline + LLM accents.',
             ]);
           }
         } else {
           await finishStage('generate_vehicle_mesh', 'completed', [], [
-            `Tripo did not return a model: ${tripoResult.skipReason ?? 'unknown reason'}`,
-            'Falling back to LLM-scene composer.',
+            'Meshy did not return a GLB URL — falling back to procedural baseline + LLM accents.',
           ]);
         }
-      } catch (tripoErr) {
-        logger.warn('[Vehicle] Tripo text_to_model failed', { jobId, error: errorMessage(tripoErr) });
+      } catch (meshyErr) {
+        logger.warn('[Vehicle] Meshy text-to-3d failed', { jobId, error: errorMessage(meshyErr) });
         await finishStage('generate_vehicle_mesh', 'completed', [], [
-          `Tripo unavailable: ${errorMessage(tripoErr).slice(0, 200)}`,
-          'Falling back to LLM-scene composer.',
+          `Meshy unavailable: ${errorMessage(meshyErr).slice(0, 200)}`,
+          'Falling back to procedural baseline + LLM accents.',
         ]);
       }
 
@@ -26757,16 +26782,16 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // pattern used by furniture (chair/table/lamp/etc.) — the LLM decides
       // the look, the backend guarantees the physics.
       //
-      // SKIP this stage entirely when Tripo already produced a usable mesh
+      // SKIP this stage entirely when Meshy already produced a usable mesh
       // asset id (the previous stage stored it in metadata.vehicleMeshAssetId).
       // The builder gives mesh-asset top priority and ignores vehicleScene
       // when both exist, so running the LLM composer would just burn tokens.
-      const hadTripoMeshAlready = typeof currentJob.metadata?.vehicleMeshAssetId === 'number'
+      const hadMeshAlready = typeof currentJob.metadata?.vehicleMeshAssetId === 'number'
         && (currentJob.metadata.vehicleMeshAssetId as number) > 0;
-      if (hadTripoMeshAlready) {
-        await beginStage('generate_vehicle_scene', 'Skipping LLM scene — Tripo mesh already available');
+      if (hadMeshAlready) {
+        await beginStage('generate_vehicle_scene', 'Skipping LLM scene — vehicle mesh already available');
         await finishStage('generate_vehicle_scene', 'completed', [], [
-          'Tripo mesh already produced — LLM scene composer skipped.',
+          'Mesh body already produced — LLM scene composer skipped.',
         ]);
       } else {
       await beginStage('generate_vehicle_scene', 'LLM is designing the vehicle body from the brief');

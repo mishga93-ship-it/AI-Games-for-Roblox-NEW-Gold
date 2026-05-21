@@ -1808,6 +1808,95 @@ export async function generateFlatShirtMockup(
   }
 }
 
+// 2026-05-21 Phase 2 — Roblox-native UV template generator.
+// Uses the CivitAI "Roblox Shirt (Base SDXL)" LoRA via fal-ai/lora endpoint.
+// Unlike Flux flat-shirt-then-slice, this LoRA was trained on actual
+// Roblox 585×559 UV template layouts, so the output already places the
+// design correctly across front torso / back / sleeves UV regions and
+// the result can go straight to itemconfiguration.roblox.com upload —
+// no slicing, no compositing, no per-face cropping. Falls back to the
+// flat-mockup-slice path if the LoRA generation fails.
+//
+//   Model id   88420  (CivitAI: "Roblox Shirt (Base SDXL)")
+//   Version    573750
+//   Base       SDXL 1.0
+//   Scale      1.0–1.2 per author recommendation
+//   Pipeline   1024×1024 → resize 559×559 → pad to 585×559 → ready for upload
+export async function generateRobloxNativeShirtTemplate(
+  garmentDescription: string,
+): Promise<ClothingTextureUploadResult | undefined> {
+  const sanitisedDesc = garmentDescription
+    .trim()
+    .slice(0, 1000)
+    .replace(/\b(adidas|nike|supreme|off[\s-]?white|puma|champion|gucci|prada|louis vuitton|balenciaga|yeezy|trefoil|swoosh|jumpman)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const cleanDesc = sanitisedDesc || 'a simple colorful design';
+  const prompt =
+    `clothing template with a shirt ${cleanDesc}. ` +
+    'Roblox classic shirt UV template layout, flat 2D texture, clean lines.';
+  const negativePrompt =
+    'realistic photo, photograph, 3D, perspective, mannequin, person, character, body, hands, ' +
+    'face, head, hair, eyes, mouth, ' +
+    'brand logo, copyrighted, trademark, ' +
+    'Adidas, Nike, Supreme, Off-White, Puma, Champion, Gucci, Prada, Yeezy';
+  try {
+    const result = await runFal('lora-sdxl', {
+      endpoint: 'fal-ai/lora',
+      payload: {
+        model_name: 'stabilityai/stable-diffusion-xl-base-1.0',
+        prompt,
+        negative_prompt: negativePrompt,
+        loras: [
+          {
+            // Roblox Shirt (Base SDXL) — model version 573750 of CivitAI 88420.
+            path: 'https://civitai.com/api/download/models/573750',
+            scale: 1.1,
+          },
+        ],
+        num_inference_steps: 30,
+        guidance_scale: 7.5,
+        image_size: { width: 1024, height: 1024 },
+        num_images: 1,
+      },
+    });
+    if (!result.outputUrl) {
+      logger.warn('[generateRobloxNativeShirtTemplate] fal-ai/lora returned no URL');
+      return undefined;
+    }
+    const resp = await fetch(result.outputUrl);
+    if (!resp.ok) {
+      logger.warn('[generateRobloxNativeShirtTemplate] failed to download LoRA output', { status: resp.status });
+      return undefined;
+    }
+    const raw = Buffer.from(await resp.arrayBuffer());
+
+    // CivitAI Roblox LoRA recipe:
+    //   1) Generated at 1024×1024
+    //   2) Resize to 559×559 (preserves UV layout proportionally)
+    //   3) Pad to 585×559 with 13px on each side (transparent / neutral)
+    // The author's exact instructions, paraphrased on the CivitAI model page.
+    const resized = await sharp(raw).resize(559, 559, { fit: 'cover' }).png().toBuffer();
+    const padded = await sharp({
+      create: {
+        width: 585,
+        height: 559,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([{ input: resized, left: 13, top: 0 }])
+      .png()
+      .toBuffer();
+
+    logger.info('[generateRobloxNativeShirtTemplate] Roblox-native 585×559 template ready');
+    return await uploadGeneratedClothingTexture(padded, 'shirts');
+  } catch (err) {
+    logger.warn('[generateRobloxNativeShirtTemplate] threw', { error: (err as Error).message });
+    return undefined;
+  }
+}
+
 // 2026-05-21: Slice a flat front-view shirt photo into all the 585×559 UV
 // template regions — chest, both sleeves, and back. The Roblox classic
 // template wraps these regions onto the avatar's torso + arms; by cutting
