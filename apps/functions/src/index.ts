@@ -10176,10 +10176,58 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
             b.textureAssetId = extract.textureId;
             conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} → MeshId ${extract.meshId} + TextureID ${extract.textureId}`);
           } else {
-            conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} → MeshId ${extract.meshId} (no baked TextureID — element-colour fallback only)`);
+            conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} → MeshId ${extract.meshId} (animated FBX without texture — trying raw GLB fallback)`);
           }
         } else {
           conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} uploaded but MeshId extraction failed (state=${extract?.state ?? 'unknown'}). Use ModelAssetId to InsertService:LoadAsset.`);
+        }
+
+        // 2026-05-22 (session 375, step F): texture-only dual-upload fallback.
+        // Tripo's animate_retarget output (animated FBX) only ships geometry +
+        // skeleton — the PBR texture from the image-to-3d stage is dropped on
+        // the way to the rigged FBX. The raw GLB at b.meshUrl still has the
+        // baked PBR. If primary extract returned no textureId AND we have a
+        // raw GLB, upload it as a second Model asset and pull textureId from
+        // that. The UV mapping is the same mesh, so the texture maps cleanly
+        // to the animated MeshPart. Skipped when meshUrl == fbxUrl (no GLB
+        // ever was produced) or when we already got a texture from the FBX.
+        if ((!b.textureAssetId || b.textureAssetId <= 0) && b.meshUrl && b.meshUrl !== b.fbxUrl) {
+          try {
+            const glbResp = await fetch(b.meshUrl);
+            if (glbResp.ok) {
+              const glbBuf = Buffer.from(await glbResp.arrayBuffer());
+              const glbUpload = await uploadAssetToRoblox({
+                apiKey: ocApiKey,
+                creatorId: ocCreatorId,
+                creatorType: 'User',
+                assetType: 'Model',
+                name: `Pet ${classification.baseName} Stage ${i + 1} TexSrc`.slice(0, 50),
+                description: `Texture source for stage ${i + 1} — raw GLB with baked PBR`.slice(0, 1000),
+                fileContent: glbBuf,
+                contentType: 'model/gltf-binary',
+                assetPrivacy: 'openUse',
+              });
+              if (glbUpload) {
+                let glbModelId = glbUpload.assetId;
+                if ((!glbModelId || glbModelId <= 0) && glbUpload.operationId) {
+                  const polled = await pollRobloxOperation(ocApiKey, glbUpload.operationId, 'api-key');
+                  if (polled && polled > 0) glbModelId = polled;
+                }
+                if (glbModelId && glbModelId > 0) {
+                  const texExtract = await extractMeshIdFromModel(glbModelId);
+                  if (texExtract?.textureId && texExtract.textureId > 0) {
+                    b.textureAssetId = texExtract.textureId;
+                    conversionNotes.push(`Stage ${i + 1}: raw GLB Model ${glbModelId} → TextureID ${texExtract.textureId} (recovered from baked PBR)`);
+                  } else {
+                    conversionNotes.push(`Stage ${i + 1}: raw GLB Model ${glbModelId} extract returned no TextureID — Tripo skipped baking, falling through to element colour`);
+                  }
+                }
+              }
+            }
+          } catch (texErr) {
+            conversionNotes.push(`Stage ${i + 1}: raw GLB texture fallback failed: ${errorMessage(texErr).slice(0, 120)}`);
+            logger.warn('[Pet 3D] raw GLB texture fallback failed', { jobId, idx: i, error: errorMessage(texErr) });
+          }
         }
       } catch (err) {
         conversionNotes.push(`Stage ${i + 1}: upload error — ${errorMessage(err).slice(0, 160)}`);

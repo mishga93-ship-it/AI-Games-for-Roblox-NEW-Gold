@@ -29,6 +29,7 @@ import {
 import {
   buildPetFollowScript,
   buildPetLevelingModule,
+  buildPetDebugEvolveScript,
   buildBlockyPetFollowScript,
   buildBlockyPetLevelingModule,
   buildBlockyPetEggHatchScript,
@@ -2063,6 +2064,16 @@ function buildPetEvolutionManifest(
         scriptType: 'ModuleScript',
         container: petModelId,
         source: buildPetLevelingModule(),
+      },
+      // 2026-05-22 (session 375, step G): debug keybind "E" to cycle Stage 1→2→3.
+      // Without this the only way to see evolution is to grind to level 25/50,
+      // which the current sandbox game loop doesn't provide. Cosmetic only.
+      {
+        id: uuidv4(),
+        name: 'PetDebugEvolveKeybind',
+        scriptType: 'LocalScript',
+        container: petModelId,
+        source: buildPetDebugEvolveScript(),
       },
     ],
     ui: [],
