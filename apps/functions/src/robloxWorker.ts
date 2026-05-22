@@ -1767,6 +1767,29 @@ function buildLayeredClothingManifest(
 // Pairs with apps/functions/src/uiTemplates.ts → buildPetFollowScript /
 // buildPetLevelingModule (Lua sources injected via manifest.scripts).
 // ---------------------------------------------------------------------------
+
+// 2026-05-22 (session 375, step B): fallback Color3 for Body MeshPart by
+// petElement. Tripo/Meshy bake textures into the GLB/FBX, but
+// extractMeshIdFromModel only retrieves the inner MeshId and loses the link
+// to the baked texture during Open Cloud upload — so MeshPart renders as
+// untextured white. Until we wire a proper texture-decal upload (separate
+// task), this color tints the white mesh so the dragon at least matches its
+// element. MeshPart.Color is a multiply over TextureID, so when we later add
+// a real texture we'll reset this to (1,1,1) on Bodies that have a TextureID.
+function petElementColor3(element: string): { __type: 'Color3'; r: number; g: number; b: number } {
+  const palette: Record<string, [number, number, number]> = {
+    Fire:    [0.95, 0.32, 0.10],
+    Ice:     [0.62, 0.85, 0.98],
+    Shadow:  [0.28, 0.18, 0.38],
+    Light:   [0.99, 0.92, 0.55],
+    Nature:  [0.32, 0.72, 0.34],
+    Tech:    [0.55, 0.70, 0.82],
+    Neutral: [0.76, 0.78, 0.82],
+  };
+  const [r, g, b] = palette[element] ?? palette.Neutral;
+  return { __type: 'Color3', r, g, b };
+}
+
 function buildPetEvolutionManifest(
   args: {
     title: string;
@@ -1884,6 +1907,21 @@ function buildPetEvolutionManifest(
           // suppresses RIGID-body physics, not GPU-side bone deformation.
           Anchored: true,
           Massless: true,
+          // 2026-05-22 (session 375, step A): hide inactive evolution stages.
+          // Folder `Stages` does NOT hide its descendant MeshParts — all three
+          // Body meshes used to render simultaneously, so the player saw two
+          // or three overlapping dragons. Transparency=1 keeps Stage2/Stage3
+          // in the scene graph (Evolve swaps them in instantly) but invisible.
+          // PetLevelingModule:Evolve() flips this back to 0 on activation.
+          Transparency: i === 1 ? 0 : 1,
+          // 2026-05-22 (session 375, step B): fallback element color tint.
+          // Body MeshPart on Tripo/Meshy mesh has no TextureID (baked texture
+          // is lost during extractMeshIdFromModel + Open Cloud upload), so it
+          // renders as a white untextured shape. petElementColor3 tints it by
+          // element (Fire=orange-red, Ice=pale blue, etc.). When a real
+          // TextureID is later wired in, reset Color to (1,1,1) so the
+          // texture renders cleanly (Color multiplies over TextureID).
+          Color: petElementColor3(element),
         },
       },
       // Pending-upload sentinel for PetFollowScript to warn on.

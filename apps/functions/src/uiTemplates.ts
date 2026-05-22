@@ -3397,6 +3397,40 @@ local walkTrack = loadStageTrack(activeStage, "Walk")
 local flyTrack = cfg:FindFirstChild("IsFlying") and cfg.IsFlying.Value and loadStageTrack(activeStage, "Fly") or nil
 if idleTrack then idleTrack:Play() end
 
+-- 2026-05-22 (session 375, step C.1): procedural fallback animation.
+-- Tripo bakes the rig + animation into the FBX, but Roblox Open Cloud's
+-- AssetType=Animation upload accepts only KeyframeSequence-bearing .rbxm
+-- files — not raw FBX. Until an FBX→KeyframeSequence converter exists, the
+-- AnimationController has empty AnimationIds and *Track:Play() is a no-op.
+-- To keep the dragon visually alive we add:
+--   1. Idle body bob — sinusoidal Y offset (≈0.35 stud, 1.2Hz), always.
+--   2. Wing flap — scan mesh:GetDescendants() once for Bones whose names
+--      contain "wing" (case-insensitive) or "кры", and rotate them around
+--      local Z by ±25° on a 2.2Hz cycle. SkinnedMesh re-skins on Bone.CFrame
+--      changes, so this animates the geometry without any anim track.
+--   3. Walk roll — small Z lean when the player is moving.
+local IDLE_BOB_AMPL = 0.35
+local IDLE_BOB_FREQ = 1.2
+local WING_FLAP_AMPL = math.rad(25)
+local WING_FLAP_FREQ = 2.2
+local WALK_ROLL_AMPL = math.rad(6)
+local WALK_ROLL_FREQ = 2.6
+
+local wingBones = {}
+do
+    for _, d in ipairs(mesh:GetDescendants()) do
+        if d:IsA("Bone") then
+            local lower = string.lower(d.Name)
+            if string.find(lower, "wing") or string.find(d.Name, "кры") then
+                local x = d.CFrame.Position.X
+                local side = (x >= 0) and 1 or -1
+                table.insert(wingBones, { bone = d, restCF = d.CFrame, side = side })
+            end
+        end
+    end
+end
+print(string.format("[PetFollowScript] Procedural wings: %d bone(s) matched", #wingBones))
+
 -- Capture Body's authored CFrame relative to HRP at script-init time.
 -- After every Heartbeat we set body.CFrame = hrp.CFrame * bodyOffset so the
 -- mesh travels with the invisible root.
@@ -3481,13 +3515,26 @@ RunService.Heartbeat:Connect(function()
         currentHRP = currentHRP:Lerp(target, LERP_ALPHA)
     end
     hrp.CFrame = currentHRP
+    -- 2026-05-22 (session 375, step C.1): procedural body bob + walk roll.
+    local moving = playerHrp.Velocity.Magnitude > 2
+    local t = tick()
+    local bobY = math.sin(t * IDLE_BOB_FREQ * 2 * math.pi) * IDLE_BOB_AMPL
+    local rollZ = moving and (math.sin(t * WALK_ROLL_FREQ * 2 * math.pi) * WALK_ROLL_AMPL) or 0
+    local animOffset = CFrame.new(0, bobY, 0) * CFrame.Angles(0, 0, rollZ)
     if mesh.Parent then
-        mesh.CFrame = currentHRP * bodyOffset
+        mesh.CFrame = currentHRP * animOffset * bodyOffset
     end
 
-    -- Skeletal animation state machine.
+    -- 2026-05-22 (session 375, step C.1): procedural wing flap.
+    if #wingBones > 0 then
+        local flap = math.sin(t * WING_FLAP_FREQ * 2 * math.pi) * WING_FLAP_AMPL
+        for _, w in ipairs(wingBones) do
+            w.bone.CFrame = w.restCF * CFrame.Angles(0, 0, flap * w.side)
+        end
+    end
+
+    -- Skeletal animation state machine (no-op when AnimationIds are empty).
     local isFlying = cfg:FindFirstChild("IsFlying") and cfg.IsFlying.Value
-    local moving = playerHrp.Velocity.Magnitude > 2
     if isFlying and flyTrack then
         if not flyTrack.IsPlaying then flyTrack:Play() end
         if idleTrack and idleTrack.IsPlaying then idleTrack:Stop() end
@@ -3542,6 +3589,19 @@ function PetLeveling:GetCoinMultiplier()
     return b * (1 + cfg.Level.Value * 0.02)
 end
 
+-- 2026-05-22 (session 375, step A): visibility helper. Stage2/Stage3 ship with
+-- Body.Transparency=1 so the player sees only the active Stage1 dragon at spawn.
+-- Evolve() flips the target stage's Body to visible and hides the previously
+-- active one. Folders don't have a Visible property — Transparency on the
+-- MeshPart is the only way to suppress rendering.
+local function setStageVisible(stage, visible)
+    if not stage then return end
+    local body = stage:FindFirstChild("Body")
+    if body and body:IsA("BasePart") then
+        body.Transparency = visible and 0 or 1
+    end
+end
+
 function PetLeveling:Evolve(stage)
     local target = stagesFolder:FindFirstChild("Stage" .. stage)
     if not target then
@@ -3551,11 +3611,15 @@ function PetLeveling:Evolve(stage)
     cfg.EvolutionStage.Value = stage
     for _, child in ipairs(pet:GetChildren()) do
         if child:IsA("Model") and child.Name:match("^Stage%d+$") and child ~= target then
+            setStageVisible(child, false)
             child.Parent = stagesFolder
         end
     end
     for _, child in ipairs(stagesFolder:GetChildren()) do
-        if child == target then child.Parent = pet end
+        if child == target then
+            child.Parent = pet
+            setStageVisible(child, true)
+        end
     end
     return true
 end

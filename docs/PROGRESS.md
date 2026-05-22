@@ -18,6 +18,40 @@
 
 ## Выполненные задачи
 
+### 🟡 [Pet 3D Visual] Три симптома пет-генерации: два меша, белый цвет, статичные крылья (2026-05-22, сессия 375, не задеплоено)
+- **Проблема**: пользователь прислал скриншот Roblox с двумя белыми драконами и сообщением «он без цвета и не машет крыльями нет движения».
+- **Root causes**:
+  1. Все 3 evolution-стадии (Stage1/2/3) рендерились одновременно — `Folder Stages` в Roblox не скрывает дочерние `MeshPart`-ы. PetLevelingModule:Evolve() переключал родителей, но при init все Body были видимы.
+  2. На MeshPart `Body` не выставлен ни `TextureID`, ни fallback `Color` — Tripo запекает текстуру в GLB/FBX, но `extractMeshIdFromModel` достаёт только inner MeshId → связь с baked texture теряется при Open Cloud upload → меш белый.
+  3. `Animation.AnimationId` получал raw HTTPS Tripo FBX URL (`bundle.idleAnimUrl = animResult.fbxUrl`). Roblox runtime принимает строго `rbxassetid://N` от KeyframeSequence asset, поэтому tracks были nil и крылья статичные.
+- **Решение** (3 шага):
+  - **Шаг A** (`apps/functions/src/robloxWorker.ts:buildPetEvolutionManifest` + `apps/functions/src/uiTemplates.ts:buildPetLevelingModule`): Stage2/Stage3 ship с `Body.Transparency=1`, Stage1 = 0. `Evolve(stage)` через новый `setStageVisible(stage, visible)` flips Transparency на target/old при reparent.
+  - **Шаг B** (`apps/functions/src/robloxWorker.ts`): добавлен helper `petElementColor3(element)` — Color3 palette по `petElement` (Fire→оранжево-красный, Ice→бледно-голубой, Shadow→дусковый фиолет, Light→золото, Nature→зелёный, Tech→cyan-steel, Neutral→серебро). Применяется на `Body.Color`.
+  - **Шаг C.1** (`apps/functions/src/index.ts:processPet3DJob` + `apps/functions/src/uiTemplates.ts:buildPetFollowScript`): убраны `bundle.idleAnimUrl/walkAnimUrl/flyAnimUrl = animResult.fbxUrl` (никогда не работали). PetFollowScript теперь даёт procedural fallback: idle body bob (sin 1.2Hz × 0.35 stud по Y), walk roll (sin 2.6Hz × 6° по Z при moving), wing flap (для всех `Bone` с именем matching `wing` или `кры` — вращение ±25° на 2.2Hz, side по `bone.Position.X`).
+- **Проверка**: `npm run build --workspace apps/functions` ✅ (clean tsc) после каждого шага.
+- **Commit/Deploy**: НЕ закоммичено и НЕ задеплоено — пользователь сначала должен сгенерировать fresh pet после deploy и подтвердить визуально.
+- **Известные ограничения / Known Issues**:
+  - Fallback `Body.Color` применяется ко всему мешу одинаково (нет деталей разного цвета — нос, глаза). Решит только настоящая texture через Open Cloud Decal upload.
+  - Wing flap зависит от того, что Tripo назовёт кости с подстрокой "wing". Если rigType=AVIAN или QUADRUPED с другой конвенцией — крылья не двигаются (только body bob).
+- **Внешний TODO (C.2, отдельная сессия)**: настоящий FBX→KeyframeSequence→.rbxm converter через blender-cage-service + Open Cloud `AssetType=Animation` upload. См. cursor/changelog-375.md `## 5`.
+
+### 🟡 [iOS Export UX] Фикс freeze при первом тапе Download/Share + редактируемые уникальные имена файлов (2026-05-21, сессия 374, ждёт Xcode build от пользователя)
+- **Проблема**: (1) при первом тапе «Download / Share File» в чате прола подвисала на несколько секунд; (2) все скачанные файлы попадали на Mac с одинаковым базовым именем (`<title>.<ext>`) — пользователь задолбался переименовывать вручную.
+- **Root cause**:
+  1. `ExportView` сам открыт как SwiftUI `.sheet(item: $exportGuide)` поверх ChatView preview-sheet (NavigationStack внутри `.sheet`). Кнопка «Download / Share File» поднимала ещё один `.sheet(isPresented: $showShareSheet) { FileShareSheet(UIActivityViewController) }` — это **третий** уровень модальных контроллеров. На iOS 17/18 это хорошо известная проблема: первый показ UIActivityViewController + холодная инициализация share-extensions через cold cache + проброс через три SwiftUI sheet'а вешает презентацию.
+  2. `fileName` собирался один раз из `preview.title.lowercased()` для конкретного контент-типа и не нёс уникального компонента (timestamp/jobId).
+- **Решение** (`apps/ios/AIGoldRoblox/Features/Export/ExportView.swift`):
+  - Заменил `.sheet(isPresented: $showShareSheet)` + `FileShareSheet` UIViewControllerRepresentable на UIKit-direct презентацию: helper `presentShareSheet(for: URL)` поднимается через `UIApplication.shared.connectedScenes` → `UIWindowScene` → key window → топовый `presentedViewController`, и вызывает `present(_:animated:)` напрямую. Теперь share-sheet — 2-й модал, не 3-й, и обходит SwiftUI sheet machinery. Поддержка iPad (`popoverPresentationController.sourceView/sourceRect`).
+  - В карточке-header заменил статичный `Text("\(fileName).\(fileType)")` на редактируемый `TextField` (binding на `editableFileName`) + суффикс `.\(fileType)`. Default = `<base>-yyyyMMdd-HHmmss` (uniformly unique even within the same minute), инициализируется в `.onAppear`. Все `downloadToTempFile(...)` теперь передают `nameOverride: currentBaseName()` — каждый файл попадает на Mac с тем именем, что показано в TextField.
+  - Добавил `.scrollDismissesKeyboard(.interactively)` чтобы клавиатура закрывалась свайпом.
+  - Files-picker (`UIDocumentPickerViewController`) остался через SwiftUI `.sheet` — он работал нормально, на него жалоб не было.
+- **Проверка**:
+  - `git diff --check -- apps/ios/AIGoldRoblox/Features/Export/ExportView.swift` ✅ (no whitespace errors).
+  - `grep -n "showShareSheet|FileShareSheet"` ✅ (нет orphan refs).
+  - Build verification — **ждёт пользователя**: преflight показал открытый Xcode на том же `.xcodeproj`, поэтому CLI `xcodebuild` пропущен (AGENTS.md §0.7 — не лочить пользовательский build.db).
+- **Commit/Deploy**: НЕ закоммичено — по §0.5 п.6 commit делается только после успешного теста/build/check; user должен сначала пересобрать в Xcode и убедиться что Download / Share File работает мгновенно и имена файлов в `~/Downloads/` имеют timestamp-суффикс. Backend не затронут — deploy не нужен.
+- **Известные ограничения**: текстура PNG путь сохраняет суффикс `-texture` (`<base>-texture.png`) — на случай если пользователь поменяет base в TextField, PNG получит новое имя соответственно.
+
 ### ✅ [Vehicles Hybrid Skeleton] Машины перестали быть плоскими коробками — procedural baseline + LLM accent-only (2026-05-21, сессия 373)
 - **Проблема**: пользователь прислал `~/Downloads/content-project-vehicle.rbxm` и скрин Studio с тремя «машинами», которые выглядели как плоские прямоугольные коробки на колёсах. Физика рабочая, проблема только в визуале.
 - **Root cause**: builder vehicle pipeline отдавал приоритет LLM-scene composer (`vehicleScene` metadata) над procedural family-sedan baseline. LLM (Gemini 2.5 Flash) генерировал ~10 простых Block-частей без WedgePart/CornerWedgePart — флэт-боксы. Прокачанный baseline (120+ парт с WedgePart hood/trunk, наклонными стёклами 22°/-22°, отдельной крышей/кабиной) **никогда не задействовался**, потому что был последним fallback'ом.
