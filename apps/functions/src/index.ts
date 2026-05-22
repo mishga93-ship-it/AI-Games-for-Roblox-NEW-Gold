@@ -6149,7 +6149,7 @@ function createVehiclePipelineStages(): GenerationStageProgress[] {
     { id: 'concept_approval', title: 'Awaiting your approval', status: 'pending' },
     // Phase 2 — runs after user approves the concept.
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
-    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Tripo → Meshy fallback)', status: 'pending' },
+    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Meshy 6)', status: 'pending' },
     { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
@@ -27163,20 +27163,18 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         'Using canonical self-contained VehicleController template',
       ]);
 
-      // ── generate_vehicle_mesh: Tripo v2.5 text-to-3d → Meshy 6 fallback.
-      // Session 373 round 19 (option B): nilo.io blog reports Tripo's "smart
-      // mesh system" produces better car topology than Meshy ("messy meshes").
-      // We try Tripo first; if it skips (TRIPO_API_KEY unset) / fails (banned,
-      // expired, timeout) we fall back to Meshy 6 which has been the prod path
-      // since session 373 #10. The procedural baseline still kicks in if both
-      // upstream providers fail (addVehicleBodyShell always emitted) — that's
-      // the third-tier safety net so the user always gets a drivable car.
+      // ── generate_vehicle_mesh: Meshy 6 primary.
+      // Session 373 round 19 originally added Tripo v2.5 → Meshy 6 fallback
+      // chain (per nilo.io blog: Tripo claims better car topology). Live test
+      // in #14/#15 showed Tripo billing balance = $0 → every call 403'd then
+      // fell through to Meshy after ~2s wasted latency + log noise. User
+      // decided 2026-05-22 (option B): drop Tripo from active chain, run
+      // Meshy directly. Tripo can be reinstated by topping up balance and
+      // setting ENABLE_TRIPO_VEHICLE=true in env.
       //
-      // Tripo GLBs embed PBR textures natively (glTF-spec compliant), so we
-      // skip the separate Image-asset upload for the base color PNG that
-      // Meshy needs (round 11 workaround). Inner MeshPart.TextureID gets
-      // populated by Roblox during Open Cloud Model import for Tripo.
-      await beginStage('generate_vehicle_mesh', 'Generating a 3D vehicle body (Tripo v2.5 → Meshy 6 fallback)');
+      // Procedural baseline (addVehicleBodyShell) remains as 2nd-tier safety
+      // net if Meshy itself fails.
+      await beginStage('generate_vehicle_mesh', 'Meshy 6 is generating a 3D vehicle body');
       try {
         const titleStrForMesh = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
         const meshyBrief = [titleStrForMesh, job.prompt].filter(Boolean).join('. ');
@@ -27187,41 +27185,49 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           ? currentJob.metadata.primaryColor as string : '';
         const accentHexForProvider = typeof currentJob.metadata?.accentColor === 'string'
           ? currentJob.metadata.accentColor as string : '';
-
-        // Phase 1 — Tripo v2.5 text-to-model. Skip-gracefully if key missing
-        // or task fails: returns { skipped: true, skipReason }, never throws.
+        // Provider state kept as `meshProvider` for downstream compatibility
+        // (metadata field name unchanged). When ENABLE_TRIPO_VEHICLE flag
+        // exists in future the type union expands again.
         let meshyGlbUrl = '';
         let meshyThumbnailUrl = '';
         let meshyBaseColorUrl = '';
-        let meshProvider: 'tripo-v2.5' | 'meshy-v6' = 'tripo-v2.5';
+        let meshProvider: 'tripo-v2.5' | 'meshy-v6' = 'meshy-v6';
         let meshProviderTaskId: string | undefined;
-        try {
-          const tripoResult = await (await import('./providers.js')).runTripoVehicleText({
-            prompt: meshyBrief,
-            vehicleType,
-            primaryHex: primaryHexForProvider,
-            accentHex: accentHexForProvider,
-          });
-          if (tripoResult.modelUrl && !tripoResult.skipped) {
-            meshyGlbUrl = tripoResult.modelUrl;
-            meshyThumbnailUrl = tripoResult.thumbnailUrl ?? '';
-            meshProviderTaskId = tripoResult.taskId;
-            logger.info('[Vehicle] Tripo v2.5 success', {
-              jobId, taskId: tripoResult.taskId, modelUrlPrefix: tripoResult.modelUrl.slice(0, 80),
+        void primaryHexForProvider;
+        void accentHexForProvider;
+
+        // Optional Tripo path — only enabled when env flag is explicitly set
+        // AND TRIPO_API_KEY has credit. Default disabled per user decision.
+        if (process.env.ENABLE_TRIPO_VEHICLE === 'true') {
+          try {
+            const tripoResult = await (await import('./providers.js')).runTripoVehicleText({
+              prompt: meshyBrief,
+              vehicleType,
+              primaryHex: primaryHexForProvider,
+              accentHex: accentHexForProvider,
             });
-          } else {
-            logger.info('[Vehicle] Tripo skipped/failed, falling back to Meshy 6', {
-              jobId, skipReason: tripoResult.skipReason,
+            if (tripoResult.modelUrl && !tripoResult.skipped) {
+              meshyGlbUrl = tripoResult.modelUrl;
+              meshyThumbnailUrl = tripoResult.thumbnailUrl ?? '';
+              meshProvider = 'tripo-v2.5';
+              meshProviderTaskId = tripoResult.taskId;
+              logger.info('[Vehicle] Tripo v2.5 success', {
+                jobId, taskId: tripoResult.taskId, modelUrlPrefix: tripoResult.modelUrl.slice(0, 80),
+              });
+            } else {
+              logger.info('[Vehicle] Tripo skipped/failed (enabled), falling back to Meshy 6', {
+                jobId, skipReason: tripoResult.skipReason,
+              });
+            }
+          } catch (tripoErr) {
+            logger.warn('[Vehicle] Tripo threw (enabled), falling back to Meshy 6', {
+              jobId, error: errorMessage(tripoErr),
             });
           }
-        } catch (tripoErr) {
-          logger.warn('[Vehicle] Tripo threw, falling back to Meshy 6', {
-            jobId, error: errorMessage(tripoErr),
-          });
         }
 
-        // Phase 2 — Meshy 6 fallback (multi-image-to-3d when concept URL set,
-        // text-to-3d otherwise). runMeshy reads contentCategory /
+        // Meshy 6 — primary path. multi-image-to-3d when concept URL set,
+        // text-to-3d otherwise. runMeshy reads contentCategory /
         // requestedKind to switch to vehicle-specific negative_prompt.
         if (!meshyGlbUrl) {
           meshProvider = 'meshy-v6';
