@@ -383,7 +383,20 @@ def main() -> None:
         sys.exit(2)
     body = _join_meshes(imported, name="VehicleBody")
     _recenter_origin(body)
-    _auto_orient_forward_minus_z(body)
+    # Auto-orient DISABLED 2026-05-22 (round 17). Blender's
+    # transform_apply(rotation=True) doesn't reliably bake the rotation
+    # into the exported GLB when combined with export_yup=True — the
+    # bbox extents after rotation matched extents BEFORE rotation in my
+    # local logs, which means either the rotation didn't take effect or
+    # the export's Y-up conversion undid it. Either way, TS-side
+    # robloxWorker.ts reads natural sizeX/sizeY/sizeZ from
+    # extractMeshIdFromModel AFTER Blender ran and applies its own
+    # forwardIsX detection + meshRot=[0,90,0] when X>Z. If Blender ALSO
+    # rotated, we get DOUBLE-rotation → mesh visual faces world -X
+    # (90° left of chassis forward) → user reports "едет боком, не
+    # крутятся колёса, нет звуков" because chassis pushes -Z but mesh
+    # points -X. Letting TS handle rotation alone keeps it deterministic.
+    # _auto_orient_forward_minus_z(body)
     # Phase B (session 373 round 13): delete baked-in wheels + soften the
     # window pixels so they read as glass in Studio. Both are best-effort
     # heuristics — they help typical Meshy outputs but may misbehave on

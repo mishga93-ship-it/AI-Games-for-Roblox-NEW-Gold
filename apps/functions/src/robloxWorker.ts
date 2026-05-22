@@ -3159,10 +3159,15 @@ function addVehicleSeats(args: {
   // Driver cabin Y ≈ 55% up the mesh body from its bottom (above floor pan,
   // below roof). Round 6: anchored to mesh bottom (= wheelRadius) not rootY,
   // matching the lowered mesh position.
+  // Round 17: dropped 55% → 40% so the seat sits INSIDE the cabin instead
+  // of on top of the roof. After Round 12's L/H enforcement, Y is often
+  // non-uniformly stretched (Meshy sport cars get +85% Y) and the cabin
+  // ends up around 35-50% of total height; 55% landed the seat above the
+  // visible roof line, user-reported as "перс сидит не в ней а на ней".
   const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
-    ? meshFitBottomY + meshFitHeight * 0.55
+    ? meshFitBottomY + meshFitHeight * 0.40
     : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
-      ? rootY + meshFitHeight * 0.55
+      ? rootY + meshFitHeight * 0.40
       : undefined;
   const seatY = meshSeatY ?? (
     profile.type === 'bus'
@@ -3306,32 +3311,21 @@ function addVehiclePhysics(args: {
         // with the actual mesh edge when meshFitWidth is used.
         const x = side === 0 ? 0 : side * width * 0.52;
         const wheelY = Math.max(profile.wheelRadius, 0.45);
-        // Round 16: when a Meshy mesh body is loaded, that mesh ALWAYS
-        // includes baked-in wheel geometry (rim + tyre + arch — Meshy
-        // ignores "no wheels" in the prompt). Our procedural Cylinder
-        // wheels then either (a) overlap visually with the baked wheels
-        // = duplicate-wheel artefacts user kept calling "в жопе", or
-        // (b) get pushed slightly outside the body silhouette = even
-        // more disconnected. Solution: make the procedural wheels
-        // INVISIBLE (Transparency=1) when mesh-body mode is active,
-        // but keep their geometry for physics — the chassis still
-        // drives via HingeConstraints, collisions still register on
-        // the wheel cylinders, the user just sees the mesh's own
-        // baked wheels which are at the correct visible positions.
-        const meshBodyMode = (meshFitWidth !== undefined && meshFitWidth > 0);
+        // Round 17 reverted Round 16: wheels are VISIBLE again. Round 16
+        // made them invisible to hide overlap with Meshy's baked wheels,
+        // but the user reported "колёса не крутятся" — the spinning
+        // procedural wheels were invisible while Meshy's baked (static)
+        // wheels were what the user could see. Reverting to visible
+        // wheels: at least the user sees rotation feedback. The visual
+        // overlap is the next issue to fix (Phase B v2 — tighter wheel-
+        // removal heuristic).
         const wheelId = addPart(
           `Wheel${wheelIndex + 1}`,
           folders.wheels,
           [profile.wheelRadius * 0.55, profile.wheelRadius * 2, profile.wheelRadius * 2],
           [x, wheelY, z],
           dark,
-          {
-            shape: 'Cylinder',
-            material: 'SmoothPlastic',
-            canCollide: !stableLandMode,
-            massless: stableLandMode,
-            transparency: meshBodyMode ? 1 : 0,
-          },
+          { shape: 'Cylinder', material: 'SmoothPlastic', canCollide: !stableLandMode, massless: stableLandMode },
         );
         const rootAtt = uuidv4();
         const wheelAtt = uuidv4();
