@@ -2389,38 +2389,45 @@ function buildVehicleModelManifest(
       && naturalSizeRaw.x > 0 && naturalSizeRaw.y > 0 && naturalSizeRaw.z > 0
       ? { x: naturalSizeRaw.x, y: naturalSizeRaw.y, z: naturalSizeRaw.z }
       : { x: 1, y: 0.3, z: 1 }; // fallback: cars are wider than tall, mesh roughly 1:0.3:1 ratio
-    // Forward axis detection: the horizontal dimension with the larger extent
-    // is the mesh's "length" direction. Cars are always longer than they are
-    // wide.
-    const forwardIsX = natural.x > natural.z;
-    const mLong = Math.max(natural.x, natural.z);   // mesh-length
-    const mShort = Math.min(natural.x, natural.z);  // mesh-width
-    const mTall = natural.y;                         // mesh-height
-    // Uniform scale so longest horizontal dim matches chassis length.
+    // Session 373 round 18: TRUST the Meshy GLB orientation entirely.
+    //
+    // Background: rounds 12-17 tried to detect "forward = longer horizontal
+    // axis" and rotate the MeshPart 90° around Y when X > Z. That assumes
+    // Meshy outputs cars with forward = +X. But Meshy actually emits GLBs
+    // following the glTF spec (forward = -Z) and the natural longer-axis is
+    // often a body PANEL not the length (e.g. our latest Vehicle_CarProject:
+    // X=1.91, Y=0.89, Z=1.25 — natural forward IS Z, X is wider). Our 90°
+    // rotation then puts the long visible dim along world X, leaving the
+    // car visually PERPENDICULAR to chassis forward (-Z). Reported as
+    // "машина поперёк".
+    //
+    // Fix: no rotation. Mesh natural -Z = chassis forward = correct.
+    // We still uniformly scale the mesh to chassis length, but along its
+    // ACTUAL natural longest axis without swapping. mLong = max(X, Z) just
+    // for scale computation; meshSize / meshRot below use natural axes.
+    const mLong = Math.max(natural.x, natural.z);
+    const mTall = natural.y;
+    // Uniform scale so the natural longest horizontal axis fits the
+    // target chassis length (8.65 stud).
     const targetLength = length * 0.94;
     const scale = targetLength / mLong;
-    const finalLength = mLong * scale;     // becomes Z (Roblox forward axis)
-    const finalWidth = mShort * scale;     // becomes X
-    // Session 373 round 12: Meshy keeps emitting sleek F1/speedster
-    // proportions (L/H ratio 3.0+) even with the "chunky cartoon" prompt —
-    // observed Vehicle_SportyCar at natural 1.91×0.59×0.91 (L/H=3.24, user
-    // reported "размащанная"). To force cartoon Roblox aesthetic regardless
-    // of Meshy's actual mesh, we enforce a minimum height. If natural mesh
-    // is too flat, we STRETCH Y (non-uniformly) so the resulting MeshPart
-    // has L/H ≤ 1.8 (Hill Climb Racing / Lego City threshold). Slight
-    // vertical distortion of a sleek mesh is acceptable; the alternative
-    // is the smushed-out F1 silhouette the user keeps rejecting.
-    const minHeightAsLengthFraction = 1.0 / 1.8; // L/H ≤ 1.8 → H/L ≥ 0.555
-    const naturalUniformHeight = mTall * scale;
-    const enforcedMinHeight = finalLength * minHeightAsLengthFraction;
-    const finalHeight = Math.max(naturalUniformHeight, enforcedMinHeight); // Y (up)
-    // MeshPart.Size — if mesh native forward is X, we swap Size.X/Z and rotate
-    // 90° around Y so the mesh visually faces -Z (Roblox forward / chassis
-    // driving direction).
-    const meshSize: [number, number, number] = forwardIsX
-      ? [finalLength, finalHeight, finalWidth] // mesh-native: long along X, then we rotate
-      : [finalWidth, finalHeight, finalLength];
-    const meshRot: [number, number, number] = forwardIsX ? [0, 90, 0] : [0, 0, 0];
+    // Round 18: drop the L/H ≤ 1.8 enforcement. Round 12's non-uniform Y
+    // stretch (+85% on sport cars) made the mesh look "размотое" /
+    // distorted vertically. Most Meshy outputs already have L/H 1.8-2.5
+    // which is acceptable cartoon, and the stretch was uglifying the
+    // ones that did have good proportions. Trust natural Y.
+    const finalLength = natural.z * scale;  // along Roblox forward (-Z)
+    const finalWidth = natural.x * scale;   // along Roblox right (+X)
+    const finalHeight = mTall * scale;       // along Roblox up (+Y)
+    // Round 18: MeshPart.Size in mesh's NATIVE axis order (X=width, Y=tall,
+    // Z=forward — same as GLB spec). No rotation — mesh visually faces -Z
+    // naturally if Meshy followed glTF convention, which matches chassis
+    // forward direction. If a particular Meshy mesh happens to have a
+    // non-standard orientation, the user can rotate it in Studio; our
+    // pipeline no longer tries to second-guess Meshy's axis convention
+    // and ends up rotating CORRECT outputs wrong way 50% of the time.
+    const meshSize: [number, number, number] = [finalWidth, finalHeight, finalLength];
+    const meshRot: [number, number, number] = [0, 0, 0];
     // Session 373 round 6: position mesh so its bottom sits AT the wheel
     // axle level (Y = wheelRadius), not at rootY (which was 0.75 stud
     // above the wheel top — leaving a visible gap underneath the body
@@ -3159,15 +3166,15 @@ function addVehicleSeats(args: {
   // Driver cabin Y ≈ 55% up the mesh body from its bottom (above floor pan,
   // below roof). Round 6: anchored to mesh bottom (= wheelRadius) not rootY,
   // matching the lowered mesh position.
-  // Round 17: dropped 55% → 40% so the seat sits INSIDE the cabin instead
-  // of on top of the roof. After Round 12's L/H enforcement, Y is often
-  // non-uniformly stretched (Meshy sport cars get +85% Y) and the cabin
-  // ends up around 35-50% of total height; 55% landed the seat above the
-  // visible roof line, user-reported as "перс сидит не в ней а на ней".
+  // Round 18: dropped further to 30%. Even at 40% the user reported the
+  // character was sitting ON the roof, not inside the car. Meshy meshes
+  // place the cabin/interior visually around 25-35% of total bbox height
+  // (the upper 65% is empty roof-space because Meshy doesn't model true
+  // car interiors). 30% lands the seat inside the visible cabin.
   const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
-    ? meshFitBottomY + meshFitHeight * 0.40
+    ? meshFitBottomY + meshFitHeight * 0.30
     : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
-      ? rootY + meshFitHeight * 0.40
+      ? rootY + meshFitHeight * 0.30
       : undefined;
   const seatY = meshSeatY ?? (
     profile.type === 'bus'
