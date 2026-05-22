@@ -1685,6 +1685,29 @@ function buildLayeredClothingManifest(
   const clothingTypeRaw = typeof metadata.clothingType === 'string' ? metadata.clothingType : undefined;
   const accessoryTypeEnum = resolveAccessoryType(clothingTypeRaw);
 
+  // Session 378: Roblox Studio's MeshContentProvider can ONLY resolve
+  // `rbxassetid://N` URIs. Pre-this-fix we were writing raw GCS signed URLs
+  // (storage.googleapis.com/...?Signature=...) directly into MeshId /
+  // ReferenceMeshId / CageMeshId, which caused Studio Output spam:
+  //   "MeshContentProvider failed to process https://storage.googleapis.com/...
+  //    because 'could not fetch'"
+  // (Studio refuses arbitrary HTTPS hosts as a security/safety measure.)
+  //
+  // Until we wire a proper Open Cloud upload step for clothing_3d (uploads
+  // the FBX/glb as assetType=Mesh, then writes `rbxassetid://N` here), strip
+  // any non-rbxassetid value so we don't emit broken refs. The user's
+  // primary workflow is the .fbx drag-and-drop (handled by Studio's FBX
+  // importer, which embeds the actual mesh bytes) — that path doesn't go
+  // through MeshContentProvider at all and keeps working.
+  const sanitizeMeshRef = (url: string | undefined): string | undefined => {
+    if (!url) return undefined;
+    if (url.startsWith('rbxassetid://') || url.startsWith('rbxasset://')) return url;
+    return undefined;
+  };
+  const safeClothingMeshId = sanitizeMeshRef(clothingGlbUrl);
+  const safeInnerCageId = sanitizeMeshRef(innerCageUrl);
+  const safeOuterCageId = sanitizeMeshRef(outerCageUrl);
+
   const accessoryId = uuidv4();
   const handleId = uuidv4();
   const wrapLayerId = uuidv4();
@@ -1705,7 +1728,7 @@ function buildLayeredClothingManifest(
       name: 'Handle',
       parentId: accessoryId,
       properties: {
-        ...(clothingGlbUrl ? { MeshId: clothingGlbUrl } : {}),
+        ...(safeClothingMeshId ? { MeshId: safeClothingMeshId } : {}),
         Size: { __type: 'Vector3', x: 2, y: 2, z: 1 },
         CanCollide: false,
         Anchored: false,
@@ -1722,8 +1745,8 @@ function buildLayeredClothingManifest(
         AutoSkin: { __type: 'Enum', enumType: 'WrapLayerAutoSkin', enumName: 'EnabledOverride' },
         ShrinkFactor: 0,
         Puffiness: 1,
-        ...(innerCageUrl ? { ReferenceMeshId: innerCageUrl } : {}),
-        ...(outerCageUrl ? { CageMeshId: outerCageUrl } : {}),
+        ...(safeInnerCageId ? { ReferenceMeshId: safeInnerCageId } : {}),
+        ...(safeOuterCageId ? { CageMeshId: safeOuterCageId } : {}),
       },
     },
   ];
