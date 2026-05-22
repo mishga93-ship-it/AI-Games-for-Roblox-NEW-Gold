@@ -3306,13 +3306,32 @@ function addVehiclePhysics(args: {
         // with the actual mesh edge when meshFitWidth is used.
         const x = side === 0 ? 0 : side * width * 0.52;
         const wheelY = Math.max(profile.wheelRadius, 0.45);
+        // Round 16: when a Meshy mesh body is loaded, that mesh ALWAYS
+        // includes baked-in wheel geometry (rim + tyre + arch — Meshy
+        // ignores "no wheels" in the prompt). Our procedural Cylinder
+        // wheels then either (a) overlap visually with the baked wheels
+        // = duplicate-wheel artefacts user kept calling "в жопе", or
+        // (b) get pushed slightly outside the body silhouette = even
+        // more disconnected. Solution: make the procedural wheels
+        // INVISIBLE (Transparency=1) when mesh-body mode is active,
+        // but keep their geometry for physics — the chassis still
+        // drives via HingeConstraints, collisions still register on
+        // the wheel cylinders, the user just sees the mesh's own
+        // baked wheels which are at the correct visible positions.
+        const meshBodyMode = (meshFitWidth !== undefined && meshFitWidth > 0);
         const wheelId = addPart(
           `Wheel${wheelIndex + 1}`,
           folders.wheels,
           [profile.wheelRadius * 0.55, profile.wheelRadius * 2, profile.wheelRadius * 2],
           [x, wheelY, z],
           dark,
-          { shape: 'Cylinder', material: 'SmoothPlastic', canCollide: !stableLandMode, massless: stableLandMode },
+          {
+            shape: 'Cylinder',
+            material: 'SmoothPlastic',
+            canCollide: !stableLandMode,
+            massless: stableLandMode,
+            transparency: meshBodyMode ? 1 : 0,
+          },
         );
         const rootAtt = uuidv4();
         const wheelAtt = uuidv4();
