@@ -170,39 +170,72 @@ def _shrinkwrap_outer_cage(
     offset: float,
 ) -> None:
     """
-    Project every OuterCage vertex outward to sit just above the garment
-    surface. Uses Blender's built-in SHRINKWRAP modifier in TARGET_PROJECT
-    mode which is the closest match to Roblox AFT's cage-fitting algorithm
-    (push-toward-nearest-surface with normal-aligned offset).
+    Push each OuterCage vertex outward to sit just above the garment
+    surface — but only the vertices that are actually NEAR the garment.
+    Vertices far from the garment retain their body-template position.
 
-    Rule from Roblox docs we MUST not violate: don't add/remove vertices
-    or change UVs. Shrinkwrap only moves existing vertex positions, so
-    topology + UVs are preserved.
+    Why we abandoned the Shrinkwrap modifier:
+      - TARGET_PROJECT pulled EVERY vertex (including legs/feet) toward
+        the garment, crushing the cage when the accessory only covered
+        the upper body.
+      - PROJECT mode only displaces vertices whose normal ray hits the
+        target, BUT it relies on a closed/manifold target mesh — Meshy
+        outputs often have open surfaces and non-manifold topology, and
+        the unbounded ray length sent vertices flying tens of studs away.
+
+    Manual algorithm with explicit distance threshold:
+      1. Build a BVH spatial tree over the garment mesh.
+      2. For each OuterCage vertex find the nearest garment surface point.
+      3. If distance ≤ threshold → push vertex to that surface point plus
+         a small outward offset along the garment's surface normal.
+      4. Otherwise → leave the vertex at its template position.
+
+    Topology and UVs are untouched (only coordinates move), so the
+    Roblox "do not delete vertices or alter UVs" rule is respected.
     """
-    bpy.context.view_layer.objects.active = outer
-    bpy.ops.object.select_all(action="DESELECT")
-    outer.select_set(True)
-    # 2026-05-22 — choice of Shrinkwrap mode.
-    # TARGET_PROJECT (initial pick) pulls every vertex to the nearest
-    # garment surface, which crushed the cage downward when the garment
-    # only covered the upper body. PROJECT mode only displaces vertices
-    # whose normal ray actually hits the target — matches Roblox AFT's
-    # "only adjust vertices that intersect the accessory" workflow.
-    mod = outer.modifiers.new(name="CageWrap", type="SHRINKWRAP")
-    mod.target = garment
-    mod.wrap_method = "PROJECT"
-    mod.wrap_mode = "OUTSIDE"           # cage stays outside garment surface
-    mod.offset = offset                 # small air gap (no z-fighting)
-    mod.project_limit = 0.0             # unlimited ray length
-    mod.use_negative_direction = True   # check both ways along the normal
-    mod.use_positive_direction = True
-    # At least one axis must be enabled or PROJECT silently does nothing.
-    # Local Z is the standard "outward" direction on Roblox cage meshes.
-    mod.use_project_z = True
-    mod.cull_face = "OFF"
-    # Bake the modifier into actual vertex positions so the exported FBX
-    # has the deformed mesh, not a modifier stack the importer might ignore.
-    bpy.ops.object.modifier_apply(modifier=mod.name)
+    import mathutils  # type: ignore
+    from mathutils.bvhtree import BVHTree  # type: ignore
+
+    # Build a BVH over the garment in world space. World coordinates so
+    # we can compare directly with OuterCage's world-space vertex
+    # positions; both objects are at the origin with identity transforms
+    # after we apply transforms in _import_garment / _append_cages, but
+    # multiplying by matrix_world keeps the math defensive against any
+    # future stray translation/rotation.
+    garment_world_verts = [
+        garment.matrix_world @ v.co for v in garment.data.vertices
+    ]
+    garment_polys = [list(p.vertices) for p in garment.data.polygons]
+    bvh = BVHTree.FromPolygons(garment_world_verts, garment_polys, all_triangles=False)
+
+    # Tunable distance threshold. The cage template is ≈3.2 × 5.5 × 0.8
+    # studs (Roblox blocky body). A garment sits ≤0.3-0.5 studs outside
+    # the body surface. Anything farther is "elsewhere on the body" and
+    # the cage should keep its template position.
+    threshold = 0.5  # studs
+
+    outer_inv = outer.matrix_world.inverted()
+    moved = 0
+    for v in outer.data.vertices:
+        world_pos = outer.matrix_world @ v.co
+        hit = bvh.find_nearest(world_pos)
+        if not hit:
+            continue
+        location, normal, _face_idx, dist = hit
+        if location is None or dist > threshold:
+            continue
+        # Push outward along garment's surface normal at that point so
+        # the cage sits just OUTSIDE the garment (Roblox layered clothing
+        # requires inner cage < garment < outer cage in offset stack).
+        if normal is None:
+            normal = mathutils.Vector((0, 0, 1))
+        new_world = location + normal * offset
+        v.co = outer_inv @ new_world
+        moved += 1
+
+    outer.data.update()
+    print(f"[generate_cages] moved {moved}/{len(outer.data.vertices)} outer-cage vertices "
+          f"(threshold={threshold} studs, offset={offset})")
 
 
 def _name_cages(
