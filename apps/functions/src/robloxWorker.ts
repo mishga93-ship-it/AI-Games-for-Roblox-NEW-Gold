@@ -2407,7 +2407,19 @@ function buildVehicleModelManifest(
     const scale = targetLength / mLong;
     const finalLength = mLong * scale;     // becomes Z (Roblox forward axis)
     const finalWidth = mShort * scale;     // becomes X
-    const finalHeight = mTall * scale;     // becomes Y (up)
+    // Session 373 round 12: Meshy keeps emitting sleek F1/speedster
+    // proportions (L/H ratio 3.0+) even with the "chunky cartoon" prompt —
+    // observed Vehicle_SportyCar at natural 1.91×0.59×0.91 (L/H=3.24, user
+    // reported "размащанная"). To force cartoon Roblox aesthetic regardless
+    // of Meshy's actual mesh, we enforce a minimum height. If natural mesh
+    // is too flat, we STRETCH Y (non-uniformly) so the resulting MeshPart
+    // has L/H ≤ 1.8 (Hill Climb Racing / Lego City threshold). Slight
+    // vertical distortion of a sleek mesh is acceptable; the alternative
+    // is the smushed-out F1 silhouette the user keeps rejecting.
+    const minHeightAsLengthFraction = 1.0 / 1.8; // L/H ≤ 1.8 → H/L ≥ 0.555
+    const naturalUniformHeight = mTall * scale;
+    const enforcedMinHeight = finalLength * minHeightAsLengthFraction;
+    const finalHeight = Math.max(naturalUniformHeight, enforcedMinHeight); // Y (up)
     // MeshPart.Size — if mesh native forward is X, we swap Size.X/Z and rotate
     // 90° around Y so the mesh visually faces -Z (Roblox forward / chassis
     // driving direction).
@@ -3279,19 +3291,26 @@ function addVehiclePhysics(args: {
         properties: { Part0: ref(rootId), Part1: ref(colliderId) },
       });
     }
+    // Session 373 round 12: wheels closer to corners (0.34 → 0.42 of length)
+    // so 4-wheel cars don't have visible 30% bumper overhang front+rear
+    // that the user keeps perceiving as "колёса не туда" (wheels not in
+    // the right place — they were at 68% from centre while body extended
+    // to 100%, leaving the wheels visually orphaned).
     const zPositions = profile.wheelCount <= 2
       ? [-length * 0.36, length * 0.34]
       : profile.wheelCount === 3
         ? [-length * 0.34, length * 0.28, 0]
         : profile.wheelCount === 6
-          ? [-length * 0.34, 0, length * 0.34]
-          : [-length * 0.34, length * 0.34];
+          ? [-length * 0.42, 0, length * 0.42]
+          : [-length * 0.42, length * 0.42];
     const sidePositions = profile.wheelCount === 2 || profile.wheelCount === 3 ? [0] : [-1, 1];
     let wheelIndex = 0;
     for (const z of zPositions) {
       for (const side of sidePositions) {
         if (wheelIndex >= profile.wheelCount) break;
-        const x = side === 0 ? 0 : side * width * 0.48;
+        // Round 12: side wheels also further out (0.48 → 0.52) to align
+        // with the actual mesh edge when meshFitWidth is used.
+        const x = side === 0 ? 0 : side * width * 0.52;
         const wheelY = Math.max(profile.wheelRadius, 0.45);
         const wheelId = addPart(
           `Wheel${wheelIndex + 1}`,
