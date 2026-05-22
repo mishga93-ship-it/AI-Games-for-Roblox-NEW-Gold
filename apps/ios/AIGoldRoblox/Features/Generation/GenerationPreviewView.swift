@@ -534,7 +534,16 @@ struct GenerationPreviewView: View {
                 if case .media = artifactType { return true }
                 return false
             })
-            let conceptStage = stages.first(where: { $0.id == "concept_image" && $0.isCompleted && $0.artifactType != nil })
+            // 2026-05-21: pet_3d uses `concept_stage1` instead of the generic
+            // `concept_image` (because it generates 3 stages of concepts —
+            // baby/adult/legendary). The approval gate pauses after Stage 1's
+            // concept, so we render the same approval UI when concept_stage1
+            // is completed AND the pipeline is awaiting review.
+            let conceptStage = stages.first(where: {
+                ($0.id == "concept_image" || $0.id == "concept_stage1")
+                    && $0.isCompleted
+                    && $0.artifactType != nil
+            })
             let meshStage = stages.first(where: { $0.id == "mesh_3d" && $0.isCompleted && $0.artifactType != nil })
             // Game builds have no `concept_image` stage — use `build_scene` as
             // the hero thumbnail source. Backend tags `preview-texture.png`
@@ -554,7 +563,7 @@ struct GenerationPreviewView: View {
                 if case .media = type { return true }
                 return false
             })
-            let lastInfoStage = stages.last(where: { $0.isCompleted && $0.artifactType != nil && $0.id != "concept_image" && $0.id != "mesh_3d" && $0.id != "build_scene" })
+            let lastInfoStage = stages.last(where: { $0.isCompleted && $0.artifactType != nil && $0.id != "concept_image" && $0.id != "concept_stage1" && $0.id != "mesh_3d" && $0.id != "build_scene" })
 
             VStack(alignment: .leading, spacing: 14) {
                 if let clothingPreviewStage, case .clothingPreview(let shirtURL, let pantsURL) = clothingPreviewStage.artifactType {

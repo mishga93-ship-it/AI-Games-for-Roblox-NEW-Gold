@@ -173,6 +173,11 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "vehicles" {
             return "Looks good — Build 3D Vehicle"
         }
+        // 2026-05-21: pet concept-approve gate. Tap after seeing the baby
+        // concept image kicks off Tripo image-to-3d + rig + 3-stage evolution.
+        if contentSubcategory == "pets" {
+            return "Looks good — Build 3D Pet"
+        }
         return "Looks good — Start 3D"
     }
 
