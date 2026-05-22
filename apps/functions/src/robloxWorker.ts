@@ -1686,20 +1686,26 @@ function buildLayeredClothingManifest(
   const clothingTypeRaw = typeof metadata.clothingType === 'string' ? metadata.clothingType : undefined;
   const accessoryTypeEnum = resolveAccessoryType(clothingTypeRaw);
 
-  // Session 378: Roblox Studio's MeshContentProvider can ONLY resolve
-  // `rbxassetid://N` URIs. Pre-this-fix we were writing raw GCS signed URLs
-  // (storage.googleapis.com/...?Signature=...) directly into MeshId /
-  // ReferenceMeshId / CageMeshId, which caused Studio Output spam:
-  //   "MeshContentProvider failed to process https://storage.googleapis.com/...
+  // Session 378: prefer the InsertService:LoadAsset path when we have a
+  // real Roblox asset ID (from Open Cloud upload of the cage FBX during
+  // package_accessory). That makes the RBXM self-sufficient — drop into
+  // any place, press Play, and the layered accessory auto-equips on each
+  // joining player. Without an assetId we fall back to the empty
+  // Accessory scaffold (user still has the .fbx for drag-and-drop).
+  const layeredAssetId = typeof metadata.layeredClothingModelAssetId === 'number'
+    && Number.isFinite(metadata.layeredClothingModelAssetId)
+    && metadata.layeredClothingModelAssetId > 0
+    ? metadata.layeredClothingModelAssetId
+    : (typeof metadata.layeredClothingModelAssetId === 'string'
+        && /^\d+$/.test(metadata.layeredClothingModelAssetId)
+      ? parseInt(metadata.layeredClothingModelAssetId, 10)
+      : undefined);
+
+  // Roblox Studio's MeshContentProvider can ONLY resolve `rbxassetid://N`
+  // URIs at runtime. Strip any non-rbxassetid value so we don't emit
+  // refs that cause Studio Output spam:
+  //   "MeshContentProvider failed to process https://...
   //    because 'could not fetch'"
-  // (Studio refuses arbitrary HTTPS hosts as a security/safety measure.)
-  //
-  // Until we wire a proper Open Cloud upload step for clothing_3d (uploads
-  // the FBX/glb as assetType=Mesh, then writes `rbxassetid://N` here), strip
-  // any non-rbxassetid value so we don't emit broken refs. The user's
-  // primary workflow is the .fbx drag-and-drop (handled by Studio's FBX
-  // importer, which embeds the actual mesh bytes) — that path doesn't go
-  // through MeshContentProvider at all and keeps working.
   const sanitizeMeshRef = (url: string | undefined): string | undefined => {
     if (!url) return undefined;
     if (url.startsWith('rbxassetid://') || url.startsWith('rbxasset://')) return url;
@@ -1752,7 +1758,16 @@ function buildLayeredClothingManifest(
     },
   ];
 
-  const autoEquipScript = buildLayeredClothingAutoEquipScript();
+  // If we have a real Open Cloud asset ID, swap the static (and currently
+  // empty) Accessory subtree for a runtime InsertService:LoadAsset path —
+  // see buildLayeredClothingAutoEquipScript(assetId). The ServerScript
+  // loads the published Model on PlayerAdded, finds the Accessory child,
+  // and AddAccessory's it to the Humanoid. This works regardless of whose
+  // place imports the RBXM (asset is openUse when system-uploaded, or
+  // owned-by-user when uploaded via Roblox OAuth).
+  const autoEquipScript = layeredAssetId
+    ? buildLayeredClothingAutoEquipScript(layeredAssetId)
+    : buildLayeredClothingAutoEquipScript();
 
   return {
     id: uuidv4(),
@@ -4262,7 +4277,107 @@ function buildBlockyPetManifest(
   };
 }
 
-function buildLayeredClothingAutoEquipScript(): string {
+function buildLayeredClothingAutoEquipScript(assetId?: number): string {
+  // Session 378: when an Open Cloud asset ID is available we use
+  // InsertService:LoadAsset to fetch the published Model at runtime,
+  // extract the Accessory inside, and AddAccessory it to every joining
+  // player's Humanoid. The Model uploaded by the backend contains the
+  // FBX-imported Accessory tree (Handle MeshPart + WrapLayer with cages),
+  // so the layered-clothing wiring is preserved without us needing to
+  // hand-build MeshId references in the RBXM (which would fail because
+  // Studio doesn't fetch arbitrary HTTPS URLs at runtime).
+  if (assetId && Number.isFinite(assetId) && assetId > 0) {
+    return `
+-- Auto-equip layered clothing — published as Roblox asset ${assetId}.
+-- Backend uploaded the cage FBX via Open Cloud (assetType=Model) and
+-- stamped the assetId into the RBXM at generation time. At runtime we
+-- pull the asset down with InsertService:LoadAsset(), pluck out the
+-- Accessory the FBX importer built, and add it to each player's
+-- Humanoid. AssetPrivacy=openUse when system-uploaded so this works
+-- in any experience that imports this RBXM.
+
+local Players = game:GetService("Players")
+local InsertService = game:GetService("InsertService")
+
+local LAYERED_ASSET_ID = ${assetId}
+
+local cachedAccessory = nil
+local loadAttempted = false
+
+local function loadAccessoryTemplate()
+  if cachedAccessory then return cachedAccessory end
+  if loadAttempted then return nil end
+  loadAttempted = true
+  local ok, result = pcall(function()
+    return InsertService:LoadAsset(LAYERED_ASSET_ID)
+  end)
+  if not ok or not result then
+    warn("[LayeredClothing] InsertService:LoadAsset(", LAYERED_ASSET_ID, ") failed:", result)
+    return nil
+  end
+  local accessory = result:FindFirstChildOfClass("Accessory")
+  if not accessory then
+    -- Some uploaded FBX trees nest Accessory under a Model; descend once.
+    for _, descendant in pairs(result:GetDescendants()) do
+      if descendant:IsA("Accessory") then
+        accessory = descendant
+        break
+      end
+    end
+  end
+  if accessory then
+    cachedAccessory = accessory:Clone()
+    accessory.Parent = nil
+  else
+    warn("[LayeredClothing] no Accessory found in loaded asset ", LAYERED_ASSET_ID)
+  end
+  result:Destroy()
+  return cachedAccessory
+end
+
+local function applyLayeredClothing(character)
+  local humanoid = character:FindFirstChildOfClass("Humanoid")
+  if not humanoid then
+    humanoid = character:WaitForChild("Humanoid", 5)
+  end
+  if not humanoid then return end
+
+  local template = loadAccessoryTemplate()
+  if not template then return end
+
+  local existing = character:FindFirstChild(template.Name)
+  if existing and existing:IsA("Accessory") then
+    existing:Destroy()
+  end
+  humanoid:AddAccessory(template:Clone())
+end
+
+local function setupPlayer(player)
+  player.CharacterAdded:Connect(applyLayeredClothing)
+  if player.Character then
+    applyLayeredClothing(player.Character)
+  end
+end
+
+for _, player in pairs(Players:GetPlayers()) do
+  setupPlayer(player)
+end
+Players.PlayerAdded:Connect(setupPlayer)
+
+-- Also apply to any pre-placed non-player Humanoid models (test rigs/NPCs).
+for _, model in pairs(workspace:GetChildren()) do
+  if model:IsA("Model") and model:FindFirstChildOfClass("Humanoid") then
+    applyLayeredClothing(model)
+  end
+end
+`.trim();
+  }
+
+  // Fallback: legacy script that scans the in-workspace clothingModel for
+  // Accessory children. Used when Open Cloud upload was unavailable
+  // (no Roblox OAuth + no system API key) — the Accessory subtree in the
+  // RBXM is empty, so AddAccessory becomes a no-op, but the script
+  // doesn't crash.
   return `
 local Players = game:GetService("Players")
 local clothingModel = script.Parent
