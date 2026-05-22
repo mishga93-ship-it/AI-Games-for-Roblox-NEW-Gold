@@ -112,7 +112,21 @@ if not meshPart then
 end
 
 local meshIdStr = meshPart.MeshId or ""
+-- 2026-05-22 (session 375, step I): Tripo (and modern GLB imports) often
+-- attach the PBR base colour through a SurfaceAppearance child rather than
+-- the legacy MeshPart.TextureID property. Check the legacy field first, then
+-- walk the MeshPart's children for SurfaceAppearance.ColorMap. Whichever is
+-- non-empty wins. Without this fallback Tripo pets ship MeshPart.TextureID=""
+-- and the runtime renders them untextured (white) — user-reported on
+-- Pet_FluffyShiba 2026-05-22 in changelog-375.
 local textureIdStr = meshPart.TextureID or ""
+if textureIdStr == "" or textureIdStr == "rbxassetid://" then
+  local sa = meshPart:FindFirstChildOfClass("SurfaceAppearance")
+  if sa then
+    local cm = sa.ColorMap or ""
+    if cm ~= "" then textureIdStr = cm end
+  end
+end
 local size = meshPart.Size
 local hasSkinned = false
 pcall(function() hasSkinned = meshPart.HasSkinnedMesh end)

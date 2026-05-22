@@ -29,7 +29,6 @@ import {
 import {
   buildPetFollowScript,
   buildPetLevelingModule,
-  buildPetDebugEvolveScript,
   buildBlockyPetFollowScript,
   buildBlockyPetLevelingModule,
   buildBlockyPetEggHatchScript,
@@ -2080,16 +2079,11 @@ function buildPetEvolutionManifest(
         container: petModelId,
         source: buildPetLevelingModule(),
       },
-      // 2026-05-22 (session 375, step G): debug keybind "E" to cycle Stage 1→2→3.
-      // Without this the only way to see evolution is to grind to level 25/50,
-      // which the current sandbox game loop doesn't provide. Cosmetic only.
-      {
-        id: uuidv4(),
-        name: 'PetDebugEvolveKeybind',
-        scriptType: 'LocalScript',
-        container: petModelId,
-        source: buildPetDebugEvolveScript(),
-      },
+      // 2026-05-22 (session 375, step J supersedes step G):
+      // The Evolve UI is now created inside PetFollowScript itself (server-
+      // side ScreenGui installed into each player's PlayerGui). LocalScripts
+      // inside a Model in Workspace don't auto-run — that's why step G's
+      // PetDebugEvolveKeybind never fired. Kept as a deliberate no-op slot.
     ],
     ui: [],
     metadata: {
