@@ -25833,6 +25833,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         await finishStage('validate_layered', 'skipped', [], ['Validation skipped — proceed with manual check in Studio'], errorMessage(valErr));
       }
 
+      // 2026-05-22 (session 378) — keep cage FBX bytes accessible across
+      // the next stage so package_accessory can upload it to Open Cloud
+      // without re-fetching the artifact from GCS.
+      let cagedFbxBuffer: Buffer | null = null;
+      let cagedFbxSafeName: string = 'Garment';
+
       await beginStage('generate_cages', 'Generating inner/outer wrap cages via Blender headless service');
       // 2026-05-22 Phase C: call blender-cage-service on Cloud Run.
       // Replaces the previous no-op marker and the never-fully-wired
@@ -25868,6 +25874,9 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           logsTail: (cageJson.logs ?? '').slice(-300),
         });
         const cagedFbxBuf = Buffer.from(cageJson.fbxBase64, 'base64');
+        // Stash for use by the next stage's Open Cloud upload (session 378).
+        cagedFbxBuffer = cagedFbxBuf;
+        cagedFbxSafeName = safeName;
         const cagedFbxArtifact = await uploadBinaryArtifact(job, cagedFbxBuf, {
           type: 'fbx',
           extension: 'fbx',
@@ -25913,7 +25922,104 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             outerCageUrl: outerCageArtifact?.downloadUrl ?? outerCageArtifact?.url,
           },
         };
-        await finishStage('package_accessory', 'completed', [], ['Accessory metadata prepared for RBXM export']);
+
+        // 2026-05-22 (session 378) — upload the cage FBX to Roblox Open Cloud
+        // so the RBXM can reference it by `rbxassetid://N` via InsertService.
+        // Without this step Studio's MeshContentProvider can't fetch GCS URLs
+        // (security: only rbxassetid:// is allowed at runtime), and the RBXM
+        // accessory ends up empty. With it, the RBXM contains a ServerScript
+        // that runtime-fetches the published Model and auto-equips it to
+        // each player's Humanoid.
+        //
+        // Auth: prefer the user's linked Roblox OAuth (asset owned by them →
+        // works in their own places). Fallback to system Open Cloud key +
+        // ROBLOX_CREATOR_ID with assetPrivacy=openUse (so anyone can
+        // InsertService:LoadAsset it). This mirrors the upload pattern in
+        // processCharacter3DJob's upload_roblox stage (~line 26248).
+        let uploadedAssetId: number | null = null;
+        const uploadNotes: string[] = ['Accessory metadata prepared for RBXM export'];
+        if (cagedFbxBuffer) {
+          try {
+            const robloxAuth = await getRobloxUserToken(job.userId);
+            const systemApiKey = getRobloxOpenCloudApiKey();
+            const systemCreatorId = getRobloxCreatorId();
+            const useSystemAuth = !robloxAuth && !!systemApiKey && !!systemCreatorId;
+            if (!robloxAuth && !useSystemAuth) {
+              uploadNotes.push('Roblox upload skipped — link Roblox in iOS Settings or set system Open Cloud key.');
+            } else {
+              const uploadName = (title || cagedFbxSafeName || 'LayeredGarment').slice(0, 50);
+              const uploadResult = await uploadAssetToRoblox(
+                robloxAuth
+                  ? {
+                      bearerToken: robloxAuth.accessToken,
+                      creatorId: robloxAuth.robloxUserId,
+                      creatorType: 'User',
+                      assetType: 'Model',
+                      name: uploadName,
+                      description: 'AI-generated layered clothing (garment + cages)',
+                      fileContent: cagedFbxBuffer,
+                      contentType: 'model/fbx',
+                    }
+                  : {
+                      apiKey: systemApiKey!,
+                      creatorId: systemCreatorId!,
+                      creatorType: 'User',
+                      assetType: 'Model',
+                      name: uploadName,
+                      description: 'AI-generated layered clothing (garment + cages)',
+                      fileContent: cagedFbxBuffer,
+                      contentType: 'model/fbx',
+                      // openUse so the system-uploaded asset is loadable by
+                      // any experience via InsertService:LoadAsset.
+                      assetPrivacy: 'openUse',
+                    },
+              );
+              if (uploadResult) {
+                let finalAssetId = uploadResult.assetId;
+                if (uploadResult.operationId && !finalAssetId) {
+                  const authToken = robloxAuth?.accessToken ?? systemApiKey ?? '';
+                  const authMode = robloxAuth ? 'bearer' : 'api-key';
+                  const polled = await pollRobloxOperation(authToken, uploadResult.operationId, authMode);
+                  if (polled) finalAssetId = polled;
+                }
+                if (finalAssetId) {
+                  uploadedAssetId = finalAssetId;
+                  logger.info('[package_accessory] cage FBX uploaded as Model asset', {
+                    jobId,
+                    assetId: finalAssetId,
+                    authMode: robloxAuth ? 'bearer' : 'api-key',
+                  });
+                  uploadNotes.push(`Uploaded to Roblox as asset ${finalAssetId} — RBXM will auto-equip via InsertService.`);
+                } else {
+                  uploadNotes.push('Roblox upload returned no asset ID — RBXM will fall back to drag-and-drop FBX.');
+                }
+              } else {
+                uploadNotes.push('Roblox Open Cloud upload failed — RBXM will fall back to drag-and-drop FBX.');
+              }
+            }
+          } catch (uploadErr) {
+            logger.warn('[package_accessory] Open Cloud upload threw', { jobId, error: errorMessage(uploadErr) });
+            uploadNotes.push(`Roblox upload errored: ${errorMessage(uploadErr)}`);
+          }
+        } else {
+          uploadNotes.push('No cage FBX in scope — generate_cages produced no buffer.');
+        }
+
+        if (uploadedAssetId !== null) {
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              layeredClothingModelAssetId: uploadedAssetId,
+              // Overwrite clothingGlbUrl with rbxassetid form so any
+              // downstream consumer that expects a Roblox-resolvable URL
+              // (eg MeshPart.MeshId in fallback paths) gets the right one.
+              clothingGlbUrl: `rbxassetid://${uploadedAssetId}`,
+            },
+          };
+        }
+
+        await finishStage('package_accessory', 'completed', [], uploadNotes);
       } catch (pkgErr) {
         logger.warn('Accessory packaging failed', { error: errorMessage(pkgErr) });
         await finishStage('package_accessory', 'skipped', [], ['Accessory packaging skipped'], errorMessage(pkgErr));
@@ -27027,6 +27133,74 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         const meshyGlbUrl = typeof meshyResult.outputUrl === 'string' ? meshyResult.outputUrl : '';
         const meshyRaw = (meshyResult.raw ?? {}) as Record<string, unknown>;
         const meshyThumbnailUrl = typeof meshyRaw.thumbnailUrl === 'string' ? meshyRaw.thumbnailUrl : '';
+        // Round 11: Meshy returns the base color PBR map as a SEPARATE PNG URL
+        // alongside the GLB. Roblox Open Cloud's Model upload of a GLB does NOT
+        // reliably extract embedded textures (devforum 2320761), so inner
+        // MeshPart.TextureID comes back empty and Studio renders the mesh as
+        // a textureless white blob (which is what user reports in session 373).
+        // NPC pipeline solves this by uploading the PNG as a SEPARATE Image
+        // asset and writing its assetId to MeshPart.TextureID (see
+        // texture_upload stage at index.ts ~26615). We mirror that pattern
+        // here for vehicles.
+        const meshyBaseColorUrl = typeof meshyRaw.baseColorTextureUrl === 'string' ? meshyRaw.baseColorTextureUrl : '';
+        let vehicleTextureAssetId = 0;
+        if (meshyBaseColorUrl) {
+          try {
+            const apiKeyForTex = getRobloxOpenCloudApiKey();
+            const creatorIdForTex = getRobloxCreatorId();
+            if (apiKeyForTex && creatorIdForTex) {
+              const texResp = await fetch(meshyBaseColorUrl);
+              if (texResp.ok) {
+                const texBuf = Buffer.from(await texResp.arrayBuffer());
+                const texUpload = await uploadAssetToRoblox({
+                  apiKey: apiKeyForTex,
+                  creatorId: creatorIdForTex,
+                  creatorType: 'User',
+                  assetType: 'Image',
+                  name: `Vehicle ${vehicleType} ${titleStrForMesh.slice(0, 30)}_tex`.slice(0, 50),
+                  description: `AI-generated ${vehicleType} base color texture from Meshy 6`,
+                  fileContent: texBuf,
+                  contentType: 'image/png',
+                });
+                if (texUpload) {
+                  let resolvedTexAssetId = texUpload.assetId;
+                  if (!resolvedTexAssetId && texUpload.operationId) {
+                    const polled = await pollRobloxOperation(apiKeyForTex, texUpload.operationId, 'api-key');
+                    if (polled && polled > 0) resolvedTexAssetId = polled;
+                  }
+                  if (resolvedTexAssetId && resolvedTexAssetId > 0) {
+                    vehicleTextureAssetId = resolvedTexAssetId;
+                    // Same private-by-default policy as mesh assets — grant
+                    // openUse so non-creator Studios can render the texture.
+                    let texGrantOk = false;
+                    try {
+                      texGrantOk = await grantAssetOpenUse({ apiKey: apiKeyForTex, assetId: resolvedTexAssetId });
+                    } catch (texGrantErr) {
+                      logger.warn('[Vehicle] grantAssetOpenUse on texture asset threw', {
+                        jobId, assetId: resolvedTexAssetId, error: errorMessage(texGrantErr),
+                      });
+                    }
+                    logger.info('[Vehicle] base color texture uploaded as Image asset', {
+                      jobId, textureAssetId: resolvedTexAssetId, openUseGranted: texGrantOk,
+                    });
+                  } else {
+                    logger.warn('[Vehicle] texture upload returned no assetId', { jobId, operationId: texUpload.operationId });
+                  }
+                }
+              } else {
+                logger.warn('[Vehicle] failed to download Meshy baseColor PNG', { jobId, status: texResp.status });
+              }
+            } else {
+              logger.warn('[Vehicle] no Open Cloud creds for texture upload — MeshPart will be untextured', { jobId });
+            }
+          } catch (texErr) {
+            logger.warn('[Vehicle] texture upload threw, continuing without texture (MeshPart will be untextured)', {
+              jobId, error: errorMessage(texErr),
+            });
+          }
+        } else {
+          logger.warn('[Vehicle] Meshy did not return baseColorTextureUrl — MeshPart will be untextured', { jobId });
+        }
         if (meshyGlbUrl) {
           // Download Meshy GLB → (optional Blender preprocessor recentres
           // origin / auto-rotates / bakes primary color) → upload to Roblox
@@ -27148,39 +27322,24 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                     // positioned inside the actual mesh silhouette instead of
                     // a fixed Y, so the driver visually sits in the cabin.
                     const naturalSize = extract?.meshSize;
-                    // Round 9: extractMeshIdFromModel ALSO returns the inner
-                    // MeshPart's TextureID (the Roblox texture asset baked from
-                    // Meshy's PBR diffuse map). Without explicitly attaching it
-                    // to our standalone MeshPart, Studio renders the mesh as
-                    // a textureless SmoothPlastic blob — the Roblox library
-                    // thumbnail looks correct because it server-side-renders
-                    // the full Model wrapper which still has its embedded
-                    // texture reference. Grant openUse on the texture too so
-                    // non-creator Studios can fetch it (same private-by-default
-                    // policy as the mesh asset).
+                    // Round 11: use the SEPARATELY-UPLOADED Image asset
+                    // (vehicleTextureAssetId, set above from Meshy's base
+                    // color PNG URL) instead of reading TextureID from the
+                    // imported MeshPart (which Roblox leaves empty for
+                    // embedded-texture GLBs — devforum 2320761).
+                    // extract?.textureId is kept as a fallback ONLY in case
+                    // a future Roblox import improvement does populate it.
                     const innerTextureId = extract?.textureId;
-                    let textureGranted = false;
-                    if (innerTextureId && innerTextureId > 0) {
-                      try {
-                        textureGranted = await grantAssetOpenUse({ apiKey, assetId: innerTextureId });
-                      } catch (grantErr) {
-                        logger.warn('[Vehicle] grantAssetOpenUse on inner texture threw', {
-                          jobId, textureId: innerTextureId, error: errorMessage(grantErr),
-                        });
-                      }
-                      if (!textureGranted) {
-                        logger.warn('[Vehicle] grantAssetOpenUse(texture) returned false — texture may be invisible to non-owner Studios', {
-                          jobId, textureId: innerTextureId,
-                        });
-                      }
-                    }
+                    const finalTextureAssetId = vehicleTextureAssetId > 0
+                      ? vehicleTextureAssetId
+                      : (innerTextureId && innerTextureId > 0 ? innerTextureId : 0);
                     currentJob = {
                       ...currentJob,
                       metadata: {
                         ...(currentJob.metadata ?? {}),
                         vehicleMeshAssetId: meshId,
-                        vehicleMeshTextureAssetId: innerTextureId && innerTextureId > 0 ? innerTextureId : undefined,
-                        vehicleMeshTextureOpenUse: textureGranted,
+                        vehicleMeshTextureAssetId: finalTextureAssetId > 0 ? finalTextureAssetId : undefined,
+                        vehicleMeshTextureSource: vehicleTextureAssetId > 0 ? 'meshy-base-color-png' : (innerTextureId && innerTextureId > 0 ? 'inner-meshpart' : 'none'),
                         vehicleMeshModelAssetId: resolvedModelAssetId,
                         vehicleMeshThumbnailUrl: meshyThumbnailUrl,
                         vehicleMeshProvider: 'meshy-v6',
@@ -27194,7 +27353,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                       'Meshy 6 text-to-3d success',
                       `Roblox Model asset: ${resolvedModelAssetId}`,
                       `Inner MeshId: ${meshId}`,
-                      `Inner TextureID: ${innerTextureId && innerTextureId > 0 ? `${innerTextureId} (openUse=${textureGranted})` : 'none'}`,
+                      `Texture asset: ${finalTextureAssetId > 0 ? `${finalTextureAssetId} (source=${vehicleTextureAssetId > 0 ? 'meshy-base-color-png' : 'inner-meshpart'})` : 'none — MeshPart will be untextured'}`,
                       `Mesh openUse: ${meshGranted ? 'granted' : 'FAILED — mesh may not render for non-owners'}`,
                       naturalSize ? `Mesh natural size: ${naturalSize.x.toFixed(2)}×${naturalSize.y.toFixed(2)}×${naturalSize.z.toFixed(2)}` : 'Mesh natural size: unknown',
                     ]);
