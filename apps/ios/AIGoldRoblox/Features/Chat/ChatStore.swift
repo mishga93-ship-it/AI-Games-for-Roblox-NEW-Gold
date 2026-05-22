@@ -1277,52 +1277,33 @@ final class ChatStore: ObservableObject {
             openMarketplaceHandoff()
             return
         }
-        // Track 3 (Pet pipeline): pet-species picker. Default to Phase 2
-        // BLOCKY mode (fast, free, native Roblox style). User can opt into
-        // Phase 1 3D photoreal mesh path explicitly via "🐾 3D ..." chips.
+        // Track 3 (Pet pipeline): pet-species picker. Pick the species only;
+        // the Blocky-vs-3D mode is decided AFTER the interview via the
+        // post-interview path picker (needsPetPathChoice). Previously the
+        // chips also set draft.petMode, which (a) duplicated the choice the
+        // path picker also asks for, and (b) bypassed the picker entirely
+        // when a chip was tapped — leading to user confusion: "if I pick
+        // regular it generates blocky directly, why these initial choices?".
+        // Now there's exactly one place where mode is decided.
+        // Old "🎲 X" / "🐾 3D X (premium)" chip variants kept as case
+        // aliases so any in-flight chat that surfaces them still routes
+        // correctly to the species — the mode choice happens later.
         if contentSubcategory == "pets" {
             switch normalized {
-            // Blocky (default — Phase 2)
-            case "🎲 dog", "blocky dog", "🐕 dog", "dog", "🐕":
+            case "🐕 dog", "dog", "🐕", "🎲 dog", "blocky dog", "🐾 3d dog", "3d dog":
                 draft.petSpecies = "dog"
-                draft.petMode = "blocky"
-            case "🎲 cat", "blocky cat", "🐈 cat", "cat", "🐈":
+            case "🐈 cat", "cat", "🐈", "🎲 cat", "blocky cat", "🐾 3d cat", "3d cat":
                 draft.petSpecies = "cat"
-                draft.petMode = "blocky"
-            case "🎲 dragon", "blocky dragon", "🐉 dragon", "dragon", "🐉":
+            case "🐉 dragon", "dragon", "🐉", "🎲 dragon", "blocky dragon", "🐾 3d dragon", "3d dragon":
                 draft.petSpecies = "dragon"
-                draft.petMode = "blocky"
-            case "🎲 unicorn", "blocky unicorn", "🦄 unicorn", "unicorn", "🦄":
+            case "🦄 unicorn", "unicorn", "🦄", "🎲 unicorn", "blocky unicorn", "🐾 3d unicorn", "3d unicorn":
                 draft.petSpecies = "unicorn"
-                draft.petMode = "blocky"
-            case "🎲 robot", "blocky robot", "🤖 robot", "robot", "🤖":
+            case "🤖 robot", "robot", "🤖", "🎲 robot", "blocky robot", "🐾 3d robot", "3d robot",
+                 "robot pet":
                 draft.petSpecies = "robot"
-                draft.petMode = "blocky"
-            case "🎲 custom", "blocky custom", "✨ custom", "custom", "fantasy creature", "cute companion":
+            case "✨ custom", "custom", "🎲 custom", "blocky custom", "🐾 3d custom", "3d custom",
+                 "fantasy creature", "cute companion":
                 draft.petSpecies = "fantasy"
-                draft.petMode = "blocky"
-            case "robot pet":
-                draft.petSpecies = "robot"
-                draft.petMode = "blocky"
-            // 3D Premium (Phase 1 — opt-in, requires TRIPO_API_KEY for quadrupeds)
-            case "🐾 3d dog", "3d dog":
-                draft.petSpecies = "dog"
-                draft.petMode = "evolution_3d"
-            case "🐾 3d cat", "3d cat":
-                draft.petSpecies = "cat"
-                draft.petMode = "evolution_3d"
-            case "🐾 3d dragon", "3d dragon":
-                draft.petSpecies = "dragon"
-                draft.petMode = "evolution_3d"
-            case "🐾 3d unicorn", "3d unicorn":
-                draft.petSpecies = "unicorn"
-                draft.petMode = "evolution_3d"
-            case "🐾 3d robot", "3d robot":
-                draft.petSpecies = "robot"
-                draft.petMode = "evolution_3d"
-            case "🐾 3d custom", "3d custom":
-                draft.petSpecies = "fantasy"
-                draft.petMode = "evolution_3d"
             default: break
             }
         }
@@ -6737,12 +6718,12 @@ final class ChatStore: ObservableObject {
         case "items":
             return ["Example: Legendary pickup glow", "Example: Mining pickaxe tool", "Example: Healing potion consumable", "Switch to Interview"]
         case "pets":
-            // Track 3 — quick-generate path. Default = blocky pets (Phase 2,
-            // 30-60s, free); 3D premium row is opt-in.
+            // Track 3 — quick-generate path. Pick a species only; the
+            // Blocky-vs-3D mode is decided AFTER interview via the
+            // post-interview path picker (one consistent choice point).
             return [
-                "🎲 Dog", "🎲 Cat", "🎲 Dragon", "🎲 Unicorn", "🎲 Robot",
+                "🐕 Dog", "🐈 Cat", "🐉 Dragon", "🦄 Unicorn", "🤖 Robot", "✨ Custom",
                 "Example: Fluffy fox companion", "Example: Robot drone pet", "Example: Tiny dragon hatchling",
-                "🐾 3D Dog (premium)", "🐾 3D Dragon (premium)",
                 "Switch to Interview",
             ]
         case "scripts":
@@ -6796,12 +6777,11 @@ final class ChatStore: ObservableObject {
 	        case "items":
 	            return ["Key / unlock", "Potion / buff", "Coin / currency", "Medkit / heal", "Resource / material", "Other tool", "Decide for me", "Start over"]
         case "pets":
-            // Track 3 — pet species picker. Default = blocky (Phase 2, fast +
-            // free + native Roblox style). 3D premium row is opt-in and
-            // requires TRIPO_API_KEY for quadrupeds.
+            // Track 3 — pet species picker only. The Blocky-vs-3D build path
+            // is selected after the interview via the unified post-interview
+            // picker (needsPetPathChoice → appendPetPathChoiceMessage).
             return [
-                "🎲 Dog", "🎲 Cat", "🎲 Dragon", "🎲 Unicorn", "🎲 Robot", "🎲 Custom",
-                "🐾 3D Dog (premium)", "🐾 3D Cat (premium)", "🐾 3D Dragon (premium)",
+                "🐕 Dog", "🐈 Cat", "🐉 Dragon", "🦄 Unicorn", "🤖 Robot", "✨ Custom",
                 "Decide for me", "Start over",
             ]
         case "scripts":
