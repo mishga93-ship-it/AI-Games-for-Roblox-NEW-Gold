@@ -1234,7 +1234,10 @@ ${viralStyleInjection.promptBlock}`, 8000);
 
     const requestedKind = resolveRequestedGenerationKind(body.kind, effectiveMetadata);
     const kindRequiresProvider = providerForKind(requestedKind, effectiveMetadata);
-    const kindsWithFixedProvider: GenerationJob['kind'][] = ['character_3d', 'image', 'search'];
+    // Session 376: clothing_3d / vehicle_3d added — they hit the same image-to-3d
+    // executeProvider path as character_3d, so allowing body.provider override would
+    // route them to 'openai' (returns text, not glb) and fail mesh_3d stage.
+    const kindsWithFixedProvider: GenerationJob['kind'][] = ['character_3d', 'clothing_3d', 'vehicle_3d', 'image', 'search'];
     const provider = kindsWithFixedProvider.includes(requestedKind)
       ? kindRequiresProvider
       : (body.provider ?? kindRequiresProvider);
@@ -8912,7 +8915,15 @@ async function resolveArtifactTypes(userId: string, artifactIds: string[]): Prom
 
 function providerForKind(kind?: string, metadata?: Record<string, unknown>): AIProvider {
   switch (kind) {
-    case 'character_3d': {
+    case 'character_3d':
+    case 'clothing_3d':
+    case 'vehicle_3d': {
+      // Session 376: clothing_3d/vehicle_3d also go through processCharacter3DJob
+      // → executeProvider({provider: job.provider, operation: 'image-to-3d'}).
+      // If body.provider leaks in as 'openai'/'gemini' (iOS sends selectedLLMProvider
+      // for ALL kinds), executeProvider routes to runChatProvider which returns text
+      // not a 3D glb URL → meshResult.outputUrl undefined → mesh_3d stage failed.
+      // Lock to meshy (or hunyuan3d if metadata.meshProvider says so).
       const meshProv = typeof metadata?.meshProvider === 'string' ? metadata.meshProvider : '';
       if (meshProv === 'hunyuan3d') return 'hunyuan3d' as AIProvider;
       return 'meshy';
