@@ -2382,6 +2382,27 @@ function buildVehicleModelManifest(
     // #E03A2E for car when the prompt has no explicit color word. White
     // [1,1,1] = identity tint that lets Meshy's natural color come through.
     const meshWhite = color3(1, 1, 1);
+    // Round 9: pull the texture asset ID stashed by index.ts after
+    // extractMeshIdFromModel. Without TextureID Roblox renders the mesh
+    // as a colourless SmoothPlastic blob (the Roblox library thumbnail
+    // server-side rendering DOES see textures because it walks the
+    // wrapper Model with its embedded texture reference — but our
+    // standalone MeshPart has no such embed). With TextureID set,
+    // Studio displays the Meshy concept-baked colours correctly.
+    const vehicleMeshTextureAssetId = typeof metadata.vehicleMeshTextureAssetId === 'number' && metadata.vehicleMeshTextureAssetId > 0
+      ? metadata.vehicleMeshTextureAssetId
+      : undefined;
+    const meshExtra: Record<string, unknown> = {
+      MeshContent: `rbxassetid://${vehicleMeshAssetId}`,
+      MeshId: `rbxassetid://${vehicleMeshAssetId}`,
+    };
+    if (vehicleMeshTextureAssetId) {
+      meshExtra.TextureID = `rbxassetid://${vehicleMeshTextureAssetId}`;
+      // TextureContent is the 2024+ Content-typed sibling. Roblox Studio
+      // 4.x+ prefers it over the legacy string TextureID; Lune's
+      // CONTENT_PROPERTIES handles both via the resolveContentString path.
+      meshExtra.TextureContent = `rbxassetid://${vehicleMeshTextureAssetId}`;
+    }
     const meshBodyId = addPart(
       'VehicleMeshBody',
       folders.body,
@@ -2394,10 +2415,7 @@ function buildVehicleModelManifest(
         rot: meshRot,
         canCollide: false,
         massless: true,
-        extra: {
-          MeshContent: `rbxassetid://${vehicleMeshAssetId}`,
-          MeshId: `rbxassetid://${vehicleMeshAssetId}`,
-        },
+        extra: meshExtra,
       },
     );
     weldToRoot(meshBodyId, 'VehicleMeshBodyWeld');

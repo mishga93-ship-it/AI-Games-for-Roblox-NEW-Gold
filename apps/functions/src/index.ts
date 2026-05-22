@@ -27131,11 +27131,39 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                     // positioned inside the actual mesh silhouette instead of
                     // a fixed Y, so the driver visually sits in the cabin.
                     const naturalSize = extract?.meshSize;
+                    // Round 9: extractMeshIdFromModel ALSO returns the inner
+                    // MeshPart's TextureID (the Roblox texture asset baked from
+                    // Meshy's PBR diffuse map). Without explicitly attaching it
+                    // to our standalone MeshPart, Studio renders the mesh as
+                    // a textureless SmoothPlastic blob — the Roblox library
+                    // thumbnail looks correct because it server-side-renders
+                    // the full Model wrapper which still has its embedded
+                    // texture reference. Grant openUse on the texture too so
+                    // non-creator Studios can fetch it (same private-by-default
+                    // policy as the mesh asset).
+                    const innerTextureId = extract?.textureId;
+                    let textureGranted = false;
+                    if (innerTextureId && innerTextureId > 0) {
+                      try {
+                        textureGranted = await grantAssetOpenUse({ apiKey, assetId: innerTextureId });
+                      } catch (grantErr) {
+                        logger.warn('[Vehicle] grantAssetOpenUse on inner texture threw', {
+                          jobId, textureId: innerTextureId, error: errorMessage(grantErr),
+                        });
+                      }
+                      if (!textureGranted) {
+                        logger.warn('[Vehicle] grantAssetOpenUse(texture) returned false — texture may be invisible to non-owner Studios', {
+                          jobId, textureId: innerTextureId,
+                        });
+                      }
+                    }
                     currentJob = {
                       ...currentJob,
                       metadata: {
                         ...(currentJob.metadata ?? {}),
                         vehicleMeshAssetId: meshId,
+                        vehicleMeshTextureAssetId: innerTextureId && innerTextureId > 0 ? innerTextureId : undefined,
+                        vehicleMeshTextureOpenUse: textureGranted,
                         vehicleMeshModelAssetId: resolvedModelAssetId,
                         vehicleMeshThumbnailUrl: meshyThumbnailUrl,
                         vehicleMeshProvider: 'meshy-v6',
@@ -27149,6 +27177,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                       'Meshy 6 text-to-3d success',
                       `Roblox Model asset: ${resolvedModelAssetId}`,
                       `Inner MeshId: ${meshId}`,
+                      `Inner TextureID: ${innerTextureId && innerTextureId > 0 ? `${innerTextureId} (openUse=${textureGranted})` : 'none'}`,
                       `Mesh openUse: ${meshGranted ? 'granted' : 'FAILED — mesh may not render for non-owners'}`,
                       naturalSize ? `Mesh natural size: ${naturalSize.x.toFixed(2)}×${naturalSize.y.toFixed(2)}×${naturalSize.z.toFixed(2)}` : 'Mesh natural size: unknown',
                     ]);
