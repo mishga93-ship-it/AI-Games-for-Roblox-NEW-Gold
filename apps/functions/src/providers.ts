@@ -3505,6 +3505,14 @@ export async function runMeshy(prompt: string, input: JsonRecord): Promise<Provi
   // (one glowing eye, scar, ragged wing), so we disable symmetry enforcement
   // when the pet stage is marked as the legendary final form.
   const isLegendaryStage3 = isPetContent && input.petStageIndex === 3;
+  // Session 373 round 10: vehicles need MUCH lower polycount because the
+  // pipeline uploads the GLB to Roblox Open Cloud, and 20k-tri meshes
+  // produce ~12MB GLBs that hit the Open Cloud 60-sec POST timeout
+  // (observed HTTP 408 on Vehicle_BlueLowPolyCar Meshy upload). 6k tris
+  // is plenty for a cartoon car silhouette (matches Sloyd / Hill Climb
+  // Racing default density) and keeps the GLB under ~3 MB which uploads
+  // in under 15 sec.
+  const polycountForVehicle = isVehicleContent ? 6_000 : 20_000;
   const payload: Record<string, unknown> = useImageTo3d
     ? {
         image_urls: imageUrls,
@@ -3513,8 +3521,9 @@ export async function runMeshy(prompt: string, input: JsonRecord): Promise<Provi
         // facial features (eyes, mouth, hat details) — produced "blurry/soapy"
         // visual per user feedback. 20k preserves character details while still
         // being a clean topology compared to default 30k. Roblox MeshPart
-        // accepts up to 60k tri so 20k is well within budget.
-        target_polycount: 20_000,
+        // accepts up to 60k tri so 20k is well within budget. Vehicles
+        // override to 6k (see polycountForVehicle above).
+        target_polycount: polycountForVehicle,
         symmetry_mode: isLegendaryStage3 ? 'off' : 'auto',
         pose_mode: '',
         should_remesh: true,
@@ -3578,7 +3587,9 @@ export async function runMeshy(prompt: string, input: JsonRecord): Promise<Provi
   const buildSingleImagePayload = (): Record<string, unknown> => ({
     image_url: imageUrls[0],
     topology: 'quad',
-    target_polycount: 20_000,
+    // Round 10: vehicle single-image fallback also uses the lower 6k cap so
+    // GLB size stays under Open Cloud's effective 60-sec POST timeout.
+    target_polycount: polycountForVehicle,
     symmetry_mode: 'auto',
     pose_mode: '',
     should_remesh: true,
