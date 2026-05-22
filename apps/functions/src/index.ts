@@ -10016,49 +10016,63 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
       await beginStage(rigStageId, [`Rigging Stage ${idx} via ${routing.rig}`]);
       if (routing.rig === 'tripo' && bundle.meshTaskId) {
         const rigType = mapSkeletonToTripoRigType(classification.skeletonType, classification.isFlying);
+        // 2026-05-22 (session 375, step K): switch Tripo rig + anim to GLB+Mixamo.
+        // - GLB instead of FBX: Roblox's 3D Importer handles glTF natively
+        //   (devforum 2584034) — embedded animations are detected and lifted
+        //   into the user's "My Animations" inventory. Even when we do
+        //   programmatic Open Cloud upload as Model, the GLB path has a
+        //   shot at carrying animation tracks through (FBX never did).
+        // - MIXAMO spec instead of TRIPO: Mixamo bone names (mixamorig:Hips,
+        //   mixamorig:LeftLeg, …) are an industry standard close to Roblox
+        //   R15. Our procedural leg-walk regex (leg/hip/knee/…) and wing
+        //   regex (wing/arm/forearm) pick them up much more reliably than
+        //   Tripo's proprietary naming. Bonus: any future native Roblox
+        //   AnimationClip mapping will plug into the standard skeleton.
         const rigResult = await runTripoRigging({
           meshTaskId: bundle.meshTaskId,
           rigType,
-          outFormat: 'fbx',
-          spec: 'TRIPO',
+          outFormat: 'glb',
+          spec: 'MIXAMO',
         });
         if (rigResult.skipped || !rigResult.taskId) {
           await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig skipped: ${rigResult.skipReason ?? 'no rig task id'}`], rigResult.skipReason);
         } else {
           bundle.rigTaskId = rigResult.taskId;
           // Chain animate_retarget — bakes IDLE + skeleton-specific walk
-          // (QUADRUPED_WALK / SERPENTINE_MARCH / etc.) into one FBX with
+          // (QUADRUPED_WALK / SERPENTINE_MARCH / etc.) into one GLB with
           // geometry exported, so Studio's 3D Importer treats it as the
           // canonical animated pet asset.
           const anims = mapAnimationsForRigType(rigType);
           const animResult = await runTripoAnimation({
             rigTaskId: rigResult.taskId,
             animations: anims,
-            outFormat: 'fbx',
+            outFormat: 'glb',
             bakeAnimation: true,
             exportWithGeometry: true,
           });
-          if (animResult.skipped || !animResult.fbxUrl) {
-            // Fall back to the rigged-only FBX (no anim track but mesh+skeleton).
-            bundle.fbxUrl = rigResult.fbxUrl;
+          const rigGlbUrl = rigResult.glbUrl ?? rigResult.modelUrl;
+          const animGlbUrl = animResult.glbUrl ?? animResult.modelUrl;
+          if (animResult.skipped || !animGlbUrl) {
+            // Fall back to the rigged-only GLB (no anim track but mesh+skeleton).
+            bundle.fbxUrl = rigGlbUrl;
             const note = animResult.skipReason
-              ? `anim_retarget skipped: ${animResult.skipReason}; using rigged-only FBX`
-              : 'anim_retarget returned no FBX; using rigged-only FBX';
-            if (rigResult.fbxUrl) {
-              const rigArt = await copyExternalArtifact(currentJob, rigResult.fbxUrl, 'model/fbx', {
+              ? `anim_retarget skipped: ${animResult.skipReason}; using rigged-only GLB`
+              : 'anim_retarget returned no GLB; using rigged-only GLB';
+            if (rigGlbUrl) {
+              const rigArt = await copyExternalArtifact(currentJob, rigGlbUrl, 'model/gltf-binary', {
                 name: bundle.fbxFileName,
                 stageId: rigStageId,
                 artifactRole: 'rigged_model',
-                metadata: { petStageIndex: idx, isPetRiggedFbx: true, rigType, animations: [] as string[] },
+                metadata: { petStageIndex: idx, isPetRiggedFbx: true, rigType, animations: [] as string[], format: 'glb' },
               });
               currentJob.artifacts = [...currentJob.artifacts, rigArt];
               await finishStage(rigStageId, 'completed', [rigArt.id], [`Stage ${idx} rig (${rigType}) ready — anim step skipped`, note]);
             } else {
-              await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig produced no FBX URL`, note]);
+              await finishStage(rigStageId, 'skipped', [], [`Stage ${idx} rig produced no GLB URL`, note]);
             }
           } else {
             bundle.animTaskId = animResult.taskId;
-            bundle.fbxUrl = animResult.fbxUrl;
+            bundle.fbxUrl = animGlbUrl;
             // 2026-05-22 (session 375, step C.1): we used to assign animResult.fbxUrl
             // to idleAnimUrl/walkAnimUrl/flyAnimUrl, but Roblox Animation.AnimationId
             // only accepts rbxassetid://<N> referring to a KeyframeSequence asset —
@@ -10071,15 +10085,15 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
             // AssetType=Animation per https://devforum.roblox.com/t/4022082).
             // PetFollowScript now provides a procedural wing-flap fallback so the
             // dragon at least looks alive (see buildPetFollowScript step C.1).
-            const rigArt = await copyExternalArtifact(currentJob, animResult.fbxUrl, 'model/fbx', {
+            const rigArt = await copyExternalArtifact(currentJob, animGlbUrl, 'model/gltf-binary', {
               name: bundle.fbxFileName,
               stageId: rigStageId,
               artifactRole: 'rigged_model',
-              metadata: { petStageIndex: idx, isPetRiggedFbx: true, rigType, animations: anims },
+              metadata: { petStageIndex: idx, isPetRiggedFbx: true, rigType, animations: anims, format: 'glb' },
             });
             currentJob.artifacts = [...currentJob.artifacts, rigArt];
             await finishStage(rigStageId, 'completed', [rigArt.id], [
-              `Stage ${idx} rig (${rigType}) + animations ${anims.join(', ')} baked into ${bundle.fbxFileName}`,
+              `Stage ${idx} rig (${rigType}) + animations ${anims.join(', ')} baked into ${bundle.fbxFileName} (GLB+Mixamo). Drag the .glb into Studio Workspace; embedded animations appear in Toolbox > My Animations.`,
             ]);
           }
         }
@@ -26059,10 +26073,22 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             metadata: {
               ...(currentJob.metadata ?? {}),
               layeredClothingModelAssetId: uploadedAssetId,
-              // Overwrite clothingGlbUrl with rbxassetid form so any
-              // downstream consumer that expects a Roblox-resolvable URL
-              // (eg MeshPart.MeshId in fallback paths) gets the right one.
-              clothingGlbUrl: `rbxassetid://${uploadedAssetId}`,
+              // 2026-05-22 (session 380): do NOT overwrite clothingGlbUrl
+              // with rbxassetid://${uploadedAssetId}. The uploaded asset is
+              // a *Model* (assetType=Model), and MeshPart.MeshContent /
+              // .MeshId expect a *Mesh* asset ID — distinct numeric type.
+              // The Model-as-MeshContent caused Studio to spam
+              //   "MeshContentProvider failed to process
+              //    https://assetdelivery.roblox.com/v1/asset?id=${id}
+              //    because 'could not fetch'"
+              // (technically fetch succeeded but the response wasn't a
+              // Mesh binary, so MeshContentProvider rejected it).
+              //
+              // Leaving clothingGlbUrl as the GCS signed URL is fine: the
+              // sanitizer in buildLayeredClothingManifest will drop it
+              // because it doesn't start with rbxassetid://. Result: the
+              // MeshPart.Handle node has no MeshContent → no fetch
+              // attempt → no error.
             },
           };
         }

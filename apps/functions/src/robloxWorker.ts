@@ -4291,23 +4291,37 @@ function buildBlockyPetManifest(
 }
 
 function buildLayeredClothingAutoEquipScript(assetId?: number): string {
-  // Session 378: when an Open Cloud asset ID is available we use
-  // InsertService:LoadAsset to fetch the published Model at runtime,
-  // extract the Accessory inside, and AddAccessory it to every joining
-  // player's Humanoid. The Model uploaded by the backend contains the
-  // FBX-imported Accessory tree (Handle MeshPart + WrapLayer with cages),
-  // so the layered-clothing wiring is preserved without us needing to
-  // hand-build MeshId references in the RBXM (which would fail because
-  // Studio doesn't fetch arbitrary HTTPS URLs at runtime).
+  // Session 378→380: when an Open Cloud asset ID is available we use
+  // InsertService:LoadAsset to fetch the published Model at runtime.
+  //
+  // Reality of Open Cloud `assetType=Model` upload of a Roblox-cage FBX
+  // (discovered in session 380 test): Roblox's server-side importer does
+  // NOT wrap the imported FBX in an Accessory or wire WrapLayer cages.
+  // The result is a plain Model containing 3 MeshParts named like:
+  //   <Name>            ← garment mesh
+  //   <Name>_InnerCage  ← inner cage mesh
+  //   <Name>_OuterCage  ← outer cage mesh
+  // (Studio's local FBX importer DOES create the Accessory/WrapLayer —
+  // that's the drag-and-drop workflow that ships with the .fbx artifact.)
+  //
+  // So this script does the best practical thing with an "open cloud only"
+  // Model: it finds the garment MeshPart (excluding `_Cage` children),
+  // builds a minimal Accessory wrapper, and AddAccessory's it to each
+  // joining player's Humanoid. The result is a static accessory (no
+  // cage-based deformation), but it IS visible and attaches at the right
+  // body part. For real layered-clothing deformation the user should
+  // drag the .fbx artifact into Studio Workspace directly.
   if (assetId && Number.isFinite(assetId) && assetId > 0) {
     return `
--- Auto-equip layered clothing — published as Roblox asset ${assetId}.
--- Backend uploaded the cage FBX via Open Cloud (assetType=Model) and
--- stamped the assetId into the RBXM at generation time. At runtime we
--- pull the asset down with InsertService:LoadAsset(), pluck out the
--- Accessory the FBX importer built, and add it to each player's
--- Humanoid. AssetPrivacy=openUse when system-uploaded so this works
--- in any experience that imports this RBXM.
+-- Auto-equip clothing — published as Roblox asset ${assetId}.
+--
+-- Note: Open Cloud Model uploads of FBX files do NOT auto-create
+-- Accessory/WrapLayer wiring (that's Studio FBX-importer's job). This
+-- script extracts the garment MeshPart, wraps it in a minimal Accessory,
+-- and adds it to each player's Humanoid. The result is a static
+-- accessory (visible but not cage-deformed). For real layered clothing
+-- with proper avatar deformation, drag the .fbx file from this
+-- generation into Studio Workspace directly.
 
 local Players = game:GetService("Players")
 local InsertService = game:GetService("InsertService")
@@ -4317,10 +4331,26 @@ local LAYERED_ASSET_ID = ${assetId}
 local cachedAccessory = nil
 local loadAttempted = false
 
+local function findGarmentMeshPart(container)
+  -- Prefer a MeshPart whose name does NOT contain "Cage" (matches
+  -- "InnerCage" / "OuterCage" emitted by generate_cages.py).
+  local fallback = nil
+  for _, descendant in pairs(container:GetDescendants()) do
+    if descendant:IsA("MeshPart") then
+      if not string.find(descendant.Name, "Cage") then
+        return descendant
+      end
+      fallback = fallback or descendant
+    end
+  end
+  return fallback
+end
+
 local function loadAccessoryTemplate()
   if cachedAccessory then return cachedAccessory end
   if loadAttempted then return nil end
   loadAttempted = true
+
   local ok, result = pcall(function()
     return InsertService:LoadAsset(LAYERED_ASSET_ID)
   end)
@@ -4328,22 +4358,34 @@ local function loadAccessoryTemplate()
     warn("[LayeredClothing] InsertService:LoadAsset(", LAYERED_ASSET_ID, ") failed:", result)
     return nil
   end
-  local accessory = result:FindFirstChildOfClass("Accessory")
-  if not accessory then
-    -- Some uploaded FBX trees nest Accessory under a Model; descend once.
-    for _, descendant in pairs(result:GetDescendants()) do
-      if descendant:IsA("Accessory") then
-        accessory = descendant
-        break
-      end
-    end
+
+  local garment = findGarmentMeshPart(result)
+  if not garment then
+    warn("[LayeredClothing] no garment MeshPart found in asset", LAYERED_ASSET_ID,
+      "— drag the .fbx file into Studio Workspace instead.")
+    result:Destroy()
+    return nil
   end
-  if accessory then
-    cachedAccessory = accessory:Clone()
-    accessory.Parent = nil
-  else
-    warn("[LayeredClothing] no Accessory found in loaded asset ", LAYERED_ASSET_ID)
-  end
+
+  -- Build a minimal Accessory wrapping a clone of the garment MeshPart.
+  local accessory = Instance.new("Accessory")
+  accessory.Name = "AIGarment"
+  accessory.AccessoryType = Enum.AccessoryType.Shirt
+
+  local handle = garment:Clone()
+  handle.Name = "Handle"
+  handle.CanCollide = false
+  handle.Anchored = false
+  handle.Massless = true
+  handle.Parent = accessory
+
+  -- Standard Roblox Accessory needs an Attachment matching one on the
+  -- target body part. BodyFrontAttachment is on UpperTorso for R15.
+  local attachment = Instance.new("Attachment")
+  attachment.Name = "BodyFrontAttachment"
+  attachment.Parent = handle
+
+  cachedAccessory = accessory
   result:Destroy()
   return cachedAccessory
 end
