@@ -237,6 +237,127 @@ def _apply_primary_color(obj: bpy.types.Object, primary_hex: str) -> None:
     print(f"[vehicle_fix] applied primary {primary_hex} → linear {rgba[:3]} to {len(obj.data.materials)} material slot(s)")
 
 
+def _remove_baked_wheels(obj: bpy.types.Object) -> None:
+    """Delete vertices inside cylindrical wheel zones at the 4 bottom corners
+    of the mesh bbox. Meshy meshes for vehicles consistently include the
+    wheels as baked geometry (even when the prompt says "no wheels"), and
+    those baked wheels overlap our procedural Cylinder wheels — visible to
+    the user as "колеса где-то в середине" / "колёса не туды" because the
+    procedural ones sit beside the visible baked ones.
+
+    Heuristic: in mesh-local space after Blender's GLB Y-up import + our
+    auto-orient pass, the car's length axis is X. Wheel centres are
+    approximately at:
+        X = ±extent_x * 0.40   (front + rear axles, near corners but not flush)
+        Z = ±extent_z * 0.42   (sides)
+        Y = mn.y + extent_y * 0.20  (lower quarter of bbox)
+    Radius ≈ extent_y * 0.45 (wheels are about as tall as half the bbox).
+
+    Any vertex inside one of those 4 spheres gets removed in edit mode. The
+    body geometry above (chassis, doors, hood, cabin) is untouched."""
+    import bmesh  # noqa: PLC0415 — Blender-only module, must import inside
+
+    mn, mx = _bbox_of(obj)
+    extent_x = mx.x - mn.x
+    extent_y = mx.y - mn.y
+    extent_z = mx.z - mn.z
+    cx_front = mx.x - extent_x * 0.10  # front axle x
+    cx_rear  = mn.x + extent_x * 0.10  # rear axle x
+    cz_left  = mn.z + extent_z * 0.05  # left side z (just inside bbox)
+    cz_right = mx.z - extent_z * 0.05
+    cy = mn.y + extent_y * 0.20        # wheel centre y, in lower quarter
+    wheel_radius = max(extent_y * 0.45, extent_z * 0.25)
+
+    wheel_centres = [
+        (cx_front, cy, cz_left),
+        (cx_front, cy, cz_right),
+        (cx_rear,  cy, cz_left),
+        (cx_rear,  cy, cz_right),
+    ]
+    print(f"[vehicle_fix] baked-wheel removal: 4 centres at x=±{(extent_x*0.40):.3f} z=±{(extent_z*0.42):.3f} y={cy:.3f} radius={wheel_radius:.3f}")
+
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="DESELECT")
+
+    bm = bmesh.from_edit_mesh(obj.data)
+    selected_count = 0
+    rsq = wheel_radius * wheel_radius
+    for v in bm.verts:
+        for (cx, cy_c, cz) in wheel_centres:
+            dx = v.co.x - cx
+            dy = v.co.y - cy_c
+            dz = v.co.z - cz
+            if dx * dx + dy * dy + dz * dz < rsq:
+                v.select = True
+                selected_count += 1
+                break
+    bmesh.update_edit_mesh(obj.data)
+    if selected_count > 0:
+        bpy.ops.mesh.delete(type="VERT")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    print(f"[vehicle_fix] removed {selected_count} vertices in 4 wheel zones")
+
+
+def _make_glass_transparent(obj: bpy.types.Object, alpha: float = 0.4) -> None:
+    """Mesh windows are usually painted as a dark-blue or dark-grey region in
+    the texture. Roblox MeshPart respects per-pixel alpha in the texture
+    (PNG with alpha channel), so we walk each material's base-color image
+    and SOFTEN the dark pixels (alpha goes from 1.0 → ~0.4). The result is
+    glass-like transparency on windows without per-face material splitting.
+
+    This is best-effort: if Meshy bakes windows as opaque dark blue
+    everywhere this works, if windows share material with other dark parts
+    the trade-off is some unwanted transparency on the body. For Phase B
+    we ship it and let the user judge."""
+    try:
+        from PIL import Image  # type: ignore  # noqa: PLC0415
+    except ImportError:
+        print("[vehicle_fix] glass-transparent: Pillow not installed in Blender python, skipping")
+        return
+    if not obj.data.materials:
+        print("[vehicle_fix] glass-transparent: object has no materials, skipping")
+        return
+    for mat in obj.data.materials:
+        if mat is None or not mat.use_nodes:
+            continue
+        for node in mat.node_tree.nodes:
+            if node.type != "TEX_IMAGE":
+                continue
+            img = node.image
+            if img is None or img.size[0] == 0 or img.size[1] == 0:
+                continue
+            # Bake Blender image to a temp PNG, soften dark pixels via PIL.
+            tmp_in = f"/tmp/{img.name}_in.png"
+            tmp_out = f"/tmp/{img.name}_out.png"
+            try:
+                img.filepath_raw = tmp_in
+                img.file_format = "PNG"
+                img.save()
+                pil = Image.open(tmp_in).convert("RGBA")
+                pixels = pil.load()
+                w, h = pil.size
+                softened = 0
+                for y in range(h):
+                    for x in range(w):
+                        r, g, b, a = pixels[x, y]
+                        # Detect window-glass pixels: dark-ish (mean RGB < 80)
+                        # AND somewhat blue (B >= R, B >= G) OR pure dark grey.
+                        mean = (r + g + b) // 3
+                        if mean < 80 and (b >= r and b >= g or abs(r - g) + abs(g - b) < 20):
+                            pixels[x, y] = (r, g, b, int(255 * alpha))
+                            softened += 1
+                pil.save(tmp_out, "PNG")
+                # Re-load softened PNG back into the Blender Image data block.
+                img.filepath = tmp_out
+                img.reload()
+                print(f"[vehicle_fix] glass-transparent: {img.name} softened {softened}/{w*h} dark pixels (alpha={alpha})")
+            except Exception as err:  # noqa: BLE001
+                print(f"[vehicle_fix] glass-transparent: failed for {img.name}: {err}")
+
+
 def _export_glb(path: str) -> None:
     """Export the current scene as a GLB suitable for Roblox Open Cloud upload."""
     bpy.ops.export_scene.gltf(
@@ -263,8 +384,26 @@ def main() -> None:
     body = _join_meshes(imported, name="VehicleBody")
     _recenter_origin(body)
     _auto_orient_forward_minus_z(body)
+    # Phase B (session 373 round 13): delete baked-in wheels + soften the
+    # window pixels so they read as glass in Studio. Both are best-effort
+    # heuristics — they help typical Meshy outputs but may misbehave on
+    # unusual meshes (e.g. monster trucks where wheels aren't at the corners,
+    # or vehicles whose entire body is dark-blue and gets partial alpha
+    # applied). Failures fail-soft via try/except so the rest of the
+    # pipeline keeps working.
+    try:
+        _remove_baked_wheels(body)
+    except Exception as err:  # noqa: BLE001
+        print(f"[vehicle_fix] _remove_baked_wheels failed (continuing): {err}")
     _apply_primary_color(body, args.primary_hex)
-    # Final recenter pass so any rotation didn't shift the bbox off centre.
+    # Glass-transparent step disabled in Phase B v1 — the mean<80 dark-pixel
+    # heuristic was way too broad on Meshy textures (whole car body is
+    # dark-ish baseline, so 100% of texels got softened → entire mesh
+    # rendered semi-transparent in Studio). Will revisit with a tighter
+    # detector (saturated-blue OR pure-black region only) once we have
+    # Phase B v1 user feedback on baked-wheel removal alone.
+    # Final recenter pass so any rotation / vertex deletion didn't shift the
+    # bbox off centre.
     _recenter_origin(body)
     _export_glb(args.output)
     print("[vehicle_fix] done")

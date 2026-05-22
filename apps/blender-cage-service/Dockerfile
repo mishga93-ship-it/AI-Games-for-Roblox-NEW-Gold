@@ -40,6 +40,13 @@ RUN mkdir -p /usr/local/blender \
  && rm /tmp/blender.tar.xz \
  && /usr/local/blender/blender --version
 
+# Install Pillow into Blender's own Python so vehicle_fix.py can soften
+# window-glass pixels in Meshy textures (Phase B, session 373 round 13).
+# Blender bundles its own python 3.11 under <BLENDER>/4.2/python/bin/; pip
+# install must target THAT interpreter, not the system python3.
+RUN /usr/local/blender/4.2/python/bin/python3.11 -m ensurepip --upgrade \
+ && /usr/local/blender/4.2/python/bin/python3.11 -m pip install --no-cache-dir Pillow==10.4.0
+
 WORKDIR /app
 COPY generate_cages.py /app/generate_cages.py
 COPY vehicle_fix.py /app/vehicle_fix.py
