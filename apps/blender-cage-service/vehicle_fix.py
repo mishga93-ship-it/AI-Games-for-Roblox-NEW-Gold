@@ -391,10 +391,21 @@ def main() -> None:
     # or vehicles whose entire body is dark-blue and gets partial alpha
     # applied). Failures fail-soft via try/except so the rest of the
     # pipeline keeps working.
-    try:
-        _remove_baked_wheels(body)
-    except Exception as err:  # noqa: BLE001
-        print(f"[vehicle_fix] _remove_baked_wheels failed (continuing): {err}")
+    # Phase B v1 baked-wheel removal DISABLED 2026-05-22 (round 15).
+    # The sphere-mask heuristic with radius = max(extent_y*0.45, extent_z*0.25)
+    # was wildly too aggressive on Vehicle_LowPolyCar — radius ≈ 0.45 stud
+    # on a 1.0-stud-tall mesh = nearly HALF the body height, which deleted
+    # not just the wheels but the fenders, lower doors, and front-right
+    # bumper, leaving the user-visible result described as "погрызли" (gnawed).
+    # Re-enable only with a much tighter mask: cylinder along the wheel axle
+    # axis with radius ~0.15-0.20 of bbox extent_y, AND y-band restricted to
+    # the bottom 30% of the bbox. Or skip entirely and accept the visual
+    # overlap of procedural wheels with Meshy's baked wheels — a duplicated
+    # wheel reads better than a hole in the car body.
+    # try:
+    #     _remove_baked_wheels(body)
+    # except Exception as err:  # noqa: BLE001
+    #     print(f"[vehicle_fix] _remove_baked_wheels failed (continuing): {err}")
     _apply_primary_color(body, args.primary_hex)
     # Glass-transparent step disabled in Phase B v1 — the mean<80 dark-pixel
     # heuristic was way too broad on Meshy textures (whole car body is
