@@ -3409,52 +3409,83 @@ if idleTrack then idleTrack:Play() end
 --      local Z by ±25° on a 2.2Hz cycle. SkinnedMesh re-skins on Bone.CFrame
 --      changes, so this animates the geometry without any anim track.
 --   3. Walk roll — small Z lean when the player is moving.
--- 2026-05-22 (session 375, step E): tune bob/flap by skeleton type.
--- Flying pets get a stronger hover bob (parsec-level visible) and a larger
--- side roll, plus they pick up "arm"/"forelimb"/"hand" bones as wing bones —
--- Tripo maps winged_quadruped to QUADRUPED rig (dog/horse), which has no
--- canonical wing bones. Anatomically on a winged quadruped dragon the front
--- legs ARE the wings, so rotating the QUADRUPED's front-limb bones produces a
--- visible wing flap on the geometry.
+-- 2026-05-22 (session 375, steps E+H): tune bob/flap by skeleton type and
+-- find leg bones for a trotting walk cycle.
+-- Flying pets: bigger hover bob, larger side roll, front-limb bones double as
+-- wing bones (Tripo's winged_quadruped → QUADRUPED rig has no canonical wing
+-- bones, but anatomically the front limbs ARE the wings).
+-- Quadrupeds (dog/horse): low-amplitude bob so the body doesn't "tremble",
+-- but if leg bones exist they're animated in a 4-leg trotting cycle while the
+-- player is moving. Front-left + rear-right share phase 0; front-right +
+-- rear-left share phase π — standard diagonal-pair trot.
 local skeletonValue = cfg:FindFirstChild("SkeletonType")
 local skeletonType = skeletonValue and skeletonValue:IsA("StringValue") and skeletonValue.Value or ""
 local isWingedSkeleton = (skeletonType == "winged_quadruped") or (cfg:FindFirstChild("IsFlying") and cfg.IsFlying.Value)
-local IDLE_BOB_AMPL = isWingedSkeleton and 0.85 or 0.35
-local IDLE_BOB_FREQ = isWingedSkeleton and 1.6 or 1.2
+local IDLE_BOB_AMPL = isWingedSkeleton and 0.85 or 0.12
+local IDLE_BOB_FREQ = isWingedSkeleton and 1.6 or 1.0
 local WING_FLAP_AMPL = math.rad(isWingedSkeleton and 40 or 25)
 local WING_FLAP_FREQ = 2.4
-local WALK_ROLL_AMPL = math.rad(isWingedSkeleton and 9 or 6)
+local WALK_ROLL_AMPL = math.rad(isWingedSkeleton and 9 or 4)
 local WALK_ROLL_FREQ = 2.6
+local LEG_STEP_AMPL = math.rad(28)
+local LEG_STEP_FREQ = 3.0
 
 local wingBones = {}
+local legBones = {}
 do
-    -- Wing-keyword set. For winged quadrupeds we also accept anatomical
-    -- front-limb names because Tripo's QUADRUPED rig labels the bones that
-    -- physically sit inside the wings as arm/forearm/hand.
+    -- Wing-keyword set. For winged quadrupeds we accept anatomical front-limb
+    -- names because Tripo's QUADRUPED rig labels the bones that physically
+    -- sit inside the wings as arm/forearm/hand.
     local wingPatterns
     if isWingedSkeleton then
-        wingPatterns = { "wing", "arm", "forearm", "forelimb", "hand", "clavicle" }
+        wingPatterns = { "wing", "clavicle" }
     else
         wingPatterns = { "wing" }
+    end
+    -- Leg-keyword set: everything that could be a limb segment of a quadruped
+    -- gait (front pair + rear pair). Includes humanoid/anatomical names that
+    -- both Tripo and Meshy use. Limits to ground pets so we don't crank wings
+    -- as if they were legs.
+    local legPatterns = { "leg", "thigh", "shin", "calf", "knee", "ankle", "foot", "paw", "hip", "hock", "shoulder" }
+    if not isWingedSkeleton then
+        -- For ground quadrupeds the front limbs are walking legs, not wings —
+        -- treat arm/forearm/hand as legs (drives the front-leg lift).
+        table.insert(legPatterns, "arm")
+        table.insert(legPatterns, "forearm")
+        table.insert(legPatterns, "forelimb")
+        table.insert(legPatterns, "hand")
     end
     for _, d in ipairs(mesh:GetDescendants()) do
         if d:IsA("Bone") then
             local lower = string.lower(d.Name)
-            local match = false
+            local wingMatch = false
             for _, p in ipairs(wingPatterns) do
-                if string.find(lower, p) then match = true; break end
+                if string.find(lower, p) then wingMatch = true; break end
             end
-            if not match and string.find(d.Name, "кры") then match = true end
-            if match then
+            if not wingMatch and string.find(d.Name, "кры") then wingMatch = true end
+            if wingMatch then
                 local x = d.CFrame.Position.X
                 local side = (x >= 0) and 1 or -1
                 table.insert(wingBones, { bone = d, restCF = d.CFrame, side = side })
+            else
+                local legMatch = false
+                for _, p in ipairs(legPatterns) do
+                    if string.find(lower, p) then legMatch = true; break end
+                end
+                if legMatch then
+                    local pos = d.CFrame.Position
+                    local isFront = pos.Z < 0
+                    local isRight = pos.X >= 0
+                    -- Diagonal pairs in phase: FL+RR = 0; FR+RL = pi.
+                    local phase = ((isFront and not isRight) or (not isFront and isRight)) and 0 or math.pi
+                    table.insert(legBones, { bone = d, restCF = d.CFrame, phase = phase, isFront = isFront })
+                end
             end
         end
     end
 end
-print(string.format("[PetFollowScript] skeleton=%s winged=%s; procedural wings: %d bone(s) matched",
-    skeletonType, tostring(isWingedSkeleton), #wingBones))
+print(string.format("[PetFollowScript] skeleton=%s winged=%s; wings=%d, legs=%d bones matched",
+    skeletonType, tostring(isWingedSkeleton), #wingBones, #legBones))
 
 -- Capture Body's authored CFrame relative to HRP at script-init time.
 -- After every Heartbeat we set body.CFrame = hrp.CFrame * bodyOffset so the
@@ -3555,6 +3586,25 @@ RunService.Heartbeat:Connect(function()
         local flap = math.sin(t * WING_FLAP_FREQ * 2 * math.pi) * WING_FLAP_AMPL
         for _, w in ipairs(wingBones) do
             w.bone.CFrame = w.restCF * CFrame.Angles(0, 0, flap * w.side)
+        end
+    end
+
+    -- 2026-05-22 (session 375, step H): procedural quadruped leg walk-cycle.
+    -- Only when the player is moving — at rest the legs sit at their rest
+    -- pose. Each leg pivots around its local X-axis (forward/back swing).
+    -- Diagonal pairs share a phase so the result reads as a normal trot
+    -- gait rather than four desynced limbs.
+    if #legBones > 0 and moving then
+        local cycle = t * LEG_STEP_FREQ * 2 * math.pi
+        for _, leg in ipairs(legBones) do
+            local step = math.sin(cycle + leg.phase) * LEG_STEP_AMPL
+            leg.bone.CFrame = leg.restCF * CFrame.Angles(step, 0, 0)
+        end
+    elseif #legBones > 0 then
+        -- Idle: reset legs so the trot doesn't get stuck mid-stride when the
+        -- player stops moving.
+        for _, leg in ipairs(legBones) do
+            leg.bone.CFrame = leg.restCF
         end
     end
 
