@@ -1710,9 +1710,41 @@ app.post('/api/content/jobs/:jobId/approve-concept', async (req: AuthedRequest, 
       logger.info('Concept approved, awaiting iOS run-phase2 call', { jobId });
       return res.json({ status: 'approved', message: '3D generation starting...' });
     } else {
-      // User rejected → regenerate concept image with optional feedback
-      const conceptPreviewUrl = typeof job.metadata?.conceptPreviewUrl === 'string' ? job.metadata.conceptPreviewUrl : undefined;
-      let alignedPrompt = buildConceptImagePrompt(job.prompt, job.metadata ?? {});
+      // User rejected → regenerate concept image with optional feedback.
+      //
+      // 2026-05-21 (pet_3d): two pet-specific quirks the generic flow misses:
+      //   1) Pet's first concept stage is named `concept_stage1`, NOT
+      //      `concept_image`. If we ship the new artifact with the generic
+      //      stageId, the pet pipeline stage that drives the iOS approval
+      //      UI loses its artifact link → iOS shows a stale image or no
+      //      image at all.
+      //   2) buildConceptImagePrompt() doesn't know about the pet's
+      //      classification (species/element/rarity/evolution-arc) cached
+      //      in metadata.petClassificationCache. Without that, the
+      //      regenerated image is generic and looks nearly identical to
+      //      the first one — user thinks "same PNG, regenerate broken".
+      // So for pets we (a) use the stage1 prompt from the cached evolution
+      // arc, and (b) attach the artifact with stageId='concept_stage1'.
+      const isPetJob = job.kind === 'pet_3d';
+      const petClassification = isPetJob
+        && job.metadata?.petClassificationCache
+        && typeof job.metadata.petClassificationCache === 'object'
+        ? job.metadata.petClassificationCache as {
+            evolutionArc?: { stage1?: { prompt?: string } };
+            speciesType?: string; rarity?: string; element?: string;
+          }
+        : undefined;
+
+      let alignedPrompt: string;
+      if (isPetJob && petClassification?.evolutionArc?.stage1?.prompt) {
+        // Pet: rebuild the same Stage-1 prompt the original generator used,
+        // append explicit "different from previous attempt" + feedback.
+        const stage1 = petClassification.evolutionArc.stage1.prompt;
+        const flavor = `${petClassification.rarity ?? ''} ${petClassification.element ?? ''} ${petClassification.speciesType ?? ''}`.trim();
+        alignedPrompt = `${stage1}. ${flavor ? `${flavor} pet baby stage. ` : ''}Different composition, different pose, different angle from any previous attempt.`;
+      } else {
+        alignedPrompt = buildConceptImagePrompt(job.prompt, job.metadata ?? {});
+      }
       if (feedback && feedback.trim().length > 0) {
         alignedPrompt = `${alignedPrompt}. User correction: ${feedback.trim()}`;
       }
@@ -1726,27 +1758,58 @@ app.post('/api/content/jobs/:jobId/approve-concept', async (req: AuthedRequest, 
         logger.warn('Concept regeneration failed', { error: errorMessage(err) });
       }
 
-      // Update artifacts — replace old concept with new one
+      // Update artifacts — replace old concept with new one. For pets we
+      // also re-link the artifact to the concept_stage1 stage so iOS's
+      // conceptStage lookup picks it up (otherwise stage.artifactIds is
+      // empty after the old artifact is filtered out and the UI shows nothing).
+      const conceptStageId: GenerationStageId = isPetJob
+        ? ('concept_stage1' as GenerationStageId)
+        : ('concept_image' as GenerationStageId);
       let artifacts = job.artifacts;
+      let newConceptArtifactId: string | undefined;
       if (newConceptUrl) {
         const newConceptArtifact = await copyExternalArtifact(job, newConceptUrl, 'image/png', {
-          name: 'concept-regenerated.png',
+          name: isPetJob ? 'pet-concept-regenerated.png' : 'concept-regenerated.png',
           previewText: 'Regenerated concept image',
-          stageId: 'concept_image',
+          stageId: conceptStageId,
           artifactRole: 'concept',
-          metadata: { isPreviewTexture: true, isConcept: true, regenerated: true },
+          metadata: {
+            isPreviewTexture: true,
+            isConcept: true,
+            regenerated: true,
+            ...(isPetJob ? { isPetConcept: true, petStageIndex: 1 } : {}),
+          },
         });
-        // Remove old concept artifacts, add new one
+        newConceptArtifactId = newConceptArtifact.id;
+        // Remove old concept artifacts, add new one.
         artifacts = [
           ...artifacts.filter((a) => a.artifactRole !== 'concept'),
           newConceptArtifact,
         ];
       }
 
+      // For pets: re-link the new artifact id onto the concept_stage1
+      // stage's artifactIds so iOS's pipelineArtifactType resolver picks
+      // it up regardless of stageId-based matching ordering.
+      const updatedStages = (job.stages ?? []).map((s) => {
+        if (isPetJob && s.id === 'concept_stage1' && newConceptArtifactId) {
+          return { ...s, artifactIds: [newConceptArtifactId] };
+        }
+        return s;
+      });
+
       await docRef.update({
         artifacts,
+        stages: updatedStages,
         updatedAt: new Date().toISOString(),
-        metadata: { ...(job.metadata ?? {}), conceptPreviewUrl: newConceptUrl },
+        metadata: {
+          ...(job.metadata ?? {}),
+          conceptPreviewUrl: newConceptUrl,
+          // Pet resume path reads approvedPetConceptUrl on /run-phase2.
+          // Update the cache too so approval after a regen uses the NEW
+          // image, not the stale original.
+          ...(isPetJob && newConceptUrl ? { approvedPetConceptUrl: newConceptUrl } : {}),
+        },
         history: [...job.history, `User requested concept regeneration${feedback ? ` (feedback: ${feedback.trim()})` : ''} — ${newConceptUrl ? 'new image generated' : 'generation failed'}`],
       });
 
