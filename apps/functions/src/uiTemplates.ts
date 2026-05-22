@@ -3409,19 +3409,43 @@ if idleTrack then idleTrack:Play() end
 --      local Z by ±25° on a 2.2Hz cycle. SkinnedMesh re-skins on Bone.CFrame
 --      changes, so this animates the geometry without any anim track.
 --   3. Walk roll — small Z lean when the player is moving.
-local IDLE_BOB_AMPL = 0.35
-local IDLE_BOB_FREQ = 1.2
-local WING_FLAP_AMPL = math.rad(25)
-local WING_FLAP_FREQ = 2.2
-local WALK_ROLL_AMPL = math.rad(6)
+-- 2026-05-22 (session 375, step E): tune bob/flap by skeleton type.
+-- Flying pets get a stronger hover bob (parsec-level visible) and a larger
+-- side roll, plus they pick up "arm"/"forelimb"/"hand" bones as wing bones —
+-- Tripo maps winged_quadruped to QUADRUPED rig (dog/horse), which has no
+-- canonical wing bones. Anatomically on a winged quadruped dragon the front
+-- legs ARE the wings, so rotating the QUADRUPED's front-limb bones produces a
+-- visible wing flap on the geometry.
+local skeletonValue = cfg:FindFirstChild("SkeletonType")
+local skeletonType = skeletonValue and skeletonValue:IsA("StringValue") and skeletonValue.Value or ""
+local isWingedSkeleton = (skeletonType == "winged_quadruped") or (cfg:FindFirstChild("IsFlying") and cfg.IsFlying.Value)
+local IDLE_BOB_AMPL = isWingedSkeleton and 0.85 or 0.35
+local IDLE_BOB_FREQ = isWingedSkeleton and 1.6 or 1.2
+local WING_FLAP_AMPL = math.rad(isWingedSkeleton and 40 or 25)
+local WING_FLAP_FREQ = 2.4
+local WALK_ROLL_AMPL = math.rad(isWingedSkeleton and 9 or 6)
 local WALK_ROLL_FREQ = 2.6
 
 local wingBones = {}
 do
+    -- Wing-keyword set. For winged quadrupeds we also accept anatomical
+    -- front-limb names because Tripo's QUADRUPED rig labels the bones that
+    -- physically sit inside the wings as arm/forearm/hand.
+    local wingPatterns
+    if isWingedSkeleton then
+        wingPatterns = { "wing", "arm", "forearm", "forelimb", "hand", "clavicle" }
+    else
+        wingPatterns = { "wing" }
+    end
     for _, d in ipairs(mesh:GetDescendants()) do
         if d:IsA("Bone") then
             local lower = string.lower(d.Name)
-            if string.find(lower, "wing") or string.find(d.Name, "кры") then
+            local match = false
+            for _, p in ipairs(wingPatterns) do
+                if string.find(lower, p) then match = true; break end
+            end
+            if not match and string.find(d.Name, "кры") then match = true end
+            if match then
                 local x = d.CFrame.Position.X
                 local side = (x >= 0) and 1 or -1
                 table.insert(wingBones, { bone = d, restCF = d.CFrame, side = side })
@@ -3429,7 +3453,8 @@ do
         end
     end
 end
-print(string.format("[PetFollowScript] Procedural wings: %d bone(s) matched", #wingBones))
+print(string.format("[PetFollowScript] skeleton=%s winged=%s; procedural wings: %d bone(s) matched",
+    skeletonType, tostring(isWingedSkeleton), #wingBones))
 
 -- Capture Body's authored CFrame relative to HRP at script-init time.
 -- After every Heartbeat we set body.CFrame = hrp.CFrame * bodyOffset so the

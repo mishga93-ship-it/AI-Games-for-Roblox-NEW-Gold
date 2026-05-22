@@ -1807,7 +1807,7 @@ function buildPetEvolutionManifest(
   const rarity = typeof metadata.petRarity === 'string' ? metadata.petRarity : 'Rare';
   const element = typeof metadata.petElement === 'string' ? metadata.petElement : 'Neutral';
   const isFlying = !!metadata.petIsFlying;
-  const stageMeshes = (metadata.petStageMeshes as Array<{ meshUrl?: string; meshAssetId?: number; modelAssetId?: number; fbxFileName?: string; idleAnimUrl?: string; walkAnimUrl?: string; flyAnimUrl?: string }> | undefined) ?? [];
+  const stageMeshes = (metadata.petStageMeshes as Array<{ meshUrl?: string; meshAssetId?: number; modelAssetId?: number; textureAssetId?: number; fbxFileName?: string; idleAnimUrl?: string; walkAnimUrl?: string; flyAnimUrl?: string }> | undefined) ?? [];
   const coinBonusBase = rarityCoinBonus(rarity);
 
   const petModelId = uuidv4();
@@ -1898,6 +1898,13 @@ function buildPetEvolutionManifest(
           MeshContent: (stageData.meshAssetId && stageData.meshAssetId > 0)
             ? `rbxassetid://${stageData.meshAssetId}`
             : 'rbxassetid://0',
+          // 2026-05-22 (session 375, step D): baked PBR texture from Tripo
+          // GLB extracted via Engine API Luau (extractMeshIdFromModel). Empty
+          // string when Tripo didn't ship a baked texture — in that case the
+          // fallback Color below tints the white mesh by element.
+          ...(stageData.textureAssetId && stageData.textureAssetId > 0
+            ? { TextureID: `rbxassetid://${stageData.textureAssetId}` }
+            : {}),
           Size: { __type: 'Vector3', x: 3, y: 3, z: 3 },
           CanCollide: false,
           // 2026-05-21: anchored. The visible mesh is driven directly each
@@ -1914,14 +1921,14 @@ function buildPetEvolutionManifest(
           // in the scene graph (Evolve swaps them in instantly) but invisible.
           // PetLevelingModule:Evolve() flips this back to 0 on activation.
           Transparency: i === 1 ? 0 : 1,
-          // 2026-05-22 (session 375, step B): fallback element color tint.
-          // Body MeshPart on Tripo/Meshy mesh has no TextureID (baked texture
-          // is lost during extractMeshIdFromModel + Open Cloud upload), so it
-          // renders as a white untextured shape. petElementColor3 tints it by
-          // element (Fire=orange-red, Ice=pale blue, etc.). When a real
-          // TextureID is later wired in, reset Color to (1,1,1) so the
-          // texture renders cleanly (Color multiplies over TextureID).
-          Color: petElementColor3(element),
+          // 2026-05-22 (session 375, steps B+D): Color3 fallback / texture
+          // pass-through. When a real baked TextureID is present (step D), use
+          // white (1,1,1) so MeshPart.Color doesn't multiply over and distort
+          // the texture. Otherwise tint by element so the white mesh at least
+          // matches its element identity.
+          Color: (stageData.textureAssetId && stageData.textureAssetId > 0)
+            ? { __type: 'Color3' as const, r: 1, g: 1, b: 1 }
+            : petElementColor3(element),
         },
       },
       // Pending-upload sentinel for PetFollowScript to warn on.

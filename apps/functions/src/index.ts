@@ -9877,6 +9877,10 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
       // the actual MeshContent property.
       modelAssetId?: number;
       meshAssetId?: number;
+      // 2026-05-22 (session 375, step D): baked PBR texture asset id extracted
+      // from the uploaded Model wrapper via Engine API. Empty when Tripo
+      // didn't ship a baked texture or extraction failed.
+      textureAssetId?: number;
     };
     const stageBundles: StageArtifactBundle[] = [];
 
@@ -10161,7 +10165,19 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         const extract = await extractMeshIdFromModel(resolvedModelAssetId);
         if (extract?.meshId && extract.meshId > 0) {
           b.meshAssetId = extract.meshId;
-          conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} → MeshId ${extract.meshId}`);
+          // 2026-05-22 (session 375, step D): Tripo bakes the concept image as
+          // a PBR texture into the GLB. The Engine API Luau snippet inside
+          // extractMeshIdFromModel returns the inner MeshPart's TextureID too —
+          // we just weren't storing it. With this, the dragon gets its real
+          // concept-art colours (multi-colour PBR) instead of the single
+          // fallback element tint. Pairs with the white-Color3 reset in the
+          // builder so MeshPart.Color doesn't multiply over the texture.
+          if (extract.textureId && extract.textureId > 0) {
+            b.textureAssetId = extract.textureId;
+            conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} → MeshId ${extract.meshId} + TextureID ${extract.textureId}`);
+          } else {
+            conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} → MeshId ${extract.meshId} (no baked TextureID — element-colour fallback only)`);
+          }
         } else {
           conversionNotes.push(`Stage ${i + 1}: Model ${resolvedModelAssetId} uploaded but MeshId extraction failed (state=${extract?.state ?? 'unknown'}). Use ModelAssetId to InsertService:LoadAsset.`);
         }
@@ -10206,6 +10222,7 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         meshUrl: b.fbxUrl ?? b.meshUrl ?? '',
         meshAssetId: b.meshAssetId ?? 0,
         modelAssetId: b.modelAssetId ?? 0,
+        textureAssetId: b.textureAssetId ?? 0,
         fbxFileName: b.fbxFileName,
         idleAnimUrl: b.idleAnimUrl ?? '',
         walkAnimUrl: b.walkAnimUrl ?? '',
