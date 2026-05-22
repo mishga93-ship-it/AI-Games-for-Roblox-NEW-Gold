@@ -2389,45 +2389,34 @@ function buildVehicleModelManifest(
       && naturalSizeRaw.x > 0 && naturalSizeRaw.y > 0 && naturalSizeRaw.z > 0
       ? { x: naturalSizeRaw.x, y: naturalSizeRaw.y, z: naturalSizeRaw.z }
       : { x: 1, y: 0.3, z: 1 }; // fallback: cars are wider than tall, mesh roughly 1:0.3:1 ratio
-    // Session 373 round 18: TRUST the Meshy GLB orientation entirely.
+    // Session 373 round 19: REVERT round 18's "no rotation" experiment.
+    // It was based on assumption that Meshy follows glTF spec (forward=-Z),
+    // but inspection of Vehicle_CarBuild (natural X=1.91, Z=1.15) without
+    // rotation put the LONG mesh axis along Roblox X (side direction),
+    // leaving the car visually perpendicular to chassis forward (-Z) —
+    // user-reported "машина поперёк" recurred.
     //
-    // Background: rounds 12-17 tried to detect "forward = longer horizontal
-    // axis" and rotate the MeshPart 90° around Y when X > Z. That assumes
-    // Meshy outputs cars with forward = +X. But Meshy actually emits GLBs
-    // following the glTF spec (forward = -Z) and the natural longer-axis is
-    // often a body PANEL not the length (e.g. our latest Vehicle_CarProject:
-    // X=1.91, Y=0.89, Z=1.25 — natural forward IS Z, X is wider). Our 90°
-    // rotation then puts the long visible dim along world X, leaving the
-    // car visually PERPENDICULAR to chassis forward (-Z). Reported as
-    // "машина поперёк".
-    //
-    // Fix: no rotation. Mesh natural -Z = chassis forward = correct.
-    // We still uniformly scale the mesh to chassis length, but along its
-    // ACTUAL natural longest axis without swapping. mLong = max(X, Z) just
-    // for scale computation; meshSize / meshRot below use natural axes.
+    // Restoring round 12-17 rotation: detect longer horizontal axis as
+    // "forward" and rotate MeshPart 90° around Y when X is the longer one.
+    // KEEPS round 18's two good changes: (a) no L/H ≤ 1.8 Y-stretch
+    // (preserves natural proportions), (b) DriveSeat at 30% up (in cabin).
+    const forwardIsX = natural.x > natural.z;
     const mLong = Math.max(natural.x, natural.z);
+    const mShort = Math.min(natural.x, natural.z);
     const mTall = natural.y;
-    // Uniform scale so the natural longest horizontal axis fits the
-    // target chassis length (8.65 stud).
     const targetLength = length * 0.94;
     const scale = targetLength / mLong;
-    // Round 18: drop the L/H ≤ 1.8 enforcement. Round 12's non-uniform Y
-    // stretch (+85% on sport cars) made the mesh look "размотое" /
-    // distorted vertically. Most Meshy outputs already have L/H 1.8-2.5
-    // which is acceptable cartoon, and the stretch was uglifying the
-    // ones that did have good proportions. Trust natural Y.
-    const finalLength = natural.z * scale;  // along Roblox forward (-Z)
-    const finalWidth = natural.x * scale;   // along Roblox right (+X)
-    const finalHeight = mTall * scale;       // along Roblox up (+Y)
-    // Round 18: MeshPart.Size in mesh's NATIVE axis order (X=width, Y=tall,
-    // Z=forward — same as GLB spec). No rotation — mesh visually faces -Z
-    // naturally if Meshy followed glTF convention, which matches chassis
-    // forward direction. If a particular Meshy mesh happens to have a
-    // non-standard orientation, the user can rotate it in Studio; our
-    // pipeline no longer tries to second-guess Meshy's axis convention
-    // and ends up rotating CORRECT outputs wrong way 50% of the time.
-    const meshSize: [number, number, number] = [finalWidth, finalHeight, finalLength];
-    const meshRot: [number, number, number] = [0, 0, 0];
+    const finalLength = mLong * scale;     // becomes Z (Roblox forward) after rot
+    const finalWidth = mShort * scale;     // becomes X (side)
+    const finalHeight = mTall * scale;      // Y (up), uniform — no stretch
+    // Round 19: restore Round 12 rotation logic. If mesh's long axis is X
+    // (Meshy emits cars with forward = +X), rotate 90° around Y so long
+    // axis → Roblox -Z (chassis forward). Otherwise mesh natural axes pass
+    // through.
+    const meshSize: [number, number, number] = forwardIsX
+      ? [finalLength, finalHeight, finalWidth]
+      : [finalWidth, finalHeight, finalLength];
+    const meshRot: [number, number, number] = forwardIsX ? [0, 90, 0] : [0, 0, 0];
     // Session 373 round 6: position mesh so its bottom sits AT the wheel
     // axle level (Y = wheelRadius), not at rootY (which was 0.75 stud
     // above the wheel top — leaving a visible gap underneath the body
