@@ -10044,9 +10044,18 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
           } else {
             bundle.animTaskId = animResult.taskId;
             bundle.fbxUrl = animResult.fbxUrl;
-            bundle.idleAnimUrl = animResult.fbxUrl; // single FBX carries all clips
-            bundle.walkAnimUrl = animResult.fbxUrl;
-            if (classification.isFlying) bundle.flyAnimUrl = animResult.fbxUrl;
+            // 2026-05-22 (session 375, step C.1): we used to assign animResult.fbxUrl
+            // to idleAnimUrl/walkAnimUrl/flyAnimUrl, but Roblox Animation.AnimationId
+            // only accepts rbxassetid://<N> referring to a KeyframeSequence asset —
+            // never raw HTTPS FBX URLs. Studio's 3D Importer can ingest the FBX, but
+            // the live-client refuses it, so wings never animated and Roblox spammed
+            // warnings on every ac:LoadAnimation call. We now leave the fields empty
+            // until we have a real FBX→KeyframeSequence→.rbxm converter (TODO,
+            // session 376+: extend blender-cage-service to parse FBX bone curves
+            // and emit a KeyframeSequence .rbxm, then Open Cloud upload as
+            // AssetType=Animation per https://devforum.roblox.com/t/4022082).
+            // PetFollowScript now provides a procedural wing-flap fallback so the
+            // dragon at least looks alive (see buildPetFollowScript step C.1).
             const rigArt = await copyExternalArtifact(currentJob, animResult.fbxUrl, 'model/fbx', {
               name: bundle.fbxFileName,
               stageId: rigStageId,
@@ -25796,34 +25805,69 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         await finishStage('validate_layered', 'skipped', [], ['Validation skipped — proceed with manual check in Studio'], errorMessage(valErr));
       }
 
-      await beginStage('generate_cages', 'Generating inner/outer cage meshes for WrapLayer');
+      await beginStage('generate_cages', 'Generating inner/outer wrap cages via Blender headless service');
+      // 2026-05-22 Phase C: call blender-cage-service on Cloud Run.
+      // Replaces the previous no-op marker and the never-fully-wired
+      // generateClothingCages() helper. The service appends Roblox's
+      // canonical Clothing_Cage_Template (InnerCage + OuterCage, 1358v
+      // each), runs BVH-based shrinkwrap on OuterCage targeting the
+      // garment mesh from Meshy/Tripo, and returns a single .fbx
+      // containing all three named meshes ready for Studio drag-and-drop
+      // (no manual AFT step).
       try {
         const glbUrl = rawMeshArtifact.downloadUrl ?? rawMeshArtifact.url ?? '';
-        const cageResult = await generateClothingCages(glbUrl, job.prompt);
-        const cageArtifacts: GenerationArtifact[] = [];
-        if (cageResult.innerCageUrl) {
-          cageArtifacts.push(await copyExternalArtifact(job, cageResult.innerCageUrl, 'model/gltf-binary', {
-            name: `${title}-inner-cage.glb`,
-            previewText: 'Inner cage mesh for WrapLayer',
-            stageId: 'generate_cages',
-            artifactRole: 'mesh_raw',
-            metadata: { cageType: 'inner' },
-          }));
+        if (!glbUrl) throw new Error('No garment glb URL to send to cage service');
+        const cageServiceUrl = process.env.BLENDER_CAGE_SERVICE_URL
+          ?? 'https://blender-cage-service-664827511773.us-central1.run.app';
+        const safeName = title.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'Garment';
+        logger.info('[generate_cages] calling blender-cage-service', { jobId, cageServiceUrl, glbUrl, safeName });
+        const cageResp = await fetch(`${cageServiceUrl}/cage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ garmentUrl: glbUrl, name: safeName, offset: 0.005 }),
+        });
+        if (!cageResp.ok) {
+          const errBody = await cageResp.text();
+          throw new Error(`blender-cage-service ${cageResp.status}: ${errBody.slice(0, 400)}`);
         }
-        if (cageResult.outerCageUrl) {
-          cageArtifacts.push(await copyExternalArtifact(job, cageResult.outerCageUrl, 'model/gltf-binary', {
-            name: `${title}-outer-cage.glb`,
-            previewText: 'Outer cage mesh for WrapLayer',
-            stageId: 'generate_cages',
-            artifactRole: 'mesh_raw',
-            metadata: { cageType: 'outer' },
-          }));
+        const cageJson = await cageResp.json() as { fbxBase64?: string; fbxBytes?: number; logs?: string; error?: string };
+        if (cageJson.error || !cageJson.fbxBase64) {
+          throw new Error(`blender-cage-service returned no fbx: ${cageJson.error ?? 'unknown'}`);
         }
-        currentJob.artifacts = [...currentJob.artifacts, ...cageArtifacts];
-        await finishStage('generate_cages', 'completed', cageArtifacts.map((a) => a.id), ['Inner/outer cages generated']);
+        logger.info('[generate_cages] cage service produced FBX', {
+          jobId,
+          fbxBytes: cageJson.fbxBytes,
+          logsTail: (cageJson.logs ?? '').slice(-300),
+        });
+        const cagedFbxBuf = Buffer.from(cageJson.fbxBase64, 'base64');
+        const cagedFbxArtifact = await uploadBinaryArtifact(job, cagedFbxBuf, {
+          type: 'fbx',
+          extension: 'fbx',
+          mimeType: 'model/fbx',
+          name: `${safeName}-with-cages.fbx`,
+          previewText: 'Garment + inner/outer cages — drag into Studio as Accessory (no AFT needed)',
+          stageId: 'generate_cages',
+          artifactRole: 'export_binary',
+          metadata: { is3DModel: true, isLayeredClothingFbx: true, hasCages: true },
+        });
+        currentJob.artifacts = [...currentJob.artifacts, cagedFbxArtifact];
+        currentJob = {
+          ...currentJob,
+          metadata: {
+            ...(currentJob.metadata ?? {}),
+            cagedFbxUrl: cagedFbxArtifact.downloadUrl ?? cagedFbxArtifact.url,
+            cagedFbxBytes: cageJson.fbxBytes,
+            cagesGenerated: true,
+          },
+        };
+        await finishStage('generate_cages', 'completed', [cagedFbxArtifact.id], [
+          `Inner + outer cages generated (FBX ${(cageJson.fbxBytes ?? 0)} bytes). Drag the .fbx into Studio Workspace — no AFT step required.`,
+        ]);
       } catch (cageErr) {
-        logger.warn('Cage generation failed, using mesh as both cages', { error: errorMessage(cageErr) });
-        await finishStage('generate_cages', 'skipped', [], ['Cage generation skipped — using mesh as fallback cage'], errorMessage(cageErr));
+        logger.warn('[generate_cages] blender-cage-service call failed', { jobId, error: errorMessage(cageErr) });
+        await finishStage('generate_cages', 'skipped', [], [
+          'Automated cage generation unavailable — fall back to manual Studio AFT workflow on the .glb/.fbx',
+        ], errorMessage(cageErr));
       }
 
       await beginStage('package_accessory', 'Packaging as Roblox Accessory with WrapLayer');
