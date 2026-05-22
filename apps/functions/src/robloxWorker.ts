@@ -2373,21 +2373,21 @@ function buildVehicleModelManifest(
     // 1.05 stud into the body bottom (wheel wells).
     const meshBottomY = profile.wheelRadius;
     const meshCenterY = meshBottomY + finalHeight * 0.5;
-    // Session 373 round 6: restore Color: primary tint on the MeshPart.
-    // White tint (round 5) was a wrong call — Meshy 6 rarely bakes the
-    // user's chosen color reliably into the GLB, so white tint produces
-    // a default-white mesh that ignores the user's brief. Roblox MeshPart
-    // applies Color multiplicatively over the mesh's PBR texture, so:
-    //   - If mesh has white PBR base color (common Meshy default): tint
-    //     comes through cleanly → user gets their chosen color.
-    //   - If mesh has colored PBR: tint slightly darkens / shifts hue
-    //     (acceptable tradeoff vs ignoring the user's pick entirely).
+    // Session 373 round 8: pass WHITE (no tint) so Meshy's concept-baked
+    // colors show through cleanly. After Meshy multi-image-to-3d (Phase A
+    // pipeline), the mesh has PBR textures matching the user-approved
+    // concept (yellow SUV → yellow mesh, red sport car → red mesh, etc.).
+    // The previous round-6 primary tint multiplied over Meshy's PBR turned
+    // every car the same saturated red because primary defaults to
+    // #E03A2E for car when the prompt has no explicit color word. White
+    // [1,1,1] = identity tint that lets Meshy's natural color come through.
+    const meshWhite = color3(1, 1, 1);
     const meshBodyId = addPart(
       'VehicleMeshBody',
       folders.body,
       meshSize,
       [0, meshCenterY, 0],
-      primary,
+      meshWhite,
       {
         className: 'MeshPart',
         material: 'SmoothPlastic',

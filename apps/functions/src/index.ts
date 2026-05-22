@@ -27011,8 +27011,19 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               // If BLENDER_VEHICLE_FIX_URL is unset / service unavailable,
               // returns null and we fall through to raw Meshy GLB (same as
               // before round 7 — no regression).
-              const primaryHexForBlender = typeof currentJob.metadata?.primaryColor === 'string' ? currentJob.metadata.primaryColor as string : '';
-              const accentHexForBlender = typeof currentJob.metadata?.accentColor === 'string' ? currentJob.metadata.accentColor as string : '';
+              //
+              // Round 8: STOP baking primaryHex / accentHex into the mesh
+              // material. Meshy generates the mesh from the user-approved 2D
+              // concept which already has colors baked into the PBR texture.
+              // Forcing primaryColor on top turned a yellow concept-approved
+              // cartoon SUV into a red blob because (a) prompts without an
+              // explicit color word default primaryColor to #E03A2E red
+              // regardless of concept; (b) Blender bake + Roblox MeshPart.
+              // Color tint multiplied red × red = saturated red. Empty hex →
+              // Blender skips color bake; we trust Meshy's natural concept
+              // colors. Robloxworker mesh branch also passes white Color3.
+              const primaryHexForBlender = '';
+              const accentHexForBlender = '';
               let glbBuf: Buffer | undefined;
               let blenderUsed = false;
               try {
