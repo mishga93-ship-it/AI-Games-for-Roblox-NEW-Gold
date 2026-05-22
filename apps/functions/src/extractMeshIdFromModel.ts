@@ -121,11 +121,23 @@ local meshIdStr = meshPart.MeshId or ""
 -- Pet_FluffyShiba 2026-05-22 in changelog-375.
 local textureIdStr = meshPart.TextureID or ""
 if textureIdStr == "" or textureIdStr == "rbxassetid://" then
-  local sa = meshPart:FindFirstChildOfClass("SurfaceAppearance")
-  if sa then
-    local cm = sa.ColorMap or ""
-    if cm ~= "" then textureIdStr = cm end
-  end
+  -- 2026-05-22 (session 373 round 14): SurfaceAppearance.ColorMap is a
+  -- plugin-capability-gated property in the Engine API sandbox; reading it
+  -- without the Plugin capability throws "The current thread cannot read
+  -- 'ColorMap' (lacking capability Plugin)" and the whole Luau task fails
+  -- (=> the entire vehicle pipeline falls back to procedural baseline).
+  -- Wrap the access in pcall so we silently skip the SurfaceAppearance
+  -- fallback when the sandbox refuses, instead of taking down the whole
+  -- extraction. Pets still benefit when ColorMap IS readable; vehicles
+  -- (which never had SurfaceAppearance anyway because Meshy embeds the
+  -- texture in the mesh asset) no longer crash on the attempt.
+  pcall(function()
+    local sa = meshPart:FindFirstChildOfClass("SurfaceAppearance")
+    if sa then
+      local cm = sa.ColorMap or ""
+      if cm ~= "" then textureIdStr = cm end
+    end
+  end)
 end
 local size = meshPart.Size
 local hasSkinned = false
