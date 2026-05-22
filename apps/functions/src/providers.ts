@@ -897,7 +897,7 @@ async function translateForImageGen(text: string): Promise<string> {
 export async function generatePreviewTexture(
   description: string,
   _style: string = 'roblox',
-  context: 'character' | 'game' | 'prop' = 'character',
+  context: 'character' | 'game' | 'prop' | 'pet' = 'character',
 ): Promise<string | undefined> {
   const englishDescription = await translateForImageGen(description);
   // Session 231 (Roblox suspension fix): every prompt suffixes a Roblox-friendly safety clause
@@ -915,6 +915,16 @@ export async function generatePreviewTexture(
     ? `3D game level screenshot: ${englishDescription}. Colorful platforming world, obstacle course environment, floating platforms, bright neon colors, top-down isometric camera angle. NO characters, NO people, NO avatars. Only the game world and level geometry. Do NOT include any text or watermarks.${SAFETY_SUFFIX}`
     : context === 'prop'
       ? `${englishDescription}. Single 3D object centered on white background, front view. Clean stylized render, bright saturated colors, game-ready prop. Do NOT include any text, watermarks, logos, people, or characters.${SAFETY_SUFFIX}`
+      : context === 'pet'
+        // 2026-05-21: Pet concept goes through TRIPO image-to-3d (NOT Meshy),
+        // so the cartoon/Roblox-toon flavor that 'character' enforces (to dodge
+        // Meshy's content_policy_violation) is no longer required. User
+        // feedback: "2д на Flux слишком мультяшные всегда". Push toward a
+        // sculpted/concept-art look that gives Tripo more geometry detail to
+        // work with while still being family-friendly + creature-friendly.
+        // Tripo's image-to-3d is happiest with: full body, plain background,
+        // clear silhouette, no extra props/scenery, soft studio lighting.
+        ? `${englishDescription}. Cinematic AAA-game creature concept art of a single original 3D pet creature: detailed sculpted forms, vibrant saturated colors, expressive stylized realism (NOT Saturday-morning cartoon, NOT flat cel-shading), soft PBR materials with visible texture variation — fur strands, scale highlights, leathery wing membranes, metallic glints where appropriate. Full body 3/4 hero pose, character on plain neutral white background, soft three-point studio lighting, clean front-facing reference render, game-ready creature reference. Original non-franchise design; do not imitate or resemble any existing cartoon, game, movie, mascot, or copyrighted character. NO human, NO rider, NO weapon, NO scenery, NO ground plane shadow, NO text, NO watermark, NO logo.${SAFETY_SUFFIX}`
       // Stylized cartoon/Roblox-toon character. Avoid "premium / realistic / studio lighting"
       // wording — it nudges Flux toward photorealism, which Meshy v6 image-to-3d frequently
       // rejects with content_policy_violation, sending us into a retry loop. Heavy color
@@ -959,8 +969,16 @@ export async function generatePreviewTexture(
   // flux-pro, then schnell/dev. For game/prop contexts, schnell stays first (cheap,
   // plenty good for backgrounds and isolated props). User feedback: lower-cost paths
   // occasionally produced black-and-white characters for "premium / sigma / chad" briefs.
-  const useCharacterNeg = context === 'character';
-  const negPrompt = useCharacterNeg ? CHARACTER_NEGATIVE : NEGATIVE_PROMPT;
+  // 2026-05-21: pet context piggybacks on the character negative prompt (same
+  // monochrome / desaturation guard) but adds creature-specific bans on Flux's
+  // recurring cartoon defaults — flat cel-shading, eyes too big, chibi
+  // proportions — that don't survive the Tripo image-to-3d step nicely.
+  const PET_NEGATIVE = `${CHARACTER_NEGATIVE}, flat shading, cel shading, chibi, super-deformed proportions, oversized head, dot eyes, plush toy, stuffed animal, knitted, crochet, felt material, low-poly toy, plastic figurine, action figure box, multiple animals, two of, group, pack, two heads`;
+  const negPrompt = context === 'character'
+    ? CHARACTER_NEGATIVE
+    : context === 'pet'
+      ? PET_NEGATIVE
+      : NEGATIVE_PROMPT;
   const ultraConfig = {
     name: 'flux-pro/v1.1-ultra',
     config: {

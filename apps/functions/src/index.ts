@@ -1753,7 +1753,11 @@ app.post('/api/content/jobs/:jobId/approve-concept', async (req: AuthedRequest, 
 
       let newConceptUrl: string | undefined;
       try {
-        newConceptUrl = await generatePreviewTexture(alignedPrompt, previewStyle, 'character');
+        // Pet regen also uses the sculpted-realism 'pet' context so the
+        // new image matches the look of the original Stage-1 concept (and
+        // doesn't suddenly snap back to the Roblox-toon cartoon style).
+        const regenContext: 'character' | 'pet' = isPetJob ? 'pet' : 'character';
+        newConceptUrl = await generatePreviewTexture(alignedPrompt, previewStyle, regenContext);
       } catch (err) {
         logger.warn('Concept regeneration failed', { error: errorMessage(err) });
       }
@@ -9884,7 +9888,10 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
       } else {
         await beginStage(conceptStageId, [`Generating concept image for Stage ${idx}`]);
         try {
-          const conceptUrl = await generatePreviewTexture(stagePrompt, 'roblox', 'character');
+          // 2026-05-21: context='pet' picks the sculpted-realism Flux prompt
+          // tuned for Tripo image-to-3d (no Roblox-toon flatness — user said
+          // the cartoon style was too "мультяшное" for what Tripo will build).
+          const conceptUrl = await generatePreviewTexture(stagePrompt, 'roblox', 'pet');
           if (conceptUrl) {
             bundle.conceptUrl = conceptUrl;
             const conceptArt = await copyExternalArtifact(currentJob, conceptUrl, 'image/png', {
