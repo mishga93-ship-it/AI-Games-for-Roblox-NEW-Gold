@@ -310,6 +310,50 @@ def _name_cages(
         outer.data.name = outer.name
 
 
+def _make_cages_transparent(inner: bpy.types.Object, outer: bpy.types.Object) -> None:
+    """Attach an alpha=0 material to inner/outer cage meshes.
+
+    2026-05-22 (session 381) — user reported the FBX appears as a huge
+    white blob in Workspace because Studio renders the cage meshes
+    (which are full-body avatar shapes, ~5.5 studs tall) as opaque
+    geometry. The actual ~1.8 stud garment is inside but obscured.
+
+    Studio's layered-clothing system identifies cages by the
+    `_InnerCage` / `_OuterCage` name suffix (not by visibility), so
+    making the cages transparent only affects the standalone-drop
+    scenario where the user drags the FBX into Workspace. When the FBX
+    goes through Avatar Setup or is dropped onto a Rig, Studio still
+    detects the cages and wires WrapLayer/WrapTarget — the deformation
+    machinery is unaffected. The garment mesh keeps its own materials
+    untouched.
+    """
+    trans_mat = bpy.data.materials.get("AIGold_CageTransparent")
+    if trans_mat is None:
+        trans_mat = bpy.data.materials.new(name="AIGold_CageTransparent")
+        trans_mat.use_nodes = True
+        bsdf = trans_mat.node_tree.nodes.get("Principled BSDF")
+        if bsdf is not None:
+            # Alpha=0 → fully transparent. Roblox FBX importer reads the
+            # baseColor.A channel and maps it to MeshPart.Transparency.
+            bsdf.inputs["Alpha"].default_value = 0.0
+            # Also zero out the base colour alpha-channel so legacy
+            # exporters that ignore the principled-BSDF Alpha input still
+            # carry the transparency through.
+            base = bsdf.inputs.get("Base Color")
+            if base is not None and hasattr(base, "default_value"):
+                base.default_value = (1.0, 1.0, 1.0, 0.0)
+        trans_mat.blend_method = "BLEND"
+        # Mark as the material the entire mesh uses (no mixed-material
+        # rendering); single material slot → single MeshPart in Roblox.
+        trans_mat.diffuse_color = (1.0, 1.0, 1.0, 0.0)
+
+    for cage in (inner, outer):
+        if cage.data is None:
+            continue
+        cage.data.materials.clear()
+        cage.data.materials.append(trans_mat)
+
+
 def _select_only(objects: list[bpy.types.Object]) -> None:
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
@@ -367,6 +411,9 @@ def main() -> int:
 
     _name_cages(inner, outer, args.name)
     print(f"[generate_cages] renamed: {inner.name}, {outer.name}")
+
+    _make_cages_transparent(inner, outer)
+    print(f"[generate_cages] cages set to transparent (FBX-drag visibility off)")
 
     _export_fbx(args.output, [garment, inner, outer])
     size_bytes = os.path.getsize(args.output)

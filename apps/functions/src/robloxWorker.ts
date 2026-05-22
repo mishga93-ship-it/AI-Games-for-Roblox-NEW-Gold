@@ -4315,13 +4315,16 @@ function buildLayeredClothingAutoEquipScript(assetId?: number): string {
     return `
 -- Auto-equip clothing — published as Roblox asset ${assetId}.
 --
--- Note: Open Cloud Model uploads of FBX files do NOT auto-create
--- Accessory/WrapLayer wiring (that's Studio FBX-importer's job). This
--- script extracts the garment MeshPart, wraps it in a minimal Accessory,
--- and adds it to each player's Humanoid. The result is a static
--- accessory (visible but not cage-deformed). For real layered clothing
--- with proper avatar deformation, drag the .fbx file from this
--- generation into Studio Workspace directly.
+-- Open Cloud Model uploads of FBX files do NOT auto-create
+-- Accessory/WrapLayer wiring (that's Studio FBX-importer's job), so we
+-- can't use Humanoid:AddAccessory: it would attach the garment to the
+-- BodyFrontAttachment of UpperTorso, sticking it out in front of the
+-- player instead of wearing it on the torso (session 381 feedback). We
+-- clone the garment MeshPart, position it at UpperTorso's centre with
+-- a small empirical Y offset (cage-service authors garment top at
+-- Y=+1.5 in template space), and weld it. The garment then follows the
+-- character but does NOT deform with limbs — for real layered clothing
+-- deformation drop the .fbx file into Studio Workspace.
 
 local Players = game:GetService("Players")
 local InsertService = game:GetService("InsertService")
@@ -4346,7 +4349,7 @@ local function findGarmentMeshPart(container)
   return fallback
 end
 
-local function loadAccessoryTemplate()
+local function loadGarmentTemplate()
   if cachedAccessory then return cachedAccessory end
   if loadAttempted then return nil end
   loadAttempted = true
@@ -4367,28 +4370,31 @@ local function loadAccessoryTemplate()
     return nil
   end
 
-  -- Build a minimal Accessory wrapping a clone of the garment MeshPart.
-  local accessory = Instance.new("Accessory")
-  accessory.Name = "AIGarment"
-  accessory.AccessoryType = Enum.AccessoryType.Shirt
-
+  -- Clone the garment as a standalone MeshPart template. We don't wrap
+  -- in Accessory because Humanoid:AddAccessory uses BodyFrontAttachment
+  -- positioning by default, which sticks the garment to the front of
+  -- the torso instead of centering it on UpperTorso (session 381 user
+  -- feedback "он спереди крепиться а не одевается на перса"). Instead
+  -- we weld the MeshPart directly to UpperTorso below.
   local handle = garment:Clone()
-  handle.Name = "Handle"
+  handle.Name = "AIGarment"
   handle.CanCollide = false
   handle.Anchored = false
   handle.Massless = true
-  handle.Parent = accessory
 
-  -- Standard Roblox Accessory needs an Attachment matching one on the
-  -- target body part. BodyFrontAttachment is on UpperTorso for R15.
-  local attachment = Instance.new("Attachment")
-  attachment.Name = "BodyFrontAttachment"
-  attachment.Parent = handle
-
-  cachedAccessory = accessory
+  cachedAccessory = handle
   result:Destroy()
   return cachedAccessory
 end
+
+-- Empirical Y offset between the garment's local origin and where it
+-- should sit relative to UpperTorso's centre. The cage-service authors
+-- the garment so its top edge is at Y=+1.5 studs in cage-template
+-- space, and the cage centre roughly maps to UpperTorso's centre when
+-- worn. R15 UpperTorso half-height ≈ 0.8 studs; we want the garment top
+-- at UpperTorso top, so garment_origin_Y = (0.8) - 1.5 = -0.7 studs
+-- relative to UpperTorso centre.
+local GARMENT_OFFSET_Y = -0.7
 
 local function applyLayeredClothing(character)
   local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -4397,14 +4403,31 @@ local function applyLayeredClothing(character)
   end
   if not humanoid then return end
 
-  local template = loadAccessoryTemplate()
+  -- Layered clothing for shirts sits on UpperTorso. R6 rigs use Torso;
+  -- support both for safety.
+  local target = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+  if not target then
+    target = character:WaitForChild("UpperTorso", 5) or character:FindFirstChild("Torso")
+  end
+  if not target then return end
+
+  local template = loadGarmentTemplate()
   if not template then return end
 
+  -- Remove old garment if re-spawning.
   local existing = character:FindFirstChild(template.Name)
-  if existing and existing:IsA("Accessory") then
-    existing:Destroy()
-  end
-  humanoid:AddAccessory(template:Clone())
+  if existing then existing:Destroy() end
+
+  local handle = template:Clone()
+  handle.CFrame = target.CFrame * CFrame.new(0, GARMENT_OFFSET_Y, 0)
+  handle.Parent = character
+
+  -- WeldConstraint follows Part0 (UpperTorso) automatically, so the
+  -- garment moves with the character without us hand-rolling Motor6Ds.
+  local weld = Instance.new("WeldConstraint")
+  weld.Part0 = target
+  weld.Part1 = handle
+  weld.Parent = handle
 end
 
 local function setupPlayer(player)
