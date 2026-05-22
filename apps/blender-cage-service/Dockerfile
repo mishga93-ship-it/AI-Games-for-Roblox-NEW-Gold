@@ -42,6 +42,7 @@ RUN mkdir -p /usr/local/blender \
 
 WORKDIR /app
 COPY generate_cages.py /app/generate_cages.py
+COPY vehicle_fix.py /app/vehicle_fix.py
 COPY Clothing_Cage_Template.blend /app/Clothing_Cage_Template.blend
 COPY server.py /app/server.py
 
