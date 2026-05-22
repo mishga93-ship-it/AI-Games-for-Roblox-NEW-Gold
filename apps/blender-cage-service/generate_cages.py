@@ -129,6 +129,43 @@ def _import_garment(glb_path: str, target_name: str) -> bpy.types.Object:
     rot = mathutils.Matrix.Rotation(_math.radians(-90.0), 4, "X")
     garment.data.transform(rot)
     garment.data.update()
+
+    # 2026-05-22 — auto-rescale to Roblox stud scale and reposition over the
+    # cage body. Meshy/Tripo outputs are in raw model units which Studio
+    # interprets at huge stud scale on FBX import — the user reported the
+    # imported accessory failed UGC bounds check ("doesn't fit in required
+    # bounds, scale till it fits into the blue bounding box") because the
+    # garment was 5-10× the target chest size.
+    #
+    # Roblox layered-clothing UGC bounds (per docs): ≤8 studs in any
+    # dimension. A torso-chest garment typically sits at ~2.5-3 studs tall.
+    # Roblox's body cage template (which we already loaded) is ~5.5 studs
+    # tall (Y) — we use it as the reference: garment should fit inside
+    # roughly the upper half of that cage (chest area).
+    #
+    # Strategy: scale the garment uniformly so its longest dimension equals
+    # TARGET_GARMENT_LONGEST_DIM studs, then translate it so its centre
+    # sits at the cage's chest height (Y ≈ +1.0, the cage spans Y=-3..+2.5).
+    bbox = [garment.matrix_world @ mathutils.Vector(corner) for corner in garment.bound_box]
+    xs = [v.x for v in bbox]; ys = [v.y for v in bbox]; zs = [v.z for v in bbox]
+    cur_dim = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+    target_longest = 2.6  # studs — fits within UGC ≤8 bounds with breathing room
+    if cur_dim > 0.001:
+        scale = target_longest / cur_dim
+        scale_mat = mathutils.Matrix.Scale(scale, 4)
+        garment.data.transform(scale_mat)
+        print(f"[generate_cages] auto-rescale: longest dim {cur_dim:.3f} → "
+              f"{cur_dim * scale:.3f} (scale ×{scale:.4f})")
+    # Re-center on origin then translate up to cage chest level so the BVH
+    # shrinkwrap finds the cage's chest vertices.
+    bbox2 = [mathutils.Vector(corner) for corner in garment.bound_box]
+    cx = (max(v.x for v in bbox2) + min(v.x for v in bbox2)) / 2
+    cy = (max(v.y for v in bbox2) + min(v.y for v in bbox2)) / 2
+    cz = (max(v.z for v in bbox2) + min(v.z for v in bbox2)) / 2
+    chest_offset_y = 1.0  # cage chest centre ≈ Y=+1 in the template
+    translate = mathutils.Matrix.Translation((-cx, -cy + chest_offset_y, -cz))
+    garment.data.transform(translate)
+    garment.data.update()
     return garment
 
 
