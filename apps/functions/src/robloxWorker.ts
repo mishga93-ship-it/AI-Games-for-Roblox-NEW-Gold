@@ -2321,23 +2321,35 @@ function buildVehicleModelManifest(
       ? [finalLength, finalHeight, finalWidth] // mesh-native: long along X, then we rotate
       : [finalWidth, finalHeight, finalLength];
     const meshRot: [number, number, number] = forwardIsX ? [0, 90, 0] : [0, 0, 0];
-    // Position mesh so its bottom touches the chassis underbody (rootY level),
-    // i.e. mesh center Y = rootY + half-height. That way wheels stick out from
-    // the bottom of the mesh as expected (not floating inside).
-    const meshCenterY = rootY + finalHeight * 0.5;
-    // Session 373: pass WHITE (Color3 [1,1,1]) instead of primary. MeshPart
-    // applies Color as a multiplicative tint on top of the mesh's natural
-    // PBR texture. Meshy generates the mesh from the user-approved concept
-    // (which already has the user's chosen colors baked in) — overriding
-    // with primary turns a white sedan into a red blob and ignores the
-    // approved concept color.
-    const meshWhite = color3(1, 1, 1);
+    // Session 373 round 6: position mesh so its bottom sits AT the wheel
+    // axle level (Y = wheelRadius), not at rootY (which was 0.75 stud
+    // above the wheel top — leaving a visible gap underneath the body
+    // that the user reported as "наполовину утонула"). When Meshy bakes
+    // wheel-well-shaped indents into the bottom of the mesh (common for
+    // text-to-3d cars), they now line up with the procedural wheels
+    // instead of floating above them.
+    //
+    // Math: wheels touch ground at Y=0, top at Y=wheelRadius*2 = 2.10.
+    // Mesh bottom at Y=wheelRadius means wheels stick out 1.05 stud
+    // below the body bottom (proper road-clearance look) AND poke
+    // 1.05 stud into the body bottom (wheel wells).
+    const meshBottomY = profile.wheelRadius;
+    const meshCenterY = meshBottomY + finalHeight * 0.5;
+    // Session 373 round 6: restore Color: primary tint on the MeshPart.
+    // White tint (round 5) was a wrong call — Meshy 6 rarely bakes the
+    // user's chosen color reliably into the GLB, so white tint produces
+    // a default-white mesh that ignores the user's brief. Roblox MeshPart
+    // applies Color multiplicatively over the mesh's PBR texture, so:
+    //   - If mesh has white PBR base color (common Meshy default): tint
+    //     comes through cleanly → user gets their chosen color.
+    //   - If mesh has colored PBR: tint slightly darkens / shifts hue
+    //     (acceptable tradeoff vs ignoring the user's pick entirely).
     const meshBodyId = addPart(
       'VehicleMeshBody',
       folders.body,
       meshSize,
       [0, meshCenterY, 0],
-      meshWhite,
+      primary,
       {
         className: 'MeshPart',
         material: 'SmoothPlastic',
@@ -2354,17 +2366,19 @@ function buildVehicleModelManifest(
     // Stash mesh-fit metrics so addVehicleSeats and addVehiclePhysics can
     // align DriveSeat / wheel positions with the actual mesh silhouette
     // (cabin/track) instead of the fixed chassis envelope.
-    (metadata as Record<string, unknown>).vehicleMeshFitTopY = rootY + finalHeight;
+    (metadata as Record<string, unknown>).vehicleMeshFitBottomY = meshBottomY;
+    (metadata as Record<string, unknown>).vehicleMeshFitTopY = meshBottomY + finalHeight;
     (metadata as Record<string, unknown>).vehicleMeshFitHeight = finalHeight;
     (metadata as Record<string, unknown>).vehicleMeshFitWidth = finalWidth;
     (metadata as Record<string, unknown>).vehicleMeshFitLength = finalLength;
     if (vehicleType === 'car') {
-      // Sized relative to actual mesh extent, not the fixed [width*0.92, ...].
+      // Bumpers + plate sized relative to actual mesh extent, positioned
+      // at mesh bottom (not rootY) so they're flush with the body bottom.
       const trimWidth = finalWidth * 0.92;
       const trimLengthHalf = finalLength * 0.50;
-      addBodyPart('MeshBodyFrontBumperTrim', [trimWidth, finalHeight * 0.10, 0.18], [0, rootY + finalHeight * 0.10, -trimLengthHalf], dark, { material: 'Metal' });
-      addBodyPart('MeshBodyRearBumperTrim',  [trimWidth, finalHeight * 0.10, 0.18], [0, rootY + finalHeight * 0.10,  trimLengthHalf], dark, { material: 'Metal' });
-      addBodyPart('MeshBodyRearLicensePlate', [finalWidth * 0.26, finalHeight * 0.09, 0.06], [0, rootY + finalHeight * 0.28, trimLengthHalf + 0.01], silver, { material: 'Metal' });
+      addBodyPart('MeshBodyFrontBumperTrim', [trimWidth, finalHeight * 0.10, 0.18], [0, meshBottomY + finalHeight * 0.10, -trimLengthHalf], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearBumperTrim',  [trimWidth, finalHeight * 0.10, 0.18], [0, meshBottomY + finalHeight * 0.10,  trimLengthHalf], dark, { material: 'Metal' });
+      addBodyPart('MeshBodyRearLicensePlate', [finalWidth * 0.26, finalHeight * 0.09, 0.06], [0, meshBottomY + finalHeight * 0.28, trimLengthHalf + 0.01], silver, { material: 'Metal' });
     }
   } else {
     // Procedural family-sedan baseline ALWAYS runs (proven WedgePart hood/
@@ -2399,16 +2413,19 @@ function buildVehicleModelManifest(
       addBodyPart('VehicleSceneRoot', [0.1, 0.1, 0.1], [0, rootY, 0], dark, { material: 'Metal', transparency: 1 });
     }
   }
-  // Session 373: when the mesh-body branch ran, it stashed meshFitTopY/Height
-  // in metadata so we can sit the DriveSeat inside the actual mesh silhouette
-  // instead of a fixed Y based on profile.size[1].
+  // Session 373: when the mesh-body branch ran, it stashed meshFit*
+  // in metadata so we can sit the DriveSeat inside the actual mesh
+  // silhouette instead of a fixed Y based on profile.size[1].
   const meshFitTopY = typeof (metadata as Record<string, unknown>).vehicleMeshFitTopY === 'number'
     ? (metadata as Record<string, number>).vehicleMeshFitTopY
     : undefined;
   const meshFitHeight = typeof (metadata as Record<string, unknown>).vehicleMeshFitHeight === 'number'
     ? (metadata as Record<string, number>).vehicleMeshFitHeight
     : undefined;
-  addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot, meshFitTopY, meshFitHeight });
+  const meshFitBottomY = typeof (metadata as Record<string, unknown>).vehicleMeshFitBottomY === 'number'
+    ? (metadata as Record<string, number>).vehicleMeshFitBottomY
+    : undefined;
+  addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot, meshFitTopY, meshFitHeight, meshFitBottomY });
   const meshFitWidth = typeof (metadata as Record<string, unknown>).vehicleMeshFitWidth === 'number'
     ? (metadata as Record<string, number>).vehicleMeshFitWidth
     : undefined;
@@ -3012,18 +3029,23 @@ function addVehicleSeats(args: {
   weldToRoot: (partId: string, name: string) => void;
   meshFitTopY?: number;
   meshFitHeight?: number;
+  meshFitBottomY?: number;
 }): void {
-  const { scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot, meshFitTopY, meshFitHeight } = args;
+  const { scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot, meshFitTopY, meshFitHeight, meshFitBottomY } = args;
   const driveSeatId = uuidv4();
   const physicalSeatTransparency = 1;
   // Session 373: when an external mesh body is loaded (Meshy v6), the chassis
-  // height no longer matches profile.size[1] — use the actual mesh fit height
-  // so the DriveSeat sits inside the cabin (otherwise the driver floats above
-  // a low sports-car mesh or sinks into a tall SUV).
-  // Driver cabin Y ≈ 70% up the mesh body (above floor pan, below roof).
-  const meshSeatY = (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
-    ? rootY + meshFitHeight * 0.55
-    : undefined;
+  // height no longer matches profile.size[1] — use the actual mesh fit
+  // bottom/top so the DriveSeat sits inside the cabin (otherwise the driver
+  // floats above a low sports-car mesh or sinks into a tall SUV).
+  // Driver cabin Y ≈ 55% up the mesh body from its bottom (above floor pan,
+  // below roof). Round 6: anchored to mesh bottom (= wheelRadius) not rootY,
+  // matching the lowered mesh position.
+  const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
+    ? meshFitBottomY + meshFitHeight * 0.55
+    : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
+      ? rootY + meshFitHeight * 0.55
+      : undefined;
   const seatY = meshSeatY ?? (
     profile.type === 'bus'
       ? rootY + profile.size[1] * 0.36
