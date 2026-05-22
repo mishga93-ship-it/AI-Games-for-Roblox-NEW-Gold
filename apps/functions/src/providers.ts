@@ -4381,7 +4381,15 @@ export async function scoreVehicleMeshPreview(args: {
         user,
         images: [{ base64: args.previewPngBase64, mediaType: 'image/png' }],
       },
-      'claude-3-5-sonnet-20241022',
+      // Sonnet 4.5 — stable model id (Anthropic listed it via /v1/models in
+      // session 373 round 19). The earlier `claude-3-5-sonnet-20241022`
+      // returns HTTP 404 not_found_error in our 2026-05 environment because
+      // it was deprecated; Anthropic now ships Sonnet 4.x. Sonnet over
+      // Haiku because vehicle visual QA needs nuanced silhouette judgment
+      // (colour match, wheel readability, cabin presence) — Haiku 4.5 is
+      // cheaper but at the cost of vision detail Claude needs to flag
+      // subtle defects like wrong proportions or flat-box shapes.
+      'claude-sonnet-4-5-20250929',
       args.timeoutMs ?? 60_000,
     );
 
