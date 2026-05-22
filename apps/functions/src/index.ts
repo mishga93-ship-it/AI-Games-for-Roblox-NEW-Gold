@@ -26956,14 +26956,53 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         const meshyRaw = (meshyResult.raw ?? {}) as Record<string, unknown>;
         const meshyThumbnailUrl = typeof meshyRaw.thumbnailUrl === 'string' ? meshyRaw.thumbnailUrl : '';
         if (meshyGlbUrl) {
-          // Download Meshy GLB → upload to Roblox Open Cloud → extract MeshId.
+          // Download Meshy GLB → (optional Blender preprocessor recentres
+          // origin / auto-rotates / bakes primary color) → upload to Roblox
+          // Open Cloud → extract MeshId.
           const apiKey = getRobloxOpenCloudApiKey();
           const creatorId = getRobloxCreatorId();
           if (apiKey && creatorId) {
             try {
-              const glbResp = await fetch(meshyGlbUrl);
+              // Session 373 round 7: try Blender vehicle-fix preprocessor.
+              // If BLENDER_VEHICLE_FIX_URL is unset / service unavailable,
+              // returns null and we fall through to raw Meshy GLB (same as
+              // before round 7 — no regression).
+              const primaryHexForBlender = typeof currentJob.metadata?.primaryColor === 'string' ? currentJob.metadata.primaryColor as string : '';
+              const accentHexForBlender = typeof currentJob.metadata?.accentColor === 'string' ? currentJob.metadata.accentColor as string : '';
+              let glbBuf: Buffer | undefined;
+              let blenderUsed = false;
+              try {
+                const cleaned = await (await import('./providers.js')).callBlenderVehicleFix({
+                  glbUrl: meshyGlbUrl,
+                  primaryHex: primaryHexForBlender,
+                  accentHex: accentHexForBlender,
+                });
+                if (cleaned?.cleanedGlb && cleaned.cleanedGlb.length > 0) {
+                  glbBuf = cleaned.cleanedGlb;
+                  blenderUsed = true;
+                  logger.info('[Vehicle] Blender vehicle-fix preprocessed GLB', {
+                    jobId, originalUrl: meshyGlbUrl, cleanedBytes: glbBuf.length,
+                  });
+                }
+              } catch (blenderErr) {
+                logger.warn('[Vehicle] Blender vehicle-fix threw, falling through to raw Meshy GLB', {
+                  jobId, error: errorMessage(blenderErr),
+                });
+              }
+              if (!glbBuf) {
+                const glbResp = await fetch(meshyGlbUrl);
+                if (!glbResp.ok) {
+                  await finishStage('generate_vehicle_mesh', 'completed', [], [
+                    `Failed to download Meshy GLB (HTTP ${glbResp.status}) — falling back to procedural baseline.`,
+                  ]);
+                  throw new Error('meshy_glb_download_failed');
+                }
+                glbBuf = Buffer.from(await glbResp.arrayBuffer());
+              }
+              if (true) {
+                const glbResp = { ok: true, status: 200 } as { ok: boolean; status: number };
+                void blenderUsed;
               if (glbResp.ok) {
-                const glbBuf = Buffer.from(await glbResp.arrayBuffer());
                 const upload = await uploadAssetToRoblox({
                   apiKey,
                   creatorId,
@@ -27066,6 +27105,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                   `Failed to download Meshy GLB (HTTP ${glbResp.status}) — falling back to procedural baseline.`,
                 ]);
               }
+              }  // close `if (true) {` (Blender-preprocessor wrapper added in round 7)
             } catch (uploadErr) {
               logger.warn('[Vehicle] Roblox Open Cloud upload failed', { jobId, error: errorMessage(uploadErr) });
               await finishStage('generate_vehicle_mesh', 'completed', [], [

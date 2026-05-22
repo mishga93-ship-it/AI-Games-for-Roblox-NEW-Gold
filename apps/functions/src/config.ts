@@ -35,6 +35,13 @@ export const ROBLOX_OAUTH_CLIENT_ID = defineString('ROBLOX_OAUTH_CLIENT_ID', { d
 export const ROBLOX_UNIVERSE_ID = defineString('ROBLOX_UNIVERSE_ID', { default: '' });
 export const ROBLOX_PLACE_ID = defineString('ROBLOX_PLACE_ID', { default: '' });
 export const JOB_DISPATCH_MODE = defineString('JOB_DISPATCH_MODE', { default: 'embedded' });
+// Session 373 round 7: optional Blender preprocessor service URL. When set,
+// the vehicle pipeline POSTs Meshy GLBs to {URL}/vehicle-fix to recenter
+// origin, auto-rotate to -Z forward, and bake primary color into materials
+// BEFORE Roblox Open Cloud upload. Graceful fallback: empty / unreachable →
+// raw Meshy GLB is uploaded directly (same behaviour as pre-round-7).
+// Service code lives in apps/blender-cage-service.
+export const BLENDER_VEHICLE_FIX_URL = defineString('BLENDER_VEHICLE_FIX_URL', { default: '' });
 export const ALLOW_UNAUTHENTICATED_REQUESTS = defineString('ALLOW_UNAUTHENTICATED_REQUESTS', { default: 'false' });
 
 export const secretParams = [

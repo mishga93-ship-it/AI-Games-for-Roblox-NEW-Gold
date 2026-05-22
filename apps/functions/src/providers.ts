@@ -19,6 +19,7 @@ import {
   OPENAI_API_KEY,
   SUNO_API_KEY,
   TRIPO_API_KEY,
+  BLENDER_VEHICLE_FIX_URL,
   defaults,
 } from './config.js';
 import type { ProviderPromptInput } from './promptCatalog.js';
@@ -4270,4 +4271,72 @@ export async function generateAnimationPreviewVideo(
   }
 
   return null;
+}
+
+// ── Blender vehicle preprocessor (Phase A) ─────────────────────────────
+//
+// Session 373 round 7: optional preprocess of Meshy vehicle GLB before
+// Roblox Open Cloud upload. The Blender service handles 3 operations
+// that we couldn't do reliably in TypeScript / Roblox runtime:
+//   1. Recenter origin to geometry median (so Roblox MeshPart bbox
+//      visually contains the mesh, not floating in one corner).
+//   2. Auto-rotate so the longest horizontal axis = -Z (Roblox forward).
+//   3. Bake primaryHex into Principled BSDF base color, so the imported
+//      MeshPart shows the user-chosen color without needing a tint
+//      override (which previously distorted Meshy's PBR textures).
+//
+// Service: apps/blender-cage-service (Cloud Run). Set
+// BLENDER_VEHICLE_FIX_URL env var to enable. Empty → caller uses the
+// raw Meshy GLB directly (same behaviour as before this round).
+//
+// Returns the cleaned GLB as a Buffer so the caller can upload it
+// directly to Roblox Open Cloud without needing inter-service Storage.
+export async function callBlenderVehicleFix(args: {
+  glbUrl: string;
+  primaryHex?: string;
+  accentHex?: string;
+  timeoutMs?: number;
+}): Promise<{ cleanedGlb: Buffer; logs: string } | null> {
+  const baseUrl = (BLENDER_VEHICLE_FIX_URL.value() ?? '').trim();
+  if (!baseUrl) {
+    logger.info('[callBlenderVehicleFix] BLENDER_VEHICLE_FIX_URL not configured — skipping preprocess');
+    return null;
+  }
+  const endpoint = `${baseUrl.replace(/\/+$/, '')}/vehicle-fix`;
+  const timeoutMs = args.timeoutMs ?? 180_000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        glbUrl: args.glbUrl,
+        primaryHex: (args.primaryHex ?? '').trim(),
+        accentHex: (args.accentHex ?? '').trim(),
+      }),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      logger.warn('[callBlenderVehicleFix] non-OK', { status: resp.status, body: text.slice(0, 400) });
+      return null;
+    }
+    const json = await resp.json() as { glbBase64?: string; glbBytes?: number; logs?: string; error?: string };
+    if (!json.glbBase64) {
+      logger.warn('[callBlenderVehicleFix] response missing glbBase64', { error: json.error, logs: (json.logs ?? '').slice(0, 400) });
+      return null;
+    }
+    const cleanedGlb = Buffer.from(json.glbBase64, 'base64');
+    logger.info('[callBlenderVehicleFix] success', {
+      glbBytes: json.glbBytes ?? cleanedGlb.length,
+      logsTail: (json.logs ?? '').slice(-300),
+    });
+    return { cleanedGlb, logs: json.logs ?? '' };
+  } catch (err) {
+    logger.warn('[callBlenderVehicleFix] threw', { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
