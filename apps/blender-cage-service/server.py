@@ -56,8 +56,18 @@ def _run_blender(garment_path: str, output_path: str, name: str, offset: float) 
     return proc.returncode, combined
 
 
-def _run_blender_vehicle_fix(input_path: str, output_path: str, primary_hex: str, accent_hex: str) -> tuple[int, str]:
-    """Invoke vehicle_fix.py headless. Same subprocess pattern as cages."""
+def _run_blender_vehicle_fix(
+    input_path: str,
+    output_path: str,
+    primary_hex: str,
+    accent_hex: str,
+    preview_png_path: str = "",
+) -> tuple[int, str]:
+    """Invoke vehicle_fix.py headless. Same subprocess pattern as cages.
+
+    Round 19: when preview_png_path is non-empty, Blender also writes a
+    3/4-front PNG render to that path so the backend can ship it to Claude
+    vision for QA scoring. Empty path = skip render (legacy fast path)."""
     cmd = [
         BLENDER_BIN,
         "--background",
@@ -68,7 +78,9 @@ def _run_blender_vehicle_fix(input_path: str, output_path: str, primary_hex: str
         "--primary-hex", primary_hex,
         "--accent-hex", accent_hex,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if preview_png_path:
+        cmd.extend(["--preview-png", preview_png_path])
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
     combined = proc.stdout + "\n" + proc.stderr
     return proc.returncode, combined
 
@@ -165,15 +177,23 @@ class Handler(BaseHTTPRequestHandler):
         glb_url = body.get("glbUrl")
         primary_hex = (body.get("primaryHex") or "").strip()
         accent_hex = (body.get("accentHex") or "").strip()
+        # Round 19: caller opts into Visual QA gate by passing renderPreview=true.
+        # Adds ~2-5s to the response (EEVEE Next render on Cloud Run CPU) and
+        # returns previewPngBase64 alongside the cleaned GLB. Legacy callers
+        # that omit the flag still get the old fast path with no PNG render.
+        render_preview = bool(body.get("renderPreview"))
         if not glb_url:
             self._send_json(400, {"error": "glbUrl is required"})
             return
         workdir = tempfile.mkdtemp(prefix="vehicle-fix-")
         input_path = os.path.join(workdir, "input.glb")
         output_path = os.path.join(workdir, "cleaned.glb")
+        preview_path = os.path.join(workdir, "preview.png") if render_preview else ""
         try:
             _download(glb_url, input_path)
-            code, logs = _run_blender_vehicle_fix(input_path, output_path, primary_hex, accent_hex)
+            code, logs = _run_blender_vehicle_fix(
+                input_path, output_path, primary_hex, accent_hex, preview_path,
+            )
             if code != 0 or not os.path.exists(output_path):
                 self._send_json(500, {
                     "error": f"blender exit code {code}",
@@ -182,11 +202,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with open(output_path, "rb") as f:
                 glb_b64 = base64.b64encode(f.read()).decode("ascii")
-            self._send_json(200, {
+            payload: dict = {
                 "glbBase64": glb_b64,
                 "glbBytes": os.path.getsize(output_path),
                 "logs": logs[-2000:],
-            })
+            }
+            if render_preview and preview_path and os.path.exists(preview_path):
+                with open(preview_path, "rb") as pf:
+                    payload["previewPngBase64"] = base64.b64encode(pf.read()).decode("ascii")
+                payload["previewPngBytes"] = os.path.getsize(preview_path)
+            elif render_preview:
+                # Render was requested but failed (Blender printed log, returned 0).
+                # Caller treats missing previewPngBase64 as "QA gate unavailable"
+                # → falls through without re-generating.
+                payload["previewPngError"] = "preview render did not produce a PNG (see logs)"
+            self._send_json(200, payload)
         except Exception as err:  # noqa: BLE001
             self._send_json(500, {"error": str(err)})
         finally:

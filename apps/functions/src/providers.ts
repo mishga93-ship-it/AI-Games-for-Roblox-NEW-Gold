@@ -4302,19 +4302,154 @@ export async function generateAnimationPreviewVideo(
 //
 // Returns the cleaned GLB as a Buffer so the caller can upload it
 // directly to Roblox Open Cloud without needing inter-service Storage.
+/**
+ * Round 19 Visual QA gate for vehicle meshes.
+ *
+ * Sends a 3/4-front PNG preview (rendered by Blender's EEVEE Next from the
+ * cleaned vehicle GLB) to Claude vision and asks for a structured quality
+ * score 0.0-1.0 plus a list of concrete issues. The vehicle pipeline uses
+ * the score to decide whether to upload the mesh to Roblox or fall through
+ * to the deterministic procedural family-sedan baseline (which is known to
+ * produce a reasonable car silhouette in 100% of cases).
+ *
+ * Why Claude vision: the user has rejected ~18 prior vehicle attempts in
+ * session 373, all of which "looked like a brick" / "flat box" / "колёса
+ * не туды". Most of those failures would have been caught by a 5-second
+ * human glance at a render — i.e., by a vision model. Cost is ~$0.005 per
+ * call (Claude 3.5 Sonnet sees a 512x512 PNG ≈ 800 input tokens + ~200
+ * output tokens), trivial next to the $0.80 Meshy / $0.30 Tripo bill the
+ * call gates.
+ *
+ * Returns { score, issues, raw } where score is in [0, 1] and a sentinel
+ * value of NaN means the QA call itself failed — callers should treat NaN
+ * as "QA unavailable, proceed with mesh" (fail-open) to avoid blocking the
+ * user when Claude is having an outage. We do NOT default to a low score
+ * on QA-call failures because that would silently degrade every car to
+ * procedural during Anthropic incidents.
+ */
+export async function scoreVehicleMeshPreview(args: {
+  previewPngBase64: string;
+  vehicleType: string;
+  brief?: string;
+  primaryHex?: string;
+  accentHex?: string;
+  provider?: string;
+  passingScore?: number;
+  timeoutMs?: number;
+}): Promise<{ score: number; issues: string[]; rawText?: string; rawJson?: Record<string, unknown> }> {
+  const passingScore = args.passingScore ?? 0.6;
+  void passingScore; // callers compare themselves; kept for future telemetry.
+  try {
+    const colorHint = [
+      args.primaryHex ? `primary ${args.primaryHex}` : '',
+      args.accentHex && args.accentHex !== args.primaryHex ? `accent ${args.accentHex}` : '',
+    ].filter(Boolean).join(', ');
+    const briefHint = (args.brief ?? '').slice(0, 200);
+    const providerHint = args.provider ? ` (from ${args.provider})` : '';
+
+    const system = [
+      'You are a strict 3D-vehicle-asset reviewer for Roblox Studio.',
+      'You score the visual quality of an AI-generated low-poly vehicle render',
+      'on a scale 0.0 (unusable, looks like a flat box / random blob / non-vehicle)',
+      'to 1.0 (clean cartoon car silhouette with readable wheels, cabin, hood,',
+      'windshield, body colour). Always answer in strict JSON only — no prose.',
+    ].join(' ');
+
+    const user = [
+      `Vehicle type: ${args.vehicleType}.${providerHint}`,
+      colorHint ? `Requested colours: ${colorHint}.` : '',
+      briefHint ? `Brief: ${briefHint}` : '',
+      '',
+      'Inspect the attached 3/4-front render and answer in JSON with these fields:',
+      '  "score": float 0.0-1.0 — overall visual quality.',
+      '  "isVehicle": boolean — does the silhouette read as the requested vehicle?',
+      '  "hasReadableWheels": boolean — are 2-4 wheels visibly distinct from the body?',
+      '  "hasCabin": boolean — is there a raised cabin / windshield / driver compartment?',
+      '  "colourMatchesBrief": boolean — does the dominant body colour roughly match the requested primary colour?',
+      '  "issues": array of short strings (max 5) — concrete defects (e.g.,',
+      '          "flat box silhouette", "wheels embedded in body", "wrong colour",',
+      '          "missing roof", "front and back look identical").',
+      '',
+      'Be harsh — a flat featureless box should score below 0.3. A recognisable',
+      'low-poly cartoon car silhouette with separate wheels and cabin should',
+      'score above 0.7. Always return valid JSON — no markdown fences.',
+    ].filter(Boolean).join('\n');
+
+    const result = await runAnthropicVisionStructured(
+      {
+        system,
+        user,
+        images: [{ base64: args.previewPngBase64, mediaType: 'image/png' }],
+      },
+      'claude-3-5-sonnet-20241022',
+      args.timeoutMs ?? 60_000,
+    );
+
+    const text = (result.text ?? '').trim();
+    // Try to parse strict JSON; if the model leaks markdown fences, strip
+    // them. Defensive — we treat any unparseable response as "QA unavailable".
+    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = JSON.parse(stripped) as Record<string, unknown>;
+    } catch {
+      // Find first {...} blob.
+      const m = stripped.match(/\{[\s\S]*\}/);
+      if (m) {
+        try { parsed = JSON.parse(m[0]) as Record<string, unknown>; } catch { parsed = null; }
+      }
+    }
+    if (!parsed) {
+      logger.warn('[scoreVehicleMeshPreview] could not parse JSON, treating as QA-unavailable', {
+        textPreview: text.slice(0, 200),
+      });
+      return { score: Number.NaN, issues: [], rawText: text };
+    }
+    const rawScore = typeof parsed.score === 'number' ? parsed.score : Number(parsed.score);
+    const score = Number.isFinite(rawScore)
+      ? Math.max(0, Math.min(1, rawScore))
+      : Number.NaN;
+    const issuesRaw = Array.isArray(parsed.issues) ? parsed.issues : [];
+    const issues = issuesRaw
+      .map((it) => (typeof it === 'string' ? it : ''))
+      .filter(Boolean)
+      .slice(0, 5);
+    logger.info('[scoreVehicleMeshPreview] result', {
+      score, vehicleType: args.vehicleType, provider: args.provider,
+      isVehicle: parsed.isVehicle, hasReadableWheels: parsed.hasReadableWheels,
+      hasCabin: parsed.hasCabin, colourMatchesBrief: parsed.colourMatchesBrief,
+      issuesCount: issues.length, issuesPreview: issues.slice(0, 3),
+    });
+    return { score, issues, rawText: text, rawJson: parsed };
+  } catch (err) {
+    logger.warn('[scoreVehicleMeshPreview] threw (fail-open: treat as QA-unavailable)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { score: Number.NaN, issues: [] };
+  }
+}
+
 export async function callBlenderVehicleFix(args: {
   glbUrl: string;
   primaryHex?: string;
   accentHex?: string;
   timeoutMs?: number;
-}): Promise<{ cleanedGlb: Buffer; logs: string } | null> {
+  /**
+   * Round 19 Visual QA gate: when true, Blender also renders a 3/4-front
+   * PNG preview that the caller can ship to Claude vision for scoring.
+   * Adds ~2-5s to the response (EEVEE Next on Cloud Run CPU).
+   */
+  renderPreview?: boolean;
+}): Promise<{ cleanedGlb: Buffer; logs: string; previewPng?: Buffer } | null> {
   const baseUrl = (BLENDER_VEHICLE_FIX_URL.value() ?? '').trim();
   if (!baseUrl) {
     logger.info('[callBlenderVehicleFix] BLENDER_VEHICLE_FIX_URL not configured — skipping preprocess');
     return null;
   }
   const endpoint = `${baseUrl.replace(/\/+$/, '')}/vehicle-fix`;
-  const timeoutMs = args.timeoutMs ?? 180_000;
+  // Default timeout 180s; bumped to 240s when renderPreview is on so a slow
+  // EEVEE/Cycles render doesn't trip the abort signal before Blender finishes.
+  const timeoutMs = args.timeoutMs ?? (args.renderPreview ? 240_000 : 180_000);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -4325,6 +4460,7 @@ export async function callBlenderVehicleFix(args: {
         glbUrl: args.glbUrl,
         primaryHex: (args.primaryHex ?? '').trim(),
         accentHex: (args.accentHex ?? '').trim(),
+        renderPreview: !!args.renderPreview,
       }),
       signal: ctrl.signal,
     });
@@ -4333,17 +4469,30 @@ export async function callBlenderVehicleFix(args: {
       logger.warn('[callBlenderVehicleFix] non-OK', { status: resp.status, body: text.slice(0, 400) });
       return null;
     }
-    const json = await resp.json() as { glbBase64?: string; glbBytes?: number; logs?: string; error?: string };
+    const json = await resp.json() as {
+      glbBase64?: string;
+      glbBytes?: number;
+      logs?: string;
+      error?: string;
+      previewPngBase64?: string;
+      previewPngBytes?: number;
+      previewPngError?: string;
+    };
     if (!json.glbBase64) {
       logger.warn('[callBlenderVehicleFix] response missing glbBase64', { error: json.error, logs: (json.logs ?? '').slice(0, 400) });
       return null;
     }
     const cleanedGlb = Buffer.from(json.glbBase64, 'base64');
+    const previewPng = json.previewPngBase64
+      ? Buffer.from(json.previewPngBase64, 'base64')
+      : undefined;
     logger.info('[callBlenderVehicleFix] success', {
       glbBytes: json.glbBytes ?? cleanedGlb.length,
+      previewBytes: previewPng?.length ?? 0,
+      previewError: json.previewPngError,
       logsTail: (json.logs ?? '').slice(-300),
     });
-    return { cleanedGlb, logs: json.logs ?? '' };
+    return { cleanedGlb, logs: json.logs ?? '', previewPng };
   } catch (err) {
     logger.warn('[callBlenderVehicleFix] threw', { error: err instanceof Error ? err.message : String(err) });
     return null;

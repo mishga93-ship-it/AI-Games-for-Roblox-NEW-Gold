@@ -6149,7 +6149,7 @@ function createVehiclePipelineStages(): GenerationStageProgress[] {
     { id: 'concept_approval', title: 'Awaiting your approval', status: 'pending' },
     // Phase 2 — runs after user approves the concept.
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
-    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Meshy 6)', status: 'pending' },
+    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Tripo → Meshy fallback)', status: 'pending' },
     { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
@@ -27163,60 +27163,95 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         'Using canonical self-contained VehicleController template',
       ]);
 
-      // ── generate_vehicle_mesh: Meshy 6 text-to-3d via fal.ai. Session 373
-      // switched from Tripo v2.5 → Meshy 6 because Tripo's car generation is
-      // weak (Trustpilot/Reddit reports) and our prod Tripo path was silently
-      // failing too often, leaving every car on the procedural-block fallback.
-      // Meshy 6 has better topology + PBR maps + native Roblox import path
-      // (fal.ai blog 2025-10-16). On success we download the GLB, upload to
-      // Roblox Open Cloud as a Model asset, extract the inner MeshPart's
-      // MeshId, and stash both in metadata. The builder branches on
-      // metadata.vehicleMeshAssetId and emits a single MeshPart 'VehicleMeshBody'
-      // with rbxassetid:// MeshContent — that actually renders in the Roblox
-      // runtime, unlike raw https:// URLs.
+      // ── generate_vehicle_mesh: Tripo v2.5 text-to-3d → Meshy 6 fallback.
+      // Session 373 round 19 (option B): nilo.io blog reports Tripo's "smart
+      // mesh system" produces better car topology than Meshy ("messy meshes").
+      // We try Tripo first; if it skips (TRIPO_API_KEY unset) / fails (banned,
+      // expired, timeout) we fall back to Meshy 6 which has been the prod path
+      // since session 373 #10. The procedural baseline still kicks in if both
+      // upstream providers fail (addVehicleBodyShell always emitted) — that's
+      // the third-tier safety net so the user always gets a drivable car.
       //
-      // Falls back to the procedural family-sedan baseline (always emitted by
-      // robloxWorker.ts:addVehicleBodyShell) + the LLM accent-decorator path
-      // when Meshy or the Open Cloud upload fails.
-      await beginStage('generate_vehicle_mesh', 'Meshy 6 is generating a 3D vehicle body');
+      // Tripo GLBs embed PBR textures natively (glTF-spec compliant), so we
+      // skip the separate Image-asset upload for the base color PNG that
+      // Meshy needs (round 11 workaround). Inner MeshPart.TextureID gets
+      // populated by Roblox during Open Cloud Model import for Tripo.
+      await beginStage('generate_vehicle_mesh', 'Generating a 3D vehicle body (Tripo v2.5 → Meshy 6 fallback)');
       try {
         const titleStrForMesh = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
         const meshyBrief = [titleStrForMesh, job.prompt].filter(Boolean).join('. ');
-        // runMeshy reads contentCategory / requestedKind to switch to its
-        // vehicle-specific negative_prompt. If conceptImageUrl is present
-        // (Phase 2 after user approved the 2D concept), it switches to
-        // multi-image-to-3d for much higher-quality mesh output than pure
-        // text-to-3d. The orbit-view step generates side+back views from
-        // the front concept so Meshy gets 3 angles.
         const approvedConceptUrl = typeof currentJob.metadata?.conceptPreviewUrl === 'string'
           ? currentJob.metadata.conceptPreviewUrl as string
           : '';
-        const meshyInput: Record<string, unknown> = {
-          ...(currentJob.metadata ?? {}),
-          contentCategory: 'vehicle',
-          contentSubcategory: 'vehicles',
-          requestedKind: 'vehicle_3d',
-          vehicleType,
-          title: titleStrForMesh,
-          // Alias for runMeshy which reads `conceptImageUrl` (set by furniture
-          // / character / etc. paths) — same shape, just renamed for the
-          // vehicle metadata field.
-          conceptImageUrl: approvedConceptUrl || undefined,
-        };
-        const meshyResult = await (await import('./providers.js')).runMeshy(meshyBrief, meshyInput);
-        const meshyGlbUrl = typeof meshyResult.outputUrl === 'string' ? meshyResult.outputUrl : '';
-        const meshyRaw = (meshyResult.raw ?? {}) as Record<string, unknown>;
-        const meshyThumbnailUrl = typeof meshyRaw.thumbnailUrl === 'string' ? meshyRaw.thumbnailUrl : '';
+        const primaryHexForProvider = typeof currentJob.metadata?.primaryColor === 'string'
+          ? currentJob.metadata.primaryColor as string : '';
+        const accentHexForProvider = typeof currentJob.metadata?.accentColor === 'string'
+          ? currentJob.metadata.accentColor as string : '';
+
+        // Phase 1 — Tripo v2.5 text-to-model. Skip-gracefully if key missing
+        // or task fails: returns { skipped: true, skipReason }, never throws.
+        let meshyGlbUrl = '';
+        let meshyThumbnailUrl = '';
+        let meshyBaseColorUrl = '';
+        let meshProvider: 'tripo-v2.5' | 'meshy-v6' = 'tripo-v2.5';
+        let meshProviderTaskId: string | undefined;
+        try {
+          const tripoResult = await (await import('./providers.js')).runTripoVehicleText({
+            prompt: meshyBrief,
+            vehicleType,
+            primaryHex: primaryHexForProvider,
+            accentHex: accentHexForProvider,
+          });
+          if (tripoResult.modelUrl && !tripoResult.skipped) {
+            meshyGlbUrl = tripoResult.modelUrl;
+            meshyThumbnailUrl = tripoResult.thumbnailUrl ?? '';
+            meshProviderTaskId = tripoResult.taskId;
+            logger.info('[Vehicle] Tripo v2.5 success', {
+              jobId, taskId: tripoResult.taskId, modelUrlPrefix: tripoResult.modelUrl.slice(0, 80),
+            });
+          } else {
+            logger.info('[Vehicle] Tripo skipped/failed, falling back to Meshy 6', {
+              jobId, skipReason: tripoResult.skipReason,
+            });
+          }
+        } catch (tripoErr) {
+          logger.warn('[Vehicle] Tripo threw, falling back to Meshy 6', {
+            jobId, error: errorMessage(tripoErr),
+          });
+        }
+
+        // Phase 2 — Meshy 6 fallback (multi-image-to-3d when concept URL set,
+        // text-to-3d otherwise). runMeshy reads contentCategory /
+        // requestedKind to switch to vehicle-specific negative_prompt.
+        if (!meshyGlbUrl) {
+          meshProvider = 'meshy-v6';
+          const meshyInput: Record<string, unknown> = {
+            ...(currentJob.metadata ?? {}),
+            contentCategory: 'vehicle',
+            contentSubcategory: 'vehicles',
+            requestedKind: 'vehicle_3d',
+            vehicleType,
+            title: titleStrForMesh,
+            conceptImageUrl: approvedConceptUrl || undefined,
+          };
+          const meshyResult = await (await import('./providers.js')).runMeshy(meshyBrief, meshyInput);
+          meshyGlbUrl = typeof meshyResult.outputUrl === 'string' ? meshyResult.outputUrl : '';
+          const meshyRaw = (meshyResult.raw ?? {}) as Record<string, unknown>;
+          meshyThumbnailUrl = typeof meshyRaw.thumbnailUrl === 'string' ? meshyRaw.thumbnailUrl : '';
+          meshyBaseColorUrl = typeof meshyRaw.baseColorTextureUrl === 'string' ? meshyRaw.baseColorTextureUrl : '';
+        }
+
         // Round 11: Meshy returns the base color PBR map as a SEPARATE PNG URL
         // alongside the GLB. Roblox Open Cloud's Model upload of a GLB does NOT
         // reliably extract embedded textures (devforum 2320761), so inner
         // MeshPart.TextureID comes back empty and Studio renders the mesh as
-        // a textureless white blob (which is what user reports in session 373).
+        // a textureless white blob.
         // NPC pipeline solves this by uploading the PNG as a SEPARATE Image
         // asset and writing its assetId to MeshPart.TextureID (see
         // texture_upload stage at index.ts ~26615). We mirror that pattern
-        // here for vehicles.
-        const meshyBaseColorUrl = typeof meshyRaw.baseColorTextureUrl === 'string' ? meshyRaw.baseColorTextureUrl : '';
+        // here for vehicles when running on Meshy. Tripo embeds PBR natively
+        // (glTF-compliant), so meshyBaseColorUrl stays empty for Tripo and
+        // we fall through to inner MeshPart.TextureID populated by Roblox.
         let vehicleTextureAssetId = 0;
         if (meshyBaseColorUrl) {
           try {
@@ -27273,7 +27308,11 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             });
           }
         } else {
-          logger.warn('[Vehicle] Meshy did not return baseColorTextureUrl — MeshPart will be untextured', { jobId });
+          if (meshProvider === 'tripo-v2.5') {
+            logger.info('[Vehicle] Tripo path — relying on embedded PBR via inner MeshPart.TextureID', { jobId });
+          } else {
+            logger.warn('[Vehicle] Meshy did not return baseColorTextureUrl — MeshPart will be untextured', { jobId });
+          }
         }
         if (meshyGlbUrl) {
           // Download Meshy GLB → (optional Blender preprocessor recentres
@@ -27302,23 +27341,75 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               const accentHexForBlender = '';
               let glbBuf: Buffer | undefined;
               let blenderUsed = false;
+              // Round 19 Visual QA: Blender now also renders a 3/4-front PNG
+              // preview so we can score the mesh BEFORE uploading to Roblox.
+              // If Claude vision says the mesh is unusable (flat box, no
+              // wheels, wrong colour) we skip the upload and fall through to
+              // the procedural baseline — which is known to look reasonable.
+              let qaPreviewPng: Buffer | undefined;
               try {
                 const cleaned = await (await import('./providers.js')).callBlenderVehicleFix({
                   glbUrl: meshyGlbUrl,
                   primaryHex: primaryHexForBlender,
                   accentHex: accentHexForBlender,
+                  renderPreview: true,
                 });
                 if (cleaned?.cleanedGlb && cleaned.cleanedGlb.length > 0) {
                   glbBuf = cleaned.cleanedGlb;
                   blenderUsed = true;
+                  qaPreviewPng = cleaned.previewPng;
                   logger.info('[Vehicle] Blender vehicle-fix preprocessed GLB', {
                     jobId, originalUrl: meshyGlbUrl, cleanedBytes: glbBuf.length,
+                    previewBytes: qaPreviewPng?.length ?? 0,
                   });
                 }
               } catch (blenderErr) {
                 logger.warn('[Vehicle] Blender vehicle-fix threw, falling through to raw Meshy GLB', {
                   jobId, error: errorMessage(blenderErr),
                 });
+              }
+              // Visual QA gate — score the preview, decide whether to ship.
+              // Fail-OPEN policy: if QA itself errors (Claude outage, parse
+              // failure → score === NaN), proceed with the mesh. Only an
+              // explicit low score (< QA_PASSING_SCORE) blocks the upload.
+              const QA_PASSING_SCORE = 0.55;
+              let qaScore = Number.NaN;
+              let qaIssues: string[] = [];
+              let qaSkipUpload = false;
+              const primaryHexForQa = typeof currentJob.metadata?.primaryColor === 'string'
+                ? currentJob.metadata.primaryColor as string : '';
+              const accentHexForQa = typeof currentJob.metadata?.accentColor === 'string'
+                ? currentJob.metadata.accentColor as string : '';
+              if (qaPreviewPng && qaPreviewPng.length > 0) {
+                try {
+                  const qa = await (await import('./providers.js')).scoreVehicleMeshPreview({
+                    previewPngBase64: qaPreviewPng.toString('base64'),
+                    vehicleType,
+                    brief: meshyBrief,
+                    primaryHex: primaryHexForQa,
+                    accentHex: accentHexForQa,
+                    provider: meshProvider,
+                  });
+                  qaScore = qa.score;
+                  qaIssues = qa.issues;
+                  if (Number.isFinite(qaScore) && qaScore < QA_PASSING_SCORE) {
+                    qaSkipUpload = true;
+                    logger.warn('[Vehicle] QA gate FAILED — skipping upload, falling back to procedural', {
+                      jobId, score: qaScore, threshold: QA_PASSING_SCORE,
+                      issues: qaIssues, provider: meshProvider,
+                    });
+                  } else {
+                    logger.info('[Vehicle] QA gate PASSED', {
+                      jobId, score: qaScore, threshold: QA_PASSING_SCORE,
+                      issuesCount: qaIssues.length, provider: meshProvider,
+                    });
+                  }
+                } catch (qaErr) {
+                  // Fail-open — proceed with upload.
+                  logger.warn('[Vehicle] QA gate threw (fail-open: proceeding)', {
+                    jobId, error: errorMessage(qaErr),
+                  });
+                }
               }
               if (!glbBuf) {
                 const glbResp = await fetch(meshyGlbUrl);
@@ -27329,6 +27420,19 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                   throw new Error('meshy_glb_download_failed');
                 }
                 glbBuf = Buffer.from(await glbResp.arrayBuffer());
+              }
+              // Round 19: short-circuit when Visual QA explicitly rejected.
+              // The pipeline falls through to vehicleScene → procedural
+              // baseline (always-emitted in robloxWorker addVehicleBodyShell)
+              // so the user STILL gets a drivable car, just made from
+              // procedural primitives instead of the AI mesh.
+              if (qaSkipUpload) {
+                await finishStage('generate_vehicle_mesh', 'completed', [], [
+                  `Visual QA rejected ${meshProvider} mesh (score=${qaScore.toFixed(2)} < ${QA_PASSING_SCORE}).`,
+                  qaIssues.length > 0 ? `Issues: ${qaIssues.slice(0, 3).join('; ')}` : 'No specific issues returned.',
+                  'Falling back to procedural baseline + LLM accents.',
+                ]);
+                throw new Error('vehicle_qa_rejected');
               }
               if (true) {
                 const glbResp = { ok: true, status: 200 } as { ok: boolean; status: number };
@@ -27416,20 +27520,26 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                         vehicleMeshTextureSource: vehicleTextureAssetId > 0 ? 'meshy-base-color-png' : (innerTextureId && innerTextureId > 0 ? 'inner-meshpart' : 'none'),
                         vehicleMeshModelAssetId: resolvedModelAssetId,
                         vehicleMeshThumbnailUrl: meshyThumbnailUrl,
-                        vehicleMeshProvider: 'meshy-v6',
+                        vehicleMeshProvider: meshProvider,
+                        vehicleMeshProviderTaskId: meshProviderTaskId,
                         vehicleMeshOpenUse: meshGranted,
                         vehicleMeshNaturalSize: naturalSize && naturalSize.x > 0 && naturalSize.y > 0 && naturalSize.z > 0
                           ? { x: naturalSize.x, y: naturalSize.y, z: naturalSize.z }
                           : undefined,
+                        vehicleMeshQaScore: Number.isFinite(qaScore) ? qaScore : undefined,
+                        vehicleMeshQaIssues: qaIssues.length > 0 ? qaIssues : undefined,
                       },
                     };
                     await finishStage('generate_vehicle_mesh', 'completed', [], [
-                      'Meshy 6 text-to-3d success',
+                      `${meshProvider === 'tripo-v2.5' ? 'Tripo v2.5' : 'Meshy 6'} text-to-3d success`,
                       `Roblox Model asset: ${resolvedModelAssetId}`,
                       `Inner MeshId: ${meshId}`,
                       `Texture asset: ${finalTextureAssetId > 0 ? `${finalTextureAssetId} (source=${vehicleTextureAssetId > 0 ? 'meshy-base-color-png' : 'inner-meshpart'})` : 'none — MeshPart will be untextured'}`,
                       `Mesh openUse: ${meshGranted ? 'granted' : 'FAILED — mesh may not render for non-owners'}`,
                       naturalSize ? `Mesh natural size: ${naturalSize.x.toFixed(2)}×${naturalSize.y.toFixed(2)}×${naturalSize.z.toFixed(2)}` : 'Mesh natural size: unknown',
+                      Number.isFinite(qaScore)
+                        ? `Visual QA: score=${qaScore.toFixed(2)} (threshold ${QA_PASSING_SCORE}) — passed${qaIssues.length > 0 ? `, minor issues: ${qaIssues.slice(0, 2).join('; ')}` : ''}`
+                        : 'Visual QA: unavailable (Claude vision didn\'t return parseable score — fail-open passed)',
                     ]);
                   } else {
                     logger.warn('[Vehicle] extractMeshIdFromModel returned no meshId; falling back', {
@@ -27447,7 +27557,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                 }
               } else {
                 await finishStage('generate_vehicle_mesh', 'completed', [], [
-                  `Failed to download Meshy GLB (HTTP ${glbResp.status}) — falling back to procedural baseline.`,
+                  `Failed to download ${meshProvider === 'tripo-v2.5' ? 'Tripo' : 'Meshy'} GLB (HTTP ${glbResp.status}) — falling back to procedural baseline.`,
                 ]);
               }
               }  // close `if (true) {` (Blender-preprocessor wrapper added in round 7)
@@ -27460,19 +27570,19 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             }
           } else {
             await finishStage('generate_vehicle_mesh', 'completed', [], [
-              'Roblox Open Cloud API key / creator id missing — Meshy GLB cannot be made into a MeshPart.',
+              `Roblox Open Cloud API key / creator id missing — ${meshProvider === 'tripo-v2.5' ? 'Tripo' : 'Meshy'} GLB cannot be made into a MeshPart.`,
               'Falling back to procedural baseline + LLM accents.',
             ]);
           }
         } else {
           await finishStage('generate_vehicle_mesh', 'completed', [], [
-            'Meshy did not return a GLB URL — falling back to procedural baseline + LLM accents.',
+            'Neither Tripo nor Meshy returned a usable GLB — falling back to procedural baseline + LLM accents.',
           ]);
         }
       } catch (meshyErr) {
-        logger.warn('[Vehicle] Meshy text-to-3d failed', { jobId, error: errorMessage(meshyErr) });
+        logger.warn('[Vehicle] mesh provider chain failed', { jobId, error: errorMessage(meshyErr) });
         await finishStage('generate_vehicle_mesh', 'completed', [], [
-          `Meshy unavailable: ${errorMessage(meshyErr).slice(0, 200)}`,
+          `Mesh provider unavailable: ${errorMessage(meshyErr).slice(0, 200)}`,
           'Falling back to procedural baseline + LLM accents.',
         ]);
       }

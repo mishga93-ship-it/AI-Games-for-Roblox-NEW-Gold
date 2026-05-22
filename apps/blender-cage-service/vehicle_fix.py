@@ -66,6 +66,12 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help='Hex colour for secondary material slots (roof / spoiler).',
     )
+    parser.add_argument(
+        "--preview-png",
+        default="",
+        help='Output PNG path for the 3/4 front Cycles/Eevee preview render. '
+             'Empty = skip render (faster path when QA gate is disabled).',
+    )
     return parser.parse_args(_strip_argv_before_doubledash())
 
 
@@ -358,6 +364,105 @@ def _make_glass_transparent(obj: bpy.types.Object, alpha: float = 0.4) -> None:
                 print(f"[vehicle_fix] glass-transparent: failed for {img.name}: {err}")
 
 
+def _render_preview_png(obj: bpy.types.Object, out_path: str, size: int = 512) -> bool:
+    """Render a 3/4-front preview PNG of the cleaned mesh for Round 19 Visual QA.
+
+    The camera sits at (+X, +Y, +Z) relative to the bbox so the mesh is shown
+    front-three-quarter view (the angle that best reveals hood, windshield,
+    side panel, wheels at once — same angle used by car-image-generation
+    models like Flux for vehicle concepts). Returns True on success, False
+    on any render failure (caller treats as "preview unavailable" → QA gate
+    skipped, mesh ships as-is — preserves backwards compatibility when this
+    flag is on but Blender lacks Cycles/Eevee for some reason).
+
+    Uses Blender's EEVEE Next (Blender 4.2 default), which renders a typical
+    vehicle GLB in 1-3 seconds on Cloud Run's CPU-only nodes — Cycles would
+    take 30-60 seconds without GPU. Quality is sufficient for Claude vision
+    to judge silhouette / colour / proportions, which is all the QA gate
+    needs."""
+    try:
+        scene = bpy.context.scene
+
+        # Frame the mesh tightly: pick a camera distance proportional to bbox.
+        mn, mx = _bbox_of(obj)
+        extent_x = mx.x - mn.x
+        extent_y = mx.y - mn.y
+        extent_z = mx.z - mn.z
+        cx = (mn.x + mx.x) / 2.0
+        cy = (mn.y + mx.y) / 2.0
+        cz = (mn.z + mx.z) / 2.0
+        radius = max(extent_x, extent_y, extent_z) * 1.6
+
+        # Add camera at 3/4 front position. Roblox / Blender coords post-import:
+        # the longest axis (chassis length) is along X after our auto-orient
+        # disabled in round 17 — but the front 3/4 view rotates around all 3
+        # axes so it works regardless of orientation. Camera at (+X, +Y, +Z)
+        # relative to centre, looking at centre, gives the canonical
+        # 3/4-front view.
+        cam_data = bpy.data.cameras.new(name="QACam")
+        cam = bpy.data.objects.new("QACam", cam_data)
+        scene.collection.objects.link(cam)
+        cam.location = (cx + radius * 0.9, cy + radius * 0.55, cz + radius * 0.9)
+        # Point camera at bbox centre — track-to constraint is simpler than
+        # computing rotation_euler from a target.
+        constraint = cam.constraints.new(type="TRACK_TO")
+        # Create an empty at the target so the constraint has something to
+        # track. (constraint.target requires an Object, not a Vector.)
+        target_empty = bpy.data.objects.new("QATarget", None)
+        target_empty.location = (cx, cy, cz)
+        scene.collection.objects.link(target_empty)
+        constraint.target = target_empty
+        constraint.track_axis = "TRACK_NEGATIVE_Z"
+        constraint.up_axis = "UP_Y"
+
+        scene.camera = cam
+
+        # Add a sun light so the mesh isn't pitch black. World background
+        # also lifted to a soft grey so Claude sees the silhouette clearly.
+        sun_data = bpy.data.lights.new(name="QASun", type="SUN")
+        sun_data.energy = 3.0
+        sun_obj = bpy.data.objects.new("QASun", sun_data)
+        sun_obj.location = (cx + radius, cy + radius * 1.5, cz)
+        sun_obj.rotation_euler = (math.radians(-45), math.radians(35), 0)
+        scene.collection.objects.link(sun_obj)
+
+        world = scene.world or bpy.data.worlds.new(name="QAWorld")
+        scene.world = world
+        world.use_nodes = True
+        bg = world.node_tree.nodes.get("Background")
+        if bg is not None:
+            # Light grey background = high contrast for vision model.
+            bg.inputs[0].default_value = (0.88, 0.88, 0.92, 1.0)
+            bg.inputs[1].default_value = 1.2
+
+        # Render settings — EEVEE Next is the default in Blender 4.2.
+        scene.render.resolution_x = size
+        scene.render.resolution_y = size
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "PNG"
+        scene.render.image_settings.color_mode = "RGB"
+        scene.render.filepath = out_path
+
+        # Pick a render engine that works on Cloud Run CPU nodes.
+        # BLENDER_EEVEE_NEXT (Blender 4.2 EEVEE rewrite) is fast on CPU.
+        # Some older Blender builds still have BLENDER_EEVEE — try both.
+        for engine in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES"):
+            try:
+                scene.render.engine = engine
+                print(f"[vehicle_fix] preview render: using engine={engine}")
+                break
+            except (TypeError, ValueError) as err:
+                print(f"[vehicle_fix] preview render: engine {engine} unavailable ({err})")
+
+        bpy.ops.render.render(write_still=True)
+        size_bytes = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+        print(f"[vehicle_fix] preview render saved to {out_path} ({size_bytes} bytes)")
+        return size_bytes > 0
+    except Exception as err:  # noqa: BLE001
+        print(f"[vehicle_fix] preview render FAILED (non-fatal): {err}")
+        return False
+
+
 def _export_glb(path: str) -> None:
     """Export the current scene as a GLB suitable for Roblox Open Cloud upload."""
     bpy.ops.export_scene.gltf(
@@ -429,6 +534,12 @@ def main() -> None:
     # Final recenter pass so any rotation / vertex deletion didn't shift the
     # bbox off centre.
     _recenter_origin(body)
+    # Round 19 Visual QA gate: render a 3/4 front preview PNG BEFORE export so
+    # the backend can ship it to Claude vision and score the mesh quality.
+    # Render runs only when --preview-png path is non-empty; skipping it
+    # preserves the pre-Round-19 perf characteristics for legacy callers.
+    if args.preview_png:
+        _render_preview_png(body, args.preview_png, size=512)
     _export_glb(args.output)
     print("[vehicle_fix] done")
 
