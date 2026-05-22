@@ -2325,12 +2325,19 @@ function buildVehicleModelManifest(
     // i.e. mesh center Y = rootY + half-height. That way wheels stick out from
     // the bottom of the mesh as expected (not floating inside).
     const meshCenterY = rootY + finalHeight * 0.5;
+    // Session 373: pass WHITE (Color3 [1,1,1]) instead of primary. MeshPart
+    // applies Color as a multiplicative tint on top of the mesh's natural
+    // PBR texture. Meshy generates the mesh from the user-approved concept
+    // (which already has the user's chosen colors baked in) — overriding
+    // with primary turns a white sedan into a red blob and ignores the
+    // approved concept color.
+    const meshWhite = color3(1, 1, 1);
     const meshBodyId = addPart(
       'VehicleMeshBody',
       folders.body,
       meshSize,
       [0, meshCenterY, 0],
-      primary,
+      meshWhite,
       {
         className: 'MeshPart',
         material: 'SmoothPlastic',
@@ -2344,10 +2351,13 @@ function buildVehicleModelManifest(
       },
     );
     weldToRoot(meshBodyId, 'VehicleMeshBodyWeld');
-    // Stash mesh-fit metrics so addVehicleSeats can position DriveSeat inside
-    // the actual mesh silhouette (cabin, not floating above bumper).
+    // Stash mesh-fit metrics so addVehicleSeats and addVehiclePhysics can
+    // align DriveSeat / wheel positions with the actual mesh silhouette
+    // (cabin/track) instead of the fixed chassis envelope.
     (metadata as Record<string, unknown>).vehicleMeshFitTopY = rootY + finalHeight;
     (metadata as Record<string, unknown>).vehicleMeshFitHeight = finalHeight;
+    (metadata as Record<string, unknown>).vehicleMeshFitWidth = finalWidth;
+    (metadata as Record<string, unknown>).vehicleMeshFitLength = finalLength;
     if (vehicleType === 'car') {
       // Sized relative to actual mesh extent, not the fixed [width*0.92, ...].
       const trimWidth = finalWidth * 0.92;
@@ -2399,7 +2409,13 @@ function buildVehicleModelManifest(
     ? (metadata as Record<string, number>).vehicleMeshFitHeight
     : undefined;
   addVehicleSeats({ scene, folders, rootId, profile, rootY, width, length, accent, cf, ref, weldToRoot, meshFitTopY, meshFitHeight });
-  addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart });
+  const meshFitWidth = typeof (metadata as Record<string, unknown>).vehicleMeshFitWidth === 'number'
+    ? (metadata as Record<string, number>).vehicleMeshFitWidth
+    : undefined;
+  const meshFitLength = typeof (metadata as Record<string, unknown>).vehicleMeshFitLength === 'number'
+    ? (metadata as Record<string, number>).vehicleMeshFitLength
+    : undefined;
+  addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart, meshFitWidth, meshFitLength });
   addVehicleEffects({ scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence });
 
   scene.push(
@@ -3091,8 +3107,21 @@ function addVehiclePhysics(args: {
   addPart: (name: string, parentId: string, size: [number, number, number], pos: [number, number, number], color: Record<string, unknown>, options?: {
     className?: string; material?: string; shape?: 'Block' | 'Cylinder' | 'Ball'; rot?: [number, number, number]; canCollide?: boolean; transparency?: number; massless?: boolean; anchored?: boolean; extra?: Record<string, unknown>;
   }) => string;
+  meshFitWidth?: number;
+  meshFitLength?: number;
 }): void {
-  const { scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart } = args;
+  const { scene, folders, rootId, profile, rootY, accent, dark, cf, ref, addPart, meshFitWidth, meshFitLength } = args;
+  // Session 373: when a mesh body was loaded (Meshy v6), wheels must hug the
+  // actual mesh-body silhouette instead of the theoretical chassis envelope
+  // (profile.size). Without this the wheel track is wider than the mesh and
+  // the wheels float visibly outside the car body. Use a slight inset so
+  // wheels are visually attached, not parallel-flying.
+  const width = (meshFitWidth !== undefined && meshFitWidth > 0)
+    ? meshFitWidth * 1.05  // 5% wider than mesh body so wheel outer rim aligns with mesh side
+    : args.width;
+  const length = (meshFitLength !== undefined && meshFitLength > 0)
+    ? meshFitLength
+    : args.length;
   const rootAttachmentId = uuidv4();
   scene.push({ id: rootAttachmentId, className: 'Attachment', name: 'VehicleRootAttachment', parentId: rootId, properties: { CFrame: cf(0, 0, 0) } });
 

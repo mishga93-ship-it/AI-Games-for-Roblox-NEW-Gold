@@ -2227,11 +2227,19 @@ const FURNITURE_STYLE_HINT =
 // 3d, which produces a much higher-quality car mesh than text-to-3d alone.
 // Key constraints: no driver, no environment, no wheels (the chassis adds
 // wheels procedurally — Meshy duplicating them creates 8-wheel monsters).
+//
+// Session 373 round 5: STRONGER cartoon-proportion enforcement. Previous
+// VEHICLE_STYLE_HINT said "raised cabin" but Meshy still produced sleek
+// real-car sports cars (length:height ratio ~3.2:1). For Roblox cartoon
+// aesthetic we need TALL cabin (ratio ~2:1, like Hill Climb Racing / Lego
+// City cars). Explicit "chunky / Lego / cartoon" wording + negative cues
+// against "sports / sleek / aerodynamic / realistic" silhouettes.
 const VEHICLE_STYLE_HINT =
-  'ONE single isolated stylized 3D vehicle, centered on a plain white background. Low-poly cartoon Roblox-game-ready aesthetic, vibrant readable colors, clean geometric shapes, simple PBR materials. ' +
-  'Show the FULL vehicle from a 3/4 front view so the front bumper, hood, cabin, roof, and side doors are all visible. The cabin and roof must be clearly raised above the body — NOT a flat skateboard silhouette. ' +
-  'NO driver, NO passenger, NO character, NO person, NO hands, NO body. NO wheels (the engine adds wheels separately — a vehicle drawn with no tires reads correctly). NO ground, NO road, NO scene, NO environment, NO shadow plane. ' +
-  'STRICTLY ONE vehicle only — no second car in the frame, no toy display row, no garage. Front-3/4 reference render, game-ready 3D vehicle body shell asset reference for Roblox.';
+  'ONE single isolated CHUNKY CARTOON Roblox vehicle, centered on a plain white background. Stylized blocky toy-like aesthetic like Hill Climb Racing or Lego City cars — NOT a sleek aerodynamic real-world sports car. ' +
+  'CRITICAL PROPORTIONS: vehicle height must be at least HALF of the vehicle length. Tall raised cabin with a clearly visible boxy roof on top of the body. Short stubby hood and trunk, not a long flat sleek bonnet. The silhouette must read as 3 stacked boxes (hood, cabin with windows, trunk) — NOT a low flat wedge. ' +
+  'Show the FULL vehicle from a 3/4 front view so the front bumper, hood, cabin, big windows, roof, and side doors are all visible. Bright saturated colors, clean simple PBR materials, flat-shaded look. ' +
+  'NO sleek, NO aerodynamic, NO supercar, NO racecar, NO formula1, NO low-rider, NO drag-racer. NO driver, NO passenger, NO character, NO person, NO hands, NO body. NO wheels (the engine adds wheels separately). NO ground, NO road, NO scene, NO environment, NO shadow plane. ' +
+  'STRICTLY ONE vehicle only — no second car in the frame, no toy display row, no garage. Front-3/4 reference render, game-ready chunky cartoon 3D vehicle body shell asset reference for Roblox.';
 
 const CLOTHING_KEYWORDS = /jacket|shirt|pants|dress|coat|hat|helmet|crown|cape|armor|shoe|boot|glove|hoodie|sweater|skirt|vest|scarf|mask|glasses|backpack|wing/i;
 

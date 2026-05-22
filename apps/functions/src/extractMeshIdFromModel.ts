@@ -318,7 +318,9 @@ export async function extractMeshIdFromModel(
     meshId,
     textureId,
     hasSkinnedMesh,
+    sizeX: Number(sizeX.toFixed(2)),
     sizeY: Number(sizeY.toFixed(2)),
+    sizeZ: Number(sizeZ.toFixed(2)),
     durationMs,
   });
 
