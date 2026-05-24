@@ -2578,6 +2578,50 @@ function buildVehicleModelManifest(
     },
   );
 
+  // Session 373 Round 20: when index.ts pick_vehicle_template stage picked a
+  // Roblox-endorsed vehicle, also emit a VehicleTemplateLoader script. At
+  // runtime it tries InsertService:LoadAsset → replaces this entire procedural
+  // Model with the loaded template variant + recolours body parts. On failure
+  // (network / asset unavailable) the loader self-destructs and the procedural
+  // we built above stays as honest fallback.
+  const vehicleTemplateAssetId = typeof metadata.vehicleTemplateAssetId === 'number'
+    && metadata.vehicleTemplateAssetId > 0
+    ? metadata.vehicleTemplateAssetId
+    : undefined;
+  const builtScripts: RobloxBuildManifest['scripts'] = [
+    {
+      id: uuidv4(),
+      name: 'VehicleController',
+      scriptType: 'Script',
+      container: 'WorkspaceRoot',
+      source: buildVehicleControllerScript(),
+    },
+  ];
+  if (vehicleTemplateAssetId) {
+    const tplLabel = typeof metadata.vehicleTemplateLabel === 'string' ? metadata.vehicleTemplateLabel : 'Vehicle';
+    const tplPreferred = typeof metadata.vehicleTemplatePreferredVariant === 'string' ? metadata.vehicleTemplatePreferredVariant : tplLabel;
+    const tplFallbacksRaw = metadata.vehicleTemplateVariantFallbacks;
+    const tplFallbacks = Array.isArray(tplFallbacksRaw)
+      ? tplFallbacksRaw.filter((v): v is string => typeof v === 'string')
+      : [];
+    const tplBodyHex = typeof metadata.vehicleTemplateBodyOriginalHex === 'string' ? metadata.vehicleTemplateBodyOriginalHex : '#FFFFFF';
+    const tplPrimaryHex = typeof metadata.vehicleTemplatePrimaryHex === 'string' ? metadata.vehicleTemplatePrimaryHex : (metadata.primaryColor as string ?? '#E03A2E');
+    builtScripts.push({
+      id: uuidv4(),
+      name: 'VehicleTemplateLoader',
+      scriptType: 'Script',
+      container: 'WorkspaceRoot',
+      source: buildVehicleTemplateLoaderScript({
+        templateAssetId: vehicleTemplateAssetId,
+        templateLabel: tplLabel,
+        preferredVariant: tplPreferred,
+        variantFallbacks: tplFallbacks,
+        bodyOriginalHex: tplBodyHex,
+        primaryHex: tplPrimaryHex,
+      }),
+    });
+  }
+
   return {
     id: uuidv4(),
     title,
@@ -2589,15 +2633,7 @@ function buildVehicleModelManifest(
     },
     formatPreference: 'binary',
     scene,
-    scripts: [
-      {
-        id: uuidv4(),
-        name: 'VehicleController',
-        scriptType: 'Script',
-        container: 'WorkspaceRoot',
-        source: buildVehicleControllerScript(),
-      },
-    ],
+    scripts: builtScripts,
     ui: [],
     metadata: {
       prompt: args.prompt,
@@ -3467,6 +3503,142 @@ function addVehicleEffects(args: {
       Color: color3(glowRgb.r, glowRgb.g, glowRgb.b),
     },
   });
+}
+
+/**
+ * VehicleTemplateLoader — Session 373 Round 20.
+ *
+ * Runs at game start. Tries `InsertService:LoadAsset(templateAssetId)` to
+ * pull one of 9 Roblox-endorsed vehicles. On success, drops the loaded
+ * variant into Workspace at the current Model's CFrame and recolors body
+ * parts to the user-chosen primary hex. On failure, leaves the procedural
+ * fallback (already built into this Model) untouched and self-destructs.
+ *
+ * The procedural fallback is "honest" placeholder in Edit Mode — what the
+ * user sees if Roblox's asset server is unavailable. If LoadAsset succeeds,
+ * the entire procedural is destroyed and replaced with the high-quality
+ * Roblox-built template.
+ *
+ * Recolor heuristic: match parts whose Color3 is within tolerance of the
+ * variant's known body color hex AND Material is SmoothPlastic. Preserves
+ * wheels, glass, lights, trim, interior.
+ */
+function buildVehicleTemplateLoaderScript(args: {
+  templateAssetId: number;
+  templateLabel: string;
+  preferredVariant: string;
+  variantFallbacks: string[];
+  bodyOriginalHex: string;
+  primaryHex: string;
+}): string {
+  const hexToRgb = (h: string): [number, number, number] => {
+    const s = h.replace('#', '');
+    return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+  };
+  const [or, og, ob] = hexToRgb(args.bodyOriginalHex);
+  const [pr, pg, pb] = hexToRgb(args.primaryHex);
+  const variantList = [args.preferredVariant, ...args.variantFallbacks]
+    .map((v) => `"${v.replace(/"/g, '\\"')}"`)
+    .join(', ');
+  return `
+-- VehicleTemplateLoader (auto-generated, Round 20)
+-- Template: ${args.templateLabel} (assetId ${args.templateAssetId})
+-- Loads the Roblox-endorsed vehicle at runtime, recolors body, replaces this Model.
+
+local InsertService = game:GetService("InsertService")
+
+local TEMPLATE_ASSET_ID = ${args.templateAssetId}
+local VARIANT_PREFERENCE = { ${variantList} }
+local BODY_ORIGINAL = Color3.fromRGB(${or}, ${og}, ${ob})
+local PRIMARY = Color3.fromRGB(${pr}, ${pg}, ${pb})
+local TOLERANCE = 10 / 255
+
+local wrapperModel = script.Parent
+if not wrapperModel or not wrapperModel:IsA("Model") then
+\twarn("[VehicleTemplateLoader] script.Parent is not a Model, aborting")
+\tscript:Destroy()
+\treturn
+end
+
+-- Anchor point for the loaded template — try PrimaryPart, fall back to ChassisRoot, then Pivot.
+local function getAnchorCFrame()
+\tlocal pp = wrapperModel.PrimaryPart
+\tif pp then return pp.CFrame end
+\tlocal chassis = wrapperModel:FindFirstChild("ChassisRoot")
+\tif chassis and chassis:IsA("BasePart") then return chassis.CFrame end
+\treturn wrapperModel:GetPivot()
+end
+
+local anchorCF = getAnchorCFrame()
+
+-- Step 1: try to LoadAsset (HTTP call, ~200ms; may fail if asset unavailable or rate-limited).
+local loadOk, loaded = pcall(function()
+\treturn InsertService:LoadAsset(TEMPLATE_ASSET_ID)
+end)
+
+if not loadOk or not loaded then
+\twarn("[VehicleTemplateLoader] LoadAsset(", TEMPLATE_ASSET_ID, ") failed:", tostring(loaded))
+\twarn("[VehicleTemplateLoader] Using procedural fallback (already in this Model).")
+\tscript:Destroy()
+\treturn
+end
+
+-- Step 2: pick the preferred variant (Roblox endorsed packs ship 1-5 colour variants per asset).
+local picked = nil
+for _, name in VARIANT_PREFERENCE do
+\tlocal child = loaded:FindFirstChild(name)
+\tif child then
+\t\tpicked = child
+\t\tbreak
+\tend
+end
+if not picked then
+\tpicked = loaded:GetChildren()[1]
+end
+if not picked then
+\twarn("[VehicleTemplateLoader] Loaded asset has no children, falling back to procedural.")
+\tloaded:Destroy()
+\tscript:Destroy()
+\treturn
+end
+
+-- Step 3: place the template variant in Workspace at our anchor, with same CFrame.
+picked.Parent = workspace
+picked.Name = wrapperModel.Name
+local pickedPrimary = picked.PrimaryPart
+if pickedPrimary then
+\tlocal oldCF = pickedPrimary.CFrame
+\tlocal worldOffset = anchorCF * oldCF:Inverse()
+\tfor _, descendant in picked:GetDescendants() do
+\t\tif descendant:IsA("BasePart") then
+\t\t\tdescendant.CFrame = worldOffset * descendant.CFrame
+\t\tend
+\tend
+else
+\t-- No PrimaryPart on the template — best effort: pivot to anchor
+\tpcall(function() picked:PivotTo(anchorCF) end)
+end
+
+-- Step 4: recolor body parts. Match SmoothPlastic parts whose Color is close to BODY_ORIGINAL.
+local recoloredCount = 0
+for _, descendant in picked:GetDescendants() do
+\tif descendant:IsA("BasePart") and descendant.Material == Enum.Material.SmoothPlastic then
+\t\tlocal c = descendant.Color
+\t\tif math.abs(c.R - BODY_ORIGINAL.R) < TOLERANCE
+\t\t\tand math.abs(c.G - BODY_ORIGINAL.G) < TOLERANCE
+\t\t\tand math.abs(c.B - BODY_ORIGINAL.B) < TOLERANCE then
+\t\t\tdescendant.Color = PRIMARY
+\t\t\trecoloredCount = recoloredCount + 1
+\t\tend
+\tend
+end
+print("[VehicleTemplateLoader] Loaded template, recoloured", recoloredCount, "body parts.")
+
+-- Step 5: destroy the wrapper Model (procedural fallback + this script + the controller).
+-- The loaded template has its own scripts and physics.
+loaded:Destroy()
+wrapperModel:Destroy()
+`;
 }
 
 function buildVehicleControllerScript(): string {

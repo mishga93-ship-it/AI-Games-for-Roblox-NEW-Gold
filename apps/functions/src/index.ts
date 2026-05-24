@@ -6149,6 +6149,7 @@ function createVehiclePipelineStages(): GenerationStageProgress[] {
     { id: 'concept_approval', title: 'Awaiting your approval', status: 'pending' },
     // Phase 2 — runs after user approves the concept.
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
+    { id: 'pick_vehicle_template', title: 'Selecting Roblox vehicle template', status: 'pending' },
     { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Meshy 6)', status: 'pending' },
     { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
@@ -27163,6 +27164,80 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         'Using canonical self-contained VehicleController template',
       ]);
 
+      // ── pick_vehicle_template: Session 373 Round 20.
+      //
+      // Replaces the AI-mesh chain (Tripo/Meshy) which after 19 iterations
+      // never produced quality vehicles. Now we map prompt → one of 9
+      // Roblox-endorsed templates (free, official, with proper physics +
+      // suspension + lights + dashboards baked in by Roblox itself).
+      //
+      // When a template is picked, downstream mesh + scene stages are
+      // SKIPPED — robloxWorker.ts emits a Loader Script that does
+      // InsertService:LoadAsset(<templateAssetId>) at runtime, plus a
+      // pre-built procedural fallback Model inside the same rbxm in case
+      // LoadAsset fails (network / asset unavailable).
+      //
+      // For vehicle types not in the endorsed pack (motorcycle/boat/plane/
+      // etc.), this stage emits no template — pipeline falls through to
+      // procedural baseline as before. Only `car`-style vehicles match.
+      const vehicleTypeForTemplate = String(vehicleType ?? '').toLowerCase();
+      const eligibleForTemplate = vehicleTypeForTemplate === 'car';
+      if (eligibleForTemplate) {
+        await beginStage('pick_vehicle_template', 'Picking Roblox vehicle template');
+        try {
+          const { pickVehicleTemplate } = await import('./vehicleTemplateRouter.js');
+          const promptForRouter = job.prompt ?? '';
+          const titleForRouter = typeof currentJob.metadata?.title === 'string'
+            ? currentJob.metadata.title as string : '';
+          const primaryFromMeta = typeof currentJob.metadata?.primaryColor === 'string'
+            ? currentJob.metadata.primaryColor as string : '';
+          const accentFromMeta = typeof currentJob.metadata?.accentColor === 'string'
+            ? currentJob.metadata.accentColor as string : '';
+          const pick = pickVehicleTemplate({
+            prompt: promptForRouter,
+            title: titleForRouter,
+            primaryHexFromMetadata: primaryFromMeta,
+          });
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              vehicleTemplateAssetId: pick.config.assetId,
+              vehicleTemplateName: pick.templateName,
+              vehicleTemplateLabel: pick.config.label,
+              vehicleTemplatePreferredVariant: pick.config.preferredVariant,
+              vehicleTemplateVariantFallbacks: pick.config.variantFallbacks,
+              vehicleTemplateBodyOriginalHex: pick.config.bodyOriginalHex,
+              vehicleTemplatePrimaryHex: pick.primaryHex,
+              vehicleTemplateAccentHex: accentFromMeta || '#1A1A1A',
+              vehicleTemplateRouterSource: pick.source,
+              vehicleTemplateRouterReason: pick.reason,
+            },
+          };
+          await finishStage('pick_vehicle_template', 'completed', [], [
+            `Template: ${pick.config.label} (assetId ${pick.config.assetId})`,
+            `Preferred variant: ${pick.config.preferredVariant}`,
+            `Primary color: ${pick.primaryHex}`,
+            `Router: ${pick.source} — ${pick.reason}`,
+            'Mesh + scene stages will be SKIPPED (template path).',
+          ]);
+        } catch (err) {
+          logger.warn('[Vehicle] template router threw, falling through to mesh pipeline', {
+            jobId, error: errorMessage(err),
+          });
+          await finishStage('pick_vehicle_template', 'completed', [], [
+            `Router error: ${errorMessage(err).slice(0, 200)}`,
+            'Falling through to AI-mesh / procedural baseline.',
+          ]);
+        }
+      } else {
+        await beginStage('pick_vehicle_template', `Skipping template router (vehicleType=${vehicleTypeForTemplate})`);
+        await finishStage('pick_vehicle_template', 'completed', [], [
+          `Vehicle type "${vehicleTypeForTemplate}" not in Roblox endorsed pack (cars only).`,
+          'Continuing with mesh + procedural pipeline as before.',
+        ]);
+      }
+
       // ── generate_vehicle_mesh: Meshy 6 primary.
       // Session 373 round 19 originally added Tripo v2.5 → Meshy 6 fallback
       // chain (per nilo.io blog: Tripo claims better car topology). Live test
@@ -27174,6 +27249,18 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       //
       // Procedural baseline (addVehicleBodyShell) remains as 2nd-tier safety
       // net if Meshy itself fails.
+      //
+      // SKIP this stage entirely when pick_vehicle_template selected a
+      // Roblox-endorsed template — the builder will emit a Loader Script
+      // that runtime-loads the template via InsertService:LoadAsset.
+      const templateAlreadyPicked = typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
+        && (currentJob.metadata.vehicleTemplateAssetId as number) > 0;
+      if (templateAlreadyPicked) {
+        await beginStage('generate_vehicle_mesh', 'Skipping AI mesh — Roblox template will load at runtime');
+        await finishStage('generate_vehicle_mesh', 'completed', [], [
+          `Template ${currentJob.metadata?.vehicleTemplateLabel ?? '?'} selected — AI mesh stage skipped.`,
+        ]);
+      } else {
       await beginStage('generate_vehicle_mesh', 'Meshy 6 is generating a 3D vehicle body');
       try {
         const titleStrForMesh = typeof currentJob.metadata?.title === 'string' ? currentJob.metadata.title : '';
@@ -27592,6 +27679,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           'Falling back to procedural baseline + LLM accents.',
         ]);
       }
+      }  // close `else { ` (templateAlreadyPicked skip wrapper)
 
       // ── generate_vehicle_scene: ask the LLM to compose a brief-driven
       // body silhouette (parts list with positions/sizes/colors). The chassis
@@ -27601,11 +27689,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // the look, the backend guarantees the physics.
       //
       // SKIP this stage entirely when Meshy already produced a usable mesh
-      // asset id (the previous stage stored it in metadata.vehicleMeshAssetId).
-      // The builder gives mesh-asset top priority and ignores vehicleScene
-      // when both exist, so running the LLM composer would just burn tokens.
-      const hadMeshAlready = typeof currentJob.metadata?.vehicleMeshAssetId === 'number'
-        && (currentJob.metadata.vehicleMeshAssetId as number) > 0;
+      // asset id (the previous stage stored it in metadata.vehicleMeshAssetId)
+      // OR when a Roblox template was picked (Round 20 — template owns the
+      // entire body, no LLM accents needed).
+      const hadMeshAlready = (typeof currentJob.metadata?.vehicleMeshAssetId === 'number'
+        && (currentJob.metadata.vehicleMeshAssetId as number) > 0)
+        || (typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
+        && (currentJob.metadata.vehicleTemplateAssetId as number) > 0);
       if (hadMeshAlready) {
         await beginStage('generate_vehicle_scene', 'Skipping LLM scene — vehicle mesh already available');
         await finishStage('generate_vehicle_scene', 'completed', [], [
