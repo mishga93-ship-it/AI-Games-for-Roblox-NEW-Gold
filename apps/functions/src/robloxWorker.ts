@@ -2686,6 +2686,12 @@ function buildVehicleModelManifest(
         ? metadata.vehicleTemplateRoofSignText : '';
       const roofSignColorHex = typeof metadata.vehicleTemplateRoofSignColorHex === 'string'
         ? metadata.vehicleTemplateRoofSignColorHex : '';
+      const doorDecalAssetId = typeof metadata.vehicleDecalDoorAssetId === 'number' && metadata.vehicleDecalDoorAssetId > 0
+        ? metadata.vehicleDecalDoorAssetId : undefined;
+      const hoodDecalAssetId = typeof metadata.vehicleDecalHoodAssetId === 'number' && metadata.vehicleDecalHoodAssetId > 0
+        ? metadata.vehicleDecalHoodAssetId : undefined;
+      const trunkDecalAssetId = typeof metadata.vehicleDecalTrunkAssetId === 'number' && metadata.vehicleDecalTrunkAssetId > 0
+        ? metadata.vehicleDecalTrunkAssetId : undefined;
       embeddedModels.push({
         id: uuidv4(),
         name: tplLabel,
@@ -2699,6 +2705,9 @@ function buildVehicleModelManifest(
         plateText: plateText || undefined,
         roofSignText: roofSignText || undefined,
         roofSignColorHex: roofSignColorHex || undefined,
+        doorDecalAssetId,
+        hoodDecalAssetId,
+        trunkDecalAssetId,
       });
     } else {
       // v2 fallback — runtime InsertService:LoadAsset script.

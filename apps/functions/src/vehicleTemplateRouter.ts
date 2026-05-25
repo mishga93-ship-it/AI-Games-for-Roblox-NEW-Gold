@@ -171,6 +171,91 @@ export interface VehicleAccessories {
 }
 
 /**
+ * Round 20E: Per-prompt Flux decal briefs.
+ *
+ * Each brief is a short text prompt fed to flux-pro/v1.1 to generate a
+ * PNG that gets uploaded to Roblox as an Image asset and applied as a
+ * Decal on the corresponding body part(s). Empty = skip that decal.
+ *
+ * Body part naming conventions in Roblox endorsed templates:
+ *   - Side stripe: LF/LR/RF/RR_door (4 parts; Decal Face = Left for L_*, Right for R_*)
+ *   - Hood: hood / F_bumper / roof_hood front
+ *   - Trunk: bumper_back top face
+ */
+export interface VehicleDecalBriefs {
+  /** Side stripe / livery applied to all 4 door parts. */
+  doorStripeBrief: string;
+  /** Logo / text applied to top of hood. */
+  hoodLogoBrief: string;
+  /** Optional rear logo / sign applied to trunk top. */
+  trunkLogoBrief: string;
+}
+
+/**
+ * Round 20E: derive Flux briefs per prompt+template+colour.
+ *
+ * For each known vehicle role we hand-craft brief templates that read
+ * naturally to flux-pro and produce iconic, instantly recognisable
+ * liveries. Generic vehicles fall through to a single brief based on
+ * primary colour + title.
+ *
+ * All briefs ask for "transparent background" so the Decal blends over
+ * the body's actual colour (not a white square stuck on the door).
+ */
+export function deriveVehicleDecalBriefs(args: {
+  prompt: string;
+  title: string;
+  templateName: VehicleTemplateName;
+  primaryHex: string;
+  accentHex: string;
+}): VehicleDecalBriefs {
+  const txt = `${args.prompt} ${args.title}`.toLowerCase();
+  const isTaxi = /\b(taxi|cab|такси)\b/i.test(txt);
+  const isPolice = /\b(police|cop|cruiser|patrol|sheriff)\b/i.test(txt);
+  const isFire = /\b(fire\s*truck|пожар)\b/i.test(txt);
+  const isSports = args.templateName === 'SportsCar' || args.templateName === 'Supercar'
+    || /\b(race\s*car|racing|mustang|ferrari|lambo|drift)\b/i.test(txt);
+
+  if (isTaxi) {
+    return {
+      doorStripeBrief: 'horizontal NYC taxi cab checkered stripe pattern, alternating black and yellow squares, classic livery, sharp graphic design, no text, transparent background, no shadows',
+      hoodLogoBrief: 'bold black "TAXI" text in classic sans-serif on transparent background, no shadows, no background, isolated text',
+      trunkLogoBrief: 'small black "TAXI" text plate with medallion number, transparent background, classic NYC cab graphic',
+    };
+  }
+  if (isPolice) {
+    return {
+      doorStripeBrief: 'classic American police cruiser door decal, bold "POLICE" text in white on dark blue stripe, sheriff star badge, professional law enforcement graphic, transparent background, no shadows',
+      hoodLogoBrief: 'subtle thin blue stripe along the hood, minimal police livery accent, transparent background',
+      trunkLogoBrief: 'classic black "POLICE" text on transparent background, bold sans-serif, no shadows',
+    };
+  }
+  if (isFire) {
+    return {
+      doorStripeBrief: 'fire department door decal, bold white "FIRE DEPT" text on transparent background, classic firetruck graphics, golden maltese cross badge, no shadows',
+      hoodLogoBrief: 'thin white horizontal stripe, classic fire truck reflective trim accent, transparent background',
+      trunkLogoBrief: 'small "FIRE" text white on transparent background, classic firetruck rear marker',
+    };
+  }
+  if (isSports) {
+    const colorWord = args.accentHex || '#FFFFFF';
+    return {
+      doorStripeBrief: `bold racing number "${(Math.floor(Math.random() * 89) + 10)}" in white circle with thin ${colorWord} accent border, classic motorsport livery side panel decal, transparent background, no shadows`,
+      hoodLogoBrief: `dual racing stripes vertical white running down the hood with thin ${colorWord} accent borders, classic muscle car graphic, transparent background`,
+      trunkLogoBrief: '',
+    };
+  }
+  // Generic: brand-style livery derived from title + primary colour.
+  const cleanedTitle = (args.title || '').replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 24);
+  const company = cleanedTitle || 'COMPANY';
+  return {
+    doorStripeBrief: `clean modern company car door decal, "${company}" wordmark in bold sans-serif, contemporary corporate fleet livery, transparent background, no shadows`,
+    hoodLogoBrief: '',
+    trunkLogoBrief: '',
+  };
+}
+
+/**
  * Fast keyword → template mapping. Returns null if no clear match.
  * Run in lowercase against prompt + title; first-match wins (rules ordered
  * by specificity — police BEFORE car etc.).

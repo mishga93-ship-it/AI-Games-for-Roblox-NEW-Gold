@@ -731,12 +731,70 @@ if manifest.embeddedModels ~= nil then
 											sx, sy, sz, roofPart and roofPart.Name or "FALLBACK"))
 									end
 
-									-- Round 20D-final: checkered cubes removed — they looked
-									-- like 3D blocks sticking out of the body, not integrated.
-									-- Stage A (next round) will add the iconic NYC taxi look as
-									-- a Decal-textured FLAT overlay (or via direct Decal on door
-									-- BasePart faces), so it reads as graphics on the body surface
-									-- rather than protruding geometry.
+									-- Round 20E: Decal-based per-prompt liveries. AssetIds come
+									-- from the Functions stage `generate_vehicle_decals` which
+									-- generated PNGs via Flux + uploaded to Roblox Open Cloud.
+									-- We add Decal children on specific body parts so the graphics
+									-- read AS the car body (not protruding 3D pieces).
+									local function applyDecal(parentPart, assetId, face)
+										local d = roblox.Instance.new("Decal")
+										d.Name = "AIDecal_" .. tostring(face)
+										d.Texture = "rbxassetid://" .. tostring(assetId)
+										d.Face = face
+										d.Parent = parentPart
+									end
+									local function findFirstByLowerExact(name)
+										for _, d in pickedVariant:GetDescendants() do
+											if d:IsA("BasePart") and string.lower(d.Name) == name then
+												return d
+											end
+										end
+										return nil
+									end
+
+									local doorDecalId = tonumber(embedded.doorDecalAssetId)
+									if doorDecalId and doorDecalId > 0 then
+										-- Apply same decal to all 4 side doors. Face = outward side.
+										local doorMappings = {
+											{ name = "lf_door", face = _Enum.NormalId.Left },
+											{ name = "lr_door", face = _Enum.NormalId.Left },
+											{ name = "rf_door", face = _Enum.NormalId.Right },
+											{ name = "rr_door", face = _Enum.NormalId.Right },
+											{ name = "l_door",  face = _Enum.NormalId.Left },
+											{ name = "r_door",  face = _Enum.NormalId.Right },
+										}
+										local doorsDone = 0
+										for _, m in doorMappings do
+											local dp = findFirstByLowerExact(m.name)
+											if dp then
+												applyDecal(dp, doorDecalId, m.face)
+												doorsDone = doorsDone + 1
+											end
+										end
+										print(string.format("[build_roblox] vehicle_template: door decal %d applied to %d parts", doorDecalId, doorsDone))
+									end
+
+									local hoodDecalId = tonumber(embedded.hoodDecalAssetId)
+									if hoodDecalId and hoodDecalId > 0 then
+										-- Hood is generally a separate flat-top part — try common names.
+										local hoodPart = findFirstByLowerExact("hood")
+											or findFirstByLowerExact("f_bumper")
+										if hoodPart then
+											applyDecal(hoodPart, hoodDecalId, _Enum.NormalId.Top)
+											print(string.format("[build_roblox] vehicle_template: hood decal %d applied to %s", hoodDecalId, hoodPart.Name))
+										end
+									end
+
+									local trunkDecalId = tonumber(embedded.trunkDecalAssetId)
+									if trunkDecalId and trunkDecalId > 0 then
+										local trunkPart = findFirstByLowerExact("trunk")
+											or findFirstByLowerExact("trrunk")
+											or findFirstByLowerExact("bumper_back")
+										if trunkPart then
+											applyDecal(trunkPart, trunkDecalId, _Enum.NormalId.Top)
+											print(string.format("[build_roblox] vehicle_template: trunk decal %d applied to %s", trunkDecalId, trunkPart.Name))
+										end
+									end
 								else
 									warn(string.format("[build_roblox] vehicle_template: bbox empty (parts=%d), skipping accessories", partCount))
 								end

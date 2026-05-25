@@ -276,6 +276,7 @@ export type GenerationStageId =
   | 'generate_decal_image'
   | 'generate_vehicle_scripts'
   | 'pick_vehicle_template'
+  | 'generate_vehicle_decals'
   | 'generate_vehicle_mesh'
   | 'generate_vehicle_scene'
   | 'quality_review';
@@ -369,6 +370,12 @@ export interface RobloxEmbeddedModelRef {
   roofSignText?: string;
   /** Round 20D: hex colour for the roof sign background neon material. */
   roofSignColorHex?: string;
+  /** Round 20E: Roblox Image assetId for side stripe decal applied to all 4 door parts. */
+  doorDecalAssetId?: number;
+  /** Round 20E: Roblox Image assetId for hood top Decal. */
+  hoodDecalAssetId?: number;
+  /** Round 20E: Roblox Image assetId for trunk top Decal. */
+  trunkDecalAssetId?: number;
 }
 
 export interface RobloxBuildScript {

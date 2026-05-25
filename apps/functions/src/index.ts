@@ -6150,6 +6150,7 @@ function createVehiclePipelineStages(): GenerationStageProgress[] {
     // Phase 2 — runs after user approves the concept.
     { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
     { id: 'pick_vehicle_template', title: 'Selecting Roblox vehicle template', status: 'pending' },
+    { id: 'generate_vehicle_decals', title: 'Generating vehicle livery decals (Flux)', status: 'pending' },
     { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Meshy 6)', status: 'pending' },
     { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
     { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
@@ -27250,6 +27251,134 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         await finishStage('pick_vehicle_template', 'completed', [], [
           `Vehicle type "${vehicleTypeForTemplate}" not in Roblox endorsed pack (cars only).`,
           'Continuing with mesh + procedural pipeline as before.',
+        ]);
+      }
+
+      // ── generate_vehicle_decals: Round 20E.
+      // After a template is picked, generate up to 3 livery decals via Flux
+      // (door side stripe, hood logo, trunk logo) and upload each as a
+      // Roblox Open Cloud Image asset. Storing assetIds in metadata so the
+      // builder can attach Decal instances on the right body parts at
+      // serialize time. Each unique car gets its own Flux-generated graphics
+      // per prompt — never the same livery twice.
+      //
+      // SKIPPED when no template was picked (motorcycle / boat / plane
+      // path — decals don't generalise to non-car shapes cleanly).
+      const templatePickedForDecals = typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
+        && (currentJob.metadata.vehicleTemplateAssetId as number) > 0;
+      if (templatePickedForDecals) {
+        await beginStage('generate_vehicle_decals', 'Flux is generating vehicle livery decals');
+        try {
+          const { deriveVehicleDecalBriefs } = await import('./vehicleTemplateRouter.js');
+          const { generateDecalTexture } = await import('./providers.js');
+          const tplName = currentJob.metadata?.vehicleTemplateName as string;
+          const primaryHex = (currentJob.metadata?.vehicleTemplatePrimaryHex as string) ?? '#E03A2E';
+          const accentHex = (currentJob.metadata?.vehicleTemplateAccentHex as string) ?? '#1A1A1A';
+          const briefs = deriveVehicleDecalBriefs({
+            prompt: job.prompt ?? '',
+            title: (currentJob.metadata?.title as string) ?? '',
+            templateName: tplName as Parameters<typeof deriveVehicleDecalBriefs>[0]['templateName'],
+            primaryHex,
+            accentHex,
+          });
+          logger.info('[Vehicle decals] briefs derived', {
+            jobId,
+            door: briefs.doorStripeBrief.slice(0, 80),
+            hood: briefs.hoodLogoBrief.slice(0, 80),
+            trunk: briefs.trunkLogoBrief.slice(0, 80),
+          });
+
+          // Upload one decal: generate via Flux → download → upload to Roblox.
+          const uploadDecal = async (brief: string, label: string): Promise<number | undefined> => {
+            if (!brief) return undefined;
+            const flxUrl = await generateDecalTexture({
+              imagePrompt: brief,
+              transparency: true,
+              recommendedSize: 512,
+              negativePrompt: 'background, scene, photo, realistic, 3d render, gradient, frame, border',
+            });
+            if (!flxUrl) {
+              logger.warn('[Vehicle decals] Flux returned no URL', { jobId, label, briefPreview: brief.slice(0, 80) });
+              return undefined;
+            }
+            try {
+              const apiKey = getRobloxOpenCloudApiKey();
+              const creatorId = getRobloxCreatorId();
+              if (!apiKey || !creatorId) {
+                logger.warn('[Vehicle decals] no Open Cloud creds — skipping', { jobId, label });
+                return undefined;
+              }
+              const resp = await fetch(flxUrl);
+              if (!resp.ok) {
+                logger.warn('[Vehicle decals] Flux URL fetch failed', { jobId, label, status: resp.status });
+                return undefined;
+              }
+              const buf = Buffer.from(await resp.arrayBuffer());
+              const upload = await uploadAssetToRoblox({
+                apiKey, creatorId, creatorType: 'User',
+                assetType: 'Image',
+                name: `Vehicle decal ${label} ${(currentJob.metadata?.title as string ?? '').slice(0, 24)}`.slice(0, 50),
+                description: `AI-generated vehicle livery decal (${label}) for ${tplName}`,
+                fileContent: buf,
+                contentType: 'image/png',
+              });
+              if (!upload) return undefined;
+              let assetId = upload.assetId;
+              if ((!assetId || assetId <= 0) && upload.operationId) {
+                const polled = await pollRobloxOperation(apiKey, upload.operationId, 'api-key');
+                if (polled && polled > 0) assetId = polled;
+              }
+              if (!assetId || assetId <= 0) return undefined;
+              try { await grantAssetOpenUse({ apiKey, assetId }); } catch { /* non-fatal */ }
+              logger.info('[Vehicle decals] uploaded', { jobId, label, assetId });
+              return assetId;
+            } catch (uploadErr) {
+              logger.warn('[Vehicle decals] upload threw', { jobId, label, error: errorMessage(uploadErr) });
+              return undefined;
+            }
+          };
+
+          // Run all 3 decal generations in parallel for speed.
+          const [doorAssetId, hoodAssetId, trunkAssetId] = await Promise.all([
+            uploadDecal(briefs.doorStripeBrief, 'door'),
+            uploadDecal(briefs.hoodLogoBrief, 'hood'),
+            uploadDecal(briefs.trunkLogoBrief, 'trunk'),
+          ]);
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              vehicleDecalDoorAssetId: doorAssetId,
+              vehicleDecalHoodAssetId: hoodAssetId,
+              vehicleDecalTrunkAssetId: trunkAssetId,
+              vehicleDecalBriefs: {
+                door: briefs.doorStripeBrief.slice(0, 200),
+                hood: briefs.hoodLogoBrief.slice(0, 200),
+                trunk: briefs.trunkLogoBrief.slice(0, 200),
+              },
+            },
+          };
+          const made: string[] = [];
+          if (doorAssetId) made.push(`door:${doorAssetId}`);
+          if (hoodAssetId) made.push(`hood:${hoodAssetId}`);
+          if (trunkAssetId) made.push(`trunk:${trunkAssetId}`);
+          await finishStage('generate_vehicle_decals', 'completed', [], [
+            `Generated ${made.length} decal asset(s): ${made.join(', ') || 'none'}`,
+            briefs.doorStripeBrief ? `Door brief: ${briefs.doorStripeBrief.slice(0, 80)}...` : 'No door decal',
+            briefs.hoodLogoBrief ? `Hood brief: ${briefs.hoodLogoBrief.slice(0, 80)}...` : 'No hood decal',
+            briefs.trunkLogoBrief ? `Trunk brief: ${briefs.trunkLogoBrief.slice(0, 80)}...` : 'No trunk decal',
+          ]);
+        } catch (decalErr) {
+          logger.warn('[Vehicle decals] stage threw, continuing without decals', { jobId, error: errorMessage(decalErr) });
+          await finishStage('generate_vehicle_decals', 'completed', [], [
+            `Decal generation error: ${errorMessage(decalErr).slice(0, 200)}`,
+            'Continuing without decals.',
+          ]);
+        }
+      } else {
+        await beginStage('generate_vehicle_decals', 'Skipping decals — no template picked');
+        await finishStage('generate_vehicle_decals', 'completed', [], [
+          'Decal generation only runs for template-embed path (car types).',
         ]);
       }
 

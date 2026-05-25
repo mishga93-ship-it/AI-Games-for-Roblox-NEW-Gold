@@ -246,6 +246,7 @@ export type GenerationStageId =
   | 'generate_weapon_scripts'
   | 'generate_vehicle_scripts'
   | 'pick_vehicle_template'
+  | 'generate_vehicle_decals'
   | 'generate_vehicle_mesh'
   | 'generate_vehicle_scene'
   | 'generate_item_scripts'
@@ -386,6 +387,10 @@ export interface RobloxEmbeddedModelRef {
   plateText?: string;
   roofSignText?: string;
   roofSignColorHex?: string;
+  /** Round 20E decals (assetIds for door/hood/trunk Decals on body parts). */
+  doorDecalAssetId?: number;
+  hoodDecalAssetId?: number;
+  trunkDecalAssetId?: number;
 }
 
 export interface RobloxBuildScript {
