@@ -3602,22 +3602,30 @@ if not picked then
 \treturn
 end
 
--- Step 3: place the template variant in Workspace at our anchor, with same CFrame.
+print("[VehicleTemplateLoader] LoadAsset OK, picked variant:", picked.Name, "ClassName:", picked.ClassName)
+
+-- Step 3: parent variant into workspace + move to our anchor cleanly via PivotTo.
+-- Round 20 v2: use Model:PivotTo() instead of manual descendant CFrame transforms.
+-- PivotTo correctly handles WeldConstraints / SpringConstraints / nested models;
+-- the previous manual transform left wheels / suspension floating at origin if
+-- the template's PrimaryPart wasn't the same as the chassis root. We also lift
+-- the spawn by +4 stud Y so the vehicle drops a tiny bit onto the baseplate
+-- instead of intersecting it (Roblox endorsed vehicles ship with body sitting
+-- low — without lift, wheels may clip below baseplate and the whole thing
+-- falls through to void).
 picked.Parent = workspace
 picked.Name = wrapperModel.Name
-local pickedPrimary = picked.PrimaryPart
-if pickedPrimary then
-\tlocal oldCF = pickedPrimary.CFrame
-\tlocal worldOffset = anchorCF * oldCF:Inverse()
-\tfor _, descendant in picked:GetDescendants() do
-\t\tif descendant:IsA("BasePart") then
-\t\t\tdescendant.CFrame = worldOffset * descendant.CFrame
-\t\tend
-\tend
-else
-\t-- No PrimaryPart on the template — best effort: pivot to anchor
-\tpcall(function() picked:PivotTo(anchorCF) end)
+local spawnCF = anchorCF * CFrame.new(0, 4, 0)
+local pivotOk, pivotErr = pcall(function() picked:PivotTo(spawnCF) end)
+if not pivotOk then
+\twarn("[VehicleTemplateLoader] PivotTo failed:", tostring(pivotErr))
+\t-- Don't destroy wrapper — leave procedural fallback as safety net.
+\tpicked:Destroy()
+\tloaded:Destroy()
+\tscript:Destroy()
+\treturn
 end
+print("[VehicleTemplateLoader] Placed", picked.Name, "at", tostring(spawnCF.Position))
 
 -- Step 4: recolor body parts. Match SmoothPlastic parts whose Color is close to BODY_ORIGINAL.
 local recoloredCount = 0
@@ -3632,12 +3640,13 @@ for _, descendant in picked:GetDescendants() do
 \t\tend
 \tend
 end
-print("[VehicleTemplateLoader] Loaded template, recoloured", recoloredCount, "body parts.")
+print("[VehicleTemplateLoader] Recoloured", recoloredCount, "body parts to", tostring(PRIMARY))
 
 -- Step 5: destroy the wrapper Model (procedural fallback + this script + the controller).
 -- The loaded template has its own scripts and physics.
 loaded:Destroy()
 wrapperModel:Destroy()
+print("[VehicleTemplateLoader] Done — wrapper destroyed, template now lives at workspace.", picked.Name)
 `;
 }
 
