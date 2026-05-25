@@ -2844,10 +2844,43 @@ function addVehicleBodyShell(
     return;
   }
   if (vehicleType === 'plane') {
-    addBodyPart('Fuselage', [w * 0.24, h * 0.55, l], [0, rootY + 0.15, 0], primary, { shape: 'Cylinder', rot: [90, 0, 0], material: 'Metal' });
-    addBodyPart('MainWing', [w, 0.18, l * 0.28], [0, rootY + 0.05, -l * 0.05], accent, { material: 'Metal' });
-    addBodyPart('TailWing', [w * 0.45, 0.16, l * 0.18], [0, rootY + h * 0.18, l * 0.42], accent, { material: 'Metal' });
-    addBodyPart('CockpitGlass', [w * 0.20, h * 0.24, l * 0.16], [0, rootY + h * 0.42, -l * 0.28], glass, { material: 'Glass', transparency: 0.22 });
+    // Round 20L (session 381): rich plane baseline. Replaces minimal 4-part
+    // version with ~22 parts forming a recognizable cartoon prop plane.
+    // Profile: w=14, h=3.3, l=13, wheelRadius=0.45 (3 landing gear wheels).
+    // Controller (DRIVE_MODE == "aircraft") handles W/S thrust+lift, A/D yaw.
+    // Fuselage along Z axis, nose at -Z, tail at +Z.
+    //
+    // Fuselage backbone
+    addBodyPart('Fuselage', [w * 0.20, h * 0.55, l * 0.85], [0, rootY + 0.20, 0], primary, { shape: 'Cylinder', rot: [0, 0, 90], material: 'Metal' });
+    addBodyPart('FuselageNose', [w * 0.18, h * 0.50, l * 0.16], [0, rootY + 0.20, -l * 0.46], primary, { className: 'WedgePart', rot: [0, 180, 0], material: 'Metal' });
+    addBodyPart('CockpitCanopy', [w * 0.18, h * 0.36, w * 0.20], [0, rootY + h * 0.42, -l * 0.18], glass, { shape: 'Ball', material: 'Glass', transparency: 0.28 });
+    addBodyPart('CockpitFrame', [w * 0.04, h * 0.32, w * 0.20], [0, rootY + h * 0.42, -l * 0.18], dark, { material: 'Metal' });
+    // Wings
+    addBodyPart('LeftMainWing', [w * 0.42, h * 0.08, l * 0.30], [-w * 0.30, rootY + 0.10, -l * 0.02], accent, { material: 'Metal' });
+    addBodyPart('RightMainWing', [w * 0.42, h * 0.08, l * 0.30], [w * 0.30, rootY + 0.10, -l * 0.02], accent, { material: 'Metal' });
+    addBodyPart('LeftWingTip', [w * 0.08, h * 0.06, l * 0.18], [-w * 0.51, rootY + 0.10, -l * 0.02], primary, { material: 'Metal' });
+    addBodyPart('RightWingTip', [w * 0.08, h * 0.06, l * 0.18], [w * 0.51, rootY + 0.10, -l * 0.02], primary, { material: 'Metal' });
+    addBodyPart('LeftNavLight', [0.32, 0.32, 0.32], [-w * 0.54, rootY + 0.10, -l * 0.02], glow, { shape: 'Ball', material: 'Neon' });
+    addBodyPart('RightNavLight', [0.32, 0.32, 0.32], [w * 0.54, rootY + 0.10, -l * 0.02], glow, { shape: 'Ball', material: 'Neon' });
+    // Tail section
+    addBodyPart('TailBoom', [w * 0.10, h * 0.20, l * 0.30], [0, rootY + 0.30, l * 0.34], primary, { shape: 'Cylinder', rot: [0, 0, 90], material: 'Metal' });
+    addBodyPart('VerticalStabilizer', [w * 0.05, h * 0.65, l * 0.16], [0, rootY + h * 0.50, l * 0.50], primary, { material: 'Metal' });
+    addBodyPart('VerticalStabilizerTip', [w * 0.05, h * 0.10, l * 0.10], [0, rootY + h * 0.83, l * 0.50], accent, { material: 'Metal' });
+    addBodyPart('LeftHorizontalStab', [w * 0.20, h * 0.05, l * 0.14], [-w * 0.10, rootY + h * 0.30, l * 0.52], accent, { material: 'Metal' });
+    addBodyPart('RightHorizontalStab', [w * 0.20, h * 0.05, l * 0.14], [w * 0.10, rootY + h * 0.30, l * 0.52], accent, { material: 'Metal' });
+    addBodyPart('TailStrobe', [0.25, 0.25, 0.25], [0, rootY + h * 0.88, l * 0.50], glow, { shape: 'Ball', material: 'Neon' });
+    // Propeller assembly at nose
+    addBodyPart('PropellerHub', [0.6, 0.6, 0.3], [0, rootY + 0.20, -l * 0.52], silver, { shape: 'Cylinder', rot: [0, 0, 90], material: 'Metal' });
+    addBodyPart('PropellerBladeH', [w * 0.42, 0.10, 0.20], [0, rootY + 0.20, -l * 0.54], dark, { material: 'Metal' });
+    addBodyPart('PropellerBladeV', [0.20, w * 0.42, 0.10], [0, rootY + 0.20, -l * 0.54], dark, { material: 'Metal' });
+    addBodyPart('SpinnerCap', [0.5, 0.5, 0.3], [0, rootY + 0.20, -l * 0.56], silver, { className: 'WedgePart', rot: [0, 180, 0], material: 'Metal' });
+    // Landing gear (3 struts — left/right main + tail wheel; actual wheels
+    // are added by addVehiclePhysics based on profile.wheelCount=3)
+    addBodyPart('LeftLandingStrut', [0.14, h * 0.45, 0.14], [-w * 0.20, rootY - h * 0.12, -l * 0.08], silver, { material: 'Metal' });
+    addBodyPart('RightLandingStrut', [0.14, h * 0.45, 0.14], [w * 0.20, rootY - h * 0.12, -l * 0.08], silver, { material: 'Metal' });
+    addBodyPart('TailWheelStrut', [0.10, h * 0.25, 0.10], [0, rootY - h * 0.04, l * 0.42], silver, { material: 'Metal' });
+    // Antenna
+    addBodyPart('Antenna', [0.05, h * 0.40, 0.05], [0, rootY + h * 0.65, -l * 0.05], silver, { material: 'Metal' });
     return;
   }
   if (vehicleType === 'helicopter') {

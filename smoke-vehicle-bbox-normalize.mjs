@@ -3,6 +3,12 @@
 //
 // Usage: node smoke-vehicle-bbox-normalize.mjs
 //
+// IMPORTANT: builds as `model` target (not `place`) so the output rbxm
+// can be drag-and-dropped into Studio Workspace. With `place` target
+// Studio's drag-and-drop prompts "Insert→Service" because root is
+// DataModel — see session 381 (user reported this on first round of
+// round-20L-*.rbxm).
+//
 // What this guards:
 //   - build_roblox.luau:493+ vehicle_template branch must:
 //     1. center every variant at (X=0, Z=0, Y_bottom=0)
@@ -58,7 +64,7 @@ for (const s of SCENARIOS) {
   const inspPath = join(OUT_DIR, `${s.name}-inspect.json`);
   writeFileSync(mfPath, JSON.stringify(manifest, null, 2));
   try {
-    execSync(`"${LUNE}" run "${BUILD}" "${mfPath}" "${outPath}" place`, { cwd: ROOT, encoding: 'utf8' });
+    execSync(`"${LUNE}" run "${BUILD}" "${mfPath}" "${outPath}" model`, { cwd: ROOT, encoding: 'utf8' });
     if (!existsSync(outPath)) throw new Error('no output rbxm');
     execSync(`"${LUNE}" run "${INSPECT}" "${outPath}" "${inspPath}"`, { cwd: ROOT, encoding: 'utf8' });
     const insp = JSON.parse(execSync(`cat "${inspPath}"`, { encoding: 'utf8' }));

@@ -27184,7 +27184,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       const vehicleTypeForTemplate = String(vehicleType ?? '').toLowerCase();
       // Round 20K: extend eligibility to non-car types now that we have
       // community templates for motorcycle / boat / plane / tank.
-      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'plane', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
+      // Round 20L (session 381): drop 'plane' — community War Plane template
+      // (assetId 81606616) has 2008-era HopperBin control (sit + equip "Aircraft"
+      // tool + press Y), unusable in modern UX. Replaced with rich procedural
+      // baseline (~22 parts) + existing controller aircraft mode (W/S thrust+lift,
+      // A/D yaw). See changelog-381.md.
+      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
       if (eligibleForTemplate) {
         await beginStage('pick_vehicle_template', 'Picking Roblox vehicle template');
         try {
