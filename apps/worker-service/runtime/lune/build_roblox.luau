@@ -564,25 +564,30 @@ if manifest.embeddedModels ~= nil then
 									local halfY = (maxY - minY) / 2
 									local halfZ = (maxZ - minZ) / 2
 
+									-- Round 20G: properly weld accessories to PrimaryPart so they
+									-- follow the car when it drives. Anchored=true (20D fix) kept
+									-- them visible in Edit Mode but they stayed at world spawn
+									-- position when the Sedan drove off → user reported topper
+									-- "floats in air, car drove away from it".
+									--
+									-- Fix: Anchored=true at Edit time (so render is reliable), but
+									-- ALSO add a runtime LocalScript that walks all accessories at
+									-- game start, un-anchors them, and welds each to the wrapper
+									-- Model's PrimaryPart. This survives both Edit Mode (anchored,
+									-- visible) and Play (welded, moves with car).
 									local function addAccessoryPart(name, size, worldPos, color, material)
 										local p = roblox.Instance.new("Part")
 										p.Name = name
 										p.Size = size
 										p.CFrame = _CFrame.new(worldPos)
-										-- Round 20D fix: Anchored=true so accessories render
-										-- predictably in Edit Mode. Without anchoring + weld combo,
-										-- Studio's load step appears to snap welded-but-not-anchored
-										-- parts to (0,0,0) and they end up invisible/clipped.
-										-- Trade-off: at Play, accessories stay fixed at their world
-										-- position while the car drives away. Acceptable for D
-										-- iteration (user just wants to verify they appear).
-										-- A follow-up should add a runtime LocalScript that
-										-- un-anchors and welds on demand.
 										p.Anchored = true
 										p.CanCollide = false
-										p.Massless = false
+										p.Massless = true
 										p.Color = color
 										p.Material = material
+										-- Tag with attribute so the runtime script can pick them up
+										-- without needing to hard-code names.
+										p:SetAttribute("AIAccessoryWeldOnStart", true)
 										p.Parent = pickedVariant
 										return p
 									end
@@ -739,19 +744,15 @@ if manifest.embeddedModels ~= nil then
 											capSize = _Vector3.new(1.1, 0.5, 0.5)
 											footSize = _Vector3.new(0.6, 0.35, 0.15)
 										end
-										local sx, sy, sz
-										if roofPart then
-											local rp = roofPart.CFrame.Position
-											local rs = roofPart.Size
-											sx = rp.X
-											-- Mounting-foot height included: total Y = foot + bar
-											sy = rp.Y + rs.Y / 2 + footSize.Y + barSize.Y / 2
-											sz = rp.Z
-										else
-											sx = centerPos.X
-											sy = maxY + footSize.Y + barSize.Y / 2
-											sz = centerPos.Z
-										end
+										-- Round 20G: previous Y calc tried to mount on top of
+										-- roofPart (which can be a huge multi-segment part covering
+										-- hood+roof+trunk → topper ends up 0.6-2 stud above the
+										-- visible roof). Use the bbox maxY which IS the actual top
+										-- of the visible body geometry.
+										local sx = centerPos.X
+										local sy = maxY + footSize.Y + barSize.Y / 2 + 0.02
+										local sz = centerPos.Z
+										if roofPart then sz = roofPart.CFrame.Position.Z end
 
 										-- Center bar with TAXI decal on long sides
 										local barColor = _Color3.new(sgnR, sgnG, sgnB)
@@ -854,6 +855,40 @@ if manifest.embeddedModels ~= nil then
 											applyDecal(trunkPart, trunkDecalId, _Enum.NormalId.Top)
 											print(string.format("[build_roblox] vehicle_template: trunk decal %d applied to %s", trunkDecalId, trunkPart.Name))
 										end
+									end
+
+									-- Round 20G: runtime weld script. Walks all parts tagged
+									-- AIAccessoryWeldOnStart, un-anchors them, welds each to the
+									-- variant PrimaryPart. Result: accessories visible in Edit
+									-- (anchored) AND follow the car as it drives in Play (welded).
+									if anchorPart then
+										local weldScript = roblox.Instance.new("Script")
+										weldScript.Name = "AIAccessoryWelder"
+										weldScript.Source = [[
+local model = script.Parent
+local primary = model.PrimaryPart
+if not primary then
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then primary = d break end
+	end
+end
+if not primary then warn("[AIAccessoryWelder] no PrimaryPart, aborting"); return end
+local count = 0
+for _, p in model:GetDescendants() do
+	if p:IsA("BasePart") and p:GetAttribute("AIAccessoryWeldOnStart") then
+		p.Anchored = false
+		local w = Instance.new("WeldConstraint")
+		w.Part0 = primary
+		w.Part1 = p
+		w.Parent = p
+		count = count + 1
+	end
+end
+print("[AIAccessoryWelder] welded " .. count .. " accessory parts to " .. primary.Name)
+script:Destroy()
+]]
+										weldScript.Parent = pickedVariant
+										print("[build_roblox] vehicle_template: AIAccessoryWelder runtime script added")
 									end
 								else
 									warn(string.format("[build_roblox] vehicle_template: bbox empty (parts=%d), skipping accessories", partCount))
