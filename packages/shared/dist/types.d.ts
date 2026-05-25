@@ -205,6 +205,8 @@ export interface RobloxEmbeddedModelRef {
     trunkDecalAssetId?: number;
     /** Round 20F: Roblox Image assetId for roof sign side faces (multi-part 3D topper). */
     roofSignDecalAssetId?: number;
+    /** Round 20I: neon underglow colour hex (empty = no underglow). */
+    underglowColorHex?: string;
 }
 export interface RobloxBuildScript {
     id: string;
