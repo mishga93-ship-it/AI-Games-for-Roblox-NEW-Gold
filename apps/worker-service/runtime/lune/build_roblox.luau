@@ -575,18 +575,32 @@ if manifest.embeddedModels ~= nil then
 									-- game start, un-anchors them, and welds each to the wrapper
 									-- Model's PrimaryPart. This survives both Edit Mode (anchored,
 									-- visible) and Play (welded, moves with car).
-									local function addAccessoryPart(name, size, worldPos, color, material)
-										local p = roblox.Instance.new("Part")
+									local function addAccessoryPart(name, size, worldPos, color, material, opts)
+										opts = opts or {}
+										local className = opts.className or "Part"
+										local p = roblox.Instance.new(className)
 										p.Name = name
 										p.Size = size
-										p.CFrame = _CFrame.new(worldPos)
+										local cf = _CFrame.new(worldPos)
+										if opts.rotation then
+											-- rotation as Vector3-like {x,y,z} degrees
+											cf = cf * _CFrame.Angles(
+												math.rad(opts.rotation.x or 0),
+												math.rad(opts.rotation.y or 0),
+												math.rad(opts.rotation.z or 0))
+										end
+										p.CFrame = cf
 										p.Anchored = true
 										p.CanCollide = false
 										p.Massless = true
 										p.Color = color
 										p.Material = material
-										-- Tag with attribute so the runtime script can pick them up
-										-- without needing to hard-code names.
+										if opts.shape then
+											pcall(function() p.Shape = opts.shape end)
+										end
+										if opts.transparency then
+											p.Transparency = opts.transparency
+										end
 										p:SetAttribute("AIAccessoryWeldOnStart", true)
 										p.Parent = pickedVariant
 										return p
@@ -766,21 +780,62 @@ if manifest.embeddedModels ~= nil then
 											addBillboardText(centerBar, signText, 2.4, 0)
 										end
 
-										-- End caps (slightly smaller, also neon for glow continuity)
+										-- Round 20H: WedgePart endcaps (tapered) instead of square boxes
+										-- — gives the topper a rounded/aero-dynamic NYC-cab silhouette.
+										-- WedgePart slopes from the high side (mating face to bar) down
+										-- to a thin edge on the outside. Rotation differs per side.
 										if lengthAlongZ then
 											local capLeftX = sx - barSize.X / 2 - capSize.X / 2 + 0.02
 											local capRightX = sx + barSize.X / 2 + capSize.X / 2 - 0.02
+											-- Left cap: slope from inner-side (right) down to outer-side (left)
+											-- → rotate 90° around Y so the wedge "points outward"
 											addAccessoryPart("RoofTopper_CapLeft", capSize,
-												_Vector3.new(capLeftX, sy, sz), barColor, _Enum.Material.Neon)
+												_Vector3.new(capLeftX, sy, sz), barColor, _Enum.Material.Neon,
+												{ className = "WedgePart", rotation = { y = -90 } })
 											addAccessoryPart("RoofTopper_CapRight", capSize,
-												_Vector3.new(capRightX, sy, sz), barColor, _Enum.Material.Neon)
+												_Vector3.new(capRightX, sy, sz), barColor, _Enum.Material.Neon,
+												{ className = "WedgePart", rotation = { y = 90 } })
 										else
 											local capFrontZ = sz - barSize.Z / 2 - capSize.Z / 2 + 0.02
 											local capBackZ = sz + barSize.Z / 2 + capSize.Z / 2 - 0.02
 											addAccessoryPart("RoofTopper_CapFront", capSize,
-												_Vector3.new(sx, sy, capFrontZ), barColor, _Enum.Material.Neon)
+												_Vector3.new(sx, sy, capFrontZ), barColor, _Enum.Material.Neon,
+												{ className = "WedgePart", rotation = { y = 180 } })
 											addAccessoryPart("RoofTopper_CapBack", capSize,
-												_Vector3.new(sx, sy, capBackZ), barColor, _Enum.Material.Neon)
+												_Vector3.new(sx, sy, capBackZ), barColor, _Enum.Material.Neon,
+												{ className = "WedgePart" })
+										end
+
+										-- LED dots along the bottom edge of the bar (Round 20H polish):
+										-- 6 small Neon spheres / bright white dots simulating taxi sign LEDs.
+										local ledCount = 6
+										local ledY = sy - barSize.Y / 2 + 0.04
+										local ledColor = _Color3.new(1, 1, 1)
+										local ledRadius = 0.07
+										local ledSize = _Vector3.new(ledRadius * 2, ledRadius * 2, ledRadius * 2)
+										for i = 0, ledCount - 1 do
+											local t = (i + 0.5) / ledCount
+											if lengthAlongZ then
+												local ledX = sx - barSize.X / 2 + t * barSize.X
+												addAccessoryPart("RoofTopper_LED_" .. tostring(i), ledSize,
+													_Vector3.new(ledX, ledY, sz + barSize.Z / 2 - 0.01),
+													ledColor, _Enum.Material.Neon,
+													{ shape = _Enum.PartType.Ball })
+												addAccessoryPart("RoofTopper_LED_b_" .. tostring(i), ledSize,
+													_Vector3.new(ledX, ledY, sz - barSize.Z / 2 + 0.01),
+													ledColor, _Enum.Material.Neon,
+													{ shape = _Enum.PartType.Ball })
+											else
+												local ledZ = sz - barSize.Z / 2 + t * barSize.Z
+												addAccessoryPart("RoofTopper_LED_" .. tostring(i), ledSize,
+													_Vector3.new(sx + barSize.X / 2 - 0.01, ledY, ledZ),
+													ledColor, _Enum.Material.Neon,
+													{ shape = _Enum.PartType.Ball })
+												addAccessoryPart("RoofTopper_LED_b_" .. tostring(i), ledSize,
+													_Vector3.new(sx - barSize.X / 2 + 0.01, ledY, ledZ),
+													ledColor, _Enum.Material.Neon,
+													{ shape = _Enum.PartType.Ball })
+											end
 										end
 
 										-- Mounting feet (dark, between bar and roof — looks structural)
