@@ -2850,30 +2850,32 @@ function addVehicleBodyShell(
     // Controller (DRIVE_MODE == "aircraft") handles W/S thrust+lift, A/D yaw.
     // Fuselage along Z axis, nose at -Z, tail at +Z.
     //
-    // Fuselage backbone
-    addBodyPart('Fuselage', [w * 0.20, h * 0.55, l * 0.85], [0, rootY + 0.20, 0], primary, { shape: 'Cylinder', rot: [0, 0, 90], material: 'Metal' });
-    addBodyPart('FuselageNose', [w * 0.18, h * 0.50, l * 0.16], [0, rootY + 0.20, -l * 0.46], primary, { className: 'WedgePart', rot: [0, 180, 0], material: 'Metal' });
-    addBodyPart('CockpitCanopy', [w * 0.18, h * 0.36, w * 0.20], [0, rootY + h * 0.42, -l * 0.18], glass, { shape: 'Ball', material: 'Glass', transparency: 0.28 });
-    addBodyPart('CockpitFrame', [w * 0.04, h * 0.32, w * 0.20], [0, rootY + h * 0.42, -l * 0.18], dark, { material: 'Metal' });
-    // Wings
-    addBodyPart('LeftMainWing', [w * 0.42, h * 0.08, l * 0.30], [-w * 0.30, rootY + 0.10, -l * 0.02], accent, { material: 'Metal' });
-    addBodyPart('RightMainWing', [w * 0.42, h * 0.08, l * 0.30], [w * 0.30, rootY + 0.10, -l * 0.02], accent, { material: 'Metal' });
-    addBodyPart('LeftWingTip', [w * 0.08, h * 0.06, l * 0.18], [-w * 0.51, rootY + 0.10, -l * 0.02], primary, { material: 'Metal' });
-    addBodyPart('RightWingTip', [w * 0.08, h * 0.06, l * 0.18], [w * 0.51, rootY + 0.10, -l * 0.02], primary, { material: 'Metal' });
-    addBodyPart('LeftNavLight', [0.32, 0.32, 0.32], [-w * 0.54, rootY + 0.10, -l * 0.02], glow, { shape: 'Ball', material: 'Neon' });
-    addBodyPart('RightNavLight', [0.32, 0.32, 0.32], [w * 0.54, rootY + 0.10, -l * 0.02], glow, { shape: 'Ball', material: 'Neon' });
+    // Fuselage backbone — all Block parts (Roblox Cylinder uses Size.X as
+    // length always; rotation matrix tricky. Block is unambiguous and
+    // cartoon-style works well for chat-gen plane).
+    addBodyPart('Fuselage', [w * 0.22, h * 0.55, l * 0.85], [0, rootY + 0.40, 0], primary, { material: 'Metal' });
+    addBodyPart('FuselageNose', [w * 0.22, h * 0.45, l * 0.20], [0, rootY + 0.35, -l * 0.46], primary, { className: 'WedgePart', rot: [0, 180, 0], material: 'Metal' });
+    addBodyPart('CockpitCanopy', [w * 0.18, h * 0.32, l * 0.26], [0, rootY + h * 0.50, -l * 0.16], glass, { material: 'Glass', transparency: 0.35 });
+    addBodyPart('CockpitCanopyRoof', [w * 0.18, h * 0.15, l * 0.12], [0, rootY + h * 0.72, -l * 0.20], glass, { className: 'WedgePart', rot: [0, 180, 0], material: 'Glass', transparency: 0.35 });
+    // Wings — wide aerofoil chord, swept slightly back
+    addBodyPart('LeftMainWing', [w * 0.44, h * 0.10, l * 0.38], [-w * 0.32, rootY + 0.32, l * 0.02], accent, { material: 'Metal' });
+    addBodyPart('RightMainWing', [w * 0.44, h * 0.10, l * 0.38], [w * 0.32, rootY + 0.32, l * 0.02], accent, { material: 'Metal' });
+    addBodyPart('LeftWingTip', [w * 0.10, h * 0.08, l * 0.24], [-w * 0.55, rootY + 0.32, l * 0.02], primary, { material: 'Metal' });
+    addBodyPart('RightWingTip', [w * 0.10, h * 0.08, l * 0.24], [w * 0.55, rootY + 0.32, l * 0.02], primary, { material: 'Metal' });
+    addBodyPart('LeftNavLight', [0.40, 0.30, 0.30], [-w * 0.60, rootY + 0.32, l * 0.02], glow, { material: 'Neon' });
+    addBodyPart('RightNavLight', [0.40, 0.30, 0.30], [w * 0.60, rootY + 0.32, l * 0.02], glow, { material: 'Neon' });
     // Tail section
-    addBodyPart('TailBoom', [w * 0.10, h * 0.20, l * 0.30], [0, rootY + 0.30, l * 0.34], primary, { shape: 'Cylinder', rot: [0, 0, 90], material: 'Metal' });
-    addBodyPart('VerticalStabilizer', [w * 0.05, h * 0.65, l * 0.16], [0, rootY + h * 0.50, l * 0.50], primary, { material: 'Metal' });
-    addBodyPart('VerticalStabilizerTip', [w * 0.05, h * 0.10, l * 0.10], [0, rootY + h * 0.83, l * 0.50], accent, { material: 'Metal' });
-    addBodyPart('LeftHorizontalStab', [w * 0.20, h * 0.05, l * 0.14], [-w * 0.10, rootY + h * 0.30, l * 0.52], accent, { material: 'Metal' });
-    addBodyPart('RightHorizontalStab', [w * 0.20, h * 0.05, l * 0.14], [w * 0.10, rootY + h * 0.30, l * 0.52], accent, { material: 'Metal' });
-    addBodyPart('TailStrobe', [0.25, 0.25, 0.25], [0, rootY + h * 0.88, l * 0.50], glow, { shape: 'Ball', material: 'Neon' });
+    addBodyPart('TailBoom', [w * 0.12, h * 0.32, l * 0.32], [0, rootY + 0.45, l * 0.36], primary, { material: 'Metal' });
+    addBodyPart('VerticalStabilizer', [w * 0.08, h * 0.55, l * 0.22], [0, rootY + h * 0.55, l * 0.52], primary, { material: 'Metal' });
+    addBodyPart('VerticalStabilizerTip', [w * 0.08, h * 0.10, l * 0.14], [0, rootY + h * 0.85, l * 0.50], accent, { material: 'Metal' });
+    addBodyPart('LeftHorizontalStab', [w * 0.24, h * 0.06, l * 0.16], [-w * 0.12, rootY + h * 0.42, l * 0.54], accent, { material: 'Metal' });
+    addBodyPart('RightHorizontalStab', [w * 0.24, h * 0.06, l * 0.16], [w * 0.12, rootY + h * 0.42, l * 0.54], accent, { material: 'Metal' });
+    addBodyPart('TailStrobe', [0.30, 0.30, 0.30], [0, rootY + h * 0.95, l * 0.50], glow, { material: 'Neon' });
     // Propeller assembly at nose
-    addBodyPart('PropellerHub', [0.6, 0.6, 0.3], [0, rootY + 0.20, -l * 0.52], silver, { shape: 'Cylinder', rot: [0, 0, 90], material: 'Metal' });
-    addBodyPart('PropellerBladeH', [w * 0.42, 0.10, 0.20], [0, rootY + 0.20, -l * 0.54], dark, { material: 'Metal' });
-    addBodyPart('PropellerBladeV', [0.20, w * 0.42, 0.10], [0, rootY + 0.20, -l * 0.54], dark, { material: 'Metal' });
-    addBodyPart('SpinnerCap', [0.5, 0.5, 0.3], [0, rootY + 0.20, -l * 0.56], silver, { className: 'WedgePart', rot: [0, 180, 0], material: 'Metal' });
+    addBodyPart('PropellerHub', [0.7, 0.7, 0.4], [0, rootY + 0.35, -l * 0.56], silver, { material: 'Metal' });
+    addBodyPart('PropellerBladeH', [w * 0.44, 0.14, 0.22], [0, rootY + 0.35, -l * 0.58], dark, { material: 'Metal' });
+    addBodyPart('PropellerBladeV', [0.22, w * 0.44, 0.14], [0, rootY + 0.35, -l * 0.58], dark, { material: 'Metal' });
+    addBodyPart('SpinnerCap', [0.7, 0.7, 0.32], [0, rootY + 0.35, -l * 0.62], silver, { className: 'WedgePart', rot: [0, 180, 0], material: 'Metal' });
     // Landing gear (3 struts — left/right main + tail wheel; actual wheels
     // are added by addVehiclePhysics based on profile.wheelCount=3)
     addBodyPart('LeftLandingStrut', [0.14, h * 0.45, 0.14], [-w * 0.20, rootY - h * 0.12, -l * 0.08], silver, { material: 'Metal' });
