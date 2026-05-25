@@ -2221,6 +2221,49 @@ function buildVehicleModelManifest(
   const rootY = Math.max(1.1, profile.wheelRadius + 0.75);
   const [width, height, length] = profile.size;
 
+  // Round 20 v3: detect template-embed path EARLY so we can skip the entire
+  // procedural body+wheels+seats+effects+sounds+controller build below. The
+  // embedded Roblox-endorsed template brings its own complete vehicle
+  // (40+ MeshParts, 14+ Scripts, suspension, dashboards, sounds) so any
+  // procedural overlay would just clutter the wrapper.
+  const vehicleTemplateAssetIdEarly = typeof metadata.vehicleTemplateAssetId === 'number'
+    && metadata.vehicleTemplateAssetId > 0
+    ? metadata.vehicleTemplateAssetId
+    : undefined;
+  const vehicleTemplateFilenameEarly = typeof metadata.vehicleTemplateRbxmFilename === 'string'
+    ? metadata.vehicleTemplateRbxmFilename
+    : '';
+  let vehicleTemplateRbxmBase64Early: string | undefined;
+  if (vehicleTemplateAssetIdEarly && vehicleTemplateFilenameEarly) {
+    try {
+      const here = pathDirname(fileURLToPath(import.meta.url));
+      const candidates = [
+        pathResolve(here, '..', 'templates', vehicleTemplateFilenameEarly),
+        pathResolve(here, 'templates', vehicleTemplateFilenameEarly),
+      ];
+      for (const p of candidates) {
+        try {
+          vehicleTemplateRbxmBase64Early = fsReadFileSync(p).toString('base64');
+          break;
+        } catch { /* try next */ }
+      }
+      if (!vehicleTemplateRbxmBase64Early) {
+        logger.warn('[buildVehicleModelManifest] template file not found in any candidate', {
+          filename: vehicleTemplateFilenameEarly, candidates,
+        });
+      } else {
+        logger.info('[buildVehicleModelManifest] embedded template bytes ready', {
+          filename: vehicleTemplateFilenameEarly, b64Length: vehicleTemplateRbxmBase64Early.length,
+        });
+      }
+    } catch (err) {
+      logger.warn('[buildVehicleModelManifest] template read threw', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  const useTemplateEmbed = !!vehicleTemplateRbxmBase64Early;
+
   const numberRange = (min: number, max: number): Record<string, unknown> => ({ __type: 'NumberRange', min, max });
   const numberSequence = (value: number): Record<string, unknown> => ({
     __type: 'NumberSequence',
@@ -2339,6 +2382,11 @@ function buildVehicleModelManifest(
     },
   );
 
+  // Round 20 v3: skip procedural body when Roblox-endorsed template is being
+  // embedded — the embedded variant brings its own complete vehicle. Wrapper
+  // gets just the ChassisRoot anchor (above, transparency=1) + the embedded
+  // template (added via embeddedModels in the return block below).
+  if (!useTemplateEmbed) {
   // BODY BRANCH PRIORITY (highest to lowest fallback):
   //   1. Tripo / Meshy mesh asset (metadata.vehicleMeshAssetId) — a Roblox
   //      asset ID produced by uploading the GLB to Roblox Open Cloud. Emits
@@ -2580,6 +2628,7 @@ function buildVehicleModelManifest(
       },
     },
   );
+  }  // close: if (!useTemplateEmbed) { (skip procedural body when template embed active — Round 20 v3)
 
   // Session 373 Round 20: when index.ts pick_vehicle_template stage picked a
   // Roblox-endorsed vehicle.
@@ -2594,63 +2643,24 @@ function buildVehicleModelManifest(
   // v2 fallback (network / file missing): only assetId present, no bytes.
   // We emit a VehicleTemplateLoader script that does InsertService:LoadAsset
   // at game-start. Edit Mode shows procedural fallback; Play replaces it.
-  const vehicleTemplateAssetId = typeof metadata.vehicleTemplateAssetId === 'number'
-    && metadata.vehicleTemplateAssetId > 0
-    ? metadata.vehicleTemplateAssetId
-    : undefined;
-  // Round 20 v3: read template rbxm bytes from disk (apps/functions/templates/)
-  // and base64-encode for the outgoing manifest. Metadata only stores the
-  // filename hint (small) so the Firestore doc stays under 1MB; the heavy
-  // base64 lives only in the outgoing build request.
-  //
-  // Uses fs/path directly (sync) instead of dynamic import to avoid
-  // ESM/CJS interop issues — buildVehicleModelManifest is sync, can't
-  // await import(). Path resolves at runtime from this file's dirname:
-  // apps/functions/dist/robloxWorker.js → ../templates/<filename>.
-  let vehicleTemplateRbxmBase64: string | undefined;
-  const vehicleTemplateFilename = typeof metadata.vehicleTemplateRbxmFilename === 'string'
-    ? metadata.vehicleTemplateRbxmFilename
-    : '';
-  if (vehicleTemplateAssetId && vehicleTemplateFilename) {
-    try {
-      const here = pathDirname(fileURLToPath(import.meta.url));
-      const candidates = [
-        pathResolve(here, '..', 'templates', vehicleTemplateFilename),
-        pathResolve(here, 'templates', vehicleTemplateFilename),
-      ];
-      for (const p of candidates) {
-        try {
-          const bytes = fsReadFileSync(p);
-          vehicleTemplateRbxmBase64 = bytes.toString('base64');
-          break;
-        } catch {
-          // try next path
-        }
-      }
-      if (!vehicleTemplateRbxmBase64) {
-        logger.warn('[buildVehicleModelManifest] template file not found in any candidate', {
-          filename: vehicleTemplateFilename, candidates,
-        });
-      } else {
-        logger.info('[buildVehicleModelManifest] embedded template bytes ready', {
-          filename: vehicleTemplateFilename, b64Length: vehicleTemplateRbxmBase64.length,
-        });
-      }
-    } catch (err) {
-      logger.warn('[buildVehicleModelManifest] template read threw', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-  const builtScripts: RobloxBuildManifest['scripts'] = [
-    {
+  // Late references reuse the early-read result. Renamed for clarity since
+  // we already detected useTemplateEmbed above the body-shell build.
+  const vehicleTemplateAssetId = vehicleTemplateAssetIdEarly;
+  const vehicleTemplateRbxmBase64 = vehicleTemplateRbxmBase64Early;
+
+  // VehicleController is for the procedural fallback chassis. When the
+  // Roblox-endorsed template is embedded, it has its own controller scripts
+  // baked in (~14 of them) — emitting ours would conflict.
+  const builtScripts: RobloxBuildManifest['scripts'] = [];
+  if (!useTemplateEmbed) {
+    builtScripts.push({
       id: uuidv4(),
       name: 'VehicleController',
       scriptType: 'Script',
       container: 'WorkspaceRoot',
       source: buildVehicleControllerScript(),
-    },
-  ];
+    });
+  }
   const embeddedModels: RobloxBuildManifest['embeddedModels'] = [];
   if (vehicleTemplateAssetId) {
     const tplLabel = typeof metadata.vehicleTemplateLabel === 'string' ? metadata.vehicleTemplateLabel : 'Vehicle';
