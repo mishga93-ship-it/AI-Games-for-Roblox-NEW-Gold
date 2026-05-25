@@ -493,6 +493,112 @@ if manifest.embeddedModels ~= nil then
 							pickedVariant.Parent = parent
 							if embedded.id then instanceMap[embedded.id] = pickedVariant end
 
+							-- Round 20L (session 381): normalize embedded vehicle to origin
+							-- and drop outlier world-objects.
+							--
+							-- Problem: marketplace creators save .rbxm with parts at arbitrary
+							-- world coords (Tank-101512952 lives at (-672, 140, -1262), Plane
+							-- War Plane has Regen Button + RocketLaunchers at 90+ studs from
+							-- fuselage centre — those are creator's world props, not vehicle
+							-- parts). Old code did `pickedVariant.Parent = parent` and left
+							-- everything in source coords → user spawns vehicle at (0,0,0) and
+							-- the model is over the horizon, or scattered into "4 разных штучки".
+							--
+							-- Fix in two passes:
+							--   1. Find median centroid of all BaseParts, compute each part's
+							--      distance from it. Outliers (dist > 3× median_dist AND
+							--      Anchored=true in source) are creator's world props → drop.
+							--      Tolerate non-anchored outliers (decoration welded to body,
+							--      e.g. wing-tip missile).
+							--   2. Recompute bbox of remaining parts, offset every part's
+							--      CFrame.Position so X/Z are centred at (0,0) and Y bottom
+							--      sits at y=0 → vehicle "stands on ground" at spawn.
+							local function _collectBaseParts(root)
+								local list = {}
+								for _, d in root:GetDescendants() do
+									if d:IsA("BasePart") then table.insert(list, d) end
+								end
+								if root:IsA("BasePart") then table.insert(list, root) end
+								return list
+							end
+							local _allParts = _collectBaseParts(pickedVariant)
+							if #_allParts > 0 then
+								local function _median(arr)
+									table.sort(arr)
+									local n = #arr
+									if n == 0 then return 0 end
+									if n % 2 == 1 then return arr[(n + 1) // 2] end
+									return (arr[n // 2] + arr[n // 2 + 1]) / 2
+								end
+								local _xs, _ys, _zs = {}, {}, {}
+								for _, p in _allParts do
+									local cf = p.CFrame
+									table.insert(_xs, cf.Position.X)
+									table.insert(_ys, cf.Position.Y)
+									table.insert(_zs, cf.Position.Z)
+								end
+								local _mX, _mY, _mZ = _median(_xs), _median(_ys), _median(_zs)
+								local _dists = {}
+								local _distOf = {}
+								for _, p in _allParts do
+									local cf = p.CFrame
+									local dx, dy, dz = cf.Position.X - _mX, cf.Position.Y - _mY, cf.Position.Z - _mZ
+									local d = math.sqrt(dx*dx + dy*dy + dz*dz)
+									_distOf[p] = d
+									table.insert(_dists, d)
+								end
+								local _mDist = _median(_dists)
+								local _threshold = math.max(_mDist * 2.5, 25)
+								-- known world-prop name fragments creators leave next to vehicles
+								local _propNamePatterns = { "regen", "respawn", "reset", "target", "dummy", "press to" }
+								local function _isWorldPropName(n)
+									local low = string.lower(n or "")
+									for _, pat in _propNamePatterns do
+										if string.find(low, pat, 1, true) then return true end
+									end
+									return false
+								end
+								local _removed = 0
+								for _, p in _allParts do
+									local far = _distOf[p] > _threshold
+									local namedProp = _isWorldPropName(p.Name)
+									if far or namedProp then
+										pcall(function() p:Destroy() end)
+										_removed = _removed + 1
+									end
+								end
+								if _removed > 0 then
+									print(string.format("[build_roblox] vehicle_template: dropped %d outlier/world-prop parts (threshold=%.1f studs)", _removed, _threshold))
+								end
+
+								local _remaining = _collectBaseParts(pickedVariant)
+								if #_remaining > 0 then
+									local _minX, _minY, _minZ = math.huge, math.huge, math.huge
+									local _maxX, _maxY, _maxZ = -math.huge, -math.huge, -math.huge
+									for _, p in _remaining do
+										local cf = p.CFrame
+										local s = p.Size
+										local px, py, pz = cf.Position.X, cf.Position.Y, cf.Position.Z
+										if px - s.X/2 < _minX then _minX = px - s.X/2 end
+										if py - s.Y/2 < _minY then _minY = py - s.Y/2 end
+										if pz - s.Z/2 < _minZ then _minZ = pz - s.Z/2 end
+										if px + s.X/2 > _maxX then _maxX = px + s.X/2 end
+										if py + s.Y/2 > _maxY then _maxY = py + s.Y/2 end
+										if pz + s.Z/2 > _maxZ then _maxZ = pz + s.Z/2 end
+									end
+									local _cX = (_minX + _maxX) / 2
+									local _cZ = (_minZ + _maxZ) / 2
+									local _yOffset = -_minY
+									if math.abs(_cX) > 0.01 or math.abs(_cZ) > 0.01 or math.abs(_yOffset) > 0.01 then
+										for _, p in _remaining do
+											local cf = p.CFrame
+											p.CFrame = cf - _Vector3.new(_cX, -_yOffset, _cZ)
+										end
+										print(string.format("[build_roblox] vehicle_template: normalized %d parts (X-%.1f, Y+%.1f, Z-%.1f) → centred at origin", #_remaining, _cX, _yOffset, _cZ))
+									end
+								end
+							end
+
 							-- Recolour body parts: match SmoothPlastic parts whose Color3 is
 							-- within tolerance of the variant's known body hex, set to primary.
 							local bodyHex = embedded.bodyOriginalHex or "#FFFFFF"
