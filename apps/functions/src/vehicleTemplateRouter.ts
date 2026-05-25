@@ -37,6 +37,12 @@ export const ROBLOX_ENDORSED_TEMPLATES = [
   'Van',
   'SportsCar',
   'Supercar',
+  // Round 20K (community templates from public Roblox Marketplace, not
+  // Roblox-endorsed but verified downloadable + reasonable quality):
+  'Motorcycle',
+  'Boat',
+  'Plane',
+  'Tank',
 ] as const;
 
 export type VehicleTemplateName = (typeof ROBLOX_ENDORSED_TEMPLATES)[number];
@@ -146,6 +152,42 @@ export const VEHICLE_TEMPLATE_CATALOG: Record<VehicleTemplateName, VehicleTempla
     bodyOriginalHex: '#FFFFFF',
     label: 'Police Car',
     templateRbxmFilename: 'PoliceCar-6418230807.rbxm',
+  },
+  // Round 20K: community-uploaded templates for non-car types. Roblox
+  // doesn't ship endorsed motorcycle/boat/plane/tank, so we use public
+  // free models from Creator Marketplace. Verified downloadable via
+  // assetdelivery with ROBLOX_SERVICE_COOKIE, inspected for sane structure.
+  Motorcycle: {
+    assetId: 17388481396,
+    preferredVariant: 'Dirt bike.',  // root model name (single variant)
+    variantFallbacks: [],
+    bodyOriginalHex: '#111111',
+    label: 'Motorcycle',
+    templateRbxmFilename: 'Motorcycle-17388481396.rbxm',
+  },
+  Boat: {
+    assetId: 30309891,
+    preferredVariant: 'Model',
+    variantFallbacks: [],
+    bodyOriginalHex: '#FFCC99',
+    label: 'Speedboat',
+    templateRbxmFilename: 'Boat-30309891.rbxm',
+  },
+  Plane: {
+    assetId: 81606616,
+    preferredVariant: 'regening plane',
+    variantFallbacks: [],
+    bodyOriginalHex: '#3A7D15',
+    label: 'War Plane',
+    templateRbxmFilename: 'Plane-81606616.rbxm',
+  },
+  Tank: {
+    assetId: 101512952,
+    preferredVariant: 'DrivableTank',
+    variantFallbacks: [],
+    bodyOriginalHex: '#F2F3F3',
+    label: 'Tank',
+    templateRbxmFilename: 'Tank-101512952.rbxm',
   },
 };
 
@@ -282,6 +324,11 @@ interface KeywordRule {
 }
 
 const STATIC_KEYWORD_RULES: KeywordRule[] = [
+  // Round 20K: non-car templates take priority (more specific keywords)
+  { pattern: /\b(motorcycle|motorbike|bike|dirt\s*bike|scooter|мотоцикл|мотобайк)\b/i, template: 'Motorcycle', reason: 'matched motorcycle/bike' },
+  { pattern: /\b(boat|speedboat|ship|yacht|jet\s*ski|лодк|катер|яхт|корабл)\b/i, template: 'Boat', reason: 'matched boat/ship' },
+  { pattern: /\b(plane|airplane|aircraft|jet|fighter|biplane|самол[её]т|истреб)\b/i, template: 'Plane', reason: 'matched plane/aircraft' },
+  { pattern: /\b(tank|tracked\s*vehicle|panzer|танк)\b/i, template: 'Tank', reason: 'matched tank' },
   // police variants
   { pattern: /\b(police|cop|cruiser|patrol\s*car|sheriff)\b/i, template: 'PoliceCar', impliedPrimaryHex: '#FFFFFF', reason: 'matched police/cop' },
   // taxi → sedan + yellow

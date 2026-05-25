@@ -27182,7 +27182,9 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // etc.), this stage emits no template — pipeline falls through to
       // procedural baseline as before. Only `car`-style vehicles match.
       const vehicleTypeForTemplate = String(vehicleType ?? '').toLowerCase();
-      const eligibleForTemplate = vehicleTypeForTemplate === 'car';
+      // Round 20K: extend eligibility to non-car types now that we have
+      // community templates for motorcycle / boat / plane / tank.
+      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'plane', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
       if (eligibleForTemplate) {
         await beginStage('pick_vehicle_template', 'Picking Roblox vehicle template');
         try {
