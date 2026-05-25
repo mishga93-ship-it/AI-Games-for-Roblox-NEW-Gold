@@ -672,7 +672,10 @@ export function validateRobloxManifest(manifest: RobloxBuildManifest): BuildVali
   if (!manifest.title.trim()) {
     issues.push({ severity: 'error', code: 'missing_title', message: 'Manifest title is required.' });
   }
-  if (manifest.scripts.length === 0) {
+  if (manifest.scripts.length === 0 && (!manifest.embeddedModels || manifest.embeddedModels.length === 0)) {
+    // Round 20 v3.4: embedded models may bring their own scripts (Roblox-
+    // endorsed vehicle templates pack ~14 controller scripts inside). If
+    // any embedded models are present, no top-level script requirement.
     issues.push({ severity: 'error', code: 'missing_scripts', message: 'At least one script is required.' });
   }
   if (manifest.scene.length === 0 && manifest.target === 'place') {
