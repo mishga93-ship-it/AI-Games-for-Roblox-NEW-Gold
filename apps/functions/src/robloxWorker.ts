@@ -4022,7 +4022,146 @@ RunService.Heartbeat:Connect(function(dt)
 \tVehicle:SetAttribute("PassengerCount", passengerCount)
 \tVehicle:SetAttribute("Speed", math.floor(speed + 0.5))
 \tVehicle:SetAttribute("VehicleType", VEHICLE_TYPE)
+\tif updatePlaneHUD then
+\t\tupdatePlaneHUD(throttle, speed, Root.Position.Y)
+\tend
 end)
+
+-- ---------------------------------------------------------------------------
+-- PlaneKit-style HUD (session 381, Round 20L) — Phenom-100 inspired panel.
+-- Server-side ScreenGui injected into player.PlayerGui on Occupant change.
+-- Throttle bar + Speed + Altitude + Stall warning + W/S/A/D hint.
+-- ---------------------------------------------------------------------------
+local activeHUD = nil
+local hudOwner = nil
+
+local function destroyHUD()
+\tif activeHUD then
+\t\tpcall(function() activeHUD:Destroy() end)
+\t\tactiveHUD = nil; hudOwner = nil
+\tend
+end
+
+local function buildHUDFor(player)
+\tdestroyHUD()
+\tif not player then return end
+\tlocal pg = player:FindFirstChildOfClass("PlayerGui")
+\tif not pg then return end
+
+\tlocal gui = Instance.new("ScreenGui")
+\tgui.Name = "PlaneHUD"; gui.ResetOnSpawn = false
+
+\tlocal panel = Instance.new("Frame")
+\tpanel.Name = "Panel"
+\tpanel.Size = UDim2.new(0, 480, 0, 210)
+\tpanel.Position = UDim2.new(0.5, -240, 0, 20)
+\tpanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+\tpanel.BackgroundTransparency = 0.35; panel.BorderSizePixel = 0
+\tpanel.Parent = gui
+\tlocal pC = Instance.new("UICorner"); pC.CornerRadius = UDim.new(0, 10); pC.Parent = panel
+
+\tlocal title = Instance.new("TextLabel")
+\ttitle.Size = UDim2.new(1, 0, 0, 30); title.Position = UDim2.new(0, 0, 0, 8)
+\ttitle.BackgroundTransparency = 1; title.Text = Vehicle.Name
+\ttitle.Font = Enum.Font.GothamBold; title.TextSize = 18
+\ttitle.TextColor3 = Color3.fromRGB(255, 255, 255); title.Parent = panel
+
+\tlocal thLbl = Instance.new("TextLabel")
+\tthLbl.Size = UDim2.new(0, 80, 0, 24); thLbl.Position = UDim2.new(0, 16, 0, 50)
+\tthLbl.BackgroundTransparency = 1; thLbl.Text = "Throttle"
+\tthLbl.Font = Enum.Font.Gotham; thLbl.TextSize = 14
+\tthLbl.TextColor3 = Color3.fromRGB(180, 180, 180)
+\tthLbl.TextXAlignment = Enum.TextXAlignment.Left; thLbl.Parent = panel
+
+\tlocal thBg = Instance.new("Frame"); thBg.Name = "ThrottleBg"
+\tthBg.Size = UDim2.new(1, -110, 0, 24); thBg.Position = UDim2.new(0, 100, 0, 50)
+\tthBg.BackgroundColor3 = Color3.fromRGB(60, 60, 60); thBg.BorderSizePixel = 0
+\tthBg.Parent = panel
+\tlocal thBgC = Instance.new("UICorner"); thBgC.CornerRadius = UDim.new(0, 5); thBgC.Parent = thBg
+\tlocal thFill = Instance.new("Frame"); thFill.Name = "Fill"
+\tthFill.Size = UDim2.new(0, 0, 1, 0)
+\tthFill.BackgroundColor3 = Color3.fromRGB(80, 200, 120); thFill.BorderSizePixel = 0
+\tthFill.Parent = thBg
+\tlocal thFillC = Instance.new("UICorner"); thFillC.CornerRadius = UDim.new(0, 5); thFillC.Parent = thFill
+
+\tlocal function addStat(yPos, name, defaultText, valueName)
+\t\tlocal row = Instance.new("Frame")
+\t\trow.Size = UDim2.new(0.5, -20, 0, 36); row.Position = UDim2.new(0, 16, 0, yPos)
+\t\trow.BackgroundTransparency = 1; row.Parent = panel
+\t\tlocal lbl = Instance.new("TextLabel")
+\t\tlbl.Size = UDim2.new(0, 80, 1, 0); lbl.BackgroundTransparency = 1
+\t\tlbl.Text = name; lbl.Font = Enum.Font.Gotham; lbl.TextSize = 14
+\t\tlbl.TextColor3 = Color3.fromRGB(180, 180, 180)
+\t\tlbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = row
+\t\tlocal val = Instance.new("TextLabel")
+\t\tval.Name = valueName; val.Size = UDim2.new(1, -90, 1, 0); val.Position = UDim2.new(0, 90, 0, 0)
+\t\tval.BackgroundTransparency = 1; val.Text = defaultText
+\t\tval.Font = Enum.Font.GothamBold; val.TextSize = 20
+\t\tval.TextColor3 = Color3.fromRGB(255, 255, 255)
+\t\tval.TextXAlignment = Enum.TextXAlignment.Left; val.Parent = row
+\tend
+\taddStat(86, "Speed", "0 sps", "SpeedValue")
+\taddStat(126, "Altitude", "0 sty", "AltValue")
+
+\tlocal stall = Instance.new("TextLabel"); stall.Name = "Stall"
+\tstall.Size = UDim2.new(1, -30, 0, 22); stall.Position = UDim2.new(0, 15, 0, 170)
+\tstall.BackgroundColor3 = Color3.fromRGB(180, 30, 30); stall.BackgroundTransparency = 0.2
+\tstall.BorderSizePixel = 0; stall.Text = "STALL - push throttle"
+\tstall.Font = Enum.Font.GothamBold; stall.TextSize = 13
+\tstall.TextColor3 = Color3.fromRGB(255, 255, 255); stall.Visible = false; stall.Parent = panel
+\tlocal stC = Instance.new("UICorner"); stC.CornerRadius = UDim.new(0, 4); stC.Parent = stall
+
+\tlocal hint = Instance.new("TextLabel")
+\thint.Size = UDim2.new(1, 0, 0, 18); hint.Position = UDim2.new(0, 0, 1, -22)
+\thint.BackgroundTransparency = 1; hint.Text = "W/S: throttle + lift  |  A/D: yaw"
+\thint.Font = Enum.Font.Gotham; hint.TextSize = 12
+\thint.TextColor3 = Color3.fromRGB(140, 140, 140); hint.Parent = panel
+
+\tgui.Parent = pg
+\tactiveHUD = gui; hudOwner = player
+end
+
+function updatePlaneHUD(throttle, speed, altitude)
+\tif not activeHUD then return end
+\tlocal panel = activeHUD:FindFirstChild("Panel")
+\tif not panel then return end
+\tlocal thBg = panel:FindFirstChild("ThrottleBg")
+\tif thBg then
+\t\tlocal fill = thBg:FindFirstChild("Fill")
+\t\tif fill then
+\t\t\tlocal pct = math.clamp(math.max(throttle, 0), 0, 1)
+\t\t\tfill.Size = UDim2.new(pct, 0, 1, 0)
+\t\t\tfill.BackgroundColor3 = pct > 0.8 and Color3.fromRGB(80, 200, 120)
+\t\t\t\tor pct > 0.4 and Color3.fromRGB(200, 200, 80)
+\t\t\t\tor Color3.fromRGB(200, 80, 80)
+\t\tend
+\tend
+\tfor _, child in panel:GetChildren() do
+\t\tif child:IsA("Frame") then
+\t\t\tlocal v = child:FindFirstChild("SpeedValue") or child:FindFirstChild("AltValue")
+\t\t\tif v and v.Name == "SpeedValue" then v.Text = string.format("%d sps", math.floor(speed + 0.5)) end
+\t\t\tif v and v.Name == "AltValue" then v.Text = string.format("%d sty", math.floor(altitude + 0.5)) end
+\t\tend
+\tend
+\tlocal stall = panel:FindFirstChild("Stall")
+\tif stall then stall.Visible = altitude > 8 and speed < 6 end
+end
+
+if DRIVE_MODE == "aircraft" or DRIVE_MODE == "rotorcraft" then
+\tDriveSeat:GetPropertyChangedSignal("Occupant"):Connect(function()
+\t\tlocal occ = DriveSeat.Occupant
+\t\tif occ and occ.Parent then
+\t\t\tlocal player = Players:GetPlayerFromCharacter(occ.Parent)
+\t\t\tif player then buildHUDFor(player) end
+\t\telse
+\t\t\tdestroyHUD()
+\t\tend
+\tend)
+\tif DriveSeat.Occupant and DriveSeat.Occupant.Parent then
+\t\tlocal player = Players:GetPlayerFromCharacter(DriveSeat.Occupant.Parent)
+\t\tif player then buildHUDFor(player) end
+\tend
+end
 
 print("[VehicleController] Ready:", Vehicle.Name, VEHICLE_TYPE, DRIVE_MODE)
 `;

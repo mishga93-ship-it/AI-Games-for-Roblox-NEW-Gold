@@ -27184,10 +27184,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       const vehicleTypeForTemplate = String(vehicleType ?? '').toLowerCase();
       // Round 20K: extend eligibility to non-car types now that we have
       // community templates for motorcycle / boat / plane / tank.
-      // Round 20L attempt 1 (session 381): dropped 'plane' for procedural
-      // baseline — user said Lego-style "тож фигня". REVERTED to template
-      // path until Cube 4D Body-1 ready for testing.
-      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'plane', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
+      // Round 20L attempt 2 (session 381): drop 'plane' AGAIN — user wants
+      // Phenom-100 quality without stealing marketplace assets. Plane now
+      // routes through generate_vehicle_mesh stage (Meshy 6 backend) for
+      // a polished per-prompt mesh + our VehicleController aircraft mode
+      // (W/S/A/D). PlaneKit-style HUD (Throttle/Speed/Altitude) added in
+      // Phase 2.
+      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
       if (eligibleForTemplate) {
         await beginStage('pick_vehicle_template', 'Picking Roblox vehicle template');
         try {
