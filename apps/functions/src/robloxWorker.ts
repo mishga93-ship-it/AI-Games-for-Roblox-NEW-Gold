@@ -2678,6 +2678,14 @@ function buildVehicleModelManifest(
     if (vehicleTemplateRbxmBase64) {
       // v3 — build-time embed. Pre-extracted variant + recolored body
       // parts inside the user's wrapper Model. No runtime script needed.
+      // Round 20D: also pass plate / roof-sign text so Lune adds accessory
+      // Parts on top of the embedded vehicle for personalisation.
+      const plateText = typeof metadata.vehicleTemplatePlateText === 'string'
+        ? metadata.vehicleTemplatePlateText : '';
+      const roofSignText = typeof metadata.vehicleTemplateRoofSignText === 'string'
+        ? metadata.vehicleTemplateRoofSignText : '';
+      const roofSignColorHex = typeof metadata.vehicleTemplateRoofSignColorHex === 'string'
+        ? metadata.vehicleTemplateRoofSignColorHex : '';
       embeddedModels.push({
         id: uuidv4(),
         name: tplLabel,
@@ -2688,6 +2696,9 @@ function buildVehicleModelManifest(
         variantFallbacks: tplFallbacks,
         bodyOriginalHex: tplBodyHex,
         primaryHex: tplPrimaryHex,
+        plateText: plateText || undefined,
+        roofSignText: roofSignText || undefined,
+        roofSignColorHex: roofSignColorHex || undefined,
       });
     } else {
       // v2 fallback — runtime InsertService:LoadAsset script.

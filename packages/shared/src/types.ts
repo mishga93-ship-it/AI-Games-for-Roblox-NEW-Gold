@@ -363,6 +363,12 @@ export interface RobloxEmbeddedModelRef {
   bodyOriginalHex?: string;
   /** Round 20 v3: user-chosen primary hex to apply to body parts. */
   primaryHex?: string;
+  /** Round 20D: text to put on a procedurally-added rear license plate (max ~8 chars). */
+  plateText?: string;
+  /** Round 20D: text to put on a procedurally-added neon roof sign (taxi/etc.). */
+  roofSignText?: string;
+  /** Round 20D: hex colour for the roof sign background neon material. */
+  roofSignColorHex?: string;
 }
 
 export interface RobloxBuildScript {

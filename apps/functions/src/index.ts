@@ -27218,14 +27218,22 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               vehicleTemplateRouterSource: pick.source,
               vehicleTemplateRouterReason: pick.reason,
               vehicleTemplateRbxmFilename: pick.config.templateRbxmFilename,
+              vehicleTemplatePlateText: pick.accessories.plateText,
+              vehicleTemplateRoofSignText: pick.accessories.roofSignText,
+              vehicleTemplateRoofSignColorHex: pick.accessories.roofSignColorHex,
             },
           };
+          const accessoryNote = [
+            pick.accessories.plateText ? `plate "${pick.accessories.plateText}"` : '',
+            pick.accessories.roofSignText ? `roof sign "${pick.accessories.roofSignText}" (${pick.accessories.roofSignColorHex})` : '',
+          ].filter(Boolean).join(', ') || 'no accessories';
           await finishStage('pick_vehicle_template', 'completed', [], [
             `Template: ${pick.config.label} (assetId ${pick.config.assetId})`,
             `Preferred variant: ${pick.config.preferredVariant}`,
             `Primary color: ${pick.primaryHex}`,
             `Router: ${pick.source} — ${pick.reason}`,
             `Template rbxm file: ${pick.config.templateRbxmFilename} (read by builder)`,
+            `Accessories: ${accessoryNote}`,
             'Mesh + scene stages will be SKIPPED (template path).',
           ]);
         } catch (err) {

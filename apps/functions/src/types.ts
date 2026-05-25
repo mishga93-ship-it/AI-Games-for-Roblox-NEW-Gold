@@ -382,6 +382,10 @@ export interface RobloxEmbeddedModelRef {
   variantFallbacks?: string[];
   bodyOriginalHex?: string;
   primaryHex?: string;
+  /** Round 20D accessories. */
+  plateText?: string;
+  roofSignText?: string;
+  roofSignColorHex?: string;
 }
 
 export interface RobloxBuildScript {

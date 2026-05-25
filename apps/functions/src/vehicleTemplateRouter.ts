@@ -157,6 +157,17 @@ export interface VehicleTemplatePick {
   source: 'static' | 'llm' | 'default';
   /** Human-readable reason; goes into stage log. */
   reason: string;
+  /** Round 20D accessories: small text-on-part additions that personalise the template. */
+  accessories: VehicleAccessories;
+}
+
+export interface VehicleAccessories {
+  /** Rear license plate text (max 8 chars). Empty = no plate added. */
+  plateText: string;
+  /** Roof sign text (iconic NYC-cab-style sign on top). Empty = no roof sign. */
+  roofSignText: string;
+  /** Roof sign neon color hex (background colour, usually matches primaryHex). */
+  roofSignColorHex: string;
 }
 
 /**
@@ -198,7 +209,7 @@ const STATIC_KEYWORD_RULES: KeywordRule[] = [
   { pattern: /\b(car|auto|automobile|машин)\b/i, template: 'Sedan', reason: 'fallback "car" → Sedan' },
 ];
 
-export function pickVehicleTemplateStatic(prompt: string, title?: string): VehicleTemplatePick | null {
+export function pickVehicleTemplateStatic(prompt: string, title?: string): Omit<VehicleTemplatePick, 'accessories'> | null {
   const haystack = `${title ?? ''} ${prompt ?? ''}`.toLowerCase();
   for (const rule of STATIC_KEYWORD_RULES) {
     if (rule.pattern.test(haystack)) {
@@ -223,6 +234,58 @@ export function pickVehicleTemplateStatic(prompt: string, title?: string): Vehic
  * overrides the static rule's impliedPrimaryHex. Empty string = let
  * the router pick (static rule's hint, or default #E03A2E).
  */
+/**
+ * Round 20D: derive plate text + optional roof sign per prompt + template.
+ *
+ * Goal: make each generated vehicle visibly recognisable for its role
+ * without paying for AI. Pure deterministic.
+ *
+ * Rules:
+ *   - Taxi prompt → plate "TAXI", roof sign "TAXI" in yellow neon.
+ *   - Police prompt → plate "POLICE", no roof sign (template has light bar).
+ *   - Sports / Supercar / Race → plate "SPORT" (short, fits).
+ *   - Fire truck → plate "FIRE".
+ *   - Generic → first 3-5 alphanumeric chars of title, uppercased; no sign.
+ *   - Empty title → "RBX" + last 3 digits of timestamp.
+ */
+export function deriveVehicleAccessories(args: {
+  prompt: string;
+  title: string;
+  templateName: VehicleTemplateName;
+  primaryHex: string;
+}): VehicleAccessories {
+  const txt = `${args.prompt} ${args.title}`.toLowerCase();
+  const isTaxi = /\b(taxi|cab|такси)\b/i.test(txt);
+  const isPolice = /\b(police|cop|cruiser|patrol|sheriff)\b/i.test(txt);
+  const isFire = /\b(fire\s*truck|пожар)\b/i.test(txt);
+  const isSports = args.templateName === 'SportsCar' || args.templateName === 'Supercar'
+    || /\b(race\s*car|racing|mustang|ferrari|lambo)\b/i.test(txt);
+
+  if (isTaxi) {
+    return {
+      plateText: 'TAXI',
+      roofSignText: 'TAXI',
+      // Bright neon yellow for taxi sign — iconic NYC cab look.
+      roofSignColorHex: '#F2B807',
+    };
+  }
+  if (isPolice) {
+    return { plateText: 'POLICE', roofSignText: '', roofSignColorHex: '' };
+  }
+  if (isFire) {
+    return { plateText: 'FIRE', roofSignText: '', roofSignColorHex: '' };
+  }
+  if (isSports) {
+    return { plateText: 'SPORT', roofSignText: '', roofSignColorHex: '' };
+  }
+  // Generic — derive 3-5 char plate from title or fallback random.
+  const cleanedTitle = (args.title || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const plate = cleanedTitle.length >= 3
+    ? cleanedTitle.slice(0, Math.min(6, cleanedTitle.length))
+    : `RBX${Math.floor(100 + Math.random() * 900)}`;
+  return { plateText: plate, roofSignText: '', roofSignColorHex: '' };
+}
+
 /**
  * Read the on-disk template rbxm bytes + base64-encode for inline embed.
  * Templates live under apps/functions/templates/ (bundled with the function
@@ -271,7 +334,10 @@ export function pickVehicleTemplate(args: {
   const staticPick = pickVehicleTemplateStatic(args.prompt, args.title);
   if (staticPick) {
     const primaryHex = (args.primaryHexFromMetadata?.trim()) || staticPick.primaryHex || '#E03A2E';
-    return { ...staticPick, primaryHex };
+    const accessories = deriveVehicleAccessories({
+      prompt: args.prompt, title: args.title ?? '', templateName: staticPick.templateName, primaryHex,
+    });
+    return { ...staticPick, primaryHex, accessories };
   }
   // No static match → default to Sedan (most generic, looks like a car).
   // (LLM-fallback layer can be added later if static rules prove too narrow;
@@ -281,11 +347,15 @@ export function pickVehicleTemplate(args: {
   logger.info('[vehicleTemplateRouter] no keyword match, defaulting to Sedan', {
     promptPreview: args.prompt.slice(0, 80),
   });
+  const accessories = deriveVehicleAccessories({
+    prompt: args.prompt, title: args.title ?? '', templateName: 'Sedan', primaryHex,
+  });
   return {
     templateName: 'Sedan',
     config: sedan,
     primaryHex,
     source: 'default',
     reason: 'no keyword match, default Sedan',
+    accessories,
   };
 }

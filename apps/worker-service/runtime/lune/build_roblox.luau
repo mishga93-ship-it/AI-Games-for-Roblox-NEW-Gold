@@ -524,6 +524,152 @@ if manifest.embeddedModels ~= nil then
 							end
 							print(string.format("[build_roblox] vehicle_template: picked %s, recoloured %d body parts",
 								pickedVariant.Name, recoloured))
+
+							-- Round 20D: accessory parts (plate + optional roof sign)
+							local function findPrimaryBasePart()
+								if pickedVariant.PrimaryPart then return pickedVariant.PrimaryPart end
+								for _, d in pickedVariant:GetDescendants() do
+									if d:IsA("BasePart") then return d end
+								end
+								return nil
+							end
+							local anchorPart = findPrimaryBasePart()
+							if not anchorPart then
+								warn("[build_roblox] vehicle_template: no BasePart to weld accessories to, skipping")
+							else
+								-- Lune's Roblox lib doesn't implement Model:GetBoundingBox(),
+								-- so walk all BaseParts and compute axis-aligned bbox manually.
+								local minX, minY, minZ = math.huge, math.huge, math.huge
+								local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
+								local partCount = 0
+								for _, d in pickedVariant:GetDescendants() do
+									if d:IsA("BasePart") then
+										local okP, cf = pcall(function() return d.CFrame end)
+										local okS, s = pcall(function() return d.Size end)
+										if okP and okS and cf and s then
+											local p = cf.Position
+											if p.X - s.X / 2 < minX then minX = p.X - s.X / 2 end
+											if p.Y - s.Y / 2 < minY then minY = p.Y - s.Y / 2 end
+											if p.Z - s.Z / 2 < minZ then minZ = p.Z - s.Z / 2 end
+											if p.X + s.X / 2 > maxX then maxX = p.X + s.X / 2 end
+											if p.Y + s.Y / 2 > maxY then maxY = p.Y + s.Y / 2 end
+											if p.Z + s.Z / 2 > maxZ then maxZ = p.Z + s.Z / 2 end
+											partCount = partCount + 1
+										end
+									end
+								end
+								if partCount > 0 and (maxX - minX) > 0.1 then
+									local centerPos = _Vector3.new((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
+									local halfX = (maxX - minX) / 2
+									local halfY = (maxY - minY) / 2
+									local halfZ = (maxZ - minZ) / 2
+
+									local function addAccessoryPart(name, size, worldPos, color, material)
+										local p = roblox.Instance.new("Part")
+										p.Name = name
+										p.Size = size
+										p.CFrame = _CFrame.new(worldPos)
+										p.Anchored = false
+										p.CanCollide = false
+										p.Massless = true
+										p.Color = color
+										p.Material = material
+										p.Parent = pickedVariant
+										local weld = roblox.Instance.new("WeldConstraint")
+										weld.Name = name .. "Weld"
+										weld.Part0 = anchorPart
+										weld.Part1 = p
+										weld.Parent = p
+										return p
+									end
+
+									local function addSurfaceGuiText(parentPart, face, text, textColor, bgColor)
+										local sg = roblox.Instance.new("SurfaceGui")
+										sg.Name = "TextSurface_" .. tostring(face)
+										sg.Face = face
+										sg.CanvasSize = _Vector2.new(256, 96)
+										sg.LightInfluence = 0
+										sg.Parent = parentPart
+										if bgColor then
+											local bgFrame = roblox.Instance.new("Frame")
+											bgFrame.Name = "Bg"
+											bgFrame.Size = _UDim2.new(1, 0, 1, 0)
+											bgFrame.BackgroundColor3 = bgColor
+											bgFrame.BorderSizePixel = 0
+											bgFrame.Parent = sg
+										end
+										local label = roblox.Instance.new("TextLabel")
+										label.Name = "Label"
+										label.Size = _UDim2.new(1, 0, 1, 0)
+										label.BackgroundTransparency = 1
+										label.Text = text
+										label.TextColor3 = textColor
+										-- Modern Roblox uses FontFace (Font type), not Font (EnumItem).
+										-- Setting Font property in newer Roblox builds throws type-mismatch
+										-- during serializeModel — use FontFace directly.
+										if _Font then
+											pcall(function()
+												label.FontFace = _Font.new(
+													"rbxasset://fonts/families/GothamSSm.json",
+													_Enum.FontWeight.Bold,
+													_Enum.FontStyle.Normal
+												)
+											end)
+										end
+										label.TextScaled = true
+										label.Parent = sg
+									end
+
+									local plateText = embedded.plateText
+									if type(plateText) == "string" and #plateText > 0 then
+										local plateSize = _Vector3.new(1.8, 0.45, 0.06)
+										local rearY = centerPos.Y - halfY * 0.55
+										local rearZ = centerPos.Z + halfZ + 0.05
+										local platePart = addAccessoryPart(
+											"LicensePlate_Rear",
+											plateSize,
+											_Vector3.new(centerPos.X, rearY, rearZ),
+											_Color3.new(1, 1, 1),
+											_Enum.Material.SmoothPlastic
+										)
+										addSurfaceGuiText(platePart, _Enum.NormalId.Back,
+											plateText, _Color3.new(0, 0, 0), _Color3.new(1, 1, 1))
+										local frontZ = centerPos.Z - halfZ - 0.05
+										local frontPlate = addAccessoryPart(
+											"LicensePlate_Front",
+											plateSize,
+											_Vector3.new(centerPos.X, rearY, frontZ),
+											_Color3.new(1, 1, 1),
+											_Enum.Material.SmoothPlastic
+										)
+										addSurfaceGuiText(frontPlate, _Enum.NormalId.Front,
+											plateText, _Color3.new(0, 0, 0), _Color3.new(1, 1, 1))
+										print("[build_roblox] vehicle_template: added plate", plateText)
+									end
+
+									local signText = embedded.roofSignText
+									local signColorHex = embedded.roofSignColorHex or "#F2B807"
+									if type(signText) == "string" and #signText > 0 then
+										local sgnR, sgnG, sgnB = hexToRgb01(signColorHex)
+										local signSize = _Vector3.new(2.4, 0.55, 1.0)
+										local roofY = centerPos.Y + halfY + 0.35
+										local signPart = addAccessoryPart(
+											"RoofSign",
+											signSize,
+											_Vector3.new(centerPos.X, roofY, centerPos.Z),
+											_Color3.new(sgnR, sgnG, sgnB),
+											_Enum.Material.Neon
+										)
+										addSurfaceGuiText(signPart, _Enum.NormalId.Front,
+											signText, _Color3.new(0, 0, 0), nil)
+										addSurfaceGuiText(signPart, _Enum.NormalId.Back,
+											signText, _Color3.new(0, 0, 0), nil)
+										print("[build_roblox] vehicle_template: added roof sign", signText)
+									end
+								else
+									warn(string.format("[build_roblox] vehicle_template: bbox empty (parts=%d), skipping accessories", partCount))
+								end
+							end
 						end
 					else
 					local wrapper = roblox.Instance.new("Model")
