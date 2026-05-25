@@ -628,6 +628,25 @@ if manifest.embeddedModels ~= nil then
 										label.Parent = bg
 									end
 
+									-- Decal helper hoisted above all callers (was defined below the
+									-- door-decals block and called from the roof topper block →
+									-- "attempt to call a nil value" at runtime in 20F E2E #1).
+									local function applyDecal(parentPart, assetId, face)
+										local d = roblox.Instance.new("Decal")
+										d.Name = "AIDecal_" .. tostring(face)
+										d.Texture = "rbxassetid://" .. tostring(assetId)
+										d.Face = face
+										d.Parent = parentPart
+									end
+									local function findFirstByLowerExact(name)
+										for _, d in pickedVariant:GetDescendants() do
+											if d:IsA("BasePart") and string.lower(d.Name) == name then
+												return d
+											end
+										end
+										return nil
+									end
+
 									-- Detect car's LONG axis (length axis). For Roblox endorsed
 									-- vehicles, length is usually along Z (extent ~20) and width
 									-- along X (extent ~8). Compute on the fly so we don't bake in
@@ -790,23 +809,8 @@ if manifest.embeddedModels ~= nil then
 									-- Round 20E: Decal-based per-prompt liveries. AssetIds come
 									-- from the Functions stage `generate_vehicle_decals` which
 									-- generated PNGs via Flux + uploaded to Roblox Open Cloud.
-									-- We add Decal children on specific body parts so the graphics
-									-- read AS the car body (not protruding 3D pieces).
-									local function applyDecal(parentPart, assetId, face)
-										local d = roblox.Instance.new("Decal")
-										d.Name = "AIDecal_" .. tostring(face)
-										d.Texture = "rbxassetid://" .. tostring(assetId)
-										d.Face = face
-										d.Parent = parentPart
-									end
-									local function findFirstByLowerExact(name)
-										for _, d in pickedVariant:GetDescendants() do
-											if d:IsA("BasePart") and string.lower(d.Name) == name then
-												return d
-											end
-										end
-										return nil
-									end
+									-- (applyDecal + findFirstByLowerExact hoisted above for use
+									-- by the roof topper block too.)
 
 									local doorDecalId = tonumber(embedded.doorDecalAssetId)
 									if doorDecalId and doorDecalId > 0 then
