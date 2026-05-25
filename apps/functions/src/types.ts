@@ -374,9 +374,14 @@ export interface RobloxEmbeddedModelRef {
   parentId?: string;
   contentBase64?: string;
   contentPath?: string;
-  mode?: 'npc_skinned_body';
+  mode?: 'npc_skinned_body' | 'vehicle_template';
   targetHeight?: number;
   textureId?: string;
+  /** Round 20 v3 (vehicle_template mode): preferred variant Model name. */
+  preferredVariant?: string;
+  variantFallbacks?: string[];
+  bodyOriginalHex?: string;
+  primaryHex?: string;
 }
 
 export interface RobloxBuildScript {

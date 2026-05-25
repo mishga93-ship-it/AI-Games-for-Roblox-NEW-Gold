@@ -27198,6 +27198,11 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             title: titleForRouter,
             primaryHexFromMetadata: primaryFromMeta,
           });
+          // Round 20 v3: store ONLY the filename hint in metadata. The
+          // builder (robloxWorker.ts) will read the on-disk bytes when
+          // assembling the manifest — that way the ~700KB base64 lives
+          // only in the outgoing build request (not in the Firestore doc,
+          // which has a 1MB hard limit).
           currentJob = {
             ...currentJob,
             metadata: {
@@ -27212,6 +27217,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               vehicleTemplateAccentHex: accentFromMeta || '#1A1A1A',
               vehicleTemplateRouterSource: pick.source,
               vehicleTemplateRouterReason: pick.reason,
+              vehicleTemplateRbxmFilename: pick.config.templateRbxmFilename,
             },
           };
           await finishStage('pick_vehicle_template', 'completed', [], [
@@ -27219,6 +27225,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             `Preferred variant: ${pick.config.preferredVariant}`,
             `Primary color: ${pick.primaryHex}`,
             `Router: ${pick.source} — ${pick.reason}`,
+            `Template rbxm file: ${pick.config.templateRbxmFilename} (read by builder)`,
             'Mesh + scene stages will be SKIPPED (template path).',
           ]);
         } catch (err) {

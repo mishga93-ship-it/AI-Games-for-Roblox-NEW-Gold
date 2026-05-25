@@ -21,6 +21,11 @@
  */
 
 import { logger } from 'firebase-functions/v2';
+import { readFileSync } from 'node:fs';
+import { resolve as resolvePath, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const ROBLOX_ENDORSED_TEMPLATES = [
   'PoliceCar',
@@ -53,6 +58,13 @@ export interface VehicleTemplateConfig {
   bodyOriginalHex: string;
   /** Human-readable category label for stage logs. */
   label: string;
+  /**
+   * Round 20 v3: filename inside apps/functions/templates/ that contains
+   * the pre-downloaded template rbxm bytes. Used at pick_vehicle_template
+   * stage to read bytes + base64-encode for embedded model so the user
+   * sees the actual Roblox-endorsed vehicle in Edit Mode (not just at Play).
+   */
+  templateRbxmFilename: string;
 }
 
 /**
@@ -69,6 +81,7 @@ export const VEHICLE_TEMPLATE_CATALOG: Record<VehicleTemplateName, VehicleTempla
     variantFallbacks: ['Sedan (aqua)', 'Sedan (orange)', 'Sedan (red)', 'Sedan (black)'],
     bodyOriginalHex: '#F3F3F3',
     label: 'Sedan',
+    templateRbxmFilename: 'Sedan-6418239833.rbxm',
   },
   SportsCar: {
     assetId: 6433323089,
@@ -76,15 +89,15 @@ export const VEHICLE_TEMPLATE_CATALOG: Record<VehicleTemplateName, VehicleTempla
     variantFallbacks: ['Sports Car (red)', 'Sports Car (blue)'],
     bodyOriginalHex: '#F8F8F8',
     label: 'Sports Car',
+    templateRbxmFilename: 'SportsCar-6433323089.rbxm',
   },
   Supercar: {
     assetId: 6433330180,
-    // Supercar pack has no white variant — yellow is least chromatically
-    // dominant so recolor is cleanest.
     preferredVariant: 'Supercar (yellow)',
     variantFallbacks: ['Supercar (green)', 'Supercar (blue)'],
     bodyOriginalHex: '#FFB000',
     label: 'Supercar',
+    templateRbxmFilename: 'Supercar-6433330180.rbxm',
   },
   SUV: {
     assetId: 6418234850,
@@ -92,6 +105,7 @@ export const VEHICLE_TEMPLATE_CATALOG: Record<VehicleTemplateName, VehicleTempla
     variantFallbacks: ['SUV (blue)', 'SUV (black)'],
     bodyOriginalHex: '#E7E7EC',
     label: 'SUV',
+    templateRbxmFilename: 'SUV-6418234850.rbxm',
   },
   PickupTruck: {
     assetId: 6418225759,
@@ -99,6 +113,7 @@ export const VEHICLE_TEMPLATE_CATALOG: Record<VehicleTemplateName, VehicleTempla
     variantFallbacks: ['Pickup Truck (blue)', 'Pickup Truck (bronze)'],
     bodyOriginalHex: '#F8F8F8',
     label: 'Pickup Truck',
+    templateRbxmFilename: 'PickupTruck-6418225759.rbxm',
   },
   Van: {
     assetId: 6433316269,
@@ -106,32 +121,31 @@ export const VEHICLE_TEMPLATE_CATALOG: Record<VehicleTemplateName, VehicleTempla
     variantFallbacks: ['Van (pro)', 'Van (1970)'],
     bodyOriginalHex: '#E7E7EC',
     label: 'Van',
+    templateRbxmFilename: 'Van-6433316269.rbxm',
   },
   DuneBuggy: {
     assetId: 6433272094,
-    // Dune Buggy is mostly exposed tube chassis — only 2 fenders are
-    // painted body parts. beige variant has solid #D1BEA6 fenders.
     preferredVariant: 'Dune Buggy (beige)',
     variantFallbacks: ['Dune Buggy (blue)', 'Dune Buggy (orange)'],
     bodyOriginalHex: '#D1BEA6',
     label: 'Dune Buggy',
+    templateRbxmFilename: 'DuneBuggy-6433272094.rbxm',
   },
   LightUtilityVehicle: {
     assetId: 6418221666,
-    // pink + black are SOLID colors; camo variants have multi-color
-    // patterns that don't recolor cleanly. Black is most neutral.
     preferredVariant: 'Light Utility Vehicle (black)',
     variantFallbacks: ['Light Utility Vehicle (pink)', 'Light Utility Vehicle (white camo)'],
     bodyOriginalHex: '#202020',
     label: 'Light Utility Vehicle',
+    templateRbxmFilename: 'LightUtilityVehicle-6418221666.rbxm',
   },
   PoliceCar: {
     assetId: 6418230807,
-    // PoliceCar ships single variant only.
     preferredVariant: 'Police Car',
     variantFallbacks: [],
     bodyOriginalHex: '#FFFFFF',
     label: 'Police Car',
+    templateRbxmFilename: 'PoliceCar-6418230807.rbxm',
   },
 };
 
@@ -209,6 +223,46 @@ export function pickVehicleTemplateStatic(prompt: string, title?: string): Vehic
  * overrides the static rule's impliedPrimaryHex. Empty string = let
  * the router pick (static rule's hint, or default #E03A2E).
  */
+/**
+ * Read the on-disk template rbxm bytes + base64-encode for inline embed.
+ * Templates live under apps/functions/templates/ (bundled with the function
+ * deploy). Returns null if file missing — caller falls back to runtime
+ * InsertService:LoadAsset path (the v1/v2 loader script).
+ *
+ * Path resolution: dist/vehicleTemplateRouter.js compiles to
+ * apps/functions/dist/, so templates/ is at ../templates/ relative to it.
+ */
+export function readVehicleTemplateBase64(filename: string): string | null {
+  try {
+    // After tsc compile, __dirname = apps/functions/dist
+    // Templates dir = apps/functions/templates → ../templates
+    const candidatePaths = [
+      resolvePath(__dirname, '..', 'templates', filename),
+      resolvePath(__dirname, 'templates', filename),  // in case tsc keeps flat layout
+    ];
+    for (const p of candidatePaths) {
+      try {
+        const bytes = readFileSync(p);
+        logger.info('[vehicleTemplateRouter] read template bytes', {
+          filename, path: p, bytes: bytes.length,
+        });
+        return bytes.toString('base64');
+      } catch {
+        // try next path
+      }
+    }
+    logger.warn('[vehicleTemplateRouter] template file not found in any candidate path', {
+      filename, tried: candidatePaths,
+    });
+    return null;
+  } catch (err) {
+    logger.warn('[vehicleTemplateRouter] failed to read template bytes', {
+      filename, error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 export function pickVehicleTemplate(args: {
   prompt: string;
   title?: string;

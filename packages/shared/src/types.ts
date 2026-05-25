@@ -352,9 +352,17 @@ export interface RobloxEmbeddedModelRef {
   parentId?: string;
   contentBase64?: string;
   contentPath?: string;
-  mode?: 'npc_skinned_body';
+  mode?: 'npc_skinned_body' | 'vehicle_template';
   targetHeight?: number;
   textureId?: string;
+  /** Round 20 v3 (vehicle_template mode): preferred variant Model name to pick from the embedded asset. */
+  preferredVariant?: string;
+  /** Round 20 v3: fallback variant names in order, used if preferred not found. */
+  variantFallbacks?: string[];
+  /** Round 20 v3: hex of body parts to match-and-recolor at build time. */
+  bodyOriginalHex?: string;
+  /** Round 20 v3: user-chosen primary hex to apply to body parts. */
+  primaryHex?: string;
 }
 
 export interface RobloxBuildScript {

@@ -2579,15 +2579,41 @@ function buildVehicleModelManifest(
   );
 
   // Session 373 Round 20: when index.ts pick_vehicle_template stage picked a
-  // Roblox-endorsed vehicle, also emit a VehicleTemplateLoader script. At
-  // runtime it tries InsertService:LoadAsset → replaces this entire procedural
-  // Model with the loaded template variant + recolours body parts. On failure
-  // (network / asset unavailable) the loader self-destructs and the procedural
-  // we built above stays as honest fallback.
+  // Roblox-endorsed vehicle.
+  //
+  // v3 (preferred): metadata.vehicleTemplateRbxmBase64 contains the actual
+  // template rbxm bytes (read from apps/functions/templates/ at build time).
+  // We emit an embeddedModels entry with mode=vehicle_template, and Lune
+  // builder extracts the preferred variant + recolors body parts AT BUILD
+  // TIME. User opens rbxm in Edit Mode → sees real Roblox-endorsed vehicle
+  // immediately, no runtime LoadAsset needed.
+  //
+  // v2 fallback (network / file missing): only assetId present, no bytes.
+  // We emit a VehicleTemplateLoader script that does InsertService:LoadAsset
+  // at game-start. Edit Mode shows procedural fallback; Play replaces it.
   const vehicleTemplateAssetId = typeof metadata.vehicleTemplateAssetId === 'number'
     && metadata.vehicleTemplateAssetId > 0
     ? metadata.vehicleTemplateAssetId
     : undefined;
+  // Round 20 v3: read template rbxm bytes from disk (apps/functions/templates/)
+  // and base64-encode for the outgoing manifest. Metadata only stores the
+  // filename hint (small) so the Firestore doc stays under 1MB; the heavy
+  // base64 lives only in the outgoing build request.
+  let vehicleTemplateRbxmBase64: string | undefined;
+  const vehicleTemplateFilename = typeof metadata.vehicleTemplateRbxmFilename === 'string'
+    ? metadata.vehicleTemplateRbxmFilename
+    : '';
+  if (vehicleTemplateAssetId && vehicleTemplateFilename) {
+    try {
+      const { readVehicleTemplateBase64 } = require('./vehicleTemplateRouter.js');
+      const b64 = readVehicleTemplateBase64(vehicleTemplateFilename);
+      if (typeof b64 === 'string' && b64.length > 0) {
+        vehicleTemplateRbxmBase64 = b64;
+      }
+    } catch {
+      // Fall through to v2 (runtime InsertService:LoadAsset script).
+    }
+  }
   const builtScripts: RobloxBuildManifest['scripts'] = [
     {
       id: uuidv4(),
@@ -2597,6 +2623,7 @@ function buildVehicleModelManifest(
       source: buildVehicleControllerScript(),
     },
   ];
+  const embeddedModels: RobloxBuildManifest['embeddedModels'] = [];
   if (vehicleTemplateAssetId) {
     const tplLabel = typeof metadata.vehicleTemplateLabel === 'string' ? metadata.vehicleTemplateLabel : 'Vehicle';
     const tplPreferred = typeof metadata.vehicleTemplatePreferredVariant === 'string' ? metadata.vehicleTemplatePreferredVariant : tplLabel;
@@ -2606,20 +2633,38 @@ function buildVehicleModelManifest(
       : [];
     const tplBodyHex = typeof metadata.vehicleTemplateBodyOriginalHex === 'string' ? metadata.vehicleTemplateBodyOriginalHex : '#FFFFFF';
     const tplPrimaryHex = typeof metadata.vehicleTemplatePrimaryHex === 'string' ? metadata.vehicleTemplatePrimaryHex : (metadata.primaryColor as string ?? '#E03A2E');
-    builtScripts.push({
-      id: uuidv4(),
-      name: 'VehicleTemplateLoader',
-      scriptType: 'Script',
-      container: 'WorkspaceRoot',
-      source: buildVehicleTemplateLoaderScript({
-        templateAssetId: vehicleTemplateAssetId,
-        templateLabel: tplLabel,
+
+    if (vehicleTemplateRbxmBase64) {
+      // v3 — build-time embed. Pre-extracted variant + recolored body
+      // parts inside the user's wrapper Model. No runtime script needed.
+      embeddedModels.push({
+        id: uuidv4(),
+        name: tplLabel,
+        parentId: 'WorkspaceRoot',
+        contentBase64: vehicleTemplateRbxmBase64,
+        mode: 'vehicle_template' as const,
         preferredVariant: tplPreferred,
         variantFallbacks: tplFallbacks,
         bodyOriginalHex: tplBodyHex,
         primaryHex: tplPrimaryHex,
-      }),
-    });
+      });
+    } else {
+      // v2 fallback — runtime InsertService:LoadAsset script.
+      builtScripts.push({
+        id: uuidv4(),
+        name: 'VehicleTemplateLoader',
+        scriptType: 'Script',
+        container: 'WorkspaceRoot',
+        source: buildVehicleTemplateLoaderScript({
+          templateAssetId: vehicleTemplateAssetId,
+          templateLabel: tplLabel,
+          preferredVariant: tplPreferred,
+          variantFallbacks: tplFallbacks,
+          bodyOriginalHex: tplBodyHex,
+          primaryHex: tplPrimaryHex,
+        }),
+      });
+    }
   }
 
   return {
@@ -2634,6 +2679,7 @@ function buildVehicleModelManifest(
     formatPreference: 'binary',
     scene,
     scripts: builtScripts,
+    embeddedModels: embeddedModels.length > 0 ? embeddedModels : undefined,
     ui: [],
     metadata: {
       prompt: args.prompt,

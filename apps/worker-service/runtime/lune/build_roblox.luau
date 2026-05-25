@@ -459,6 +459,73 @@ if manifest.embeddedModels ~= nil then
 					return roblox.deserializeModel(contents)
 				end)
 				if okDeserialize and embeddedInstances then
+					-- Round 20 v3: vehicle_template mode picks ONE variant by name
+					-- (Roblox endorsed packs ship 1-5 colour variants per asset)
+					-- and recolours its body parts to user's primaryHex. Other
+					-- variants in the same asset are dropped — user gets just
+					-- the single variant they asked for.
+					if embedded.mode == "vehicle_template" then
+						local preferred = embedded.preferredVariant
+						local fallbacks = embedded.variantFallbacks or {}
+						local pickedVariant = nil
+						-- Try preferred name, then each fallback
+						local function findByName(name)
+							for _, child in embeddedInstances do
+								if child.Name == name then return child end
+							end
+							return nil
+						end
+						pickedVariant = findByName(preferred)
+						if not pickedVariant then
+							for _, fb in fallbacks do
+								pickedVariant = findByName(fb)
+								if pickedVariant then break end
+							end
+						end
+						if not pickedVariant then pickedVariant = embeddedInstances[1] end
+						if not pickedVariant then
+							warn("[build_roblox] vehicle_template: no variant in embedded asset " .. tostring(embedded.name))
+						else
+							-- Parent the chosen variant directly to the target parent (Workspace
+							-- or wrapper Model), discarding the other variants. Rename to user's
+							-- title for cleaner Explorer tree.
+							pickedVariant.Name = embedded.name or pickedVariant.Name
+							pickedVariant.Parent = parent
+							if embedded.id then instanceMap[embedded.id] = pickedVariant end
+
+							-- Recolour body parts: match SmoothPlastic parts whose Color3 is
+							-- within tolerance of the variant's known body hex, set to primary.
+							local bodyHex = embedded.bodyOriginalHex or "#FFFFFF"
+							local primaryHex = embedded.primaryHex or "#E03A2E"
+							local function hexToRgb01(h)
+								local s = string.gsub(h, "^#", "")
+								local r = tonumber(string.sub(s, 1, 2), 16) or 255
+								local g = tonumber(string.sub(s, 3, 4), 16) or 255
+								local b = tonumber(string.sub(s, 5, 6), 16) or 255
+								return r / 255, g / 255, b / 255
+							end
+							local br, bg, bb = hexToRgb01(bodyHex)
+							local pr, pg, pb = hexToRgb01(primaryHex)
+							local TOL = 10 / 255
+							local recoloured = 0
+							for _, descendant in pickedVariant:GetDescendants() do
+								if descendant:IsA("BasePart") then
+									local ok, mat = pcall(function() return descendant.Material end)
+									if ok and tostring(mat) == "Enum.Material.SmoothPlastic" then
+										local c = descendant.Color
+										if math.abs(c.R - br) < TOL
+											and math.abs(c.G - bg) < TOL
+											and math.abs(c.B - bb) < TOL then
+											pcall(function() descendant.Color = _Color3.new(pr, pg, pb) end)
+											recoloured = recoloured + 1
+										end
+									end
+								end
+							end
+							print(string.format("[build_roblox] vehicle_template: picked %s, recoloured %d body parts",
+								pickedVariant.Name, recoloured))
+						end
+					else
 					local wrapper = roblox.Instance.new("Model")
 					wrapper.Name = embedded.name or "EmbeddedModel"
 					wrapper.Parent = parent
@@ -526,6 +593,7 @@ if manifest.embeddedModels ~= nil then
 							end
 						end
 					end
+					end  -- close: if embedded.mode == "vehicle_template" then ... else ... end (Round 20 v3)
 				else
 					warn("[build_roblox] Failed to deserialize embedded model " .. tostring(embedded.name))
 				end
