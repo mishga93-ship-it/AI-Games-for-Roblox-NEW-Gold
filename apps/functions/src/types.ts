@@ -393,6 +393,8 @@ export interface RobloxEmbeddedModelRef {
   trunkDecalAssetId?: number;
   /** Round 20F: assetId for roof sign side wordmark decal. */
   roofSignDecalAssetId?: number;
+  /** Round 20I: neon underglow colour. */
+  underglowColorHex?: string;
 }
 
 export interface RobloxBuildScript {

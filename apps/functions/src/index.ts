@@ -27198,6 +27198,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             prompt: promptForRouter,
             title: titleForRouter,
             primaryHexFromMetadata: primaryFromMeta,
+            accentHexFromMetadata: accentFromMeta,
           });
           // Round 20 v3: store ONLY the filename hint in metadata. The
           // builder (robloxWorker.ts) will read the on-disk bytes when
@@ -27222,6 +27223,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               vehicleTemplatePlateText: pick.accessories.plateText,
               vehicleTemplateRoofSignText: pick.accessories.roofSignText,
               vehicleTemplateRoofSignColorHex: pick.accessories.roofSignColorHex,
+              vehicleTemplateUnderglowColorHex: pick.accessories.underglowColorHex,
             },
           };
           const accessoryNote = [

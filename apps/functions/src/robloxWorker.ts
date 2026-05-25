@@ -2711,6 +2711,9 @@ function buildVehicleModelManifest(
         hoodDecalAssetId,
         trunkDecalAssetId,
         roofSignDecalAssetId,
+        underglowColorHex: typeof metadata.vehicleTemplateUnderglowColorHex === 'string'
+          && metadata.vehicleTemplateUnderglowColorHex.length > 0
+          ? metadata.vehicleTemplateUnderglowColorHex : undefined,
       });
     } else {
       // v2 fallback — runtime InsertService:LoadAsset script.

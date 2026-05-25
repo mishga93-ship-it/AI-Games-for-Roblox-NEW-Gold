@@ -920,6 +920,70 @@ if manifest.embeddedModels ~= nil then
 										end
 									end
 
+									-- Round 20I: brighten template's existing light parts (Neon
+									-- material with stronger colours). Endorsed Sedan has light_white
+									-- at #A3A2A5 (grey-ish), light_red at #B50000 (dim) — bumping to
+									-- pure colours gives "headlights on" appearance.
+									local function brightenLight(part, newColor)
+										pcall(function()
+											part.Material = _Enum.Material.Neon
+											part.Color = newColor
+										end)
+									end
+									for _, d in pickedVariant:GetDescendants() do
+										if d:IsA("BasePart") then
+											local n = string.lower(d.Name)
+											if n == "light_white" or n == "light_headlight" then
+												brightenLight(d, _Color3.new(1, 1, 0.95))
+											elseif n == "light_red" or n == "light_red_tail" or n == "light_tail_red" then
+												brightenLight(d, _Color3.new(1, 0, 0))
+											elseif n == "light_blue1" or n == "light_blue" then
+												brightenLight(d, _Color3.new(0, 0.4, 1))
+											end
+										end
+									end
+
+									-- Round 20I: optional underglow — 4 small flat neon Parts
+									-- under the car at the chassis corners, coloured per prompt
+									-- (when "neon" / "underglow" detected in prompt).
+									local underglowHex = embedded.underglowColorHex
+									if type(underglowHex) == "string" and #underglowHex > 0 then
+										local ugR, ugG, ugB = hexToRgb01(underglowHex)
+										local ugColor = _Color3.new(ugR, ugG, ugB)
+										local ugSize = lengthAlongZ
+											and _Vector3.new(2.5, 0.1, 0.6)
+											or _Vector3.new(0.6, 0.1, 2.5)
+										local ugY = minY + 0.15
+										if lengthAlongZ then
+											addAccessoryPart("Underglow_FL", ugSize,
+												_Vector3.new(centerPos.X - 1.5, ugY, minZ + (maxZ - minZ) * 0.25),
+												ugColor, _Enum.Material.Neon)
+											addAccessoryPart("Underglow_FR", ugSize,
+												_Vector3.new(centerPos.X + 1.5, ugY, minZ + (maxZ - minZ) * 0.25),
+												ugColor, _Enum.Material.Neon)
+											addAccessoryPart("Underglow_RL", ugSize,
+												_Vector3.new(centerPos.X - 1.5, ugY, minZ + (maxZ - minZ) * 0.75),
+												ugColor, _Enum.Material.Neon)
+											addAccessoryPart("Underglow_RR", ugSize,
+												_Vector3.new(centerPos.X + 1.5, ugY, minZ + (maxZ - minZ) * 0.75),
+												ugColor, _Enum.Material.Neon)
+										else
+											addAccessoryPart("Underglow_FL", ugSize,
+												_Vector3.new(minX + (maxX - minX) * 0.25, ugY, centerPos.Z - 1.5),
+												ugColor, _Enum.Material.Neon)
+											addAccessoryPart("Underglow_FR", ugSize,
+												_Vector3.new(minX + (maxX - minX) * 0.25, ugY, centerPos.Z + 1.5),
+												ugColor, _Enum.Material.Neon)
+											addAccessoryPart("Underglow_RL", ugSize,
+												_Vector3.new(minX + (maxX - minX) * 0.75, ugY, centerPos.Z - 1.5),
+												ugColor, _Enum.Material.Neon)
+											addAccessoryPart("Underglow_RR", ugSize,
+												_Vector3.new(minX + (maxX - minX) * 0.75, ugY, centerPos.Z + 1.5),
+												ugColor, _Enum.Material.Neon)
+										end
+										print(string.format("[build_roblox] vehicle_template: added underglow color=%s", underglowHex))
+									end
+
 									-- Round 20G: runtime weld script. Walks all parts tagged
 									-- AIAccessoryWeldOnStart, un-anchors them, welds each to the
 									-- variant PrimaryPart. Result: accessories visible in Edit

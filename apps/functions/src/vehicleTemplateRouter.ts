@@ -168,6 +168,9 @@ export interface VehicleAccessories {
   roofSignText: string;
   /** Roof sign neon color hex (background colour, usually matches primaryHex). */
   roofSignColorHex: string;
+  /** Round 20I: enable neon underglow parts under the car (when prompt
+   *  mentions neon/underglow/glow). Empty = no underglow. */
+  underglowColorHex: string;
 }
 
 /**
@@ -347,6 +350,7 @@ export function deriveVehicleAccessories(args: {
   title: string;
   templateName: VehicleTemplateName;
   primaryHex: string;
+  accentHex?: string;
 }): VehicleAccessories {
   const txt = `${args.prompt} ${args.title}`.toLowerCase();
   const isTaxi = /\b(taxi|cab|такси)\b/i.test(txt);
@@ -354,6 +358,11 @@ export function deriveVehicleAccessories(args: {
   const isFire = /\b(fire\s*truck|пожар)\b/i.test(txt);
   const isSports = args.templateName === 'SportsCar' || args.templateName === 'Supercar'
     || /\b(race\s*car|racing|mustang|ferrari|lambo)\b/i.test(txt);
+  // Round 20I: detect underglow intent — adds neon Parts under the car.
+  const hasUnderglow = /\b(neon|underglow|under\s*glow|glow|lit\s*up|illuminated)\b/i.test(txt);
+  const underglowColor = hasUnderglow
+    ? ((args.accentHex && args.accentHex !== '#1A1A1A') ? args.accentHex : args.primaryHex)
+    : '';
 
   // Round 20D-final: dropped license plates entirely. They couldn't be
   // mounted cleanly on the endorsed Sedan's huge bumper_front/bumper_back
@@ -363,22 +372,22 @@ export function deriveVehicleAccessories(args: {
   // via a Decal-on-body-face approach (option B with Flux-generated images).
   if (isTaxi) {
     return {
-      plateText: '',  // disabled
+      plateText: '',
       roofSignText: 'TAXI',
       roofSignColorHex: '#F2B807',
+      underglowColorHex: underglowColor,
     };
   }
   if (isPolice) {
-    return { plateText: '', roofSignText: 'POLICE', roofSignColorHex: '#0055FF' };
+    return { plateText: '', roofSignText: 'POLICE', roofSignColorHex: '#0055FF', underglowColorHex: underglowColor };
   }
   if (isFire) {
-    return { plateText: '', roofSignText: 'FIRE', roofSignColorHex: '#FF0000' };
+    return { plateText: '', roofSignText: 'FIRE', roofSignColorHex: '#FF0000', underglowColorHex: underglowColor };
   }
   if (isSports) {
-    return { plateText: '', roofSignText: '', roofSignColorHex: '' };
+    return { plateText: '', roofSignText: '', roofSignColorHex: '', underglowColorHex: underglowColor };
   }
-  // Generic: no roof sign, no plate. Body recolor alone is the personalisation.
-  return { plateText: '', roofSignText: '', roofSignColorHex: '' };
+  return { plateText: '', roofSignText: '', roofSignColorHex: '', underglowColorHex: underglowColor };
 }
 
 /**
@@ -425,12 +434,14 @@ export function pickVehicleTemplate(args: {
   prompt: string;
   title?: string;
   primaryHexFromMetadata?: string;
+  accentHexFromMetadata?: string;
 }): VehicleTemplatePick {
   const staticPick = pickVehicleTemplateStatic(args.prompt, args.title);
   if (staticPick) {
     const primaryHex = (args.primaryHexFromMetadata?.trim()) || staticPick.primaryHex || '#E03A2E';
+    const accentHex = args.accentHexFromMetadata?.trim() || '';
     const accessories = deriveVehicleAccessories({
-      prompt: args.prompt, title: args.title ?? '', templateName: staticPick.templateName, primaryHex,
+      prompt: args.prompt, title: args.title ?? '', templateName: staticPick.templateName, primaryHex, accentHex,
     });
     return { ...staticPick, primaryHex, accessories };
   }
@@ -444,6 +455,7 @@ export function pickVehicleTemplate(args: {
   });
   const accessories = deriveVehicleAccessories({
     prompt: args.prompt, title: args.title ?? '', templateName: 'Sedan', primaryHex,
+    accentHex: args.accentHexFromMetadata?.trim() || '',
   });
   return {
     templateName: 'Sedan',
