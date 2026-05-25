@@ -701,34 +701,90 @@ if manifest.embeddedModels ~= nil then
 
 									local signText = embedded.roofSignText
 									local signColorHex = embedded.roofSignColorHex or "#F2B807"
+									local roofSignDecalId = tonumber(embedded.roofSignDecalAssetId)
 									if type(signText) == "string" and #signText > 0 then
+										-- Round 20F: real 3D taxi-style roof topper made of 4 parts:
+										--   1) Center bar (low-profile neon box, wordmark decal on sides)
+										--   2) Left end cap (wedge for rounded look)
+										--   3) Right end cap
+										--   4) Two mounting feet (black) connecting to the roof
 										local sgnR, sgnG, sgnB = hexToRgb01(signColorHex)
-										-- Bigger box (more "real" taxi-topper proportions) sitting
-										-- directly on the roof. Text BillboardGui sits at sign
-										-- centre (no Y offset) so it visually attaches to the box.
-										local signSize = lengthAlongZ
-											and _Vector3.new(3.2, 0.85, 1.4)
-											or _Vector3.new(1.4, 0.85, 3.2)
+										local barSize, capSize, footSize
+										if lengthAlongZ then
+											-- car length along Z → topper wide across X, thin along Z
+											barSize = _Vector3.new(2.4, 0.5, 1.1)
+											capSize = _Vector3.new(0.5, 0.5, 1.1)
+											footSize = _Vector3.new(0.15, 0.35, 0.6)
+										else
+											barSize = _Vector3.new(1.1, 0.5, 2.4)
+											capSize = _Vector3.new(1.1, 0.5, 0.5)
+											footSize = _Vector3.new(0.6, 0.35, 0.15)
+										end
 										local sx, sy, sz
 										if roofPart then
 											local rp = roofPart.CFrame.Position
 											local rs = roofPart.Size
 											sx = rp.X
-											sy = rp.Y + rs.Y / 2 + signSize.Y / 2 + 0.02
+											-- Mounting-foot height included: total Y = foot + bar
+											sy = rp.Y + rs.Y / 2 + footSize.Y + barSize.Y / 2
 											sz = rp.Z
 										else
 											sx = centerPos.X
-											sy = maxY + signSize.Y / 2 + 0.02
+											sy = maxY + footSize.Y + barSize.Y / 2
 											sz = centerPos.Z
 										end
-										local signPart = addAccessoryPart("RoofSign", signSize,
-											_Vector3.new(sx, sy, sz),
-											_Color3.new(sgnR, sgnG, sgnB),
-											_Enum.Material.Neon)
-										-- No Y offset → label centre = part centre = visually attached.
-										addBillboardText(signPart, signText, 2.8, 0)
-										print(string.format("[build_roblox] RoofSign pos=(%.1f,%.1f,%.1f) roof=%s",
-											sx, sy, sz, roofPart and roofPart.Name or "FALLBACK"))
+
+										-- Center bar with TAXI decal on long sides
+										local barColor = _Color3.new(sgnR, sgnG, sgnB)
+										local centerBar = addAccessoryPart("RoofTopper_Bar", barSize,
+											_Vector3.new(sx, sy, sz), barColor, _Enum.Material.Neon)
+										if roofSignDecalId and roofSignDecalId > 0 then
+											applyDecal(centerBar, roofSignDecalId, _Enum.NormalId.Front)
+											applyDecal(centerBar, roofSignDecalId, _Enum.NormalId.Back)
+										else
+											-- Fallback: legacy BillboardGui label
+											addBillboardText(centerBar, signText, 2.4, 0)
+										end
+
+										-- End caps (slightly smaller, also neon for glow continuity)
+										if lengthAlongZ then
+											local capLeftX = sx - barSize.X / 2 - capSize.X / 2 + 0.02
+											local capRightX = sx + barSize.X / 2 + capSize.X / 2 - 0.02
+											addAccessoryPart("RoofTopper_CapLeft", capSize,
+												_Vector3.new(capLeftX, sy, sz), barColor, _Enum.Material.Neon)
+											addAccessoryPart("RoofTopper_CapRight", capSize,
+												_Vector3.new(capRightX, sy, sz), barColor, _Enum.Material.Neon)
+										else
+											local capFrontZ = sz - barSize.Z / 2 - capSize.Z / 2 + 0.02
+											local capBackZ = sz + barSize.Z / 2 + capSize.Z / 2 - 0.02
+											addAccessoryPart("RoofTopper_CapFront", capSize,
+												_Vector3.new(sx, sy, capFrontZ), barColor, _Enum.Material.Neon)
+											addAccessoryPart("RoofTopper_CapBack", capSize,
+												_Vector3.new(sx, sy, capBackZ), barColor, _Enum.Material.Neon)
+										end
+
+										-- Mounting feet (dark, between bar and roof — looks structural)
+										local footColor = _Color3.new(0.08, 0.08, 0.08)
+										local footY = sy - barSize.Y / 2 - footSize.Y / 2
+										if lengthAlongZ then
+											addAccessoryPart("RoofTopper_FootL", footSize,
+												_Vector3.new(sx - barSize.X * 0.35, footY, sz), footColor,
+												_Enum.Material.SmoothPlastic)
+											addAccessoryPart("RoofTopper_FootR", footSize,
+												_Vector3.new(sx + barSize.X * 0.35, footY, sz), footColor,
+												_Enum.Material.SmoothPlastic)
+										else
+											addAccessoryPart("RoofTopper_FootF", footSize,
+												_Vector3.new(sx, footY, sz - barSize.Z * 0.35), footColor,
+												_Enum.Material.SmoothPlastic)
+											addAccessoryPart("RoofTopper_FootB", footSize,
+												_Vector3.new(sx, footY, sz + barSize.Z * 0.35), footColor,
+												_Enum.Material.SmoothPlastic)
+										end
+
+										print(string.format("[build_roblox] RoofTopper 4-part composition pos=(%.1f,%.1f,%.1f) roof=%s decal=%s",
+											sx, sy, sz, roofPart and roofPart.Name or "FALLBACK",
+											roofSignDecalId and tostring(roofSignDecalId) or "none"))
 									end
 
 									-- Round 20E: Decal-based per-prompt liveries. AssetIds come

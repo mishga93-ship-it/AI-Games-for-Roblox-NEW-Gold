@@ -27338,11 +27338,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             }
           };
 
-          // Run all 3 decal generations in parallel for speed.
-          const [doorAssetId, hoodAssetId, trunkAssetId] = await Promise.all([
+          // Round 20F: 4 parallel decal generations now (added roof topper).
+          const [doorAssetId, hoodAssetId, trunkAssetId, roofSignAssetId] = await Promise.all([
             uploadDecal(briefs.doorStripeBrief, 'door'),
             uploadDecal(briefs.hoodLogoBrief, 'hood'),
             uploadDecal(briefs.trunkLogoBrief, 'trunk'),
+            uploadDecal(briefs.roofSignDecalBrief, 'roofsign'),
           ]);
           currentJob = {
             ...currentJob,
@@ -27351,10 +27352,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               vehicleDecalDoorAssetId: doorAssetId,
               vehicleDecalHoodAssetId: hoodAssetId,
               vehicleDecalTrunkAssetId: trunkAssetId,
+              vehicleDecalRoofSignAssetId: roofSignAssetId,
               vehicleDecalBriefs: {
                 door: briefs.doorStripeBrief.slice(0, 200),
                 hood: briefs.hoodLogoBrief.slice(0, 200),
                 trunk: briefs.trunkLogoBrief.slice(0, 200),
+                roofSign: briefs.roofSignDecalBrief.slice(0, 200),
               },
             },
           };
@@ -27362,11 +27365,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           if (doorAssetId) made.push(`door:${doorAssetId}`);
           if (hoodAssetId) made.push(`hood:${hoodAssetId}`);
           if (trunkAssetId) made.push(`trunk:${trunkAssetId}`);
+          if (roofSignAssetId) made.push(`roofSign:${roofSignAssetId}`);
           await finishStage('generate_vehicle_decals', 'completed', [], [
             `Generated ${made.length} decal asset(s): ${made.join(', ') || 'none'}`,
             briefs.doorStripeBrief ? `Door brief: ${briefs.doorStripeBrief.slice(0, 80)}...` : 'No door decal',
             briefs.hoodLogoBrief ? `Hood brief: ${briefs.hoodLogoBrief.slice(0, 80)}...` : 'No hood decal',
             briefs.trunkLogoBrief ? `Trunk brief: ${briefs.trunkLogoBrief.slice(0, 80)}...` : 'No trunk decal',
+            briefs.roofSignDecalBrief ? `RoofSign brief: ${briefs.roofSignDecalBrief.slice(0, 80)}...` : 'No roof sign decal',
           ]);
         } catch (decalErr) {
           logger.warn('[Vehicle decals] stage threw, continuing without decals', { jobId, error: errorMessage(decalErr) });

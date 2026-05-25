@@ -2692,6 +2692,8 @@ function buildVehicleModelManifest(
         ? metadata.vehicleDecalHoodAssetId : undefined;
       const trunkDecalAssetId = typeof metadata.vehicleDecalTrunkAssetId === 'number' && metadata.vehicleDecalTrunkAssetId > 0
         ? metadata.vehicleDecalTrunkAssetId : undefined;
+      const roofSignDecalAssetId = typeof metadata.vehicleDecalRoofSignAssetId === 'number' && metadata.vehicleDecalRoofSignAssetId > 0
+        ? metadata.vehicleDecalRoofSignAssetId : undefined;
       embeddedModels.push({
         id: uuidv4(),
         name: tplLabel,
@@ -2708,6 +2710,7 @@ function buildVehicleModelManifest(
         doorDecalAssetId,
         hoodDecalAssetId,
         trunkDecalAssetId,
+        roofSignDecalAssetId,
       });
     } else {
       // v2 fallback — runtime InsertService:LoadAsset script.

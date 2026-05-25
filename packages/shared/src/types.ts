@@ -376,6 +376,8 @@ export interface RobloxEmbeddedModelRef {
   hoodDecalAssetId?: number;
   /** Round 20E: Roblox Image assetId for trunk top Decal. */
   trunkDecalAssetId?: number;
+  /** Round 20F: Roblox Image assetId for roof sign side faces (multi-part 3D topper). */
+  roofSignDecalAssetId?: number;
 }
 
 export interface RobloxBuildScript {

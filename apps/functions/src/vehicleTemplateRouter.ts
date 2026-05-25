@@ -189,6 +189,10 @@ export interface VehicleDecalBriefs {
   hoodLogoBrief: string;
   /** Optional rear logo / sign applied to trunk top. */
   trunkLogoBrief: string;
+  /** Round 20F: text wordmark applied to BOTH side faces of the multi-part
+   *  roof topper bar (front and back faces). Empty = no decal — topper
+   *  ships as a plain coloured neon box. */
+  roofSignDecalBrief: string;
 }
 
 /**
@@ -221,6 +225,7 @@ export function deriveVehicleDecalBriefs(args: {
       doorStripeBrief: 'horizontal NYC taxi cab checkered stripe pattern, alternating black and yellow squares, classic livery, sharp graphic design, no text, transparent background, no shadows',
       hoodLogoBrief: 'bold black "TAXI" text in classic sans-serif on transparent background, no shadows, no background, isolated text',
       trunkLogoBrief: 'small black "TAXI" text plate with medallion number, transparent background, classic NYC cab graphic',
+      roofSignDecalBrief: 'bold black "TAXI" text wordmark, condensed sans-serif font, centered horizontally, classic NYC taxi rooftop topper sign label, transparent background, no shadows, no border',
     };
   }
   if (isPolice) {
@@ -228,6 +233,7 @@ export function deriveVehicleDecalBriefs(args: {
       doorStripeBrief: 'classic American police cruiser door decal, bold "POLICE" text in white on dark blue stripe, sheriff star badge, professional law enforcement graphic, transparent background, no shadows',
       hoodLogoBrief: 'subtle thin blue stripe along the hood, minimal police livery accent, transparent background',
       trunkLogoBrief: 'classic black "POLICE" text on transparent background, bold sans-serif, no shadows',
+      roofSignDecalBrief: 'bold white "POLICE" text wordmark with thin red and blue line accents, condensed sans-serif, centered horizontally, transparent background, no shadows',
     };
   }
   if (isFire) {
@@ -235,6 +241,7 @@ export function deriveVehicleDecalBriefs(args: {
       doorStripeBrief: 'fire department door decal, bold white "FIRE DEPT" text on transparent background, classic firetruck graphics, golden maltese cross badge, no shadows',
       hoodLogoBrief: 'thin white horizontal stripe, classic fire truck reflective trim accent, transparent background',
       trunkLogoBrief: 'small "FIRE" text white on transparent background, classic firetruck rear marker',
+      roofSignDecalBrief: 'bold white "FIRE" text wordmark, condensed sans-serif, centered horizontally on transparent background, no shadows',
     };
   }
   if (isSports) {
@@ -243,6 +250,7 @@ export function deriveVehicleDecalBriefs(args: {
       doorStripeBrief: `bold racing number "${(Math.floor(Math.random() * 89) + 10)}" in white circle with thin ${colorWord} accent border, classic motorsport livery side panel decal, transparent background, no shadows`,
       hoodLogoBrief: `dual racing stripes vertical white running down the hood with thin ${colorWord} accent borders, classic muscle car graphic, transparent background`,
       trunkLogoBrief: '',
+      roofSignDecalBrief: '',
     };
   }
   // Generic: brand-style livery derived from title + primary colour.
@@ -252,6 +260,7 @@ export function deriveVehicleDecalBriefs(args: {
     doorStripeBrief: `clean modern company car door decal, "${company}" wordmark in bold sans-serif, contemporary corporate fleet livery, transparent background, no shadows`,
     hoodLogoBrief: '',
     trunkLogoBrief: '',
+    roofSignDecalBrief: '',
   };
 }
 

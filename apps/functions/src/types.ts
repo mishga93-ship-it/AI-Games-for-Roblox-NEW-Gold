@@ -391,6 +391,8 @@ export interface RobloxEmbeddedModelRef {
   doorDecalAssetId?: number;
   hoodDecalAssetId?: number;
   trunkDecalAssetId?: number;
+  /** Round 20F: assetId for roof sign side wordmark decal. */
+  roofSignDecalAssetId?: number;
 }
 
 export interface RobloxBuildScript {
