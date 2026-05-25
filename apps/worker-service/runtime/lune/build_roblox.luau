@@ -892,9 +892,15 @@ if manifest.embeddedModels ~= nil then
 
 									local hoodDecalId = tonumber(embedded.hoodDecalAssetId)
 									if hoodDecalId and hoodDecalId > 0 then
-										-- Hood is generally a separate flat-top part — try common names.
+										-- Hood candidates ordered specific → generic. Roblox endorsed
+										-- Sedan (white) variant has neither "hood" nor "f_bumper"
+										-- as separate parts — the whole upper surface is one big
+										-- `roof_hood` (~20 stud long Z, the entire car top). Fall
+										-- through to that as last resort so a Decal still ships.
 										local hoodPart = findFirstByLowerExact("hood")
 											or findFirstByLowerExact("f_bumper")
+											or findFirstByLowerExact("bumper_front")
+											or findFirstByLowerExact("roof_hood")
 										if hoodPart then
 											applyDecal(hoodPart, hoodDecalId, _Enum.NormalId.Top)
 											print(string.format("[build_roblox] vehicle_template: hood decal %d applied to %s", hoodDecalId, hoodPart.Name))
@@ -906,6 +912,8 @@ if manifest.embeddedModels ~= nil then
 										local trunkPart = findFirstByLowerExact("trunk")
 											or findFirstByLowerExact("trrunk")
 											or findFirstByLowerExact("bumper_back")
+											or findFirstByLowerExact("rear_bumper")
+											or findFirstByLowerExact("back_bumper")
 										if trunkPart then
 											applyDecal(trunkPart, trunkDecalId, _Enum.NormalId.Top)
 											print(string.format("[build_roblox] vehicle_template: trunk decal %d applied to %s", trunkDecalId, trunkPart.Name))
