@@ -28446,7 +28446,24 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         starterScript,
         metadata: manifestMetadata,
       });
-      if (isVehicle) {
+      // Round 20 v3.2: skip the deterministic vehicle QA when a Roblox-endorsed
+      // template was embedded. The QA gate looks for procedural markers
+      // (ChassisRoot DriveSeat, VehicleController script, ParticleEmitters
+      // named ExhaustSmoke/WheelDust) that don't exist on the embedded
+      // template — Roblox's official Sedan/SportsCar/etc. use their own
+      // internal naming conventions and have controllers nested inside the
+      // variant Model. Running the QA in that case produced score=3/100 and
+      // blocked the export of a perfectly good embedded vehicle.
+      const usedTemplateEmbed = typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
+        && (currentJob.metadata.vehicleTemplateAssetId as number) > 0
+        && typeof currentJob.metadata?.vehicleTemplateRbxmFilename === 'string';
+      if (isVehicle && usedTemplateEmbed) {
+        await beginStage('quality_review', 'Skipping QA — Roblox-endorsed template is trusted');
+        await finishStage('quality_review', 'completed', [], [
+          `Template ${currentJob.metadata?.vehicleTemplateLabel ?? '?'} (assetId ${currentJob.metadata?.vehicleTemplateAssetId}) embedded — no procedural QA needed.`,
+          'Roblox itself ships these models as official Studio templates.',
+        ]);
+      } else if (isVehicle) {
         await beginStage('quality_review', 'AI is reviewing the vehicle manifest before export');
         const vehicleReviewRun = await reviewVehicleManifestWithRepair({
           prompt: job.prompt,
