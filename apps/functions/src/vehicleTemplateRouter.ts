@@ -261,29 +261,30 @@ export function deriveVehicleAccessories(args: {
   const isSports = args.templateName === 'SportsCar' || args.templateName === 'Supercar'
     || /\b(race\s*car|racing|mustang|ferrari|lambo)\b/i.test(txt);
 
+  // Round 20D-final: dropped license plates entirely. They couldn't be
+  // mounted cleanly on the endorsed Sedan's huge bumper_front/bumper_back
+  // parts (which span the whole front/rear quarter and curve visibly).
+  // Roof sign IS the iconic "taxi плашка" the user originally asked for,
+  // and it renders cleanly on top of roof_hood. Plates can return later
+  // via a Decal-on-body-face approach (option B with Flux-generated images).
   if (isTaxi) {
     return {
-      plateText: 'TAXI',
+      plateText: '',  // disabled
       roofSignText: 'TAXI',
-      // Bright neon yellow for taxi sign — iconic NYC cab look.
       roofSignColorHex: '#F2B807',
     };
   }
   if (isPolice) {
-    return { plateText: 'POLICE', roofSignText: '', roofSignColorHex: '' };
+    return { plateText: '', roofSignText: 'POLICE', roofSignColorHex: '#0055FF' };
   }
   if (isFire) {
-    return { plateText: 'FIRE', roofSignText: '', roofSignColorHex: '' };
+    return { plateText: '', roofSignText: 'FIRE', roofSignColorHex: '#FF0000' };
   }
   if (isSports) {
-    return { plateText: 'SPORT', roofSignText: '', roofSignColorHex: '' };
+    return { plateText: '', roofSignText: '', roofSignColorHex: '' };
   }
-  // Generic — derive 3-5 char plate from title or fallback random.
-  const cleanedTitle = (args.title || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  const plate = cleanedTitle.length >= 3
-    ? cleanedTitle.slice(0, Math.min(6, cleanedTitle.length))
-    : `RBX${Math.floor(100 + Math.random() * 900)}`;
-  return { plateText: plate, roofSignText: '', roofSignColorHex: '' };
+  // Generic: no roof sign, no plate. Body recolor alone is the personalisation.
+  return { plateText: '', roofSignText: '', roofSignColorHex: '' };
 }
 
 /**

@@ -569,44 +569,52 @@ if manifest.embeddedModels ~= nil then
 										p.Name = name
 										p.Size = size
 										p.CFrame = _CFrame.new(worldPos)
-										p.Anchored = false
+										-- Round 20D fix: Anchored=true so accessories render
+										-- predictably in Edit Mode. Without anchoring + weld combo,
+										-- Studio's load step appears to snap welded-but-not-anchored
+										-- parts to (0,0,0) and they end up invisible/clipped.
+										-- Trade-off: at Play, accessories stay fixed at their world
+										-- position while the car drives away. Acceptable for D
+										-- iteration (user just wants to verify they appear).
+										-- A follow-up should add a runtime LocalScript that
+										-- un-anchors and welds on demand.
+										p.Anchored = true
 										p.CanCollide = false
-										p.Massless = true
+										p.Massless = false
 										p.Color = color
 										p.Material = material
 										p.Parent = pickedVariant
-										local weld = roblox.Instance.new("WeldConstraint")
-										weld.Name = name .. "Weld"
-										weld.Part0 = anchorPart
-										weld.Part1 = p
-										weld.Parent = p
 										return p
 									end
 
-									local function addSurfaceGuiText(parentPart, face, text, textColor, bgColor)
-										local sg = roblox.Instance.new("SurfaceGui")
-										sg.Name = "TextSurface_" .. tostring(face)
-										sg.Face = face
-										sg.CanvasSize = _Vector2.new(256, 96)
-										sg.LightInfluence = 0
-										sg.Parent = parentPart
-										if bgColor then
-											local bgFrame = roblox.Instance.new("Frame")
-											bgFrame.Name = "Bg"
-											bgFrame.Size = _UDim2.new(1, 0, 1, 0)
-											bgFrame.BackgroundColor3 = bgColor
-											bgFrame.BorderSizePixel = 0
-											bgFrame.Parent = sg
-										end
+									-- Round 20D fix #3: SurfaceGui+TextLabel via Lune doesn't render
+									-- text in Studio for unclear reasons (Parts visible, SurfaceGui
+									-- children missing visually). Switching to BillboardGui which
+									-- floats text in 3D facing the camera — works reliably for
+									-- labels like "TAXI" / "POLICE" / plate numbers regardless of
+									-- viewing angle.
+									local function addBillboardText(parentPart, text, sizeStud, yOffset)
+										local bb = roblox.Instance.new("BillboardGui")
+										bb.Name = "BillboardLabel"
+										bb.Size = _UDim2.new(sizeStud, 0, sizeStud * 0.4, 0)
+										bb.StudsOffset = _Vector3.new(0, yOffset or 0, 0)
+										bb.AlwaysOnTop = false
+										bb.LightInfluence = 0
+										bb.MaxDistance = 200
+										bb.Parent = parentPart
+										local bg = roblox.Instance.new("Frame")
+										bg.Name = "Bg"
+										bg.Size = _UDim2.new(1, 0, 1, 0)
+										bg.BackgroundColor3 = _Color3.new(1, 1, 1)
+										bg.BorderSizePixel = 2
+										bg.Parent = bb
 										local label = roblox.Instance.new("TextLabel")
 										label.Name = "Label"
-										label.Size = _UDim2.new(1, 0, 1, 0)
+										label.Size = _UDim2.new(1, -4, 1, -4)
+										label.Position = _UDim2.new(0, 2, 0, 2)
 										label.BackgroundTransparency = 1
 										label.Text = text
-										label.TextColor3 = textColor
-										-- Modern Roblox uses FontFace (Font type), not Font (EnumItem).
-										-- Setting Font property in newer Roblox builds throws type-mismatch
-										-- during serializeModel — use FontFace directly.
+										label.TextColor3 = _Color3.new(0, 0, 0)
 										if _Font then
 											pcall(function()
 												label.FontFace = _Font.new(
@@ -617,55 +625,118 @@ if manifest.embeddedModels ~= nil then
 											end)
 										end
 										label.TextScaled = true
-										label.Parent = sg
+										label.Parent = bg
 									end
+
+									-- Detect car's LONG axis (length axis). For Roblox endorsed
+									-- vehicles, length is usually along Z (extent ~20) and width
+									-- along X (extent ~8). Compute on the fly so we don't bake in
+									-- a wrong assumption.
+									local extentX = maxX - minX
+									local extentZ = maxZ - minZ
+									local lengthAlongZ = extentZ > extentX
+									print(string.format("[build_roblox] vehicle_template: bbox extent X=%.1f Z=%.1f (length axis = %s)",
+										extentX, extentZ, lengthAlongZ and "Z" or "X"))
+
+									-- Round 20D fix #4: bbox includes outliers (RedressMount, etc.)
+									-- that stick out far beyond the visible body. Find the actual
+									-- bumper / roof / hood parts by name and use their world positions
+									-- so plates and roof signs mount on actual body surfaces, not
+									-- 3 studs out in empty air.
+									local function findFirstByLowerName(...)
+										local needles = {...}
+										for _, d in pickedVariant:GetDescendants() do
+											if d:IsA("BasePart") then
+												local n = string.lower(d.Name)
+												for _, needle in needles do
+													if n == needle then return d end
+												end
+											end
+										end
+										return nil
+									end
+									local bumperBack = findFirstByLowerName("bumper_back", "rear_bumper", "back_bumper", "r_bumper")
+									local bumperFront = findFirstByLowerName("bumper_front", "f_bumper", "front_bumper")
+									local roofPart = findFirstByLowerName("roof_hood", "roof", "roof_hood1", "main_roof")
 
 									local plateText = embedded.plateText
 									if type(plateText) == "string" and #plateText > 0 then
-										local plateSize = _Vector3.new(1.8, 0.45, 0.06)
-										local rearY = centerPos.Y - halfY * 0.55
-										local rearZ = centerPos.Z + halfZ + 0.05
-										local platePart = addAccessoryPart(
-											"LicensePlate_Rear",
-											plateSize,
-											_Vector3.new(centerPos.X, rearY, rearZ),
-											_Color3.new(1, 1, 1),
-											_Enum.Material.SmoothPlastic
-										)
-										addSurfaceGuiText(platePart, _Enum.NormalId.Back,
-											plateText, _Color3.new(0, 0, 0), _Color3.new(1, 1, 1))
-										local frontZ = centerPos.Z - halfZ - 0.05
-										local frontPlate = addAccessoryPart(
-											"LicensePlate_Front",
-											plateSize,
-											_Vector3.new(centerPos.X, rearY, frontZ),
-											_Color3.new(1, 1, 1),
-											_Enum.Material.SmoothPlastic
-										)
-										addSurfaceGuiText(frontPlate, _Enum.NormalId.Front,
-											plateText, _Color3.new(0, 0, 0), _Color3.new(1, 1, 1))
-										print("[build_roblox] vehicle_template: added plate", plateText)
+										local plateSize = _Vector3.new(2.0, 0.55, 0.08)
+										-- Mount plate AGAINST the actual bumper part if found,
+										-- otherwise fall back to bbox extents.
+										local function mountPlate(name, bumperPart, fallbackZ, fallbackX, isRear)
+											local px, py, pz
+											if bumperPart then
+												local bp = bumperPart.CFrame.Position
+												local bs = bumperPart.Size
+												px = bp.X
+												py = bp.Y
+												if lengthAlongZ then
+													-- offset outward along Z, plate face just outside bumper
+													pz = bp.Z + (isRear and (bs.Z / 2 + plateSize.Z / 2 - 0.01) or -(bs.Z / 2 + plateSize.Z / 2 - 0.01))
+												else
+													pz = bp.Z
+													px = bp.X + (isRear and (bs.X / 2 + plateSize.X / 2 - 0.01) or -(bs.X / 2 + plateSize.X / 2 - 0.01))
+												end
+											else
+												px = centerPos.X
+												py = minY + 2.8  -- bumper height fallback (was 1.7 — too low)
+												pz = fallbackZ
+											end
+											local p = addAccessoryPart(name, plateSize,
+												_Vector3.new(px, py, pz),
+												_Color3.new(1, 1, 1), _Enum.Material.SmoothPlastic)
+											addBillboardText(p, plateText, 1.6, 0)
+											print(string.format("[build_roblox] %s pos=(%.1f,%.1f,%.1f) bumper=%s",
+												name, px, py, pz, bumperPart and bumperPart.Name or "FALLBACK"))
+										end
+										if lengthAlongZ then
+											mountPlate("LicensePlate_Rear", bumperBack, maxZ + plateSize.Z / 2, nil, true)
+											mountPlate("LicensePlate_Front", bumperFront, minZ - plateSize.Z / 2, nil, false)
+										else
+											mountPlate("LicensePlate_Rear", bumperBack, nil, maxX + plateSize.X / 2, true)
+											mountPlate("LicensePlate_Front", bumperFront, nil, minX - plateSize.X / 2, false)
+										end
 									end
 
 									local signText = embedded.roofSignText
 									local signColorHex = embedded.roofSignColorHex or "#F2B807"
 									if type(signText) == "string" and #signText > 0 then
 										local sgnR, sgnG, sgnB = hexToRgb01(signColorHex)
-										local signSize = _Vector3.new(2.4, 0.55, 1.0)
-										local roofY = centerPos.Y + halfY + 0.35
-										local signPart = addAccessoryPart(
-											"RoofSign",
-											signSize,
-											_Vector3.new(centerPos.X, roofY, centerPos.Z),
+										-- Bigger box (more "real" taxi-topper proportions) sitting
+										-- directly on the roof. Text BillboardGui sits at sign
+										-- centre (no Y offset) so it visually attaches to the box.
+										local signSize = lengthAlongZ
+											and _Vector3.new(3.2, 0.85, 1.4)
+											or _Vector3.new(1.4, 0.85, 3.2)
+										local sx, sy, sz
+										if roofPart then
+											local rp = roofPart.CFrame.Position
+											local rs = roofPart.Size
+											sx = rp.X
+											sy = rp.Y + rs.Y / 2 + signSize.Y / 2 + 0.02
+											sz = rp.Z
+										else
+											sx = centerPos.X
+											sy = maxY + signSize.Y / 2 + 0.02
+											sz = centerPos.Z
+										end
+										local signPart = addAccessoryPart("RoofSign", signSize,
+											_Vector3.new(sx, sy, sz),
 											_Color3.new(sgnR, sgnG, sgnB),
-											_Enum.Material.Neon
-										)
-										addSurfaceGuiText(signPart, _Enum.NormalId.Front,
-											signText, _Color3.new(0, 0, 0), nil)
-										addSurfaceGuiText(signPart, _Enum.NormalId.Back,
-											signText, _Color3.new(0, 0, 0), nil)
-										print("[build_roblox] vehicle_template: added roof sign", signText)
+											_Enum.Material.Neon)
+										-- No Y offset → label centre = part centre = visually attached.
+										addBillboardText(signPart, signText, 2.8, 0)
+										print(string.format("[build_roblox] RoofSign pos=(%.1f,%.1f,%.1f) roof=%s",
+											sx, sy, sz, roofPart and roofPart.Name or "FALLBACK"))
 									end
+
+									-- Round 20D-final: checkered cubes removed — they looked
+									-- like 3D blocks sticking out of the body, not integrated.
+									-- Stage A (next round) will add the iconic NYC taxi look as
+									-- a Decal-textured FLAT overlay (or via direct Decal on door
+									-- BasePart faces), so it reads as graphics on the body surface
+									-- rather than protruding geometry.
 								else
 									warn(string.format("[build_roblox] vehicle_template: bbox empty (parts=%d), skipping accessories", partCount))
 								end
