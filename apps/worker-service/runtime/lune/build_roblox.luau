@@ -933,11 +933,18 @@ if manifest.embeddedModels ~= nil then
 									for _, d in pickedVariant:GetDescendants() do
 										if d:IsA("BasePart") then
 											local n = string.lower(d.Name)
-											if n == "light_white" or n == "light_headlight" then
+											-- White / front headlights (covers Sedan + Sports / Police naming)
+											if n == "light_white" or n == "light_headlight" or n == "headlights"
+												or n == "headlight" or n == "headlight_glass" then
 												brightenLight(d, _Color3.new(1, 1, 0.95))
-											elseif n == "light_red" or n == "light_red_tail" or n == "light_tail_red" then
+											-- Red / taillights
+											elseif n == "light_red" or n == "light_red_tail" or n == "light_tail_red"
+												or n == "tail_light" or n == "taillight" or n == "tail_lamp"
+												or n == "light_dark_red" then
 												brightenLight(d, _Color3.new(1, 0, 0))
-											elseif n == "light_blue1" or n == "light_blue" then
+											-- Blue accents (police etc.)
+											elseif n == "light_blue1" or n == "light_blue" or n == "light_rack_blue"
+												or n == "light_rack_blue_front" then
 												brightenLight(d, _Color3.new(0, 0.4, 1))
 											end
 										end
