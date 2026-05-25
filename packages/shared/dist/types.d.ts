@@ -150,7 +150,7 @@ export interface ChatTurnResponse {
 }
 export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'modelslab' | 'apify' | 'algolia' | 'suno' | 'elevenlabs' | 'replicate' | 'fal' | 'deepgram' | 'meshy' | 'hunyuan3d';
 export type GenerationStatus = 'queued' | 'processing' | 'awaiting_review' | 'completed' | 'failed' | 'partial';
-export type GenerationStageId = 'concept_image' | 'clothing_texture' | 'mesh_3d' | 'convert_fbx' | 'upload_roblox' | 'mesh_optimized' | 'rig_r15' | 'generate_cages' | 'package_accessory' | 'export_model' | 'export_rbxm' | 'generate_keyframes' | 'generate_decal_image' | 'generate_vehicle_scripts' | 'pick_vehicle_template' | 'generate_vehicle_mesh' | 'generate_vehicle_scene' | 'quality_review';
+export type GenerationStageId = 'concept_image' | 'clothing_texture' | 'mesh_3d' | 'convert_fbx' | 'upload_roblox' | 'mesh_optimized' | 'rig_r15' | 'generate_cages' | 'package_accessory' | 'export_model' | 'export_rbxm' | 'generate_keyframes' | 'generate_decal_image' | 'generate_vehicle_scripts' | 'pick_vehicle_template' | 'generate_vehicle_decals' | 'generate_vehicle_mesh' | 'generate_vehicle_scene' | 'quality_review';
 export type GenerationStageStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
 export type GenerationArtifactRole = 'concept' | 'mesh_raw' | 'mesh_optimized' | 'rigged_model' | 'thumbnail' | 'export_binary' | 'brief' | 'script' | 'bundle' | 'preview_texture' | 'decal_texture' | 'stage_report';
 export interface GenerationStageProgress {
@@ -197,6 +197,12 @@ export interface RobloxEmbeddedModelRef {
     roofSignText?: string;
     /** Round 20D: hex colour for the roof sign background neon material. */
     roofSignColorHex?: string;
+    /** Round 20E: Roblox Image assetId for side stripe decal applied to all 4 door parts. */
+    doorDecalAssetId?: number;
+    /** Round 20E: Roblox Image assetId for hood top Decal. */
+    hoodDecalAssetId?: number;
+    /** Round 20E: Roblox Image assetId for trunk top Decal. */
+    trunkDecalAssetId?: number;
 }
 export interface RobloxBuildScript {
     id: string;
