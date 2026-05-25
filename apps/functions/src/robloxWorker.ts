@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFileSync as fsReadFileSync } from 'node:fs';
+import { dirname as pathDirname, resolve as pathResolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 // #region agent log
@@ -2599,19 +2602,44 @@ function buildVehicleModelManifest(
   // and base64-encode for the outgoing manifest. Metadata only stores the
   // filename hint (small) so the Firestore doc stays under 1MB; the heavy
   // base64 lives only in the outgoing build request.
+  //
+  // Uses fs/path directly (sync) instead of dynamic import to avoid
+  // ESM/CJS interop issues — buildVehicleModelManifest is sync, can't
+  // await import(). Path resolves at runtime from this file's dirname:
+  // apps/functions/dist/robloxWorker.js → ../templates/<filename>.
   let vehicleTemplateRbxmBase64: string | undefined;
   const vehicleTemplateFilename = typeof metadata.vehicleTemplateRbxmFilename === 'string'
     ? metadata.vehicleTemplateRbxmFilename
     : '';
   if (vehicleTemplateAssetId && vehicleTemplateFilename) {
     try {
-      const { readVehicleTemplateBase64 } = require('./vehicleTemplateRouter.js');
-      const b64 = readVehicleTemplateBase64(vehicleTemplateFilename);
-      if (typeof b64 === 'string' && b64.length > 0) {
-        vehicleTemplateRbxmBase64 = b64;
+      const here = pathDirname(fileURLToPath(import.meta.url));
+      const candidates = [
+        pathResolve(here, '..', 'templates', vehicleTemplateFilename),
+        pathResolve(here, 'templates', vehicleTemplateFilename),
+      ];
+      for (const p of candidates) {
+        try {
+          const bytes = fsReadFileSync(p);
+          vehicleTemplateRbxmBase64 = bytes.toString('base64');
+          break;
+        } catch {
+          // try next path
+        }
       }
-    } catch {
-      // Fall through to v2 (runtime InsertService:LoadAsset script).
+      if (!vehicleTemplateRbxmBase64) {
+        logger.warn('[buildVehicleModelManifest] template file not found in any candidate', {
+          filename: vehicleTemplateFilename, candidates,
+        });
+      } else {
+        logger.info('[buildVehicleModelManifest] embedded template bytes ready', {
+          filename: vehicleTemplateFilename, b64Length: vehicleTemplateRbxmBase64.length,
+        });
+      }
+    } catch (err) {
+      logger.warn('[buildVehicleModelManifest] template read threw', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   const builtScripts: RobloxBuildManifest['scripts'] = [
