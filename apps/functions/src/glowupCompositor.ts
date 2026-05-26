@@ -18,7 +18,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { generatePreviewTexture, runFal } from './providers.js';
 import { compositeShirtTemplate, compositePantsTemplate } from './clothingCompositor.js';
 import { downloadAvatarThumbnailBuffer } from './robloxUserLookup.js';
-import { getGlowupVibe, summarizeVibe, type GlowupVibe, type GlowupVibeId, type GlowupGender, type GlowupIntensity } from './data/glowupVibes.js';
+import { getGlowupVibe, summarizeVibe, avatarRestylePromptFor, type GlowupVibe, type GlowupVibeId, type GlowupGender, type GlowupIntensity } from './data/glowupVibes.js';
 
 const PREVIEW_W = 768;
 const PREVIEW_H = 1024;
@@ -33,6 +33,10 @@ export interface GlowupAssetPack {
 export interface GlowupGenerateResult {
   vibeId: GlowupVibeId;
   title: string;
+  /** Localized pitch one-liner (RU+EN, client picks). */
+  pitchEN: string;
+  pitchRU: string;
+  /** Backward-compat field: same value as pitchRU. */
   pitch: string;
   appStoreHook: string;
   previewUrl: string;
@@ -44,6 +48,10 @@ export interface GlowupGenerateResult {
   shareCaptionRU: string;
   shareCaptionEN: string;
   cost: ReturnType<typeof summarizeVibe>;
+  /** Localized disclaimer (RU+EN, client picks). */
+  disclaimerEN: string;
+  disclaimerRU: string;
+  /** Backward-compat field: same value as disclaimerRU. */
   disclaimer: string;
 }
 
@@ -55,7 +63,8 @@ export interface GlowupGenerateInput {
   firebaseUid: string;            // for storage path scoping
 }
 
-const DISCLAIMER = 'Это креативная иллюзия из официальных бесплатных и дешёвых Catalog-аксессуаров. Это не настоящие Headless Horseman или Korblox Deathspeaker, и мы не обходим платёжную систему Roblox.';
+const DISCLAIMER_RU = 'Это креативная иллюзия из официальных бесплатных и дешёвых Catalog-аксессуаров. Это не настоящие Headless Horseman или Korblox Deathspeaker, и мы не обходим платёжную систему Roblox.';
+const DISCLAIMER_EN = 'A creative illusion built from official free and low-cost Catalog accessories. NOT the real Headless Horseman or Korblox Deathspeaker — we do not bypass any Roblox payment system.';
 
 function hexToRgba(hex: string): { r: number; g: number; b: number; alpha: number } {
   const h = hex.replace(/^#/, '');
@@ -184,12 +193,15 @@ async function buildDecalPNG(vibe: GlowupVibe, intensity: GlowupIntensity): Prom
 async function restyleAvatarViaImg2Img(args: {
   vibe: GlowupVibe;
   intensity: GlowupIntensity;
+  gender: GlowupGender;
   avatarBuffer: Buffer;       // downloaded ahead-of-time; fal.ai can't hotlink Roblox CDN
 }): Promise<string | undefined> {
   const intensitySuffix = args.intensity === 'scary'
     ? ' Darker mood, dramatic studio lighting, sharper contrast.'
     : ' Clean stylized lighting, soft shadows.';
-  const prompt = args.vibe.avatarRestylePrompt + intensitySuffix +
+  // avatarRestylePromptFor() weaves the gender choice into the prompt so
+  // flux doesn't always default to the input avatar's silhouette.
+  const prompt = avatarRestylePromptFor(args.vibe, args.gender) + intensitySuffix +
     ' Maintain the blocky Roblox character proportions and pose from the input image.';
   // fal.ai img2img wants a downloadable URL. Roblox CDN blocks their
   // downloader (hotlinking protection / UA filter), so we pass the avatar
@@ -234,6 +246,7 @@ async function restyleAvatarViaImg2Img(args: {
 async function buildPreviewPNG(
   vibe: GlowupVibe,
   intensity: GlowupIntensity,
+  gender: GlowupGender,
   robloxUserId?: string,
 ): Promise<{ buffer: Buffer; fitOnUser: boolean }> {
   const PREVIEW_BG_HEX = 'F5F5F5'; // soft neutral so transformed avatar stands out
@@ -244,7 +257,7 @@ async function buildPreviewPNG(
   if (robloxUserId) {
     const avatarBuf = await downloadAvatarThumbnailBuffer({ robloxUserId, size: '720x720', kind: 'full_body' });
     if (avatarBuf) {
-      const restyledUrl = await restyleAvatarViaImg2Img({ vibe, intensity, avatarBuffer: avatarBuf });
+      const restyledUrl = await restyleAvatarViaImg2Img({ vibe, intensity, gender, avatarBuffer: avatarBuf });
       if (restyledUrl) {
         try {
           const resp = await fetch(restyledUrl, { signal: AbortSignal.timeout(20_000) });
@@ -266,7 +279,8 @@ async function buildPreviewPNG(
 
   // Fallback to text-to-image: generate a fresh vibe avatar from scratch.
   if (!baseImage) {
-    const t2iUrl = await generatePreviewTexture(vibe.avatarRestylePrompt, 'roblox', 'character')
+    const t2iPrompt = avatarRestylePromptFor(vibe, gender);
+    const t2iUrl = await generatePreviewTexture(t2iPrompt, 'roblox', 'character')
       .catch((err: unknown) => { logger.warn('[glowupCompositor] t2i fallback failed', err); return undefined; });
     if (t2iUrl) {
       try {
@@ -360,7 +374,7 @@ export async function generateGlowup(input: GlowupGenerateInput): Promise<Glowup
     safe('buildPantsPNG', () => buildPantsPNG(vibe), () => solidBuffer(585, 559, vibe.palette.pantsPrimaryHex)),
     safe('buildDecalPNG', () => buildDecalPNG(vibe, input.intensity), () => solidBuffer(DECAL_SIZE, DECAL_SIZE, vibe.palette.skinHex)),
     safe('buildPreviewPNG',
-      () => buildPreviewPNG(vibe, input.intensity, input.robloxUserId),
+      () => buildPreviewPNG(vibe, input.intensity, input.gender, input.robloxUserId),
       async () => ({ buffer: await solidBuffer(PREVIEW_W, PREVIEW_H, vibe.palette.skinHex), fitOnUser: false })),
   ]);
 
@@ -385,7 +399,9 @@ export async function generateGlowup(input: GlowupGenerateInput): Promise<Glowup
   return {
     vibeId: vibe.id,
     title: vibe.title,
-    pitch: vibe.pitch,
+    pitchEN: vibe.pitchEN,
+    pitchRU: vibe.pitchRU,
+    pitch: vibe.pitchRU,        // backward-compat: old clients read .pitch
     appStoreHook: vibe.appStoreHook,
     previewUrl,
     fitOnUser: preview.fitOnUser,
@@ -396,6 +412,8 @@ export async function generateGlowup(input: GlowupGenerateInput): Promise<Glowup
     shareCaptionRU: vibe.shareCaptionRU,
     shareCaptionEN: vibe.shareCaptionEN,
     cost: summarizeVibe(vibe),
-    disclaimer: DISCLAIMER,
+    disclaimerEN: DISCLAIMER_EN,
+    disclaimerRU: DISCLAIMER_RU,
+    disclaimer: DISCLAIMER_RU,  // backward-compat
   };
 }

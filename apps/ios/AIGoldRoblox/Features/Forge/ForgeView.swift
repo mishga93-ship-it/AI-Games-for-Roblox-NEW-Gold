@@ -1344,7 +1344,9 @@ private extension ForgeView {
             ProjectOption(
                 id: "fake_limited",
                 title: "Fake Headless & Korblox",
-                details: "Соберём иллюзию дорогих лимиток за 0 Robux. AI подбирает бесплатные и дешёвые Catalog-аксессуары, которые визуально имитируют Headless Horseman (31 000 R$) и Korblox Deathspeaker (17 000 R$) — рецепт, превью аватара и инструкция по сборке в Avatar Editor.",
+                details: isRussianInterface
+                    ? "Соберём иллюзию дорогих лимиток за 0 Robux. AI подбирает бесплатные и дешёвые Catalog-аксессуары, которые визуально имитируют Headless Horseman (31 000 R$) и Korblox Deathspeaker (17 000 R$) — рецепт, превью аватара и инструкция по сборке в Avatar Editor."
+                    : "Build the illusion of expensive limiteds for 0 Robux. AI picks free + cheap Catalog accessories that mimic Headless Horseman (31,000 R$) and Korblox Deathspeaker (17,000 R$) — recipe, avatar preview, and Avatar Editor steps.",
                 kind: .fakeLimited,
                 tags: ["new", "viral", "ai", "tiktok", "economy"]
             ),

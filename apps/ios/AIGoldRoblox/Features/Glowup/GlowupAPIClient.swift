@@ -116,7 +116,9 @@ struct GlowupGenerationResponse: Codable {
     let generationStatus: GlowupGenerationStatus
     let vibeId: String
     let title: String
-    let pitch: String
+    let pitch: String                // backward-compat (=== pitchRU)
+    let pitchEN: String?
+    let pitchRU: String?
     let appStoreHook: String
     let previewUrl: String
     let fitOnUser: Bool
@@ -127,10 +129,22 @@ struct GlowupGenerationResponse: Codable {
     let shareCaptionRU: String
     let shareCaptionEN: String
     let cost: GlowupCostBreakdown
-    let disclaimer: String
+    let disclaimer: String           // backward-compat (=== disclaimerRU)
+    let disclaimerEN: String?
+    let disclaimerRU: String?
     let cached: Bool?
     let decalAssetId: String?
     let rateLimit: GlowupRateLimitInfo?
+
+    /// Helper: picks the right pitch based on iOS locale, with fallbacks.
+    var localizedPitch: String {
+        if GlowupLocale.isRussian { return pitchRU ?? pitch }
+        return pitchEN ?? pitch
+    }
+    var localizedDisclaimer: String {
+        if GlowupLocale.isRussian { return disclaimerRU ?? disclaimer }
+        return disclaimerEN ?? disclaimer
+    }
 }
 
 struct GlowupDecalUploadResponse: Codable {

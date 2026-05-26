@@ -37,7 +37,7 @@ struct GlowupResultView: View {
             Text(response.title)
                 .font(.appTitle2.bold())
                 .foregroundColor(.textPrimary)
-            Text(response.pitch)
+            Text(response.localizedPitch)
                 .font(.appBody)
                 .foregroundColor(.textSecondary)
         }
@@ -112,48 +112,61 @@ struct GlowupResultView: View {
 
     private var assetPackSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(loc(en: "Asset Pack", ru: "Asset Pack"))
-                .font(.appHeadline)
-                .foregroundColor(.textPrimary)
+            HStack(spacing: 6) {
+                Text(loc(en: "Asset Pack", ru: "Asset Pack"))
+                    .font(.appHeadline)
+                    .foregroundColor(.textPrimary)
+                Text(loc(en: "(PNG textures, NOT .rbxm models)",
+                         ru: "(PNG-текстуры, НЕ .rbxm-модели)"))
+                    .font(.caption2)
+                    .foregroundColor(.textSecondary.opacity(0.7))
+            }
+            Text(loc(
+                en: "Roblox classic shirts/pants are PNG textures uploaded via create.roblox.com — they can't be imported from .rbxm. Decal also uploads as PNG (auto-upload via OAuth available).",
+                ru: "Roblox classic shirts/pants — это PNG-текстуры, грузятся через create.roblox.com. Из .rbxm их импортировать нельзя. Decal тоже грузится как PNG (через OAuth — автоматом)."
+            ))
+                .font(.caption)
+                .foregroundColor(.textSecondary)
+                .padding(.bottom, 4)
 
             AssetRow(
                 title: "Shirt.png",
-                subtitle: loc(en: "Classic Shirt — upload to Roblox (10 R$)",
-                              ru: "Classic Shirt — загрузи на Roblox (10 R$)"),
+                subtitle: loc(en: "Classic Shirt texture — upload to Roblox (10 R$)",
+                              ru: "Classic Shirt texture — загрузи на Roblox (10 R$)"),
                 icon: "tshirt.fill",
-                primaryLabel: loc(en: "Save", ru: "Save"),
+                primaryLabel: loc(en: "Download PNG", ru: "Скачать PNG"),
                 primaryIcon: "square.and.arrow.down",
                 primaryAction: { studio.saveImageToPhotos(urlString: response.assetPack.shirtUrl, label: "Shirt") },
-                secondaryLabel: loc(en: "Upload", ru: "Upload"),
+                secondaryLabel: loc(en: "Roblox Upload", ru: "Roblox Upload"),
                 secondaryIcon: "arrow.up.right.square",
                 secondaryAction: { studio.openRobloxUploadPage() }
             )
             AssetRow(
                 title: "Pants.png",
-                subtitle: loc(en: "Classic Pants — upload to Roblox (10 R$)",
-                              ru: "Classic Pants — загрузи на Roblox (10 R$)"),
+                subtitle: loc(en: "Classic Pants texture — upload to Roblox (10 R$)",
+                              ru: "Classic Pants texture — загрузи на Roblox (10 R$)"),
                 icon: "figure.stand",
-                primaryLabel: loc(en: "Save", ru: "Save"),
+                primaryLabel: loc(en: "Download PNG", ru: "Скачать PNG"),
                 primaryIcon: "square.and.arrow.down",
                 primaryAction: { studio.saveImageToPhotos(urlString: response.assetPack.pantsUrl, label: "Pants") },
-                secondaryLabel: loc(en: "Upload", ru: "Upload"),
+                secondaryLabel: loc(en: "Roblox Upload", ru: "Roblox Upload"),
                 secondaryIcon: "arrow.up.right.square",
                 secondaryAction: { studio.openRobloxUploadPage() }
             )
             AssetRow(
                 title: "Decal.png",
                 subtitle: studio.oauthConnected
-                    ? loc(en: "I'll upload to your Roblox via OAuth in one tap.",
-                          ru: "Загружу в твой Roblox через OAuth в один тап.")
-                    : loc(en: "Connect Roblox to auto-upload.",
-                          ru: "Подключи Roblox, чтобы загрузить автоматически."),
+                    ? loc(en: "Face/aura decal — I'll push it to your Roblox via OAuth in one tap.",
+                          ru: "Face/aura decal — загружу в твой Roblox через OAuth в один тап.")
+                    : loc(en: "Face/aura decal — connect Roblox to auto-upload.",
+                          ru: "Face/aura decal — подключи Roblox, чтобы загрузить автоматически."),
                 icon: "face.dashed.fill",
-                primaryLabel: loc(en: "Save", ru: "Save"),
+                primaryLabel: loc(en: "Download PNG", ru: "Скачать PNG"),
                 primaryIcon: "square.and.arrow.down",
                 primaryAction: { studio.saveImageToPhotos(urlString: response.assetPack.decalUrl, label: "Decal") },
                 secondaryLabel: studio.oauthConnected
-                    ? loc(en: "Auto-Upload", ru: "Auto-Upload")
-                    : loc(en: "Connect", ru: "Connect"),
+                    ? loc(en: "Send to Roblox", ru: "Send to Roblox")
+                    : loc(en: "Connect Roblox", ru: "Connect Roblox"),
                 secondaryIcon: studio.oauthConnected ? "cloud.fill" : "link",
                 secondaryAction: {
                     if studio.oauthConnected {
@@ -246,7 +259,7 @@ struct GlowupResultView: View {
                 }
                 .buttonStyle(.bordered)
             }
-            Text(response.disclaimer)
+            Text(response.localizedDisclaimer)
                 .font(.caption2)
                 .foregroundColor(.textSecondary.opacity(0.7))
                 .padding(.top, 8)

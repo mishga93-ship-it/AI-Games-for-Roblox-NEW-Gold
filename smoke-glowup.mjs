@@ -27,7 +27,8 @@ for (const id of expectedIds) {
   const v = getGlowupVibe(id);
   check(`getGlowupVibe("${id}") returns vibe with matching id`, v.id === id);
   check(`vibe "${id}" has non-empty title`, typeof v.title === 'string' && v.title.length > 0);
-  check(`vibe "${id}" has non-empty pitch`, typeof v.pitch === 'string' && v.pitch.length > 0);
+  check(`vibe "${id}" has non-empty pitchEN`, typeof v.pitchEN === 'string' && v.pitchEN.length > 0);
+  check(`vibe "${id}" has non-empty pitchRU`, typeof v.pitchRU === 'string' && v.pitchRU.length > 0);
   check(`vibe "${id}" has appStoreHook`, typeof v.appStoreHook === 'string' && v.appStoreHook.length > 0);
   check(`vibe "${id}" has decalPrompt >= 60 chars`, v.decalPrompt.length >= 60, `got ${v.decalPrompt.length}`);
   check(`vibe "${id}" has palette.skinHex (6-char hex)`, /^[0-9A-Fa-f]{6}$/.test(v.palette.skinHex));

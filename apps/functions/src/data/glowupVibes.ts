@@ -50,7 +50,8 @@ export interface GlowupBodySettings {
 export interface GlowupVibe {
   id: GlowupVibeId;
   title: string;
-  pitch: string;                  // one-liner shown on result screen
+  pitchEN: string;                // one-liner shown on result screen (English default)
+  pitchRU: string;                // one-liner shown on result screen (Russian)
   appStoreHook: string;           // TikTok-bait phrase for share/caption
   /** Flux-pro prompt for the face/aura decal PNG (1024×1024, transparent). */
   decalPrompt: string;
@@ -92,7 +93,8 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
   headless_shadow: {
     id: 'headless_shadow',
     title: 'Headless Shadow',
-    pitch: 'Тёмный void на месте головы. Дёшево, чисто, выглядит как лимитка за 31к Robux.',
+    pitchEN: 'A dark void where your head should be. Cheap, clean, looks like a 31k-Robux limited.',
+    pitchRU: 'Тёмный void на месте головы. Дёшево, чисто, выглядит как лимитка за 31к Robux.',
     appStoreHook: 'OMG FREE HEADLESS',
     decalPrompt: 'A square dark void face accessory texture: pure black smooth gradient, faint dark blue cosmic dust, no facial features, no eyes, no mouth. Designed as a Roblox face accessory overlay. Transparent background, isolated, centered. NO text, NO logos. Family-friendly, no horror, no gore.',
     avatarRestylePrompt: 'Roblox blocky avatar, COMPLETELY HEADLESS — empty dark void where the head should be, NO face visible, NO eyes, NO mouth, just a tiny dark void blob in place of head. High black turtleneck collar covers the neck stump. All-black outfit: black shirt, black pants, black shoes. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon, no horror, no gore.',
@@ -138,7 +140,8 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
   korblox_style: {
     id: 'korblox_style',
     title: 'Korblox Style',
-    pitch: 'Скелетная нога-кибер. Имитация Korblox Deathspeaker за 17к Robux — без переплаты.',
+    pitchEN: 'Cyber skeleton leg. Mimic the 17k-Robux Korblox Deathspeaker without paying for it.',
+    pitchRU: 'Скелетная нога-кибер. Имитация Korblox Deathspeaker за 17к Robux — без переплаты.',
     appStoreHook: 'FREE KORBLOX LEG',
     decalPrompt: 'A square dark bone/skeleton texture overlay: black background with subtle white-blue bone fragments, vertical bone segments resembling a leg skeleton in cyber-fantasy style. Designed as a Roblox right-leg decal overlay. Transparent edges, centered. NO text, NO horror, NO gore — stylized fantasy bone art only.',
     avatarRestylePrompt: 'Roblox blocky avatar, normal face and normal head. The RIGHT LEG is completely dark blue-black with glowing cyan-blue cyber-bone skeleton segments visible — looks like a Korblox Deathspeaker leg, magical-cyber-fantasy aesthetic. The LEFT LEG is regular skin tone. Dark tactical torso clothing, slim build. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon.',
@@ -183,7 +186,8 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
   void: {
     id: 'void',
     title: 'Void',
-    pitch: 'Полностью чёрный, безликий, с дымной аурой. Cursed-эстетика для TikTok-видосов.',
+    pitchEN: 'Pitch-black, faceless, smoky aura. Cursed aesthetic — TikTok bait.',
+    pitchRU: 'Полностью чёрный, безликий, с дымной аурой. Cursed-эстетика для TikTok-видосов.',
     appStoreHook: 'CURSED VOID AVATAR',
     decalPrompt: 'A square cursed void aesthetic decal: dark smoky aura, subtle purple-violet glow at edges, smooth gradient from pure black center to dark grey edges. Designed as a Roblox aura/back decal overlay. No facial features, no human figures, no text. Family-friendly cosmic dark art, no gore, no horror.',
     avatarRestylePrompt: 'Roblox blocky avatar, COMPLETELY BLACK silhouette — face, body, arms, hands, legs ALL pure black. Faceless minimalist head with only the subtlest dark grey hint of eye sockets. Dark purple smoky aura wisps around the shoulders and back. All-black hoodie and pants. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Cursed void aesthetic, family-friendly stylized cartoon, no horror.',
@@ -242,7 +246,8 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
   sigma: {
     id: 'sigma',
     title: 'Sigma',
-    pitch: 'Холодный, минималистичный, в костюме без улыбки. Sigma-мейл-стайл, ноль эмоций.',
+    pitchEN: 'Cold, minimalist, suited, no smile. Sigma-male style — zero emotion.',
+    pitchRU: 'Холодный, минималистичный, в костюме без улыбки. Sigma-мейл-стайл, ноль эмоций.',
     appStoreHook: 'SIGMA CHAD MODE',
     decalPrompt: 'A square blank stoic face decal for a Roblox character: minimal facial features, neutral expression, no smile, no eyes (or very subtle dark eye dots), pale skin tone, designed as a face overlay. Photorealistic style, sharp contrast. Centered, transparent edges. No text, no logos, family-friendly.',
     avatarRestylePrompt: 'Roblox blocky avatar, light tan skin tone, completely STOIC blank facial expression — NO smile, neutral mouth, minimal cold eyes, sharp jaw. Wearing a sharp dark grey suit jacket with white shirt collar peeking out, dark black trousers, BLACK SUNGLASSES. Tall slim sigma-male silhouette, confident pose. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon.',
@@ -323,3 +328,17 @@ export function summarizeVibe(vibe: GlowupVibe): {
 }
 
 export { hexToRgbText };
+
+/**
+ * Weave gender choice into the avatar restyle prompt. Flux img2img tends to
+ * preserve the input avatar's body shape too strongly, so we explicitly tell
+ * it to lean toward male/female silhouette when the user picked one.
+ */
+export function avatarRestylePromptFor(vibe: GlowupVibe, gender: GlowupGender): string {
+  const genderClause = gender === 'girls'
+    ? ' Female Roblox character — slimmer torso, longer hairstyle, feminine proportions.'
+    : gender === 'boys'
+      ? ' Male Roblox character — broader shoulders, masculine proportions.'
+      : ' Androgynous Roblox character — neutral build.';
+  return vibe.avatarRestylePrompt + genderClause;
+}
