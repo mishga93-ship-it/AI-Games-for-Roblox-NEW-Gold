@@ -27811,8 +27811,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // SKIP this stage entirely when pick_vehicle_template selected a
       // Roblox-endorsed template — the builder will emit a Loader Script
       // that runtime-loads the template via InsertService:LoadAsset.
-      const templateAlreadyPicked = typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
-        && (currentJob.metadata.vehicleTemplateAssetId as number) > 0;
+      // Round 20L v15 (session 381): also consider templateAlreadyPicked
+      // when filename is set without assetId (local-only templates like
+      // Phenom100-PlaneKit.rbxm which has no Roblox marketplace ID).
+      const templateAlreadyPicked = (typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
+        && (currentJob.metadata.vehicleTemplateAssetId as number) > 0)
+        || (typeof currentJob.metadata?.vehicleTemplateRbxmFilename === 'string'
+            && (currentJob.metadata.vehicleTemplateRbxmFilename as string).length > 0);
       if (templateAlreadyPicked) {
         await beginStage('generate_vehicle_mesh', 'Skipping AI mesh — Roblox template will load at runtime');
         await finishStage('generate_vehicle_mesh', 'completed', [], [
