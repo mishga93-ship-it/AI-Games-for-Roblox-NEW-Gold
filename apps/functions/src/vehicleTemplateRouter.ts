@@ -174,12 +174,17 @@ export const VEHICLE_TEMPLATE_CATALOG: Record<VehicleTemplateName, VehicleTempla
     templateRbxmFilename: 'Boat-30309891.rbxm',
   },
   Plane: {
-    assetId: 81606616,
-    preferredVariant: 'regening plane',
-    variantFallbacks: [],
-    bodyOriginalHex: '#3A7D15',
-    label: 'War Plane',
-    templateRbxmFilename: 'Plane-81606616.rbxm',
+    // Round 20L v15 (session 381): switched from War Plane (HopperBin-era
+    // 2008 controls) to Embraer Phenom 100 with PlaneKit framework. PlaneKit
+    // ships: pro flight controls, in-cockpit first-person, full HUD (Throttle/
+    // Speed/Altitude/Stall), engine sounds. Body color #F8F8F8 (off-white,
+    // 63 parts) — recolor target.
+    assetId: 0,  // local-only template, no asset ID
+    preferredVariant: 'Embraer Phenom 100',
+    variantFallbacks: ['Plane', 'Embraer'],
+    bodyOriginalHex: '#F8F8F8',
+    label: 'Embraer Phenom 100',
+    templateRbxmFilename: 'Phenom100-PlaneKit.rbxm',
   },
   Tank: {
     assetId: 101512952,

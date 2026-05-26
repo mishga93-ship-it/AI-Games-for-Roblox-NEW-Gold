@@ -27584,15 +27584,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // etc.), this stage emits no template — pipeline falls through to
       // procedural baseline as before. Only `car`-style vehicles match.
       const vehicleTypeForTemplate = String(vehicleType ?? '').toLowerCase();
-      // Round 20K: extend eligibility to non-car types now that we have
-      // community templates for motorcycle / boat / plane / tank.
-      // Round 20L attempt 2 (session 381): drop 'plane' AGAIN — user wants
-      // Phenom-100 quality without stealing marketplace assets. Plane now
-      // routes through generate_vehicle_mesh stage (Meshy 6 backend) for
-      // a polished per-prompt mesh + our VehicleController aircraft mode
-      // (W/S/A/D). PlaneKit-style HUD (Throttle/Speed/Altitude) added in
-      // Phase 2.
-      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
+      // Round 20L v15 (session 381): plane returns to template path with
+      // Embraer Phenom 100 + PlaneKit. After 14 rounds of fighting Meshy
+      // single-mesh + Roblox VehicleSeat incompatibility, accepted that
+      // a proven third-party PlaneKit framework is best path. User showed
+      // Phenom 100 as their target reference. We embed + recolor body.
+      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'plane', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
       if (eligibleForTemplate) {
         await beginStage('pick_vehicle_template', 'Picking Roblox vehicle template');
         try {
