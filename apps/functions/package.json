@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/data && cp -f src/data/*.json dist/data/ 2>/dev/null || true",
     "dev": "firebase emulators:start --only functions,firestore,storage",
     "serve": "npm run dev",
     "seed": "npx tsx src/seedSocialData.ts"

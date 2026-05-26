@@ -1,0 +1,4500 @@
+{
+  "sigma": {
+    "hair": [
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 376527350,
+        "name": "Black Ponytail",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 945985,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6b51cc34fa292e05287b499127051872/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 120478611992895,
+        "name": "Side Parted Slicked Back Gojo Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "blanksfall",
+        "favoriteCount": 71671,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-18d6eb152b4536221a46669711e1a766/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 7193442167,
+        "name": "Pony Tail - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 69659,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f1e7cf8e8714d8a953516800ec17aa0d/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 85201976807991,
+        "name": "☆ straight slicked y2k haircut black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 70,
+        "creatorName": "maj noire",
+        "favoriteCount": 65875,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e64b164984a64fb2bceb30c5069a6120/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 16724366535,
+        "name": "† straight slick y2k haircut black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 70,
+        "creatorName": "maj noire",
+        "favoriteCount": 63528,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-9e9832633644604a0f381a9d3e547f52/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6993754725,
+        "name": "Straight Bangs - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 63111,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1b2a0ecac2898d461b081a9d6e109344/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 133232372409812,
+        "name": "Black - Anime Slicked Back Hair (Short Version)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "valako!",
+        "favoriteCount": 60772,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-34bb9a38b0b3102d6f8789cfd46c4cd9/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469171,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240757332,
+        "name": "Knit Sweater - Black",
+        "itemType": "Asset",
+        "assetType": 68,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 256820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-348a236664603ed2f98acc693d591330/420/420/SweaterAccessory/Png/noFilter"
+      },
+      {
+        "id": 7178736794,
+        "name": "Roblox T-Shirt - Black",
+        "itemType": "Asset",
+        "assetType": 64,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 208124,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6d5a6b8c4520f126e17fd3ad634d99cf/420/420/TshirtAccessory/Png/noFilter"
+      }
+    ],
+    "shirt": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469171,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240757332,
+        "name": "Knit Sweater - Black",
+        "itemType": "Asset",
+        "assetType": 68,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 256820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-348a236664603ed2f98acc693d591330/420/420/SweaterAccessory/Png/noFilter"
+      },
+      {
+        "id": 7178736794,
+        "name": "Roblox T-Shirt - Black",
+        "itemType": "Asset",
+        "assetType": 64,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 208124,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6d5a6b8c4520f126e17fd3ad634d99cf/420/420/TshirtAccessory/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 144076760,
+        "name": "Dark Green Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2384697,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-596d5c180068725a14691864bc353931/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469171,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 5945438043,
+        "name": "Dark Ethereal Hairstyle",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 79,
+        "creatorName": "genkroco",
+        "favoriteCount": 293117,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-3677067fdce2ef377ff60c2b5951f5d7/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "neck": [
+      {
+        "id": 11377306,
+        "name": "Silver Ninja Star of the Brilliant Light",
+        "itemType": "Asset",
+        "assetType": 19,
+        "price": 15,
+        "creatorName": "Roblox",
+        "favoriteCount": 374037,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c4dc2942b141a84a35f53a6edbe38b79/420/420/Gear/Png/noFilter"
+      },
+      {
+        "id": 5829892514,
+        "name": "Nose Chain",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "genkroco",
+        "favoriteCount": 315060,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c72323687da7c7a7de52aefdceca66ea/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6682341755,
+        "name": "Miau Butterfly Necklace Gold and White",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 70,
+        "creatorName": "cyaleys",
+        "favoriteCount": 258097,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-57b9d2fd266f458e846a3ade158be35f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 5355321395,
+        "name": "Silver Link Chain",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 75,
+        "creatorName": "genkroco",
+        "favoriteCount": 82611,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1f4a2597fe276865086f36db990d71e2/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 7191535915,
+        "name": "Y2k Emo Chain Pants Vamp vintage Aesthetic 80% OFF",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Arianator queens group",
+        "favoriteCount": 72503,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-383837784c4b19d2ded9a71f29ac0053/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 11469196099,
+        "name": "Grey Knitted Sweater w/Chain Emo Vintage Y2k Goth",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "03:03",
+        "favoriteCount": 69149,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-120177447e4d692787a980e0b4db534f/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 9312373235,
+        "name": "emo chains",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "xXPrettyAbbieXx",
+        "favoriteCount": 65444,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4df9c5cd12cb4d538d6a348a9aa22341/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7532791991,
+        "name": "Black Pants w Chain and Dragon",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "do_om",
+        "favoriteCount": 45238,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-d6540f77322431553923fa1fee61b7e6/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 7284413042,
+        "name": "Black Square Shades",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "SmoukiH",
+        "favoriteCount": 128174,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-98d741424076dbd2914b1a369875f648/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 5270451236,
+        "name": "Gangster Black Shirt w/ Tattoos and Watch",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "Æ Clothing Group",
+        "favoriteCount": 123504,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-243b79d7b646a4967c8af031d2725346/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6976457528,
+        "name": "High waisted black cargo jeans pants trendy pocket",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Aubrey's Fashion Line",
+        "favoriteCount": 67015,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ea736e8a823a815b9667d44f272b1b0a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6087965870,
+        "name": "Red Squared Christmas pijamas",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "rosslynxs",
+        "favoriteCount": 60194,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e9ba8045b98189c2ad65cc0c3f2e6e08/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 13344349945,
+        "name": "3.0 Max Watch - White",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 65,
+        "creatorName": "Ramonfrar",
+        "favoriteCount": 44112,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c902e5c0dc75efc29621cb1c91be58a8/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 5647940662,
+        "name": "Black Square Sword",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "Kelvingts",
+        "favoriteCount": 40948,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-99a0ec97835c34749d90880192617d55/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 12395517308,
+        "name": "Black and Silver Square Sunglasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "BerryAveUGC",
+        "favoriteCount": 31409,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6390166077837e190890981779c7a377/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 11041851392,
+        "name": "Eddie Pocket Bandana (waist)",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "NYTV UGC",
+        "favoriteCount": 23393,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-165cdb7c5416b7c9227444d2be84a696/420/420/WaistAccessory/Png/noFilter"
+      }
+    ]
+  },
+  "baddie": {
+    "hair": [
+      {
+        "id": 2956239660,
+        "name": "Belle Of Belfast Long Red Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2741878,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-79b30f7a245600598ffbe8a88282cebb/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 11597599236,
+        "name": "Lush Wavy Hair (Blonde)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "auroriies",
+        "favoriteCount": 471113,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f3ddb43d56a275627dbaf66c6aa32206/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6778986933,
+        "name": "Adorbs black long hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 85,
+        "creatorName": "Zayacti",
+        "favoriteCount": 423401,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fc8fdaf6c4639f467787768fe5e60f3c/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6536289312,
+        "name": "Long Blonde Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 80,
+        "creatorName": "antilique",
+        "favoriteCount": 334034,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c45377f54e861c5ba6d8f6b8d3da2ae7/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 7069883034,
+        "name": "Long Blonde High Set Pigtails",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 75,
+        "creatorName": "bunnexh",
+        "favoriteCount": 285501,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-43da858a4b620a997e2c5dbd9f50e3bc/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 12020003803,
+        "name": "Lush Wavy Hair (Blonde and Brown)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "auroriies",
+        "favoriteCount": 277494,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ec6645cec04f10ebae99cd26437a9339/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9488953695,
+        "name": "Baddie Cap in Black on Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "Beeism",
+        "favoriteCount": 117030,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b4df18978e2bbb95b79d00718c9efe06/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 18346562972,
+        "name": "Long Baddie Layered Pony (Black)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "AW SALON",
+        "favoriteCount": 112478,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-dab45b9ba059cfc0b8ca5ade82fc357a/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 1192464705,
+        "name": "Bear Face Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 95,
+        "creatorName": "Roblox",
+        "favoriteCount": 2280101,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-917523b22d0f8dcbb78e0cef6d36f164/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 14353421343,
+        "name": "Baby Queen - Face Frame",
+        "itemType": "Asset",
+        "assetType": 61,
+        "price": 50,
+        "creatorName": "Universal Music UK",
+        "favoriteCount": 638353,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-74298862ee9a8ef8bee2c1501d29201b/420/420/EmoteAnimation/Png/noFilter"
+      },
+      {
+        "id": 948,
+        "name": "Woman Face",
+        "itemType": "Bundle",
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 338575,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 949,
+        "name": "Man Face",
+        "itemType": "Bundle",
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 285882,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3102,
+        "name": "Cute Face",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "i_Sininho",
+        "favoriteCount": 90988,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3356,
+        "name": "Hum Face",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "i_Sininho",
+        "favoriteCount": 88997,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 4989,
+        "name": "Bruh Face Head",
+        "itemType": "Bundle",
+        "price": 70,
+        "creatorName": "BUNNIHOUPI",
+        "favoriteCount": 50937,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 96427140934429,
+        "name": "Pink Big Duck Lips Y2K",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Gianetti",
+        "favoriteCount": 43826,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c98bc490286d68e54d6155c927a48b04/420/420/FaceAccessory/Png/noFilter"
+      }
+    ],
+    "shirt": [
+      {
+        "id": 398634295,
+        "name": "Pastel Starburst Top with Gray Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 654396,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ee573a59247c4783399316e94324504c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 5634362258,
+        "name": "Rainbow Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 303746,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a41be0c7176c62af46850bbe531bee77/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 6768438209,
+        "name": "y2k vamp emo vintage baddie cute yay aesthetic",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 301913,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-77b007ea858fab49fc5fed34f46545d4/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 9240752338,
+        "name": "Tie-Front Top - White",
+        "itemType": "Asset",
+        "assetType": 65,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 288451,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-67bb2313dd8d2e9195cecc7ee39fc147/420/420/ShirtAccessory/Png/noFilter"
+      },
+      {
+        "id": 8739289340,
+        "name": "Brown Trippy Smiley Softie Preppy Emo Goth Baddie",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "$PARKLEZ",
+        "favoriteCount": 146744,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c682cf91133aa4a480954ad57b9d3bb1/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9364920955,
+        "name": "Y2k black top aesthetic Christmas girls emo cute ",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "kouey",
+        "favoriteCount": 127274,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1010f4252a0d15bd31a0a0ab4095f8e4/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 4047886060,
+        "name": "Purple and Teal Top",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 80490,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b02941baec5d1185103eb3a94689753a/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 9174354743,
+        "name": "Top Knot - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 24235,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-018b27b54c16b3287391ab9c2d63a160/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 144076760,
+        "name": "Dark Green Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2384697,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-596d5c180068725a14691864bc353931/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 398634487,
+        "name": "Beautiful You Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2282852,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-59433f5779b1773e252e1163a00c909c/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537806,
+        "name": "Jean Shorts",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 755904,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-62bedb4bac62a4a0458a223ab9b596ad/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537569,
+        "name": "Black Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 367783,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0808e57c5d721f09905b1a7f0351d63a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 5197702014,
+        "name": "Cute ripped Jeans Y2k aesthetic vintage girl ok",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 352566,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ade5c16c85a55023452f230fef2c26c9/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 129458426,
+        "name": "Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Roblox",
+        "favoriteCount": 301851,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8b0a5061d37ccfa66aae8ac1c07f4044/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 6275932619,
+        "name": "Elf Ears w/ White Piercings",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "inkwaves",
+        "favoriteCount": 1122656,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ada786cf4acf5500b29021507cade438/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 7141674388,
+        "name": "Black Cat Ears Hairstyle",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "DIDIgamedev",
+        "favoriteCount": 653139,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-89a840543da3fc7a14457b2224c445fc/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 1374269,
+        "name": "Kitty Ears",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "Roblox",
+        "favoriteCount": 618491,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8287e63336069ea8661b0b2b411287fe/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 4508445398,
+        "name": "Diamond Stud Earrings",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "Builder_Boy",
+        "favoriteCount": 390948,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-526e856531b3622ce3c5664522fae4a0/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 4300266038,
+        "name": "Earring Hoops",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "Builder_Boy",
+        "favoriteCount": 346991,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4f9dd2ce5cc1ae946b476e888671f4ff/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 5829892514,
+        "name": "Nose Chain",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "genkroco",
+        "favoriteCount": 315060,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c72323687da7c7a7de52aefdceca66ea/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 4846286825,
+        "name": "Cartoony Bunny Ears",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "TheShipArchitect",
+        "favoriteCount": 311126,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-7dab7ae7c388298ec2356684e76644f2/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 6338947898,
+        "name": "Elf Ears w/ White Piercings",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "inkwaves",
+        "favoriteCount": 304509,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e0d82a840648bf97c727e2e644505dc1/420/420/Hat/Png/noFilter"
+      }
+    ],
+    "neck": [
+      {
+        "id": 5829892514,
+        "name": "Nose Chain",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "genkroco",
+        "favoriteCount": 315060,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c72323687da7c7a7de52aefdceca66ea/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6682341755,
+        "name": "Miau Butterfly Necklace Gold and White",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 70,
+        "creatorName": "cyaleys",
+        "favoriteCount": 258097,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-57b9d2fd266f458e846a3ade158be35f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 5355321395,
+        "name": "Silver Link Chain",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 75,
+        "creatorName": "genkroco",
+        "favoriteCount": 82611,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1f4a2597fe276865086f36db990d71e2/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 7191535915,
+        "name": "Y2k Emo Chain Pants Vamp vintage Aesthetic 80% OFF",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Arianator queens group",
+        "favoriteCount": 72503,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-383837784c4b19d2ded9a71f29ac0053/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 11469196099,
+        "name": "Grey Knitted Sweater w/Chain Emo Vintage Y2k Goth",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "03:03",
+        "favoriteCount": 69149,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-120177447e4d692787a980e0b4db534f/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 9312373235,
+        "name": "emo chains",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "xXPrettyAbbieXx",
+        "favoriteCount": 65446,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4df9c5cd12cb4d538d6a348a9aa22341/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 1097186174,
+        "name": "White Off-Shoulder cropped top with choker",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 8,
+        "creatorName": "Tiger ®",
+        "favoriteCount": 64524,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f97a3a7fa5c4c3a2dfd4fc0975cfc386/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6682111604,
+        "name": "studded black choker 3.0",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 50,
+        "creatorName": "MatthewDeIRey",
+        "favoriteCount": 64098,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a830969557628eb43f4073bc62912e14/420/420/NeckAccessory/Png/noFilter"
+      }
+    ]
+  },
+  "y2k": {
+    "hair": [
+      {
+        "id": 10482964428,
+        "name": "Y2K Layered Wolfcut (Blonde)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "auroriies",
+        "favoriteCount": 464683,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ab231aa63a781bc6da03a8248251b43a/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15814817847,
+        "name": "♡ pink kawaii layered hair with kitty hood",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "meozi",
+        "favoriteCount": 258596,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-780332da25f8d0eabe2f49124652aad7/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 13388767855,
+        "name": "Messy Hair w/ Y2K Punk Cat Beanie(White)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "DIDIgamedev",
+        "favoriteCount": 241442,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-9ea3f25a81be555041ddd3eb59bfd2a6/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 10084548738,
+        "name": "Aesthetic Long Y2k Messy Ponytail (Black)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "dramfii",
+        "favoriteCount": 234908,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-cc123ace198542e90861f0e0e20e66fe/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 10084537101,
+        "name": "Aesthetic Long Y2k Messy Ponytail (Blonde)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "dramfii",
+        "favoriteCount": 224779,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fd74d1648e49fd50e15a245a50d865cf/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9067113301,
+        "name": "Aesthetic Y2k Messy Ponytail (Black)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 70,
+        "creatorName": "dramfii",
+        "favoriteCount": 201495,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-55de6d6030990836f36501361b9ecec0/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 10482959596,
+        "name": "Y2K Layered Wolfcut (Black)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "auroriies",
+        "favoriteCount": 178475,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8fd7c109ed36d017b03596598593b39f/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 10482969832,
+        "name": "Y2K Layered Wolfcut (Brown)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "auroriies",
+        "favoriteCount": 168703,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a470d63ad76301f3715dcb1c5a430c9b/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 8207724090,
+        "name": "Black Y2K Cyberstar Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Disordinance's Dumpster",
+        "favoriteCount": 439211,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c47ea50e85cda24bc10529622c190e8f/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6475491820,
+        "name": "Magic Cloud Glasses - Pink Version",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "S0yZuly",
+        "favoriteCount": 272516,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-bf83a866eafca98339fc6b4f8b7373e7/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 14342838254,
+        "name": "Black Cheap Y2K Double Spiky Hair",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Maki Salon",
+        "favoriteCount": 95390,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1f82740a3aab169d6ca8a99931019b29/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 5031122380,
+        "name": "Kitty Face Mask in Pink",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "PolarCub",
+        "favoriteCount": 93001,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2662e736819dc9e7fb5657adee7b9cab/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6352052826,
+        "name": "Nose Butterfly: Pink",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "RynityRift",
+        "favoriteCount": 83103,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ea093198ba1591db1674f6698ee3a7fe/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 5918733383,
+        "name": "Pink RG Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "CaioAlbarnBR",
+        "favoriteCount": 79947,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4b1517b3ac18cdb5e681f06cf5411ccf/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 4996005555,
+        "name": "Pink Macaron",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "PolarCub",
+        "favoriteCount": 76904,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b80de07006ddd59b4415c562b21dd384/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 5700130976,
+        "name": "Medical Mask (Pink)",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Ellzd",
+        "favoriteCount": 75869,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-97d3ff6e2bb4603254aac28b19432651/420/420/FaceAccessory/Png/noFilter"
+      }
+    ],
+    "shirt": [
+      {
+        "id": 398634295,
+        "name": "Pastel Starburst Top with Gray Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 654396,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ee573a59247c4783399316e94324504c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6876555875,
+        "name": "y2k aesthetic girl vintage trendy soft gray cute",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 454392,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-512aa2b945f06deb8871cd0a466d2e6c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 7919545692,
+        "name": "Christmas Emo y2k black shirt aesthetic boy trendy",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "reysia",
+        "favoriteCount": 356205,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e01d2adf0bcb13eb6974d9e9d4f5ea63/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 5197702014,
+        "name": "Cute ripped Jeans Y2k aesthetic vintage girl ok",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 352566,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ade5c16c85a55023452f230fef2c26c9/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 5634362258,
+        "name": "Rainbow Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 303746,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a41be0c7176c62af46850bbe531bee77/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240752338,
+        "name": "Tie-Front Top - White",
+        "itemType": "Asset",
+        "assetType": 65,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 288451,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-67bb2313dd8d2e9195cecc7ee39fc147/420/420/ShirtAccessory/Png/noFilter"
+      },
+      {
+        "id": 9364920955,
+        "name": "Y2k black top aesthetic Christmas girls emo cute ",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "kouey",
+        "favoriteCount": 127274,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1010f4252a0d15bd31a0a0ab4095f8e4/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 4047886060,
+        "name": "Purple and Teal Top",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 80490,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b02941baec5d1185103eb3a94689753a/420/420/Shirt/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 144076760,
+        "name": "Dark Green Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2384697,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-596d5c180068725a14691864bc353931/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 398634487,
+        "name": "Beautiful You Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2282852,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-59433f5779b1773e252e1163a00c909c/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537806,
+        "name": "Jean Shorts",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 755906,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-62bedb4bac62a4a0458a223ab9b596ad/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537569,
+        "name": "Black Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 367783,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0808e57c5d721f09905b1a7f0351d63a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 5197702014,
+        "name": "Cute ripped Jeans Y2k aesthetic vintage girl ok",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 352566,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ade5c16c85a55023452f230fef2c26c9/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 5246950670,
+        "name": "[ORIG] skirt + convers boots envy y2k vamp emo",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "h34rtSICK",
+        "favoriteCount": 317444,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8f97c3918f51e6ad8ba581ffb9e18dfe/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 4849184439,
+        "name": "Butterfly Hat",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "frenchrxses",
+        "favoriteCount": 1007399,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6d04b9c5a183a3047d4bc42a4ef1157d/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 10482964428,
+        "name": "Y2K Layered Wolfcut (Blonde)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "auroriies",
+        "favoriteCount": 464683,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ab231aa63a781bc6da03a8248251b43a/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 8207724090,
+        "name": "Black Y2K Cyberstar Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Disordinance's Dumpster",
+        "favoriteCount": 439211,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c47ea50e85cda24bc10529622c190e8f/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6036593327,
+        "name": "Fluttering  Butterfly Glasses White",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "AngiePlet",
+        "favoriteCount": 315363,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-03d59c1355bd4d72e8e9f270768aaf98/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 5197222551,
+        "name": "Silver Glasses With Butterflies",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Lukacors",
+        "favoriteCount": 289053,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8291361af3fa3d686ecc0a355e431e6a/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6682341755,
+        "name": "Miau Butterfly Necklace Gold and White",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 70,
+        "creatorName": "cyaleys",
+        "favoriteCount": 258097,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-57b9d2fd266f458e846a3ade158be35f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 6741572545,
+        "name": "Y2K Grunge Black Shoulder Bag",
+        "itemType": "Asset",
+        "assetType": 45,
+        "price": 50,
+        "creatorName": "Sarabxlla",
+        "favoriteCount": 251333,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ad8f665b9ab76bbe4abee706c14d0038/420/420/FrontAccessory/Png/noFilter"
+      },
+      {
+        "id": 4597874025,
+        "name": "Blue Butterflies",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "Ayzria",
+        "favoriteCount": 238942,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8503c89b5d158c8aa1392cbc3d3e1a7d/420/420/Hat/Png/noFilter"
+      }
+    ],
+    "neck": [
+      {
+        "id": 4849184439,
+        "name": "Butterfly Hat",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "frenchrxses",
+        "favoriteCount": 1007399,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6d04b9c5a183a3047d4bc42a4ef1157d/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 376527115,
+        "name": "Jade Necklace with Shell Pendant",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 777570,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0f53c7d59fcb68685065cc3101eecf6f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 9059176760,
+        "name": "Off-Shoulder Jacket Pink",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 70,
+        "creatorName": "Spiraxy",
+        "favoriteCount": 318619,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8bde1498322c499e5da5fcc10937787a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 6036593327,
+        "name": "Fluttering  Butterfly Glasses White",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "AngiePlet",
+        "favoriteCount": 315363,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-03d59c1355bd4d72e8e9f270768aaf98/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 107016726530712,
+        "name": "Roblox Learn Heart Necklace",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 294894,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-64bf549dd79c185022e371353311893a/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 5197222551,
+        "name": "Silver Glasses With Butterflies",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Lukacors",
+        "favoriteCount": 289053,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8291361af3fa3d686ecc0a355e431e6a/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6682341755,
+        "name": "Miau Butterfly Necklace Gold and White",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 70,
+        "creatorName": "cyaleys",
+        "favoriteCount": 258097,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-57b9d2fd266f458e846a3ade158be35f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 6419516033,
+        "name": "Pink Flamingo Floaty",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "mollyxian",
+        "favoriteCount": 241600,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a7e07cd9f31f450b46e2d800ba35ac86/420/420/WaistAccessory/Png/noFilter"
+      }
+    ]
+  },
+  "goth": {
+    "hair": [
+      {
+        "id": 2956239660,
+        "name": "Belle Of Belfast Long Red Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2741878,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-79b30f7a245600598ffbe8a88282cebb/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 376527350,
+        "name": "Black Ponytail",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 945985,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6b51cc34fa292e05287b499127051872/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 7193442167,
+        "name": "Pony Tail - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 69659,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f1e7cf8e8714d8a953516800ec17aa0d/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6993754725,
+        "name": "Straight Bangs - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 63112,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1b2a0ecac2898d461b081a9d6e109344/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9244111257,
+        "name": "Wavy Middle Part - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 50772,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-528f576e93eb64fe20e03135f9842d5a/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9174355709,
+        "name": "Sideswept Dreads - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 42279,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8c10cb32e968d3b024694efa673e2bbf/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9244089488,
+        "name": "Medium Middle Part - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 29070,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e76684f2a34a8629a01fe8d4b5f19d7d/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 98704368565579,
+        "name": "Sharp Goth Eyelashes",
+        "itemType": "Asset",
+        "assetType": 77,
+        "price": 30,
+        "creatorName": "Wonky Wardrobe",
+        "favoriteCount": 417,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-88ded982000afe190b64ffcd7408d1a3/420/420/EyelashAccessory/Png/noFilter"
+      },
+      {
+        "id": 126289967451664,
+        "name": "Goth Black Eyeshadow Everyday",
+        "itemType": "Asset",
+        "assetType": 90,
+        "price": 30,
+        "creatorName": "Style Stars UGC",
+        "favoriteCount": 197,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f722eae866da69de8549072a0533997e/420/420/EyeMakeup/Png/noFilter"
+      },
+      {
+        "id": 97301699413892,
+        "name": "Goth Clown Eyeliner",
+        "itemType": "Asset",
+        "assetType": 90,
+        "price": 30,
+        "creatorName": "SobbingSabah",
+        "favoriteCount": 153,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-96dc314f979f2c3745ba1b50e95d65fd/420/420/EyeMakeup/Png/noFilter"
+      },
+      {
+        "id": 103537373341231,
+        "name": "Tribal Goth Rock Eyeliner",
+        "itemType": "Asset",
+        "assetType": 90,
+        "price": 30,
+        "creatorName": "Respawn Beauty",
+        "favoriteCount": 150,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c243f203e1c8016808b948bc88f63c45/420/420/EyeMakeup/Png/noFilter"
+      },
+      {
+        "id": 122261560857624,
+        "name": "Bold Goth Eyeshadow - Red",
+        "itemType": "Asset",
+        "assetType": 90,
+        "price": 30,
+        "creatorName": "La Boutique Mimi",
+        "favoriteCount": 128,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-9c8340bc5e5783552cfed7e753d6b225/420/420/EyeMakeup/Png/noFilter"
+      },
+      {
+        "id": 92041070720307,
+        "name": "Natural Brown Eyeshadow Everyday Dark",
+        "itemType": "Asset",
+        "assetType": 90,
+        "price": 30,
+        "creatorName": "Style Stars UGC",
+        "favoriteCount": 124,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-35334547968d560607252bf28c226696/420/420/EyeMakeup/Png/noFilter"
+      },
+      {
+        "id": 126426755579086,
+        "name": "Goth Heart Web Tattoo",
+        "itemType": "Asset",
+        "assetType": 90,
+        "price": 30,
+        "creatorName": "Wonky Wardrobe",
+        "favoriteCount": 100,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f094dfd956cf01d2d17a8cc4d5ad6fe0/420/420/EyeMakeup/Png/noFilter"
+      },
+      {
+        "id": 73009675608823,
+        "name": "Dark Goth Eyes",
+        "itemType": "Asset",
+        "assetType": 90,
+        "price": 30,
+        "creatorName": "Chubby Carrots",
+        "favoriteCount": 87,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-38981c84b7fde1b87e1100ad456283d0/420/420/EyeMakeup/Png/noFilter"
+      }
+    ],
+    "shirt": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469173,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240757332,
+        "name": "Knit Sweater - Black",
+        "itemType": "Asset",
+        "assetType": 68,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 256820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-348a236664603ed2f98acc693d591330/420/420/SweaterAccessory/Png/noFilter"
+      },
+      {
+        "id": 7178736794,
+        "name": "Roblox T-Shirt - Black",
+        "itemType": "Asset",
+        "assetType": 64,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 208124,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6d5a6b8c4520f126e17fd3ad634d99cf/420/420/TshirtAccessory/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 129459077,
+        "name": "Black Slacks",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Roblox",
+        "favoriteCount": 448505,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c3f189f9d5100c4c73573769339a6160/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537569,
+        "name": "Black Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 367783,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0808e57c5d721f09905b1a7f0351d63a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 6709744935,
+        "name": "Jeans cute vintage aesthetic cheap emo y2k goth",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "FP clothing",
+        "favoriteCount": 212508,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-64c8e4a99b67567f46475f991d383384/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9120251003,
+        "name": "Wetsuit Pants -  Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 196998,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-76fef9a772c2140c5ff22da7be9c1854/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 6555794614,
+        "name": "White Suit 'n' Black Vest [-]",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "TIX Clothing +",
+        "favoriteCount": 176977,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1bfb64fcef4e06b77fad5ac28aab1287/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 376527115,
+        "name": "Jade Necklace with Shell Pendant",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 777570,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0f53c7d59fcb68685065cc3101eecf6f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 107016726530712,
+        "name": "Roblox Learn Heart Necklace",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 294894,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-64bf549dd79c185022e371353311893a/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 6682341755,
+        "name": "Miau Butterfly Necklace Gold and White",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 70,
+        "creatorName": "cyaleys",
+        "favoriteCount": 258097,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-57b9d2fd266f458e846a3ade158be35f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 6960786140,
+        "name": "grey pjs plaid emo y2k vamp grunge goth dh cyber",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 7,
+        "creatorName": "sévouier",
+        "favoriteCount": 251427,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4568195fc0740cbbcdf4fd7d9e019672/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7220612603,
+        "name": "Black Silk Mini Dress necklace jeans y2k goth",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "coded clothing",
+        "favoriteCount": 218667,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c36081868a93186b4a1d27a1611bb5b5/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6709744935,
+        "name": "Jeans cute vintage aesthetic cheap emo y2k goth",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "FP clothing",
+        "favoriteCount": 212508,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-64c8e4a99b67567f46475f991d383384/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9154749510,
+        "name": "beige emo khaki grunge y2k goth emo extreme boy",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "$ ADEZONE",
+        "favoriteCount": 162084,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-78cd48cb54b540ff40637968f838e5ea/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 8739289340,
+        "name": "Brown Trippy Smiley Softie Preppy Emo Goth Baddie",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "$PARKLEZ",
+        "favoriteCount": 146744,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c682cf91133aa4a480954ad57b9d3bb1/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "back": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469173,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240757332,
+        "name": "Knit Sweater - Black",
+        "itemType": "Asset",
+        "assetType": 68,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 256820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-348a236664603ed2f98acc693d591330/420/420/SweaterAccessory/Png/noFilter"
+      },
+      {
+        "id": 7178736794,
+        "name": "Roblox T-Shirt - Black",
+        "itemType": "Asset",
+        "assetType": 64,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 208124,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6d5a6b8c4520f126e17fd3ad634d99cf/420/420/TshirtAccessory/Png/noFilter"
+      }
+    ]
+  },
+  "rich_emo": {
+    "hair": [
+      {
+        "id": 7284206648,
+        "name": "Aesthetic Split Bangs Hair in Blonde",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 75,
+        "creatorName": "Lukacors",
+        "favoriteCount": 409789,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a502ab56b6d775d2d6ba9c9de13d4af3/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 78519397423927,
+        "name": "Emo half up side ponytail in Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "Archi_tecture",
+        "favoriteCount": 246339,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0d62ecc0ab8dd0d1562b149e4d6a18d8/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 3814474927,
+        "name": "Cool Side Shave",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 169270,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e6e15c8cef48a1f26e716c0b62ca9801/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 13947711266,
+        "name": "💯 Spiky Anime Boys Emo Hair (Black)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "Dreamwave Inn",
+        "favoriteCount": 135159,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1f6878f97d2990e809182a4f5cdf3ded/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 18497585788,
+        "name": "long emo girly pigtails nerd bangs hairstyle black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "umeko'",
+        "favoriteCount": 117452,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a8cf307463b530b460e87df20365f545/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6993754725,
+        "name": "Straight Bangs - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 63112,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1b2a0ecac2898d461b081a9d6e109344/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 13947637744,
+        "name": "💯 Spiky Anime Boys Emo Hair (White)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "Dreamwave Inn",
+        "favoriteCount": 59657,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-627b7d5b712762e97b0ea9eb289701ef/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 105694273623487,
+        "name": "Black Scene Messy Spiky Emo Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "climb the walls",
+        "favoriteCount": 42977,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-272ac366cf0092e258dfb31254e58397/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 1192464705,
+        "name": "Bear Face Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 95,
+        "creatorName": "Roblox",
+        "favoriteCount": 2280102,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-917523b22d0f8dcbb78e0cef6d36f164/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 14353421343,
+        "name": "Baby Queen - Face Frame",
+        "itemType": "Asset",
+        "assetType": 61,
+        "price": 50,
+        "creatorName": "Universal Music UK",
+        "favoriteCount": 638353,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-74298862ee9a8ef8bee2c1501d29201b/420/420/EmoteAnimation/Png/noFilter"
+      },
+      {
+        "id": 948,
+        "name": "Woman Face",
+        "itemType": "Bundle",
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 338575,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 949,
+        "name": "Man Face",
+        "itemType": "Bundle",
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 285882,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3102,
+        "name": "Cute Face",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "i_Sininho",
+        "favoriteCount": 90988,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3356,
+        "name": "Hum Face",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "i_Sininho",
+        "favoriteCount": 88997,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 4989,
+        "name": "Bruh Face Head",
+        "itemType": "Bundle",
+        "price": 70,
+        "creatorName": "BUNNIHOUPI",
+        "favoriteCount": 50937,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3712,
+        "name": "Freckled Face Head",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "SIEGFRlED",
+        "favoriteCount": 26952,
+        "thumbnailUrl": null
+      }
+    ],
+    "shirt": [
+      {
+        "id": 398634295,
+        "name": "Pastel Starburst Top with Gray Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 654396,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ee573a59247c4783399316e94324504c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 7919545692,
+        "name": "Christmas Emo y2k black shirt aesthetic boy trendy",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "reysia",
+        "favoriteCount": 356205,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e01d2adf0bcb13eb6974d9e9d4f5ea63/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 5634362258,
+        "name": "Rainbow Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 303746,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a41be0c7176c62af46850bbe531bee77/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240752338,
+        "name": "Tie-Front Top - White",
+        "itemType": "Asset",
+        "assetType": 65,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 288459,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-67bb2313dd8d2e9195cecc7ee39fc147/420/420/ShirtAccessory/Png/noFilter"
+      },
+      {
+        "id": 7020213212,
+        "name": "gyaru vamp gothic swag kawaii soft fairy y2k emo",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "Comunidad Latinoamérica",
+        "favoriteCount": 253296,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2df062ecee3751dec7e035392ae0c418/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 4047886060,
+        "name": "Purple and Teal Top",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 80490,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b02941baec5d1185103eb3a94689753a/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 9174354743,
+        "name": "Top Knot - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 24235,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-018b27b54c16b3287391ab9c2d63a160/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9244060144,
+        "name": "Top Knot - Brown",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 7828,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2b256ef040c3a0b74af02898eb11ee01/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 144076760,
+        "name": "Dark Green Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2384697,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-596d5c180068725a14691864bc353931/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 398634487,
+        "name": "Beautiful You Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2282852,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-59433f5779b1773e252e1163a00c909c/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537806,
+        "name": "Jean Shorts",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 755906,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-62bedb4bac62a4a0458a223ab9b596ad/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537569,
+        "name": "Black Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 367783,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0808e57c5d721f09905b1a7f0351d63a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 5197702014,
+        "name": "Cute ripped Jeans Y2k aesthetic vintage girl ok",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 352566,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ade5c16c85a55023452f230fef2c26c9/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 5246950670,
+        "name": "[ORIG] skirt + convers boots envy y2k vamp emo",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "h34rtSICK",
+        "favoriteCount": 317444,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8f97c3918f51e6ad8ba581ffb9e18dfe/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "neck": [
+      {
+        "id": 376527115,
+        "name": "Jade Necklace with Shell Pendant",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 777570,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0f53c7d59fcb68685065cc3101eecf6f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 11377306,
+        "name": "Silver Ninja Star of the Brilliant Light",
+        "itemType": "Asset",
+        "assetType": 19,
+        "price": 15,
+        "creatorName": "Roblox",
+        "favoriteCount": 374037,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c4dc2942b141a84a35f53a6edbe38b79/420/420/Gear/Png/noFilter"
+      },
+      {
+        "id": 5829892514,
+        "name": "Nose Chain",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "genkroco",
+        "favoriteCount": 315060,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c72323687da7c7a7de52aefdceca66ea/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 107016726530712,
+        "name": "Roblox Learn Heart Necklace",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 294929,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-64bf549dd79c185022e371353311893a/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 6682341755,
+        "name": "Miau Butterfly Necklace Gold and White",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 70,
+        "creatorName": "cyaleys",
+        "favoriteCount": 258097,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-57b9d2fd266f458e846a3ade158be35f/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 7220612603,
+        "name": "Black Silk Mini Dress necklace jeans y2k goth",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "coded clothing",
+        "favoriteCount": 218667,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c36081868a93186b4a1d27a1611bb5b5/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9324091278,
+        "name": "Y2K Heart Necklace",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 50,
+        "creatorName": "MissRossiie",
+        "favoriteCount": 142440,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e271dc82ab8861ae80f647bc9e2147cb/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 14760581933,
+        "name": "black y2k cyber star jeans dahood cross rot envy",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Jersey Apparelz",
+        "favoriteCount": 120638,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-efa075e7280d16a77008f494468f5823/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 5829892514,
+        "name": "Nose Chain",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "genkroco",
+        "favoriteCount": 315060,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c72323687da7c7a7de52aefdceca66ea/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 4573395775,
+        "name": "Blue Thorn Jeans w Belt",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Solo Clothing Maker",
+        "favoriteCount": 108953,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ff5b0b4d3986e5e5f1c96d58811a7993/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6934118068,
+        "name": "Fashionable Silver Ring Chain (3.0)",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 66,
+        "creatorName": "Junozy",
+        "favoriteCount": 108727,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-82eb1297d3456d1f7cb29fc82f5149ee/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 14760332491,
+        "name": "Y2K Studded Double Kitty Rhinestone Belt | Black/B",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "Y3Kᅠ",
+        "favoriteCount": 97183,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e6e59f735797f7acf8b3dcdfe69f779c/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 10912462409,
+        "name": "y2k Emo Studded Belt 3.0",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "morphist4u",
+        "favoriteCount": 92664,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-88524bd194b89ef86e4f76c77933c4c1/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 5355321395,
+        "name": "Silver Link Chain",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 75,
+        "creatorName": "genkroco",
+        "favoriteCount": 82611,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1f4a2597fe276865086f36db990d71e2/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 14733557318,
+        "name": "Y2K Studded Double Kitty Rhinestone Belt | Pink/W",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "Y3Kᅠ",
+        "favoriteCount": 75086,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-74a4d7c99ff066d5e4da6fc0f98e0d48/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 7191535915,
+        "name": "Y2k Emo Chain Pants Vamp vintage Aesthetic 80% OFF",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Arianator queens group",
+        "favoriteCount": 72503,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-383837784c4b19d2ded9a71f29ac0053/420/420/Pants/Png/noFilter"
+      }
+    ]
+  },
+  "slender": {
+    "hair": [
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 376527350,
+        "name": "Black Ponytail",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 945985,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6b51cc34fa292e05287b499127051872/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 7193442167,
+        "name": "Pony Tail - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 69659,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f1e7cf8e8714d8a953516800ec17aa0d/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6993754725,
+        "name": "Straight Bangs - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 63112,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1b2a0ecac2898d461b081a9d6e109344/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9244111257,
+        "name": "Wavy Middle Part - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 50772,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-528f576e93eb64fe20e03135f9842d5a/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9174355709,
+        "name": "Sideswept Dreads - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 42280,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8c10cb32e968d3b024694efa673e2bbf/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9244089488,
+        "name": "Medium Middle Part - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 29070,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e76684f2a34a8629a01fe8d4b5f19d7d/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 9244021842,
+        "name": "Side Part - Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 27848,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f486629de8b010281cdb9acfac45e11e/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 12850710708,
+        "name": "୨୧ | cute blush nervous blank face",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 91,
+        "creatorName": "Snoopsie",
+        "favoriteCount": 43412,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0914079848088f4371d4a3d63b255fb5/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 15247276753,
+        "name": "Blank Chibi Stare [White]",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "cIoudbun",
+        "favoriteCount": 29556,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-3347fde070f3f11f4c81f534a897d7dd/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 13549180631,
+        "name": "♡ cute chibi blank stare blush face",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 91,
+        "creatorName": "Snoopsie",
+        "favoriteCount": 27045,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-110867d149911c629120df109f250c32/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 12850751564,
+        "name": "cute blush nervous blank face",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Snoopsie",
+        "favoriteCount": 16408,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5dfae0b76f4be9c75b38824d3bdbe855/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 12989451429,
+        "name": "👀 Big Blank Starring Eyes",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Protopoly",
+        "favoriteCount": 12713,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-42577e164a1e3384423b1c1bbdec28f6/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 12668363323,
+        "name": "[ Head ] Light Skin Tone Blank Faceless Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Empyror",
+        "favoriteCount": 8166,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-229108c6373e8f736962a69d752a30d6/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 10644740822,
+        "name": "Plain Ball Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "ICENODE",
+        "favoriteCount": 8102,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0902fdc9d46c4b8fa8920d4e8ae2b3cd/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 12668318987,
+        "name": "[ Head ] White Tone Blank Faceless Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Empyror",
+        "favoriteCount": 6346,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5c6f76bafff66b9a628ef73a0bb02ebe/420/420/FaceAccessory/Png/noFilter"
+      }
+    ],
+    "shirt": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6554200369,
+        "name": "Grey Suit w/ Black Vest [+]",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "TIX Clothing +",
+        "favoriteCount": 511403,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0ec8744a0b5a000d69197d5f7b5a6d51/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469173,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 382538295,
+        "name": "Guitar Tee with Black Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 440402,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2ea290197838ddead0925dfb25360431/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7919545692,
+        "name": "Christmas Emo y2k black shirt aesthetic boy trendy",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "reysia",
+        "favoriteCount": 356205,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e01d2adf0bcb13eb6974d9e9d4f5ea63/420/420/Shirt/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469173,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 129459077,
+        "name": "Black Slacks",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Roblox",
+        "favoriteCount": 448505,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c3f189f9d5100c4c73573769339a6160/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382538503,
+        "name": "Black Jeans with Sneakers",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 408687,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-397cd8b51914b1e8764674de0b530e68/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 382537569,
+        "name": "Black Jeans",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 367783,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0808e57c5d721f09905b1a7f0351d63a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 144076358,
+        "name": "Blue and Black Motorcycle Shirt",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2667466,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-170ef99bc1e8d689066a28878beff3b1/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 1103003368,
+        "name": "Orange Beanie with Black Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2337820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-faac697e30f789f9f1b5d029cabe2b96/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 398633812,
+        "name": "Black Jeans with White Shoes",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2008741,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-333997cc59ec900b41b5dd51850bfa6a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 3670737444,
+        "name": "Roblox Shirt - Simple Pattern",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 652655,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fdfe24ce27cfd8dc42697b6f48e14750/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 7192553841,
+        "name": "Zip Hoodie - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 469173,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-598b4aac4ec4a5324cf678263cf1b50a/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 6984763785,
+        "name": "Casual Sweats - Black",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 293364,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5e2a2fc5c0abf1354acf988339112e4e/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240752338,
+        "name": "Tie-Front Top - White",
+        "itemType": "Asset",
+        "assetType": 65,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 288451,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-67bb2313dd8d2e9195cecc7ee39fc147/420/420/ShirtAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240757332,
+        "name": "Knit Sweater - Black",
+        "itemType": "Asset",
+        "assetType": 68,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 256820,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-348a236664603ed2f98acc693d591330/420/420/SweaterAccessory/Png/noFilter"
+      }
+    ]
+  },
+  "softie": {
+    "hair": [
+      {
+        "id": 727320877,
+        "name": "Long Pastel Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 95,
+        "creatorName": "Roblox",
+        "favoriteCount": 392576,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e4992d2082b61fd620ea702cc1fbfde4/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15814817847,
+        "name": "♡ pink kawaii layered hair with kitty hood",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "meozi",
+        "favoriteCount": 258596,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-780332da25f8d0eabe2f49124652aad7/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6312074205,
+        "name": "Soft Long Black Bangs",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 75,
+        "creatorName": "bunnexh",
+        "favoriteCount": 169721,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4beb61d67c97a4c75aee814ee3f607f8/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 5865642319,
+        "name": "Cheap Hot Pink Party Bob",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "antilique",
+        "favoriteCount": 165039,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8a676ffe5328f967e910b9109eff5da7/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6309005259,
+        "name": "HollywoodLocks in Pink Ombre",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "MissRossiie",
+        "favoriteCount": 162860,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6454fd83df834fefa8f6a34aefeaaad9/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 3185830268,
+        "name": "Pastel Hair for Beautiful People",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 85,
+        "creatorName": "Roblox",
+        "favoriteCount": 137486,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-7c30e6e134ca7d977661a7a94dfabf30/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 4997328475,
+        "name": "Short Pink Fluffy Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 120,
+        "creatorName": "Sukimeki",
+        "favoriteCount": 134686,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-216b6a8846641a578fa98decb3798e1d/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15949571455,
+        "name": "Soft Flowy Half up Hair w/ Bow In Blonde",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "vuriae",
+        "favoriteCount": 130642,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a0837046eec3b1d3eea08c267f4e7792/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 1192464705,
+        "name": "Bear Face Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 95,
+        "creatorName": "Roblox",
+        "favoriteCount": 2280101,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-917523b22d0f8dcbb78e0cef6d36f164/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 14353421343,
+        "name": "Baby Queen - Face Frame",
+        "itemType": "Asset",
+        "assetType": 61,
+        "price": 50,
+        "creatorName": "Universal Music UK",
+        "favoriteCount": 638353,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-74298862ee9a8ef8bee2c1501d29201b/420/420/EmoteAnimation/Png/noFilter"
+      },
+      {
+        "id": 948,
+        "name": "Woman Face",
+        "itemType": "Bundle",
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 338575,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 949,
+        "name": "Man Face",
+        "itemType": "Bundle",
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 285882,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3102,
+        "name": "Cute Face",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "i_Sininho",
+        "favoriteCount": 90988,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3356,
+        "name": "Hum Face",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "i_Sininho",
+        "favoriteCount": 88997,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 4989,
+        "name": "Bruh Face Head",
+        "itemType": "Bundle",
+        "price": 70,
+        "creatorName": "BUNNIHOUPI",
+        "favoriteCount": 50937,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 3712,
+        "name": "Freckled Face Head",
+        "itemType": "Bundle",
+        "price": 75,
+        "creatorName": "SIEGFRlED",
+        "favoriteCount": 26952,
+        "thumbnailUrl": null
+      }
+    ],
+    "shirt": [
+      {
+        "id": 398634295,
+        "name": "Pastel Starburst Top with Gray Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 654396,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ee573a59247c4783399316e94324504c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6876555875,
+        "name": "y2k aesthetic girl vintage trendy soft gray cute",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 454392,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-512aa2b945f06deb8871cd0a466d2e6c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 727320877,
+        "name": "Long Pastel Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 95,
+        "creatorName": "Roblox",
+        "favoriteCount": 392576,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e4992d2082b61fd620ea702cc1fbfde4/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 7394603967,
+        "name": "Joy Blush Pastel Yellow Tone Skin Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Blizzei",
+        "favoriteCount": 306079,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-535fcef40e0c17040b609f82e7e106d1/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 5634362258,
+        "name": "Rainbow Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 303746,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a41be0c7176c62af46850bbe531bee77/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 9240752338,
+        "name": "Tie-Front Top - White",
+        "itemType": "Asset",
+        "assetType": 65,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 288451,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-67bb2313dd8d2e9195cecc7ee39fc147/420/420/ShirtAccessory/Png/noFilter"
+      },
+      {
+        "id": 7020213212,
+        "name": "gyaru vamp gothic swag kawaii soft fairy y2k emo",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "Comunidad Latinoamérica",
+        "favoriteCount": 253296,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2df062ecee3751dec7e035392ae0c418/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 3185830268,
+        "name": "Pastel Hair for Beautiful People",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 85,
+        "creatorName": "Roblox",
+        "favoriteCount": 137486,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-7c30e6e134ca7d977661a7a94dfabf30/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 6369440433,
+        "name": "☁️Cloud Blue Shorts Jeans Cute Aesthetic Soft Y2K",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Kouture Kingdom",
+        "favoriteCount": 123295,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a3496e3bf9e516b173ffa8ec04d34c53/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6874622812,
+        "name": "🍋Cute Lemon Shorts Preppy Cottage Soft Y2K Girl",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Kouture Kingdom",
+        "favoriteCount": 98579,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8dcf26a1f2b0c9cc86fdc1e847a1964d/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 8382458828,
+        "name": "bff set y2k bloxburg soft preppy emo baddie gothic",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "$PARKLEZ",
+        "favoriteCount": 62161,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fffabb96fa33fe7acd2c76b3227b1d0c/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7011174825,
+        "name": "Pink aesthetic Roblox default fit set preppy soft",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Lana’s Closet!",
+        "favoriteCount": 58308,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4883a465bc0a5ae9ee490c2e16d99434/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9958430418,
+        "name": "black skirt y2k emo gothic preppy soft vkei",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "deepness",
+        "favoriteCount": 48217,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4db986cc5e1c2f15a807e9bc35f7437e/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9695657370,
+        "name": "Bloxburg Soft Y2K New York Emo Goth Vamp Preppy",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "$PARKLEZ",
+        "favoriteCount": 44061,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-71f16f8938c2262c697862670771790d/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 16480558221,
+        "name": "gyaru vamp gothic swag kawaii soft fairy y2k emo",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "demure dolls",
+        "favoriteCount": 38792,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-9bcd74543b554909cec1b80f962e7353/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9341987057,
+        "name": "Pastel Pink Plaid Ruffle Mini Skirt",
+        "itemType": "Asset",
+        "assetType": 72,
+        "price": 80,
+        "creatorName": "PureSweetener",
+        "favoriteCount": 34853,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-9433b8beadfc4644ed4ad2b3ac812fdc/420/420/DressSkirtAccessory/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 6100039044,
+        "name": "Bow Braids & Wispy Bangs",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 90,
+        "creatorName": "Beeism",
+        "favoriteCount": 391711,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fc26b028e4074dc56766007a484f8783/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 107016726530712,
+        "name": "Roblox Learn Heart Necklace",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 294894,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-64bf549dd79c185022e371353311893a/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 4470966858,
+        "name": "White Bow Tutu Skirt",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 150,
+        "creatorName": "Beeism",
+        "favoriteCount": 209226,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-d0a7eed3f8f3994c79fffc2c12701367/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 5460035827,
+        "name": "Giant ♥️ Heart ♥️ Bear",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "Reverse_Polarity",
+        "favoriteCount": 195982,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-bef362215aeb68b49bd51ab9bfb6e566/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 9324091278,
+        "name": "Y2K Heart Necklace",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 50,
+        "creatorName": "MissRossiie",
+        "favoriteCount": 142440,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e271dc82ab8861ae80f647bc9e2147cb/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 6202805550,
+        "name": "Layered Bow & Hearts Necklace",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 50,
+        "creatorName": "Beeism",
+        "favoriteCount": 132981,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8f82f10ad9ec43c42e264ef85cc7e0a8/420/420/NeckAccessory/Png/noFilter"
+      },
+      {
+        "id": 15949571455,
+        "name": "Soft Flowy Half up Hair w/ Bow In Blonde",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "vuriae",
+        "favoriteCount": 130642,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a0837046eec3b1d3eea08c267f4e7792/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6099260902,
+        "name": "(3.0) Layered Heart Necklace ",
+        "itemType": "Asset",
+        "assetType": 43,
+        "price": 50,
+        "creatorName": "genkroco",
+        "favoriteCount": 127566,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5df4177579c95fd12628347c6e7cf014/420/420/NeckAccessory/Png/noFilter"
+      }
+    ],
+    "back": [
+      {
+        "id": 150381051,
+        "name": "Spring Fairy",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 295,
+        "creatorName": "Roblox",
+        "favoriteCount": 589108,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-02f39b7d48ab66c54f2d8e6ff3220002/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 5313324044,
+        "name": "Gamer Wings",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "TheShipArchitect",
+        "favoriteCount": 523048,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5cd96374ba3424c212cd413b6da8d442/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 5804154156,
+        "name": "Vampire Head Wings",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "MissRossiie",
+        "favoriteCount": 393683,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-06644d13dd5bb3e57af13f9ba9b6e013/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 7020213212,
+        "name": "gyaru vamp gothic swag kawaii soft fairy y2k emo",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "Comunidad Latinoamérica",
+        "favoriteCount": 253296,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2df062ecee3751dec7e035392ae0c418/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6862266654,
+        "name": "cottage core fairy vintage plaid sweater soft tan",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "deep end.",
+        "favoriteCount": 224955,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-7fcc4f2470242c1a92a2fe0f2de57402/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6472661790,
+        "name": "Black Feather Void Wings",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "ZeFerusGT",
+        "favoriteCount": 222789,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a8c6e62d2cb1758ee7ec5a2cfdfa066d/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 7767984021,
+        "name": "cool y2k vamp emo 2000s cyber fairy bella swan hi",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 7,
+        "creatorName": "FΟRGET ME NOT",
+        "favoriteCount": 142196,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a9102def7334e7caaedebbd4638bb2ec/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 4899180116,
+        "name": "white softie skirt preppy aesthetic cute y2k fairy",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "cutieclothin",
+        "favoriteCount": 137411,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-f2fac688486c767ce55470d6703415ea/420/420/Pants/Png/noFilter"
+      }
+    ]
+  },
+  "cyber": {
+    "hair": [
+      {
+        "id": 15726608847,
+        "name": "Cyber Punk Rock Buns in Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "raekaro",
+        "favoriteCount": 131292,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0f11b49aa22b6b628f1c0237ba3717a1/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15726618034,
+        "name": "Cyber Punk Rock Buns in Ash Blonde",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "raekaro",
+        "favoriteCount": 92580,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-544e37caab037d321a4e17178f17fa7b/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15726643694,
+        "name": "Cyber Punk Rock Buns in Pink",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "raekaro",
+        "favoriteCount": 28363,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-3ba3923f8ac07843d6f211a44c6a4cbb/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15726708519,
+        "name": "Cyber Punk Rock Buns in White and Black",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "raekaro",
+        "favoriteCount": 24917,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b5a0bc02b5ef9a69abedde2b5b098285/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15850786979,
+        "name": "Scene IT girl in Cyber Brune",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 63,
+        "creatorName": "vultage",
+        "favoriteCount": 21223,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-cc89bb5d95bed1510fad09d493bd4e10/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 132665293987060,
+        "name": "Cyber Braided Metal Pigtails (Black)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "loveanwgel",
+        "favoriteCount": 20838,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-edcc8492badab6d6b2a9fe6889f3fc07/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 15726718073,
+        "name": "Cyber Punk Rock Buns in Black Stripes",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "raekaro",
+        "favoriteCount": 18308,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0dece6580fef19c5414eea7526453ebd/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 12828676070,
+        "name": "Cyber Star Kawaii Pigtails w/ Bangs (Black)",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 60,
+        "creatorName": "gyansu",
+        "favoriteCount": 16179,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c6cb4e7ede3261aac9032e8d9b67074c/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 4143016822,
+        "name": "Vintage Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 125,
+        "creatorName": "WhoToTrus",
+        "favoriteCount": 733415,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-aa9ef357ce23e16e1349d48dd4017882/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 11884330,
+        "name": "Nerd Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Roblox",
+        "favoriteCount": 503171,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e06ec984ff65376f25044776b227d80a/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 8207724090,
+        "name": "Black Y2K Cyberstar Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Disordinance's Dumpster",
+        "favoriteCount": 439211,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c47ea50e85cda24bc10529622c190e8f/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 2646473721,
+        "name": "Roblox Visor",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 434917,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-d6e062eeb2bbe6cee0c9dc556c74f9f4/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 607700713,
+        "name": "Roblox Logo Visor",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 431158,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-9b68c366f007749f8239f4a6e62b28f4/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 7246171208,
+        "name": "Fancy Stylish Glasses on Head",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "CaioAlbarnBR",
+        "favoriteCount": 391737,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2f9e6f3934a7c5d1475291733eccee72/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 4197739997,
+        "name": "Reading Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 100,
+        "creatorName": "WhoToTrus",
+        "favoriteCount": 321997,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-26f91d315dad7d530a249ed8b869ec32/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 6036593327,
+        "name": "Fluttering  Butterfly Glasses White",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "AngiePlet",
+        "favoriteCount": 315363,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-03d59c1355bd4d72e8e9f270768aaf98/420/420/FaceAccessory/Png/noFilter"
+      }
+    ],
+    "shirt": [
+      {
+        "id": 607785314,
+        "name": "ROBLOX Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2500523,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-914b519635775ae28b804e7d93acc928/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 398633584,
+        "name": "Denim Jacket with White Hoodie",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2045185,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-eef47a96eeacc3ebc119322e7af674b4/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 144076436,
+        "name": "Grey Striped Shirt with Denim Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 1559918,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ba4f56a5257e40c80b81c977c974b63d/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 398634295,
+        "name": "Pastel Starburst Top with Gray Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 654396,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ee573a59247c4783399316e94324504c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 7192549218,
+        "name": "Leather Jacket - Black",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 147238,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-27da5648cc39f90f27351723b4dab2c8/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 8516609675,
+        "name": "Denim Jacket - Light Wash",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 132161,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-549c3c5fb8b9215d98318631ba64e8c3/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 7192546798,
+        "name": "Collared Leather Jacket - White",
+        "itemType": "Asset",
+        "assetType": 67,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 100401,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-1edef6d194d5b458bb13a46c9e0ab01d/420/420/JacketAccessory/Png/noFilter"
+      },
+      {
+        "id": 4047884046,
+        "name": "Guitar Tee with Black Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 96517,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-680f4004a65ddd2ea05dbd59c48e4436/420/420/Shirt/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 6960786140,
+        "name": "grey pjs plaid emo y2k vamp grunge goth dh cyber",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 7,
+        "creatorName": "sévouier",
+        "favoriteCount": 251427,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4568195fc0740cbbcdf4fd7d9e019672/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6366077720,
+        "name": "y2k grunge swag punk cyber streetwear vamp emo ok",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "EA$YWORLD",
+        "favoriteCount": 200345,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-829851be95132ed0197b5ffedbbd26fc/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6054064906,
+        "name": "y2k grunge ludic punk cyber streetwear vamp emo ok",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "doll$tats",
+        "favoriteCount": 144463,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-dd45531025eab16de2a18514634601cf/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7581780596,
+        "name": "vamp emo cyber y2k streetwear grim rock evade vkei",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "сrіme",
+        "favoriteCount": 141045,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-89f31831d46cc8609ec31e02bca58aed/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 14760581933,
+        "name": "black y2k cyber star jeans dahood cross rot envy",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Jersey Apparelz",
+        "favoriteCount": 120633,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-efa075e7280d16a77008f494468f5823/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 14474850302,
+        "name": "pink star y2k cyber jeans emo da hood cross barbie",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Jersey Clothingz",
+        "favoriteCount": 107737,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4fa795f7c6b5db38afc6ac06e0b5771c/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6579469815,
+        "name": "✅ black y2k cross cyber tank top dahood emo shorts",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "Prince Clothing",
+        "favoriteCount": 105626,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-d4fcef62e462cbd7dce8dc22789c6803/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 11192550815,
+        "name": "scene cyber baddie da hood y2 aesthetic Christmas ",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "kouey",
+        "favoriteCount": 86689,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b0af92127d010ff565b73052a842e06e/420/420/Pants/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 6170187890,
+        "name": "y2k vamp girl vintage aesthetic emo cyber cute ok",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 294788,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-02d93fe20aa304cc085ca37df95ab5ac/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6960786140,
+        "name": "grey pjs plaid emo y2k vamp grunge goth dh cyber",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 7,
+        "creatorName": "sévouier",
+        "favoriteCount": 251427,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4568195fc0740cbbcdf4fd7d9e019672/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7581780596,
+        "name": "vamp emo cyber y2k streetwear grim rock evade vkei",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "сrіme",
+        "favoriteCount": 141045,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-89f31831d46cc8609ec31e02bca58aed/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6492207261,
+        "name": "✅ cute y2k pink star cargos da hood envy cyber",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "Prince Clothing",
+        "favoriteCount": 122644,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4fedd3a0c3dbd6dfb1fe0e9b343577b5/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 7085619259,
+        "name": "y2k ok swag yay emo cyber grunge vamp aesthetic",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "AFTER WORLD",
+        "favoriteCount": 83812,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6f7fc48e6d6dcec42919d7f2c91eb183/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 1639361,
+        "name": "Cyber Suit30",
+        "itemType": "Asset",
+        "assetType": 2,
+        "price": 0,
+        "creatorName": "RockerAAAAnnnn",
+        "favoriteCount": 12858,
+        "thumbnailUrl": "https://t7.rbxcdn.com/180DAY-994b5e8257707ba13fcfeb2d973207f3"
+      },
+      {
+        "id": 1639424,
+        "name": "Cyber Suit20",
+        "itemType": "Asset",
+        "assetType": 2,
+        "price": 0,
+        "creatorName": "RockerAAAAnnnn",
+        "favoriteCount": 6661,
+        "thumbnailUrl": "https://t6.rbxcdn.com/180DAY-404eaecc79fc99ca2bc1fec2ab05de0f"
+      },
+      {
+        "id": 6809988819,
+        "name": "Tech Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "xVoidren",
+        "favoriteCount": 6001,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5c60e05a7068592636a51fe90b25a2c4/420/420/FaceAccessory/Png/noFilter"
+      }
+    ],
+    "back": [
+      {
+        "id": 5313324044,
+        "name": "Gamer Wings",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "TheShipArchitect",
+        "favoriteCount": 523048,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5cd96374ba3424c212cd413b6da8d442/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 5804154156,
+        "name": "Vampire Head Wings",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "MissRossiie",
+        "favoriteCount": 393683,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-06644d13dd5bb3e57af13f9ba9b6e013/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 4876357616,
+        "name": "Doodle Devil Wings (Black)",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "Ellzd",
+        "favoriteCount": 231195,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b3993338f0de616c0acba39d06a4f53c/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 6472661790,
+        "name": "Black Feather Void Wings",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "ZeFerusGT",
+        "favoriteCount": 222790,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a8c6e62d2cb1758ee7ec5a2cfdfa066d/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 464,
+        "name": "Noob Attack: Mech Mobility",
+        "itemType": "Bundle",
+        "price": 240,
+        "creatorName": "Roblox",
+        "favoriteCount": 221556,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 6503401221,
+        "name": "Feather Purity Wings",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "ZeFerusGT",
+        "favoriteCount": 168244,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0ff3e54a5b140ee950a908d188aefc17/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 5803107414,
+        "name": "Dark Shoulder Wing Set",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "maplestick",
+        "favoriteCount": 131970,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-490086a71eafcd0352a24deb0c938bbd/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 5618115340,
+        "name": "White Shoulder Wing Set",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "maplestick",
+        "favoriteCount": 94570,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-422163aaa8011c96b6c272c53d668a27/420/420/ShoulderAccessory/Png/noFilter"
+      }
+    ],
+    "aura": [
+      {
+        "id": 4294795,
+        "name": "adidas aura animation pack",
+        "itemType": "Bundle",
+        "price": 250,
+        "creatorName": "Roblox",
+        "favoriteCount": 454935,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 101573394483995,
+        "name": "Effortless Aura Pose",
+        "itemType": "Asset",
+        "assetType": 61,
+        "price": 50,
+        "creatorName": "VeD_DeV",
+        "favoriteCount": 343700,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b25bd7b821cffee2fd2f0fda7ed7896b/420/420/EmoteAnimation/Png/noFilter"
+      },
+      {
+        "id": 5634362258,
+        "name": "Rainbow Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 303746,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a41be0c7176c62af46850bbe531bee77/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 6170187890,
+        "name": "y2k vamp girl vintage aesthetic emo cyber cute ok",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 5,
+        "creatorName": "uaeu",
+        "favoriteCount": 294788,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-02d93fe20aa304cc085ca37df95ab5ac/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 6960786140,
+        "name": "grey pjs plaid emo y2k vamp grunge goth dh cyber",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 7,
+        "creatorName": "sévouier",
+        "favoriteCount": 251427,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-4568195fc0740cbbcdf4fd7d9e019672/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 5634369034,
+        "name": "Rainbow Flame Aura",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "nezko",
+        "favoriteCount": 206349,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8d36cdf1d1e09a8e58904b0059027424/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 4876469013,
+        "name": "Destructive Aura",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "maplestick",
+        "favoriteCount": 158245,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-d2a10f42e925f0adeda6baa51bb03a63/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 5548531343,
+        "name": "Neon Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 143760,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-79e000106c345b659e34ea50197e9a24/420/420/ShoulderAccessory/Png/noFilter"
+      }
+    ]
+  },
+  "anime_demon": {
+    "hair": [
+      {
+        "id": 2956239660,
+        "name": "Belle Of Belfast Long Red Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2741878,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-79b30f7a245600598ffbe8a88282cebb/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6211939438,
+        "name": "Loose Black Anime Side Buns",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 80,
+        "creatorName": "bunnexh",
+        "favoriteCount": 478719,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-95f2ab1a0f49f8a9768e77545855e598/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 5891039736,
+        "name": "Black Anime Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 80,
+        "creatorName": "PolarCub",
+        "favoriteCount": 472691,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ee7cc1cf40e28b83df52d3f8094a6459/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6778986933,
+        "name": "Adorbs black long hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 85,
+        "creatorName": "Zayacti",
+        "favoriteCount": 423401,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fc8fdaf6c4639f467787768fe5e60f3c/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6216526940,
+        "name": "Loose White Anime Side Buns",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 80,
+        "creatorName": "bunnexh",
+        "favoriteCount": 401412,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2ad19602d0fc81ddc8f79bec1cab1c24/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 727320877,
+        "name": "Long Pastel Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 95,
+        "creatorName": "Roblox",
+        "favoriteCount": 392576,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e4992d2082b61fd620ea702cc1fbfde4/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6536289312,
+        "name": "Long Blonde Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 80,
+        "creatorName": "antilique",
+        "favoriteCount": 334034,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c45377f54e861c5ba6d8f6b8d3da2ae7/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 6564177190,
+        "name": "Black Messy Anime Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 76,
+        "creatorName": "sirehns",
+        "favoriteCount": 300780,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-cd3b7b0192303dca0307330c963738aa/420/420/HairAccessory/Png/noFilter"
+      }
+    ],
+    "face": [
+      {
+        "id": 6934244289,
+        "name": "Rounded Cute Anime Glasses",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "CaioAlbarnBR",
+        "favoriteCount": 293865,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8d23313a5920f501d7733b65c09b65e3/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 11966052244,
+        "name": "(Animated) Black Crying Entity Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Español.",
+        "favoriteCount": 162563,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-23e68502578169b8b3b2ba3374241b25/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 11417785930,
+        "name": "(Animated) Creepy Smile Madness Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Español.",
+        "favoriteCount": 158132,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-83d2a9bcea0dbf956f70fa9fb853ffa5/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 7565101463,
+        "name": "Anime Hair Bangs (Black)",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "x0row",
+        "favoriteCount": 127565,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-7a2e9ac9fe10ec3cd17288fb5f750134/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 11695614585,
+        "name": "(Animated) Red Crying Entity Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Español.",
+        "favoriteCount": 112516,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-49b02324aaa6fcf08f8eaf35a9356056/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 8923597159,
+        "name": "Loose Anime Messy Curtain Bangs in Black",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "StrapCode",
+        "favoriteCount": 104862,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fb764a1ead3077d112e7c9836f5ebb3c/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 4378194581,
+        "name": "Anime Treat",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "WhoToTrus",
+        "favoriteCount": 92842,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a463b1b1718d425834907502818e840c/420/420/FaceAccessory/Png/noFilter"
+      },
+      {
+        "id": 11641704751,
+        "name": "(Animated) Horror Smile Madness Mask",
+        "itemType": "Asset",
+        "assetType": 42,
+        "price": 90,
+        "creatorName": "Español.",
+        "favoriteCount": 74789,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-6d2458f5930881555719c159ecb271d9/420/420/FaceAccessory/Png/noFilter"
+      }
+    ],
+    "shirt": [
+      {
+        "id": 667,
+        "name": "Oldschool Animation Pack",
+        "itemType": "Bundle",
+        "price": 80,
+        "creatorName": "Roblox",
+        "favoriteCount": 5409275,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 607785314,
+        "name": "ROBLOX Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2500523,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-914b519635775ae28b804e7d93acc928/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 398633584,
+        "name": "Denim Jacket with White Hoodie",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2045185,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-eef47a96eeacc3ebc119322e7af674b4/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 356,
+        "name": "Rthro Animation Package",
+        "itemType": "Bundle",
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 748424,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 398634295,
+        "name": "Pastel Starburst Top with Gray Jacket",
+        "itemType": "Asset",
+        "assetType": 11,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 654396,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-ee573a59247c4783399316e94324504c/420/420/Shirt/Png/noFilter"
+      },
+      {
+        "id": 4932832113,
+        "name": "Sleep Paralysis Demon",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 150,
+        "creatorName": "Reverse_Polarity",
+        "favoriteCount": 321812,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0f7fd5b04e4486d43a2405ac017d5c25/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 4623728953,
+        "name": "Black Demon Trident",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "Jazzyx3",
+        "favoriteCount": 283315,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-29806c036ad1411df7e844141d58aaf3/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 4604288766,
+        "name": "Demon Tail",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "supernob123",
+        "favoriteCount": 185385,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a303c8bc8e4c44b451a9288d3e700c11/420/420/WaistAccessory/Png/noFilter"
+      }
+    ],
+    "pants": [
+      {
+        "id": 14702180155,
+        "name": "Tarantula Animated (Black)",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 80,
+        "creatorName": "Ethron's Emporium",
+        "favoriteCount": 94990,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-912cbcbc464672e472aad13f9102bedc/420/420/PantsAccessory/Png/noFilter"
+      },
+      {
+        "id": 4707969872,
+        "name": "ʚ♡ɞ black anime school girl outfit",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 6,
+        "creatorName": "bunbi",
+        "favoriteCount": 88117,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-40248354feaea92bf8fcbb24ed8da8db/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 8468718793,
+        "name": "☠️ Anime School Black Uniform",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "[ Content Deleted 6948532 ]",
+        "favoriteCount": 34172,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-41c69f35b25ef7c827c728dbdb8cdb5a/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6869238240,
+        "name": "♡୭ anime cute aesthetic kawaii baby demon cosplay",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "paramnesia",
+        "favoriteCount": 30129,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-75c2698c44317abf62b10ff5d7ec650d/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 7105937304,
+        "name": "♡୭ kawaii neko maid anime cosplay aesthetic cat",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "paramnesia",
+        "favoriteCount": 20811,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-c2b096f45132f0163d8c40d7e4349187/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 10150528499,
+        "name": "🖤 Black Anime School uniform [-]",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "[ Content Deleted 6948532 ]",
+        "favoriteCount": 17449,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-89191bed403a3220ca4d3f704ed4d2e9/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 6980916406,
+        "name": "Naruto Akatsuki Pain Itachi Anime Dragon Ball Pant",
+        "itemType": "Asset",
+        "assetType": 12,
+        "price": 5,
+        "creatorName": "quy_good",
+        "favoriteCount": 14263,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-814dc11fb1a075dc12dba4405c5b7323/420/420/Pants/Png/noFilter"
+      },
+      {
+        "id": 9179896785,
+        "name": "Samurai Armor Legs - Red",
+        "itemType": "Asset",
+        "assetType": 66,
+        "price": 75,
+        "creatorName": "Rage: 3D Avatars and Clothing",
+        "favoriteCount": 13246,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0b06dec87d39a05f340094a3478dcaef/420/420/PantsAccessory/Png/noFilter"
+      }
+    ],
+    "accessory": [
+      {
+        "id": 4932832113,
+        "name": "Sleep Paralysis Demon",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 150,
+        "creatorName": "Reverse_Polarity",
+        "favoriteCount": 321812,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-0f7fd5b04e4486d43a2405ac017d5c25/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 4623728953,
+        "name": "Black Demon Trident",
+        "itemType": "Asset",
+        "assetType": 46,
+        "price": 135,
+        "creatorName": "Jazzyx3",
+        "favoriteCount": 283315,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-29806c036ad1411df7e844141d58aaf3/420/420/BackAccessory/Png/noFilter"
+      },
+      {
+        "id": 7485912398,
+        "name": "Black Jewelled Horns of the Abyss",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "Felgrim",
+        "favoriteCount": 268849,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-aefba8a6af6c9e464ec2f2357946de03/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 5621576440,
+        "name": "Wicked Devil's Horns",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "DieSoft",
+        "favoriteCount": 234573,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-fec6b49de90f600eaf70f0a88a40f2a7/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 7029069143,
+        "name": "Skin Color Head w/  Horns",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 100,
+        "creatorName": "Junozy",
+        "favoriteCount": 202973,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b281f5a8560e93825134a99d5ba8ca18/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 4604288766,
+        "name": "Demon Tail",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "supernob123",
+        "favoriteCount": 185385,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a303c8bc8e4c44b451a9288d3e700c11/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 7029065120,
+        "name": "Skin Color Head w/ Horns",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 100,
+        "creatorName": "Junozy",
+        "favoriteCount": 181286,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-533ff8f9ef49d212d1496b3a47884514/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 5410759729,
+        "name": "Rainbow Cartoon Demon",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 90,
+        "creatorName": "Urbanize",
+        "favoriteCount": 96634,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-5bb7eabab92aac841757d3a8f37d079e/420/420/Hat/Png/noFilter"
+      }
+    ],
+    "back": [
+      {
+        "id": 667,
+        "name": "Oldschool Animation Pack",
+        "itemType": "Bundle",
+        "price": 80,
+        "creatorName": "Roblox",
+        "favoriteCount": 5409275,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 83,
+        "name": "Stylish Animation Pack",
+        "itemType": "Bundle",
+        "price": 80,
+        "creatorName": "Roblox",
+        "favoriteCount": 3522550,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 43,
+        "name": "Toy Animation Pack",
+        "itemType": "Bundle",
+        "price": 250,
+        "creatorName": "Roblox",
+        "favoriteCount": 2885378,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 82,
+        "name": "Robot Animation Pack",
+        "itemType": "Bundle",
+        "price": 80,
+        "creatorName": "Roblox",
+        "favoriteCount": 1872601,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 56,
+        "name": "Cartoony Animation Package",
+        "itemType": "Bundle",
+        "price": 250,
+        "creatorName": "Roblox",
+        "favoriteCount": 1594100,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 39,
+        "name": "Bubbly Animation Package",
+        "itemType": "Bundle",
+        "price": 250,
+        "creatorName": "Roblox",
+        "favoriteCount": 1577144,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 80,
+        "name": "Zombie Animation Pack",
+        "itemType": "Bundle",
+        "price": 500,
+        "creatorName": "Roblox",
+        "favoriteCount": 1256283,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 63,
+        "name": "Mage Animation Package",
+        "itemType": "Bundle",
+        "price": 250,
+        "creatorName": "Roblox",
+        "favoriteCount": 1146985,
+        "thumbnailUrl": null
+      }
+    ],
+    "aura": [
+      {
+        "id": 2956239660,
+        "name": "Belle Of Belfast Long Red Hair",
+        "itemType": "Asset",
+        "assetType": 41,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 2741878,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-79b30f7a245600598ffbe8a88282cebb/420/420/HairAccessory/Png/noFilter"
+      },
+      {
+        "id": 3756389957,
+        "name": "Cursed Flames",
+        "itemType": "Asset",
+        "assetType": 45,
+        "price": 50,
+        "creatorName": "Roblox",
+        "favoriteCount": 465302,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-7a07afd8964fd04cb0f816f4b570bfd3/420/420/FrontAccessory/Png/noFilter"
+      },
+      {
+        "id": 4294795,
+        "name": "adidas aura animation pack",
+        "itemType": "Bundle",
+        "price": 250,
+        "creatorName": "Roblox",
+        "favoriteCount": 454935,
+        "thumbnailUrl": null
+      },
+      {
+        "id": 101573394483995,
+        "name": "Effortless Aura Pose",
+        "itemType": "Asset",
+        "assetType": 61,
+        "price": 50,
+        "creatorName": "VeD_DeV",
+        "favoriteCount": 343700,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b25bd7b821cffee2fd2f0fda7ed7896b/420/420/EmoteAnimation/Png/noFilter"
+      },
+      {
+        "id": 5634362258,
+        "name": "Rainbow Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 303746,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a41be0c7176c62af46850bbe531bee77/420/420/ShoulderAccessory/Png/noFilter"
+      },
+      {
+        "id": 48474313,
+        "name": "Red Roblox Cap",
+        "itemType": "Asset",
+        "assetType": 8,
+        "price": 0,
+        "creatorName": "Roblox",
+        "favoriteCount": 298083,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-75f38ada6287db655d973e3990757ca6/420/420/Hat/Png/noFilter"
+      },
+      {
+        "id": 5634369034,
+        "name": "Rainbow Flame Aura",
+        "itemType": "Asset",
+        "assetType": 47,
+        "price": 60,
+        "creatorName": "nezko",
+        "favoriteCount": 206349,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-8d36cdf1d1e09a8e58904b0059027424/420/420/WaistAccessory/Png/noFilter"
+      },
+      {
+        "id": 5548531343,
+        "name": "Neon Flame Aura - Top",
+        "itemType": "Asset",
+        "assetType": 44,
+        "price": 50,
+        "creatorName": "nezko",
+        "favoriteCount": 143760,
+        "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-79e000106c345b659e34ea50197e9a24/420/420/ShoulderAccessory/Png/noFilter"
+      }
+    ]
+  }
+}

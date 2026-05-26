@@ -11,8 +11,15 @@
 // a catalog-curator + LLM ranker.
 
 import { logger } from 'firebase-functions/v2';
+import { createRequire } from 'node:module';
 import { fetchCatalogByKeyword, type RobloxCatalogItem } from './robloxCatalog.js';
 import { runChatProvider } from './providers.js';
+
+// Static catalog pool — pre-fetched on dev machine via scripts/prefetch-outfit-pool.mjs.
+// Roblox catalog API is blocked from Cloud Run egress; this JSON is the source
+// of truth at runtime. Refresh weekly by re-running the prefetch script.
+const require = createRequire(import.meta.url);
+const STATIC_POOL: Record<string, Record<string, RobloxCatalogItem[]>> = require('./data/outfitCatalogPool.json');
 import {
   getOutfitAesthetic,
   OUTFIT_SLOT_ORDER,
@@ -94,20 +101,25 @@ async function searchSlotCandidates(args: {
   style: OutfitStyleMode;
   remix?: OutfitRemixMode;
 }): Promise<RobloxCatalogItem[]> {
+  // Primary: static pre-fetched pool (works even when Cloud Run egress is
+  // blocked from Roblox catalog). Cap 8 items per slot.
+  const staticPool = STATIC_POOL[args.aesthetic.id]?.[args.slot] ?? [];
+  if (staticPool.length > 0) {
+    return staticPool.filter(isItemAllowed);
+  }
+
+  // Fallback: live API (rarely succeeds from Cloud Run, but kept for
+  // resilience if Roblox eventually unblocks our IP range).
   const keywords = args.aesthetic.liveKeywords[args.slot] ?? [];
   if (keywords.length === 0) return [];
   const styleHint = args.style === 'colorful' ? '' : ' dark';
   const genderHint = args.gender === 'girls' ? ' girl'
     : args.gender === 'boys' ? ' boy'
     : '';
-  const remixHint = args.remix === 'more_cursed' ? ' dark'
-    : args.remix === 'more_clean' ? ' clean'
-    : '';
-
   const pool: RobloxCatalogItem[] = [];
   const seenIds = new Set<number>();
   for (const kw of keywords) {
-    const q = `${kw}${styleHint}${genderHint}${remixHint}`.trim().toLowerCase();
+    const q = `${kw}${styleHint}${genderHint}`.trim().toLowerCase();
     try {
       const result = await fetchCatalogByKeyword({ keyword: q, limit: 10 });
       for (const item of result.items) {
@@ -117,9 +129,9 @@ async function searchSlotCandidates(args: {
         pool.push(item);
       }
     } catch (err) {
-      logger.warn('[outfitAssembler] catalog search failed', { slot: args.slot, kw, err });
+      logger.warn('[outfitAssembler] live catalog fallback failed', { slot: args.slot, kw, err: err instanceof Error ? err.message : String(err) });
     }
-    if (pool.length >= 8) break;       // enough candidates
+    if (pool.length >= 8) break;
   }
   return pool;
 }
