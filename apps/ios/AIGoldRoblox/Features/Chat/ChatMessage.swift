@@ -25,6 +25,26 @@ struct ChatMessage: Identifiable, Codable {
     /// Session #095 — weapon interview Turn 2 shows a SwiftUI ColorPicker bubble.
     /// Non-nil means this assistant message carries default hex colors to pre-fill the pickers.
     let weaponColors: WeaponColorPickerPayload?
+    /// Session 382 Variant 2 — generic "action buttons" rendered as proper
+    /// SwiftUI buttons under the bubble content. Each button has a label and
+    /// either a URL (opened via UIApplication) or a system action sentinel
+    /// (e.g. "savePhoto:<url>", "shareLook:<url>"). Used by the Fake Headless
+    /// & Korblox Crafter to render item rows + Save/Share as styled buttons
+    /// instead of quick-reply chips.
+    let linkActions: [LinkAction]?
+
+    struct LinkAction: Codable, Hashable {
+        let label: String
+        let url: String          // either https://... or sentinel "savePhoto:" / "shareLook:"
+        let systemIcon: String?  // SF Symbol name, optional
+        let style: ButtonStyleKind
+    }
+
+    enum ButtonStyleKind: String, Codable, Hashable {
+        case prominent
+        case bordered
+        case plain
+    }
 
     struct WeaponColorPickerPayload: Codable, Hashable {
         let primaryHex: String
@@ -52,7 +72,8 @@ struct ChatMessage: Identifiable, Codable {
         audioURL: URL? = nil,
         imageURL: URL? = nil,
         localImageKey: String? = nil,
-        weaponColors: WeaponColorPickerPayload? = nil
+        weaponColors: WeaponColorPickerPayload? = nil,
+        linkActions: [LinkAction]? = nil
     ) {
         self.id = id
         self.role = role
@@ -64,6 +85,7 @@ struct ChatMessage: Identifiable, Codable {
         self.imageURL = imageURL
         self.localImageKey = localImageKey
         self.weaponColors = weaponColors
+        self.linkActions = linkActions
     }
 }
 

@@ -895,6 +895,69 @@ final class ChatStore: ObservableObject {
         ]
     }
 
+    // Session 382 — Fake Headless & Korblox AI Crafter model + API client.
+    // Defined here (not in Features/FakeLimited/) because that folder isn't
+    // yet registered in the Xcode project.pbxproj. User can later move these
+    // types out once the folder is added to the project.
+    struct FakeLimitedRecipeItem: Codable, Identifiable {
+        var id: String { assetId }
+        let assetId: String
+        let name: String
+        let pricedRobux: Int
+        let category: String
+        let role: String
+        let notes: String
+    }
+
+    struct FakeLimitedRecipe: Codable {
+        let kind: String
+        let title: String
+        let pitch: String
+        let items: [FakeLimitedRecipeItem]
+        let totalCostRobux: Int
+        let savedRobux: Int
+        let steps: [String]
+        let previewImageUrl: String?
+        let disclaimer: String
+    }
+
+    enum FakeLimitedKind: String {
+        case headless, korblox, combo
+    }
+
+    private enum FakeLimitedAPIError: Error { case badResponse }
+
+    private struct FakeLimitedAPIClient {
+        func fetchRecipe(kind: FakeLimitedKind, includePreview: Bool = true) async throws -> FakeLimitedRecipe {
+            let url = APIClient.baseURL.appendingPathComponent("api/fake-limited/recipe")
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let body: [String: Any] = ["kind": kind.rawValue, "includePreview": includePreview]
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FakeLimitedAPIError.badResponse
+            }
+            return try JSONDecoder().decode(FakeLimitedRecipe.self, from: data)
+        }
+    }
+
+    // Session 382 Variant 1 — sentinels for tap-to-open chips in the
+    // fake-limited recipe bubble. quickReplies are normally text the user
+    // sends back into chat; here we hijack them: chips starting with one of
+    // these prefixes trigger a side-action (open URL, save image, share)
+    // instead of becoming a message.
+    static let fakeLimitedOpenItemPrefix = "🔗 Open: "
+    static let fakeLimitedSavePreviewLabel = "💾 Save Preview"
+    static let fakeLimitedShareLookLabel = "🎁 Share Look"
+
+    /// Map of fake-limited chip label → URL (or sentinel) for the LAST recipe
+    /// shown. Updated each time handleFakeLimitedUserMessage produces a recipe.
+    private var fakeLimitedChipURLs: [String: URL] = [:]
+    /// Last preview image URL for Save/Share actions.
+    private var fakeLimitedPreviewURL: URL? = nil
+
     // Session 382 — Fake Headless & Korblox AI Crafter chat handler. Parses
     // the user's reply ("Headless" / "Korblox" / "Combo" / ru variants),
     // calls the standalone /api/fake-limited/recipe endpoint, then appends an
@@ -926,9 +989,41 @@ final class ChatStore: ObservableObject {
         isLoading = true
         Task { @MainActor in
             do {
-                let recipe = try await FakeLimitedAPI.shared.fetchRecipe(kind: resolvedKind, includePreview: true)
+                let recipe = try await FakeLimitedAPIClient().fetchRecipe(kind: resolvedKind, includePreview: true)
                 let content = Self.formatFakeLimitedRecipe(recipe)
                 let previewURL = recipe.previewImageUrl.flatMap(URL.init(string:))
+
+                // Variant 2: build native SwiftUI buttons under the bubble.
+                // Each catalog item gets a "Open in Roblox" button. Preview
+                // produces "Save Preview" + "Share Look" buttons that fire
+                // sentinel URLs ("savePhoto:<url>" / "shareLook:<url>") which
+                // ChatView routes back into ChatStore for UIKit handling.
+                fakeLimitedPreviewURL = previewURL
+                var actions: [ChatMessage.LinkAction] = []
+                for item in recipe.items {
+                    let url = "https://www.roblox.com/catalog/\(item.assetId)"
+                    actions.append(ChatMessage.LinkAction(
+                        label: "Open: \(item.name)",
+                        url: url,
+                        systemIcon: "arrow.up.right.square",
+                        style: .bordered
+                    ))
+                }
+                if let p = previewURL {
+                    actions.append(ChatMessage.LinkAction(
+                        label: "Save Preview",
+                        url: "savePhoto:\(p.absoluteString)",
+                        systemIcon: "square.and.arrow.down",
+                        style: .bordered
+                    ))
+                    actions.append(ChatMessage.LinkAction(
+                        label: "Share Look",
+                        url: "shareLook:\(p.absoluteString)",
+                        systemIcon: "square.and.arrow.up",
+                        style: .prominent
+                    ))
+                }
+
                 let message = ChatMessage(
                     id: UUID().uuidString,
                     role: .assistant,
@@ -940,7 +1035,8 @@ final class ChatStore: ObservableObject {
                         ("Items", "\(recipe.items.count)"),
                     ],
                     createdAt: Date(),
-                    imageURL: previewURL
+                    imageURL: previewURL,
+                    linkActions: actions
                 )
                 messages.append(message)
             } catch {
@@ -955,6 +1051,76 @@ final class ChatStore: ObservableObject {
                 messages.append(errMsg)
             }
             isLoading = false
+        }
+    }
+
+    /// Variant 2 — called by ChatView when the user taps a `LinkAction`
+    /// button under an assistant bubble. Routes savePhoto:/shareLook:
+    /// sentinels through UIKit, opens https URLs in the Roblox app, all else
+    /// becomes a no-op.
+    func handleLinkAction(_ action: ChatMessage.LinkAction) {
+        let raw = action.url
+        if raw.hasPrefix("savePhoto:") {
+            let urlStr = String(raw.dropFirst("savePhoto:".count))
+            fakeLimitedPreviewURL = URL(string: urlStr) ?? fakeLimitedPreviewURL
+            saveFakeLimitedPreviewToPhotos()
+            return
+        }
+        if raw.hasPrefix("shareLook:") {
+            let urlStr = String(raw.dropFirst("shareLook:".count))
+            fakeLimitedPreviewURL = URL(string: urlStr) ?? fakeLimitedPreviewURL
+            shareFakeLimitedPreviewLook()
+            return
+        }
+        if let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    // Variant 1 — async download preview PNG → save to Photos via UIKit.
+    private func saveFakeLimitedPreviewToPhotos() {
+        guard let url = fakeLimitedPreviewURL else {
+            appendAssistantMessage("Превью ещё не сгенерировано — собери рецепт сначала.")
+            return
+        }
+        Task { @MainActor in
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let image = UIImage(data: data) else { throw URLError(.badServerResponse) }
+                UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+                appendAssistantMessage("✅ Сохранил превью в Фото.")
+            } catch {
+                appendAssistantMessage("⚠️ Не получилось скачать превью: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // Variant 1 — download preview PNG → push to iOS Share Sheet (UIActivity).
+    private func shareFakeLimitedPreviewLook() {
+        guard let url = fakeLimitedPreviewURL else {
+            appendAssistantMessage("Превью ещё не сгенерировано — собери рецепт сначала.")
+            return
+        }
+        Task { @MainActor in
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let image = UIImage(data: data) else { throw URLError(.badServerResponse) }
+                let caption = "Собрал Headless-лук за 0 Robux через Kami Gold AI 🔥"
+                let activityVC = UIActivityViewController(activityItems: [image, caption], applicationActivities: nil)
+                // Find topmost VC to present from (mirrors ExportView pattern §374).
+                guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene,
+                      let window = scene.windows.first(where: { $0.isKeyWindow }),
+                      var top = window.rootViewController else { return }
+                while let presented = top.presentedViewController { top = presented }
+                if let popover = activityVC.popoverPresentationController {
+                    popover.sourceView = top.view
+                    popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+                top.present(activityVC, animated: true)
+            } catch {
+                appendAssistantMessage("⚠️ Не получилось подготовить картинку для шаринга: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -1120,6 +1286,25 @@ final class ChatStore: ObservableObject {
 
     func sendQuickReply(_ option: String) {
         presetsVisible = false
+
+        // Session 382 Variant 1 — fake-limited chip intercepts (tap-to-open
+        // catalog item / save preview / share look). These chips never
+        // produce a chat message — they trigger side effects via UIKit.
+        if option.hasPrefix(Self.fakeLimitedOpenItemPrefix) {
+            if let url = fakeLimitedChipURLs[option] {
+                UIApplication.shared.open(url)
+            }
+            return
+        }
+        if option == Self.fakeLimitedSavePreviewLabel {
+            saveFakeLimitedPreviewToPhotos()
+            return
+        }
+        if option == Self.fakeLimitedShareLookLabel {
+            shareFakeLimitedPreviewLook()
+            return
+        }
+
         // Smart Stub: feature vote
         if option == "🗳️ I want this feature!", let stub = activeSmartStub {
             Task {
@@ -1784,7 +1969,12 @@ final class ChatStore: ObservableObject {
     }
 
     var shouldShowPlanActions: Bool {
-        !isGenerating && lastJobId == nil && lastPreview == nil
+        // Session 382 — fakeLimited crafter is a one-shot recipe flow,
+        // not a multi-stage GDD pipeline. Don't show the "Confirm & Generate"
+        // plan-action card — recipe is already finished when the assistant
+        // bubble appears, the green button would either no-op or confuse.
+        if projectKind == .fakeLimited { return false }
+        return !isGenerating && lastJobId == nil && lastPreview == nil
     }
 
     var isForegroundGenerationActive: Bool {

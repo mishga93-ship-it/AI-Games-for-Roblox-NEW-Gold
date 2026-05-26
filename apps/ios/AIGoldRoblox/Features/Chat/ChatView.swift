@@ -461,26 +461,9 @@ struct ChatView: View {
                     }
                 }
             }
-            // Session 338 round 8: in-app generation alert overlay localized to
-            // the chat fullScreenCover. RootView's overlay is hidden behind
-            // this cover, and AVAudioSession recording (Voice mode) suppresses
-            // iOS system banners. Rendering the same banner directly inside
-            // the cover guarantees it's visible even on Maps Voice screen.
-            .overlay(alignment: .top) {
-                if let notification = appState.foregroundGenerationNotification {
-                    ForegroundGenerationNotificationBanner(
-                        notification: notification,
-                        onOpen: { appState.openForegroundGenerationNotification(notification) },
-                        onDismiss: { appState.clearForegroundGenerationNotification() }
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(80)
-                }
-            }
-            .animation(.spring(response: 0.28, dampingFraction: 0.86),
-                       value: appState.foregroundGenerationNotification?.id)
+            // Session 371: in-app generation alert overlay disabled here too
+            // (see RootView.swift comment). iOS system banner remains the
+            // single visual surface for generation pushes.
             .hideCustomTabBarOnPush()
     }
 
@@ -1120,6 +1103,7 @@ struct ChatView: View {
                             onConfirmWeaponColors: { p, a, g in
                                 chatStore.confirmWeaponColors(primary: p, accent: a, glow: g)
                             },
+                            onLinkAction: { chatStore.handleLinkAction($0) },
                             showsPlanActions: chatStore.shouldShowPlanActions,
                             languageCode: chatStore.preferredResponseLanguageCode()
                         )
@@ -1955,6 +1939,10 @@ private struct MessageBubble: View {
     let onExportBrief: () -> Void
     let onConvertToTasks: () -> Void
     var onConfirmWeaponColors: ((String, String, String) -> Void)? = nil
+    /// Session 382 Variant 2 — taps on native action buttons rendered below
+    /// the bubble (Fake Headless & Korblox: per-item "Open in Roblox" + Save
+    /// Preview + Share Look). Routed back to ChatStore.handleLinkAction.
+    var onLinkAction: ((ChatMessage.LinkAction) -> Void)? = nil
     var showsPlanActions: Bool = true
     var languageCode: String = "en"
 
@@ -2057,6 +2045,32 @@ private struct MessageBubble: View {
                 .padding(.horizontal, 4)
             }
 
+            // Session 382 Variant 2 — native action buttons (per-item "Open
+            // in Roblox", Save Preview, Share Look). Tap-routed back into
+            // ChatStore.handleLinkAction via the onLinkAction callback.
+            if let actions = message.linkActions, !actions.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(actions, id: \.self) { action in
+                        Button {
+                            onLinkAction?(action)
+                        } label: {
+                            HStack(spacing: 6) {
+                                if let icon = action.systemIcon {
+                                    Image(systemName: icon)
+                                }
+                                Text(action.label)
+                                    .font(.appBody)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .modifier(LinkActionButtonStyleModifier(style: action.style))
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+
             if let rawRows = message.gddRowTuples {
                 let isAudio = contentSubcategory == "audio"
                 let lang = languageCode
@@ -2078,12 +2092,18 @@ private struct MessageBubble: View {
                     language: lang
                 )
 
-                HStack(spacing: 10) {
-                    Button(isRu ? "Экспорт брифа" : "Export Brief", action: onExportBrief)
-                    Button(isRu ? "Превратить в задачи" : "Convert to Tasks", action: onConvertToTasks)
+                // Session 382 — fakeLimited recipes don't have an exportable
+                // brief / task-list (it's a one-shot catalog recipe, not a
+                // multi-stage GDD). Hide both shortcuts so the bubble stays
+                // focused on the per-item Open buttons + Save/Share.
+                if showsPlanActions {
+                    HStack(spacing: 10) {
+                        Button(isRu ? "Экспорт брифа" : "Export Brief", action: onExportBrief)
+                        Button(isRu ? "Превратить в задачи" : "Convert to Tasks", action: onConvertToTasks)
+                    }
+                    .font(.appCaption)
+                    .foregroundColor(.accentPrimary)
                 }
-                .font(.appCaption)
-                .foregroundColor(.accentPrimary)
             }
 
             if let audioURL = message.audioURL {
@@ -2162,6 +2182,20 @@ private struct MessageBubble: View {
             return Color.bubbleBorder.opacity(0.5)
         }
         return isSystemAssistantMessage ? Color.accentPrimary.opacity(0.36) : Color.bubbleBorder.opacity(0.25)
+    }
+}
+
+// Session 382 Variant 2 — picks one of three SwiftUI button styles by name
+// (avoids running afoul of the ButtonStyle generic system at the call site).
+private struct LinkActionButtonStyleModifier: ViewModifier {
+    let style: ChatMessage.ButtonStyleKind
+
+    func body(content: Content) -> some View {
+        switch style {
+        case .prominent: AnyView(content.buttonStyle(.borderedProminent))
+        case .bordered:  AnyView(content.buttonStyle(.bordered))
+        case .plain:     AnyView(content.buttonStyle(.plain))
+        }
     }
 }
 
