@@ -4466,18 +4466,25 @@ export async function detectVehicleMeshNoseDirection(args: {
     const user = [
       `Vehicle type: ${args.vehicleType}.`,
       '',
-      'The attached image is a TOP-DOWN view of a vehicle (camera looking straight down).',
-      'In this view, NORTH is up (toward the top of the image), SOUTH is down,',
-      'EAST is to the right, WEST is to the left.',
+      'The attached image is a 3/4-FRONT render of an AI-generated vehicle.',
+      'A correctly-oriented vehicle would have its NOSE/FRONT pointing toward',
+      'the camera (lower-right area of the image typically). But the AI sometimes',
+      'bakes the mesh rotated. Identify which way the actual mesh nose is facing,',
+      'choosing one of these labels:',
+      '  "forward"  — nose points toward camera (correct orientation, render shows plane front).',
+      '  "backward" — nose points away from camera (you see the tail prominently, plane is reversed).',
+      '  "left"     — nose points to the LEFT side of the image (mesh rotated 90° CCW from correct).',
+      '  "right"    — nose points to the RIGHT side of the image (mesh rotated 90° CW from correct).',
       '',
-      'Identify the vehicle\'s front/nose direction. For a plane: where is the propeller',
-      'or aircraft nose? For a car: where is the hood/front bumper? For a boat: where is the bow?',
+      'For a plane: nose = propeller / aircraft front, NOT the tail wings.',
+      'For a car: nose = hood / front bumper, NOT the trunk.',
+      'For a boat: nose = bow, NOT the stern.',
       '',
       'Return JSON with fields:',
-      '  "direction": one of "north", "south", "east", "west" — where the nose points.',
+      '  "direction": one of "forward", "backward", "left", "right".',
       '  "confidence": float 0.0-1.0 — how sure you are.',
       '',
-      'Be precise — pick the closest cardinal direction.',
+      'Look carefully at where the front detail (cockpit canopy, propeller, hood) is.',
     ].join('\n');
 
     const result = await runAnthropicVisionStructured(
@@ -4502,10 +4509,10 @@ export async function detectVehicleMeshNoseDirection(args: {
     const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
     let rotationDeg = 0;
     switch (direction) {
-      case 'north': rotationDeg = 0; break;       // nose at -Z already (forward)
-      case 'south': rotationDeg = 180; break;     // nose at +Z, rotate to flip
-      case 'east': rotationDeg = 270; break;      // nose at +X, rotate -90 (or +270) → -Z
-      case 'west': rotationDeg = 90; break;       // nose at -X, rotate +90 → -Z
+      case 'forward': rotationDeg = 0; break;       // already correct
+      case 'backward': rotationDeg = 180; break;    // rotate 180° to flip nose
+      case 'left': rotationDeg = 270; break;        // mesh CCW from correct → rotate CW (+270/-90)
+      case 'right': rotationDeg = 90; break;        // mesh CW from correct → rotate CCW (+90)
       default: rotationDeg = 0; break;
     }
     logger.info('[detectVehicleMeshNoseDirection] result', {

@@ -3366,12 +3366,12 @@ function addVehicleSeats(args: {
   // place the cabin/interior visually around 25-35% of total bbox height
   // (the upper 65% is empty roof-space because Meshy doesn't model true
   // car interiors). 30% lands the seat inside the visible cabin.
-  // Round 20L v5 (session 381): seat low at 20% mesh Y. User reported
-  // even 40% had head sticking out. Meshy planes have tall bbox with
-  // mostly-empty top (Meshy includes wings/empty space in bbox), so
-  // visible cockpit canopy is in LOWER quarter of bbox. 20% lands seat
-  // inside actual cockpit interior.
-  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.20 : 0.30;
+  // Round 20L v7 (session 381): seat at 5% mesh Y for aircraft. Even 20%
+  // had character popping out top in user test. Meshy bbox for planes
+  // includes empty Y space above the cabin — visible cockpit is usually
+  // at the BOTTOM 10-15% of bbox. With Highlight always-on-top, exact
+  // visual seat position matters less (player sees outline anyway).
+  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.05 : 0.30;
   const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
     ? meshFitBottomY + meshFitHeight * meshSeatYFraction
     : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
