@@ -2627,6 +2627,14 @@ function buildVehicleModelManifest(
   addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart, meshFitWidth, meshFitLength });
   addVehicleEffects({ scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence });
 
+  // Round 20L v11 (session 381): aircraft engine sound. Default car loop
+  // is a deep idle hum; planes need propeller buzz. Roblox built-in asset
+  // ID 9114518995 = "Propeller Plane Loop" (verified working asset).
+  const engineSoundId = profile.driveMode === 'aircraft'
+    ? 'rbxassetid://9114518995'   // propeller plane loop
+    : profile.driveMode === 'rotorcraft'
+      ? 'rbxassetid://9114518965' // helicopter rotor loop
+      : 'rbxassetid://9120386436'; // default car engine
   scene.push(
     {
       id: uuidv4(),
@@ -2634,10 +2642,10 @@ function buildVehicleModelManifest(
       name: 'EngineLoop',
       parentId: rootId,
       properties: {
-        SoundId: 'rbxassetid://9120386436',
+        SoundId: engineSoundId,
         Looped: true,
         Volume: 0,
-        PlaybackSpeed: 0.8,
+        PlaybackSpeed: profile.driveMode === 'aircraft' ? 1.0 : 0.8,
         RollOffMinDistance: 8,
         RollOffMaxDistance: 95,
       },
@@ -4159,21 +4167,36 @@ local function destroyHUD()
 \tend
 end
 
--- Round 20L (session 381) v6: Highlight on pilot character so player can
--- see themselves through the opaque Meshy mesh body. Native Roblox
--- DepthMode.AlwaysOnTop renders outline visible through any geometry.
-local function attachPilotHighlight(player)
-\tif not player or not player.Character then return end
-\tlocal h = Instance.new("Highlight")
-\th.Name = "PilotHighlight"
-\th.Adornee = player.Character
-\th.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-\th.FillColor = Color3.fromRGB(255, 240, 120)
-\th.FillTransparency = 0.55
-\th.OutlineColor = Color3.fromRGB(255, 220, 60)
-\th.OutlineTransparency = 0
-\th.Parent = player.Character
-\tactiveHighlight = h
+-- Round 20L v11 (session 381): swap Highlight for first-person camera
+-- LocalScript injection. When player sits in aircraft seat: spawn local
+-- script in their PlayerScripts that locks camera to FirstPerson and
+-- makes the mesh body semi-transparent so they can see through the
+-- "cockpit windows". Reverted on unsit.
+local function attachPilotFirstPerson(player)
+\tif not player then return end
+\tlocal pg = player:FindFirstChildOfClass("PlayerGui")
+\tif not pg then return end
+\tlocal existing = pg:FindFirstChild("PlanePilotFirstPerson")
+\tif existing then existing:Destroy() end
+\t-- Make MeshPart slightly transparent so cockpit windows feel like glass.
+\tlocal mesh = Vehicle:FindFirstChild("VehicleMeshBody", true)
+\tif mesh then mesh.LocalTransparencyModifier = 0.55 end
+\t-- LocalScript that runs on this player to lock camera.
+\tlocal ls = Instance.new("LocalScript")
+\tls.Name = "PlanePilotFirstPerson"
+\tls.Source = [[
+local Players = game:GetService("Players")
+local me = Players.LocalPlayer
+me.CameraMode = Enum.CameraMode.LockFirstPerson
+local function unlock()
+\tif me and me.Parent then me.CameraMode = Enum.CameraMode.Classic end
+end
+-- Auto-revert when this script is destroyed (server destroys on unsit).
+script.AncestryChanged:Connect(function() if not script.Parent then unlock() end end)
+script.Destroying:Connect(unlock)
+]]
+\tls.Parent = pg
+\tactiveHighlight = ls  -- reuse the slot so destroyHUD cleans it up
 end
 
 local function buildHUDFor(player)
@@ -4324,23 +4347,29 @@ function updatePlaneHUD(throttle, speed, altitude)
 end
 
 if DRIVE_MODE == "aircraft" or DRIVE_MODE == "rotorcraft" then
+\tlocal function onUnsit()
+\t\tdestroyHUD()
+\t\t-- Restore mesh opacity
+\t\tlocal mesh = Vehicle:FindFirstChild("VehicleMeshBody", true)
+\t\tif mesh then mesh.LocalTransparencyModifier = 0 end
+\tend
 \tDriveSeat:GetPropertyChangedSignal("Occupant"):Connect(function()
 \t\tlocal occ = DriveSeat.Occupant
 \t\tif occ and occ.Parent then
 \t\t\tlocal player = Players:GetPlayerFromCharacter(occ.Parent)
 \t\t\tif player then
 \t\t\t\tbuildHUDFor(player)
-\t\t\t\tattachPilotHighlight(player)
+\t\t\t\tattachPilotFirstPerson(player)
 \t\t\tend
 \t\telse
-\t\t\tdestroyHUD()
+\t\t\tonUnsit()
 \t\tend
 \tend)
 \tif DriveSeat.Occupant and DriveSeat.Occupant.Parent then
 \t\tlocal player = Players:GetPlayerFromCharacter(DriveSeat.Occupant.Parent)
 \t\tif player then
 \t\t\tbuildHUDFor(player)
-\t\t\tattachPilotHighlight(player)
+\t\t\tattachPilotFirstPerson(player)
 \t\tend
 \tend
 end
