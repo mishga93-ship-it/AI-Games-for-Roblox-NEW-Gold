@@ -145,6 +145,11 @@ import {
 } from './providers.js';
 import { normalizeGlbScale } from './glbNormalize.js';
 import { generateFakeLimitedRecipe, parseFakeLimitedKind } from './fakeLimitedCrafter.js';
+// Session 382 Phase 2 — Avatar Glow-Up Studio.
+import { generateGlowup, type GlowupGenerateResult } from './glowupCompositor.js';
+import { isGlowupVibeId, type GlowupGender, type GlowupIntensity } from './data/glowupVibes.js';
+import { resolveRobloxUsername } from './robloxUserLookup.js';
+import { uploadDecalForUser, DecalUploadNotConnectedError } from './robloxDecalUpload.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -270,6 +275,124 @@ app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'ai-roblox-gold-firebase-api', region: defaults.region });
+});
+
+// ─── Session 382 Phase 2 — Avatar Glow-Up Studio ───
+// Two endpoints under /api/glowup:
+//   POST /api/glowup/generate     — vibe + (optional) username → asset pack
+//                                   (shirt.png, pants.png, decal.png, preview.png)
+//                                   stored in Firebase Storage with 7-day signed
+//                                   URLs. Requires Firebase auth (req.userId).
+//   POST /api/glowup/upload-decal — push a decal PNG to the user's Roblox
+//                                   account via OAuth Open Cloud assets API.
+//                                   Returns { assetId }. Requires OAuth scope
+//                                   asset:write (already in our scope list).
+
+function parseGender(raw: unknown): GlowupGender {
+  if (raw === 'boys' || raw === 'girls' || raw === 'neutral') return raw;
+  return 'neutral';
+}
+function parseIntensity(raw: unknown): GlowupIntensity {
+  if (raw === 'scary' || raw === 'clean') return raw;
+  return 'clean';
+}
+
+app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
+  try {
+    const body = (req.body ?? {}) as {
+      vibeId?: unknown;
+      gender?: unknown;
+      intensity?: unknown;
+      robloxUsername?: unknown;
+      autoUploadDecal?: unknown;
+    };
+    if (!isGlowupVibeId(body.vibeId)) {
+      return res.status(400).json({ error: 'Invalid or missing vibeId' });
+    }
+    const firebaseUid = req.userId;
+    if (!firebaseUid) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const gender = parseGender(body.gender);
+    const intensity = parseIntensity(body.intensity);
+
+    // Resolve robloxUserId: prefer OAuth-connected userId, else look up by username.
+    let robloxUserId: string | undefined;
+    try {
+      const tok = await getRobloxUserToken(firebaseUid);
+      if (tok?.robloxUserId) robloxUserId = tok.robloxUserId;
+    } catch (err) {
+      logger.warn('[glowup] OAuth token lookup non-fatal', err);
+    }
+    if (!robloxUserId && typeof body.robloxUsername === 'string') {
+      const resolved = await resolveRobloxUsername(body.robloxUsername);
+      if (resolved) robloxUserId = resolved.robloxUserId;
+    }
+
+    const result: GlowupGenerateResult = await generateGlowup({
+      vibeId: body.vibeId,
+      gender,
+      intensity,
+      robloxUserId,
+      firebaseUid,
+    });
+
+    // Optional inline decal upload — best-effort, doesn't fail the response.
+    let decalAssetId: string | undefined;
+    if (body.autoUploadDecal === true) {
+      try {
+        const decalResp = await fetch(result.assetPack.decalUrl, { signal: AbortSignal.timeout(15_000) });
+        if (decalResp.ok) {
+          const ab = await decalResp.arrayBuffer();
+          const upload = await uploadDecalForUser({
+            firebaseUid,
+            pngBuffer: Buffer.from(ab),
+            displayName: `${result.title} Glow-Up`,
+            description: `${result.pitch} — Generated via Kami Gold AI.`,
+          });
+          decalAssetId = upload.assetId;
+        }
+      } catch (err) {
+        if (err instanceof DecalUploadNotConnectedError) {
+          logger.info('[glowup] autoUploadDecal skipped — Roblox not connected', { firebaseUid });
+        } else {
+          logger.warn('[glowup] inline decal upload failed (non-fatal)', err);
+        }
+      }
+    }
+
+    return res.json({ ...result, decalAssetId });
+  } catch (err) {
+    logger.error('[glowup] generate failed', err);
+    return res.status(500).json({ error: 'Failed to generate glow-up' });
+  }
+});
+
+app.post('/api/glowup/upload-decal', async (req: AuthedRequest, res) => {
+  try {
+    const firebaseUid = req.userId;
+    if (!firebaseUid) return res.status(401).json({ error: 'Authentication required' });
+    const body = (req.body ?? {}) as { decalUrl?: unknown; displayName?: unknown };
+    if (typeof body.decalUrl !== 'string') {
+      return res.status(400).json({ error: 'Missing decalUrl' });
+    }
+    const displayName = typeof body.displayName === 'string' ? body.displayName : 'Kami Gold Glow-Up Decal';
+    const dl = await fetch(body.decalUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!dl.ok) return res.status(400).json({ error: `Failed to fetch decalUrl: HTTP ${dl.status}` });
+    const ab = await dl.arrayBuffer();
+    const upload = await uploadDecalForUser({
+      firebaseUid,
+      pngBuffer: Buffer.from(ab),
+      displayName,
+    });
+    return res.json(upload);
+  } catch (err) {
+    if (err instanceof DecalUploadNotConnectedError) {
+      return res.status(409).json({ error: 'roblox_not_connected', message: 'Connect Roblox via OAuth first.' });
+    }
+    logger.error('[glowup] decal upload failed', err);
+    return res.status(500).json({ error: 'Failed to upload decal' });
+  }
 });
 
 // Session 382 — Fake Headless & Korblox AI Crafter (public, no auth: this is a
