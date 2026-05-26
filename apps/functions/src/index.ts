@@ -6805,13 +6805,14 @@ function deterministicVehicleReview(args: {
     (m) => m.mode === 'vehicle_template',
   );
   if (hasEmbeddedVehicleTemplate) {
-    // Template ships full vehicle — skip structural checks, only do
-    // minimal sanity on metadata presence.
+    // Template ships full vehicle — skip structural checks.
     return {
+      status: 'passed',
       score: 0.85,
-      message: 'Template-embed vehicle accepted — third-party framework (PlaneKit / A-Chassis / endorsed) ships its own seat+controller.',
-      issues: [],
+      userMessage: 'Template-embed vehicle accepted — third-party framework (PlaneKit / A-Chassis / endorsed) ships its own seat+controller.',
+      reasons: ['template_embed_bypass'],
       repairActions: [],
+      reviewer: 'deterministic',
     };
   }
   if (!facts.hasDriveSeat) issues.push('missing_drive_seat: vehicle has no VehicleSeat named DriveSeat.');
