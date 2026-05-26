@@ -282,6 +282,170 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'ai-roblox-gold-firebase-api', region: defaults.region });
 });
 
+// Session 382 — Fake Headless & Korblox AI Crafter (public, no auth: this is a
+// catalog-recipe endpoint that returns curated public Roblox catalog item IDs
+// + an AI-rendered preview image. No user data is read or written.)
+app.post('/api/fake-limited/recipe', async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { kind?: unknown; includePreview?: unknown };
+    const kind = parseFakeLimitedKind(body.kind);
+    const includePreview = body.includePreview !== false;
+    const recipe = await generateFakeLimitedRecipe({ kind, includePreview });
+    res.json(recipe);
+  } catch (err) {
+    logger.error('[fake-limited] recipe generation failed', err);
+    res.status(500).json({ error: 'Failed to generate fake-limited recipe' });
+  }
+});
+
+app.get('/api/templates', async (_req, res) => {
+  try {
+    const snap = await db.collection('templates').orderBy('title').get();
+    const templates: GameTemplate[] = snap.docs.map((doc) => ({
+      ...(doc.data() as Omit<GameTemplate, 'id'>),
+      id: doc.id,
+    }));
+    res.json({ templates });
+  } catch (err) {
+    logger.error('Failed to fetch templates', err);
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+app.post('/api/internal/run-3d-pipeline', async (req, res) => {
+  const internalToken = req.header('x-internal-token');
+  const expectedToken = ROBLOX_WORKER_TOKEN.value();
+  if (!internalToken || internalToken !== expectedToken) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const { jobId } = req.body as { jobId?: string };
+  if (!jobId) {
+    res.status(400).json({ error: 'Missing jobId' });
+    return;
+  }
+
+  const jobDoc = await db.collection('generationJobs').doc(jobId).get();
+  if (!jobDoc.exists) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+
+  const job = jobDoc.data() as GenerationJob;
+  logger.info('Internal 3D pipeline started', { jobId, provider: job.provider });
+
+  // Respond immediately so the dispatch caller knows we accepted the job.
+  // Processing continues asynchronously — this prevents the 10s dispatch
+  // timeout from triggering a duplicate in-process fallback run.
+  res.json({ status: 'accepted', jobId });
+
+  runGenerationJobLifecycle(jobId, job)
+    .then((completed) => {
+      logger.info('Internal 3D pipeline completed', { jobId, status: completed.status });
+    })
+    .catch((err) => {
+      logger.error('Internal 3D pipeline error', err);
+      db.collection('generationJobs').doc(jobId).update({
+        status: 'failed',
+        errorMessage: errorMessage(err),
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+    });
+});
+
+// ── Continue 3D pipeline after concept approval (internal endpoint) ──
+// Registered BEFORE auth middleware so internal fetch (no Bearer token) is not blocked.
+// Responds immediately (like run-3d-pipeline) — work continues asynchronously.
+app.post('/api/internal/continue-3d-pipeline', async (req, res) => {
+  const internalSecret = req.headers['x-internal-secret'];
+  if (internalSecret !== (process.env.INTERNAL_SECRET ?? '')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const { jobId } = req.body as { jobId: string };
+  if (!jobId) return res.status(400).json({ error: 'jobId required' });
+
+  const docRef = db.collection('generationJobs').doc(jobId);
+  const doc = await docRef.get();
+  if (!doc.exists) return res.status(404).json({ error: 'Job not found' });
+  const job = doc.data() as GenerationJob;
+
+  logger.info('continue-3d-pipeline accepted', { jobId });
+
+  // Respond immediately so the dispatch caller knows we accepted the job.
+  // Processing continues asynchronously — same pattern as run-3d-pipeline.
+  res.json({ status: 'accepted', jobId });
+
+  continueCharacter3DPhase2(jobId, job)
+    .then(() => {
+      logger.info('Phase 2 pipeline completed', { jobId });
+    })
+    .catch((err) => {
+      logger.error('Phase 2 pipeline failed', { jobId, error: errorMessage(err) });
+      docRef.update({
+        status: 'failed',
+        errorMessage: errorMessage(err),
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+    });
+});
+
+app.get('/api/roblox/callback', (req, res) => {
+  const code = typeof req.query.code === 'string' ? req.query.code : '';
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  const error = typeof req.query.error === 'string' ? req.query.error : '';
+  if (error) {
+    const desc = typeof req.query.error_description === 'string' ? req.query.error_description : error;
+    return res.redirect(`aigoldroblox://roblox-oauth-callback?error=${encodeURIComponent(desc)}`);
+  }
+  if (!code) {
+    return res.status(400).send('Missing authorization code');
+  }
+  const redirectUrl = `aigoldroblox://roblox-oauth-callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+  res.redirect(redirectUrl);
+});
+
+app.use('/api', async (req: AuthedRequest, res, next) => {
+  if (
+    req.path === '/health'
+    || req.path === '/roblox/callback'
+    || req.path.startsWith('/admin/')
+    || req.path === '/roblox/trending-public'
+    || req.path === '/roblox/trending-games-public'
+    || req.path === '/roblox/trends/velocity-public'
+    || req.path === '/roblox/meme-trends-public'
+    || req.path === '/roblox/catalog/search-public'
+    || req.path === '/roblox/fallback-icons-public'
+  ) {
+    // Admin endpoints handle their own token-based auth.
+    // Public Roblox endpoints are consumed by published Roblox games via
+    // HttpService:GetAsync — game servers don't have a Firebase ID token.
+    // Per-IP rate-limit middleware below still applies.
+    return next();
+  }
+
+  const authHeader = req.header('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    if (getAllowUnauthenticatedRequests()) {
+      req.userId = 'dev-user';
+      req.authToken = null;
+      return next();
+    }
+    return res.status(401).json({ error: 'Missing Firebase ID token' });
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim();
+  try {
+    const decoded = await getAuth().verifyIdToken(token);
+    req.userId = decoded.uid;
+    req.authToken = decoded;
+    return next();
+  } catch (error) {
+    logger.warn('Failed to verify Firebase ID token', error);
+    return res.status(401).json({ error: 'Invalid Firebase ID token' });
+  }
+});
+
 // ─── Session 382 Phase 2 — Avatar Glow-Up Studio ───
 // Two endpoints under /api/glowup:
 //   POST /api/glowup/generate     — vibe + (optional) username → asset pack
@@ -581,169 +745,6 @@ app.post('/api/glowup/upload-decal', async (req: AuthedRequest, res) => {
   }
 });
 
-// Session 382 — Fake Headless & Korblox AI Crafter (public, no auth: this is a
-// catalog-recipe endpoint that returns curated public Roblox catalog item IDs
-// + an AI-rendered preview image. No user data is read or written.)
-app.post('/api/fake-limited/recipe', async (req, res) => {
-  try {
-    const body = (req.body ?? {}) as { kind?: unknown; includePreview?: unknown };
-    const kind = parseFakeLimitedKind(body.kind);
-    const includePreview = body.includePreview !== false;
-    const recipe = await generateFakeLimitedRecipe({ kind, includePreview });
-    res.json(recipe);
-  } catch (err) {
-    logger.error('[fake-limited] recipe generation failed', err);
-    res.status(500).json({ error: 'Failed to generate fake-limited recipe' });
-  }
-});
-
-app.get('/api/templates', async (_req, res) => {
-  try {
-    const snap = await db.collection('templates').orderBy('title').get();
-    const templates: GameTemplate[] = snap.docs.map((doc) => ({
-      ...(doc.data() as Omit<GameTemplate, 'id'>),
-      id: doc.id,
-    }));
-    res.json({ templates });
-  } catch (err) {
-    logger.error('Failed to fetch templates', err);
-    res.status(500).json({ error: 'Failed to fetch templates' });
-  }
-});
-
-app.post('/api/internal/run-3d-pipeline', async (req, res) => {
-  const internalToken = req.header('x-internal-token');
-  const expectedToken = ROBLOX_WORKER_TOKEN.value();
-  if (!internalToken || internalToken !== expectedToken) {
-    res.status(403).json({ error: 'Forbidden' });
-    return;
-  }
-
-  const { jobId } = req.body as { jobId?: string };
-  if (!jobId) {
-    res.status(400).json({ error: 'Missing jobId' });
-    return;
-  }
-
-  const jobDoc = await db.collection('generationJobs').doc(jobId).get();
-  if (!jobDoc.exists) {
-    res.status(404).json({ error: 'Job not found' });
-    return;
-  }
-
-  const job = jobDoc.data() as GenerationJob;
-  logger.info('Internal 3D pipeline started', { jobId, provider: job.provider });
-
-  // Respond immediately so the dispatch caller knows we accepted the job.
-  // Processing continues asynchronously — this prevents the 10s dispatch
-  // timeout from triggering a duplicate in-process fallback run.
-  res.json({ status: 'accepted', jobId });
-
-  runGenerationJobLifecycle(jobId, job)
-    .then((completed) => {
-      logger.info('Internal 3D pipeline completed', { jobId, status: completed.status });
-    })
-    .catch((err) => {
-      logger.error('Internal 3D pipeline error', err);
-      db.collection('generationJobs').doc(jobId).update({
-        status: 'failed',
-        errorMessage: errorMessage(err),
-        updatedAt: new Date().toISOString(),
-      }).catch(() => {});
-    });
-});
-
-// ── Continue 3D pipeline after concept approval (internal endpoint) ──
-// Registered BEFORE auth middleware so internal fetch (no Bearer token) is not blocked.
-// Responds immediately (like run-3d-pipeline) — work continues asynchronously.
-app.post('/api/internal/continue-3d-pipeline', async (req, res) => {
-  const internalSecret = req.headers['x-internal-secret'];
-  if (internalSecret !== (process.env.INTERNAL_SECRET ?? '')) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-  const { jobId } = req.body as { jobId: string };
-  if (!jobId) return res.status(400).json({ error: 'jobId required' });
-
-  const docRef = db.collection('generationJobs').doc(jobId);
-  const doc = await docRef.get();
-  if (!doc.exists) return res.status(404).json({ error: 'Job not found' });
-  const job = doc.data() as GenerationJob;
-
-  logger.info('continue-3d-pipeline accepted', { jobId });
-
-  // Respond immediately so the dispatch caller knows we accepted the job.
-  // Processing continues asynchronously — same pattern as run-3d-pipeline.
-  res.json({ status: 'accepted', jobId });
-
-  continueCharacter3DPhase2(jobId, job)
-    .then(() => {
-      logger.info('Phase 2 pipeline completed', { jobId });
-    })
-    .catch((err) => {
-      logger.error('Phase 2 pipeline failed', { jobId, error: errorMessage(err) });
-      docRef.update({
-        status: 'failed',
-        errorMessage: errorMessage(err),
-        updatedAt: new Date().toISOString(),
-      }).catch(() => {});
-    });
-});
-
-app.get('/api/roblox/callback', (req, res) => {
-  const code = typeof req.query.code === 'string' ? req.query.code : '';
-  const state = typeof req.query.state === 'string' ? req.query.state : '';
-  const error = typeof req.query.error === 'string' ? req.query.error : '';
-  if (error) {
-    const desc = typeof req.query.error_description === 'string' ? req.query.error_description : error;
-    return res.redirect(`aigoldroblox://roblox-oauth-callback?error=${encodeURIComponent(desc)}`);
-  }
-  if (!code) {
-    return res.status(400).send('Missing authorization code');
-  }
-  const redirectUrl = `aigoldroblox://roblox-oauth-callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
-  res.redirect(redirectUrl);
-});
-
-app.use('/api', async (req: AuthedRequest, res, next) => {
-  if (
-    req.path === '/health'
-    || req.path === '/roblox/callback'
-    || req.path.startsWith('/admin/')
-    || req.path === '/roblox/trending-public'
-    || req.path === '/roblox/trending-games-public'
-    || req.path === '/roblox/trends/velocity-public'
-    || req.path === '/roblox/meme-trends-public'
-    || req.path === '/roblox/catalog/search-public'
-    || req.path === '/roblox/fallback-icons-public'
-  ) {
-    // Admin endpoints handle their own token-based auth.
-    // Public Roblox endpoints are consumed by published Roblox games via
-    // HttpService:GetAsync — game servers don't have a Firebase ID token.
-    // Per-IP rate-limit middleware below still applies.
-    return next();
-  }
-
-  const authHeader = req.header('authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    if (getAllowUnauthenticatedRequests()) {
-      req.userId = 'dev-user';
-      req.authToken = null;
-      return next();
-    }
-    return res.status(401).json({ error: 'Missing Firebase ID token' });
-  }
-
-  const token = authHeader.slice('Bearer '.length).trim();
-  try {
-    const decoded = await getAuth().verifyIdToken(token);
-    req.userId = decoded.uid;
-    req.authToken = decoded;
-    return next();
-  } catch (error) {
-    logger.warn('Failed to verify Firebase ID token', error);
-    return res.status(401).json({ error: 'Invalid Firebase ID token' });
-  }
-});
 
 app.use('/api', (req: AuthedRequest, res, next) => {
   const key = req.userId ?? req.ip ?? 'anonymous';
