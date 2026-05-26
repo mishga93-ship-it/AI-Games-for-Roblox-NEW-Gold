@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		15E3019F2EFCB50EBA4583FA /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 78503588726555E66056D11D /* GoogleSignIn */; };
+		25890D9EE6A67CC7F950F596 /* GlowupResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E985E0D03312E2C86837EEAC /* GlowupResultView.swift */; };
+		38D33571F10E8020727936A7 /* GlowupStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */; };
 		521B99252F712F4200A973DE /* R15_men.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B99232F712F4200A973DE /* R15_men.obj */; };
 		521B99292F712FBF00A973DE /* R15_men.scn in Resources */ = {isa = PBXBuildFile; fileRef = 521B99282F712FBF00A973DE /* R15_men.scn */; };
 		521B992F2F71317B00A973DE /* women.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B992E2F71317B00A973DE /* women.obj */; };
@@ -17,7 +19,9 @@
 		526F84A32FA8A32500CB2F66 /* TikTokOpenAuthSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 526F84A22FA8A32500CB2F66 /* TikTokOpenAuthSDK */; };
 		526F84A52FA8A32500CB2F66 /* TikTokOpenSDKCore in Frameworks */ = {isa = PBXBuildFile; productRef = 526F84A42FA8A32500CB2F66 /* TikTokOpenSDKCore */; };
 		526F84A72FA8A32500CB2F66 /* TikTokOpenShareSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 526F84A62FA8A32500CB2F66 /* TikTokOpenShareSDK */; };
+		5D8589296E3FDB0AB484DA00 /* GlowupAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AE650C5D1A3D03B57FB514B /* GlowupAPIClient.swift */; };
 		7C3C377CD963C3C3F50400CF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */; };
+		89035988E5CCC6A34689C4DA /* FakeLimitedRecipeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */; };
 		A4B9C3E12F5A07D3E8F1B604 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = D7E2F1A84C3B95E6F0A2D718 /* FirebaseMessaging */; };
 		B0010001 /* AIGoldRobloxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010001 /* AIGoldRobloxApp.swift */; };
 		B0010002 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010002 /* RootView.swift */; };
@@ -25,7 +29,6 @@
 		B0010004 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010004 /* APIClient.swift */; };
 		B0010005 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010005 /* AuthService.swift */; };
 		B0010006 /* View+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010006 /* View+Extensions.swift */; };
-		B0010770 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010770 /* Brand.swift */; };
 		B0010007 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010007 /* Colors.swift */; };
 		B0010008 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010008 /* Typography.swift */; };
 		B0010009 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010009 /* PrimaryButton.swift */; };
@@ -37,10 +40,8 @@
 		B0010015 /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010015 /* ChatMessage.swift */; };
 		B0010016 /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010016 /* ChatStore.swift */; };
 		B0010017 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010017 /* ChatView.swift */; };
-		B001C500 /* VoiceFirstOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C500 /* VoiceFirstOverlay.swift */; };
 		B0010018 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010018 /* MainTabView.swift */; };
 		B0010019 /* GenerationPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010019 /* GenerationPreviewView.swift */; };
-		B0010050 /* DecalApprovalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010050 /* DecalApprovalSheet.swift */; };
 		B0010020 /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010020 /* ExportView.swift */; };
 		B0010021 /* CatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010021 /* CatalogView.swift */; };
 		B0010022 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010022 /* ProfileView.swift */; };
@@ -69,6 +70,7 @@
 		B0010046 /* LaunchLoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010047 /* LaunchLoadingView.swift */; };
 		B0010047 /* AIWorkspaceAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010048 /* AIWorkspaceAPI.swift */; };
 		B0010048 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010049 /* NetworkMonitor.swift */; };
+		B0010050 /* DecalApprovalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010050 /* DecalApprovalSheet.swift */; };
 		B00100A0 /* RobloxAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100A0 /* RobloxAuthService.swift */; };
 		B00100A1 /* GenerationModelPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100A1 /* GenerationModelPreview.swift */; };
 		B00100B1 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100B1 /* ChatHistoryStore.swift */; };
@@ -78,8 +80,6 @@
 		B00100C1 /* BanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100C1 /* BanView.swift */; };
 		B00100C2 /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100C2 /* DeepLinkManager.swift */; };
 		B00100D1 /* HomeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100D1 /* HomeStore.swift */; };
-		B0010500 /* TrendingRobloxStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010500 /* TrendingRobloxStrip.swift */; };
-		B0010501 /* TrendingRobloxGamesStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010501 /* TrendingRobloxGamesStrip.swift */; };
 		B00100D2 /* ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100D2 /* ChallengesView.swift */; };
 		B00100D3 /* TopChartsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100D3 /* TopChartsView.swift */; };
 		B00100D4 /* PublishView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100D4 /* PublishView.swift */; };
@@ -90,30 +90,39 @@
 		B00100F1 /* ChatImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100F1 /* ChatImageCache.swift */; };
 		B0010179 /* TikTokStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010179 /* TikTokStudioView.swift */; };
 		B00101F1 /* FollowListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00101F1 /* FollowListView.swift */; };
+		B0010500 /* TrendingRobloxStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010500 /* TrendingRobloxStrip.swift */; };
+		B0010501 /* TrendingRobloxGamesStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010501 /* TrendingRobloxGamesStrip.swift */; };
+		B0010770 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010770 /* Brand.swift */; };
 		B001C3D1 /* ClothingPreview3DView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C3D1 /* ClothingPreview3DView.swift */; };
-		B001C4D1 /* BlockyPet3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C4D1 /* BlockyPet3DSceneView.swift */; };
-		B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C5D1 /* BlockyFurniture3DSceneView.swift */; };
 		B001C3D2 /* WebUIPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C3D2 /* WebUIPreviewView.swift */; };
 		B001C3D3 /* MarketplaceHandoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C3D3 /* MarketplaceHandoffView.swift */; };
+		B001C4D1 /* BlockyPet3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C4D1 /* BlockyPet3DSceneView.swift */; };
+		B001C500 /* VoiceFirstOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C500 /* VoiceFirstOverlay.swift */; };
+		B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C5D1 /* BlockyFurniture3DSceneView.swift */; };
+		DC50831974D128D066E49DC0 /* GlowupStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */; };
 		EAED78FB2F4108DE8F6ABA7A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 87F8C902F756A98F181E73B2 /* FirebaseCore */; };
 		F71843F8C6293040F593F202 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 83543555B341FB276A0DAE54 /* FirebaseAuth */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudioView.swift; sourceTree = "<group>"; };
 		521B99232F712F4200A973DE /* R15_men.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = R15_men.obj; sourceTree = "<group>"; };
 		521B99282F712FBF00A973DE /* R15_men.scn */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = R15_men.scn; sourceTree = "<group>"; };
 		521B992E2F71317B00A973DE /* women.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = women.obj; sourceTree = "<group>"; };
 		521B99302F71318700A973DE /* women.scn */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = women.scn; sourceTree = "<group>"; };
 		521B99322F7131CA00A973DE /* basic.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = basic.obj; sourceTree = "<group>"; };
 		521B99342F7131D300A973DE /* basic.scn */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = basic.scn; sourceTree = "<group>"; };
+		6AE650C5D1A3D03B57FB514B /* GlowupAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupAPIClient.swift; sourceTree = "<group>"; };
+		AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FakeLimitedRecipeCard.swift; sourceTree = "<group>"; };
+		BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudio.swift; sourceTree = "<group>"; };
 		E0010000 /* AIGoldRoblox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIGoldRoblox.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E985E0D03312E2C86837EEAC /* GlowupResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupResultView.swift; sourceTree = "<group>"; };
 		F0010001 /* AIGoldRobloxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIGoldRobloxApp.swift; sourceTree = "<group>"; };
 		F0010002 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		F0010003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		F0010004 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		F0010005 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		F0010006 /* View+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Extensions.swift"; sourceTree = "<group>"; };
-		F0010770 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
 		F0010007 /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
 		F0010008 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		F0010009 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
@@ -125,10 +134,8 @@
 		F0010015 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		F0010016 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		F0010017 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		F001C500 /* VoiceFirstOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFirstOverlay.swift; sourceTree = "<group>"; };
 		F0010018 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		F0010019 /* GenerationPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationPreviewView.swift; sourceTree = "<group>"; };
-		F0010050 /* DecalApprovalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecalApprovalSheet.swift; sourceTree = "<group>"; };
 		F0010020 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		F0010021 /* CatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogView.swift; sourceTree = "<group>"; };
 		F0010022 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -158,6 +165,7 @@
 		F0010047 /* LaunchLoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchLoadingView.swift; sourceTree = "<group>"; };
 		F0010048 /* AIWorkspaceAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIWorkspaceAPI.swift; sourceTree = "<group>"; };
 		F0010049 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		F0010050 /* DecalApprovalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecalApprovalSheet.swift; sourceTree = "<group>"; };
 		F00100A0 /* RobloxAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobloxAuthService.swift; sourceTree = "<group>"; };
 		F00100A1 /* GenerationModelPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationModelPreview.swift; sourceTree = "<group>"; };
 		F00100B1 /* ChatHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHistoryStore.swift; sourceTree = "<group>"; };
@@ -167,8 +175,6 @@
 		F00100C1 /* BanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BanView.swift; sourceTree = "<group>"; };
 		F00100C2 /* DeepLinkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkManager.swift; sourceTree = "<group>"; };
 		F00100D1 /* HomeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeStore.swift; sourceTree = "<group>"; };
-		F0010500 /* TrendingRobloxStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingRobloxStrip.swift; sourceTree = "<group>"; };
-		F0010501 /* TrendingRobloxGamesStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingRobloxGamesStrip.swift; sourceTree = "<group>"; };
 		F00100D2 /* ChallengesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesView.swift; sourceTree = "<group>"; };
 		F00100D3 /* TopChartsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopChartsView.swift; sourceTree = "<group>"; };
 		F00100D4 /* PublishView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublishView.swift; sourceTree = "<group>"; };
@@ -179,11 +185,15 @@
 		F00100F1 /* ChatImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageCache.swift; sourceTree = "<group>"; };
 		F0010179 /* TikTokStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TikTokStudioView.swift; sourceTree = "<group>"; };
 		F00101F1 /* FollowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListView.swift; sourceTree = "<group>"; };
+		F0010500 /* TrendingRobloxStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingRobloxStrip.swift; sourceTree = "<group>"; };
+		F0010501 /* TrendingRobloxGamesStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingRobloxGamesStrip.swift; sourceTree = "<group>"; };
+		F0010770 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
 		F001C3D1 /* ClothingPreview3DView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClothingPreview3DView.swift; sourceTree = "<group>"; };
-		F001C4D1 /* BlockyPet3DSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockyPet3DSceneView.swift; sourceTree = "<group>"; };
-		F001C5D1 /* BlockyFurniture3DSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockyFurniture3DSceneView.swift; sourceTree = "<group>"; };
 		F001C3D2 /* WebUIPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebUIPreviewView.swift; sourceTree = "<group>"; };
 		F001C3D3 /* MarketplaceHandoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketplaceHandoffView.swift; sourceTree = "<group>"; };
+		F001C4D1 /* BlockyPet3DSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockyPet3DSceneView.swift; sourceTree = "<group>"; };
+		F001C500 /* VoiceFirstOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFirstOverlay.swift; sourceTree = "<group>"; };
+		F001C5D1 /* BlockyFurniture3DSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockyFurniture3DSceneView.swift; sourceTree = "<group>"; };
 		FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -205,6 +215,27 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		3DBC8835015C219196E96B77 /* FakeLimited */ = {
+			isa = PBXGroup;
+			children = (
+				AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */,
+			);
+			name = FakeLimited;
+			path = FakeLimited;
+			sourceTree = "<group>";
+		};
+		5A21117D858AEE907750603A /* Glowup */ = {
+			isa = PBXGroup;
+			children = (
+				6AE650C5D1A3D03B57FB514B /* GlowupAPIClient.swift */,
+				BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */,
+				4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */,
+				E985E0D03312E2C86837EEAC /* GlowupResultView.swift */,
+			);
+			name = Glowup;
+			path = Glowup;
+			sourceTree = "<group>";
+		};
 		G0010000 = {
 			isa = PBXGroup;
 			children = (
@@ -284,6 +315,8 @@
 				G00100D4 /* Challenges */,
 				G00100D5 /* Social */,
 				G0010017 /* Profile */,
+				5A21117D858AEE907750603A /* Glowup */,
+				3DBC8835015C219196E96B77 /* FakeLimited */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -728,6 +761,11 @@
 				B0010048 /* NetworkMonitor.swift in Sources */,
 				B00100F0 /* PostInteractionCache.swift in Sources */,
 				B00100F1 /* ChatImageCache.swift in Sources */,
+				5D8589296E3FDB0AB484DA00 /* GlowupAPIClient.swift in Sources */,
+				DC50831974D128D066E49DC0 /* GlowupStudio.swift in Sources */,
+				38D33571F10E8020727936A7 /* GlowupStudioView.swift in Sources */,
+				25890D9EE6A67CC7F950F596 /* GlowupResultView.swift in Sources */,
+				89035988E5CCC6A34689C4DA /* FakeLimitedRecipeCard.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
