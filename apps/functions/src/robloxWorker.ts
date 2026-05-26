@@ -2627,14 +2627,12 @@ function buildVehicleModelManifest(
   addVehiclePhysics({ scene, folders, rootId, profile, rootY, width, length, accent, dark, cf, ref, addPart, meshFitWidth, meshFitLength });
   addVehicleEffects({ scene, folders, rootId, profile, rootY, width, length, glowRgb, cf, numberRange, numberSequence, colorSequence });
 
-  // Round 20L v11 (session 381): aircraft engine sound. Default car loop
-  // is a deep idle hum; planes need propeller buzz. Roblox built-in asset
-  // ID 9114518995 = "Propeller Plane Loop" (verified working asset).
-  const engineSoundId = profile.driveMode === 'aircraft'
-    ? 'rbxassetid://9114518995'   // propeller plane loop
-    : profile.driveMode === 'rotorcraft'
-      ? 'rbxassetid://9114518965' // helicopter rotor loop
-      : 'rbxassetid://9120386436'; // default car engine
+  // Round 20L v12 (session 381): aircraft engine sound. Tried asset
+  // 9114518995 in v11 but got HTTP 403 (asset not publicly accessible).
+  // Revert to default car engine asset 9120386436 for all modes — at
+  // least it loads. TODO: find verified-working plane sound from public
+  // Roblox catalog and swap when known-good ID confirmed.
+  const engineSoundId = 'rbxassetid://9120386436';
   scene.push(
     {
       id: uuidv4(),
@@ -3434,6 +3432,47 @@ function addVehicleSeats(args: {
   });
   weldToRoot(driveSeatId, 'DriveSeatWeld');
 
+  // Round 20L v12 (session 381): baked LocalScript inside DriveSeat for
+  // aircraft. Roblox security blocks runtime LocalScript Source-write —
+  // need to bake into rbxm at build time. Triggers first-person camera
+  // lock when LOCAL player sits in THIS seat. Mesh transparency stays
+  // server-side (set in attachPilotFirstPerson on Occupant change).
+  if (profile.driveMode === 'aircraft' || profile.driveMode === 'rotorcraft') {
+    scene.push({
+      id: uuidv4(),
+      className: 'LocalScript',
+      name: 'PlanePilotCameraLock',
+      parentId: driveSeatId,
+      properties: {
+        Source: `
+local Players = game:GetService("Players")
+local seat = script.Parent
+if not seat or not seat:IsA("VehicleSeat") then return end
+local me = Players.LocalPlayer
+if not me then return end
+
+local function isMyCharSeated()
+\tlocal occ = seat.Occupant
+\treturn occ and occ.Parent == me.Character
+end
+
+local function applyFirstPerson()
+\tme.CameraMode = Enum.CameraMode.LockFirstPerson
+end
+
+local function revert()
+\tif me and me.Parent then me.CameraMode = Enum.CameraMode.Classic end
+end
+
+seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+\tif isMyCharSeated() then applyFirstPerson() else revert() end
+end)
+if isMyCharSeated() then applyFirstPerson() end
+`,
+      },
+    });
+  }
+
   const passengerSeats = Math.max(0, profile.seatCount - 1);
   const explicitPassengerPositions: Array<[number, number]> = profile.type === 'car'
     ? [
@@ -4167,36 +4206,16 @@ local function destroyHUD()
 \tend
 end
 
--- Round 20L v11 (session 381): swap Highlight for first-person camera
--- LocalScript injection. When player sits in aircraft seat: spawn local
--- script in their PlayerScripts that locks camera to FirstPerson and
--- makes the mesh body semi-transparent so they can see through the
--- "cockpit windows". Reverted on unsit.
+-- Round 20L v12 (session 381): no runtime LocalScript injection — Roblox
+-- security blocks it ("Cannot write Source: lacking PluginOrOpenCloud").
+-- First-person camera + mesh transparency are now handled by a baked-in
+-- LocalScript child of DriveSeat (see addPlanePilotLocalScript() in
+-- robloxWorker manifest builder). Server-side this function is a no-op
+-- placeholder for the legacy call site.
 local function attachPilotFirstPerson(player)
-\tif not player then return end
-\tlocal pg = player:FindFirstChildOfClass("PlayerGui")
-\tif not pg then return end
-\tlocal existing = pg:FindFirstChild("PlanePilotFirstPerson")
-\tif existing then existing:Destroy() end
-\t-- Make MeshPart slightly transparent so cockpit windows feel like glass.
+\t-- Mesh transparency stays server-side (works without script).
 \tlocal mesh = Vehicle:FindFirstChild("VehicleMeshBody", true)
-\tif mesh then mesh.LocalTransparencyModifier = 0.55 end
-\t-- LocalScript that runs on this player to lock camera.
-\tlocal ls = Instance.new("LocalScript")
-\tls.Name = "PlanePilotFirstPerson"
-\tls.Source = [[
-local Players = game:GetService("Players")
-local me = Players.LocalPlayer
-me.CameraMode = Enum.CameraMode.LockFirstPerson
-local function unlock()
-\tif me and me.Parent then me.CameraMode = Enum.CameraMode.Classic end
-end
--- Auto-revert when this script is destroyed (server destroys on unsit).
-script.AncestryChanged:Connect(function() if not script.Parent then unlock() end end)
-script.Destroying:Connect(unlock)
-]]
-\tls.Parent = pg
-\tactiveHighlight = ls  -- reuse the slot so destroyHUD cleans it up
+\tif mesh then mesh.Transparency = 0.55 end
 end
 
 local function buildHUDFor(player)
