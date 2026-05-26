@@ -147,12 +147,14 @@ import { normalizeGlbScale } from './glbNormalize.js';
 import { generateFakeLimitedRecipe, parseFakeLimitedKind } from './fakeLimitedCrafter.js';
 // Session 382 Phase 2 — Avatar Glow-Up Studio.
 import { generateGlowup, type GlowupGenerateResult } from './glowupCompositor.js';
-import { isGlowupVibeId, type GlowupGender, type GlowupIntensity } from './data/glowupVibes.js';
+import { isGlowupVibeId, type GlowupGender, type GlowupIntensity, type GlowupVibeId } from './data/glowupVibes.js';
 import { resolveRobloxUsername } from './robloxUserLookup.js';
 import { uploadDecalForUser, DecalUploadNotConnectedError } from './robloxDecalUpload.js';
 import { computeGlowupCacheKey, getCachedGlowup, setCachedGlowup } from './glowupCache.js';
 import { checkAndConsumeGlowupRateLimit } from './glowupRateLimit.js';
 import { recordGlowupEvent, parseGlowupEventType } from './glowupAnalytics.js';
+import { mintGlowupGenerationId, persistGlowupGeneration, fetchPersistedGeneration, isGlowupGenerationId } from './glowupGenerationId.js';
+import { checkIpRateLimit, extractClientIp } from './glowupIpRateLimit.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -302,7 +304,8 @@ function parseIntensity(raw: unknown): GlowupIntensity {
 
 app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
   const firebaseUid = req.userId;
-  let resolvedVibeId: string | undefined;
+  const generationId = mintGlowupGenerationId();
+  let resolvedVibeId: GlowupVibeId | undefined;
   try {
     const body = (req.body ?? {}) as {
       vibeId?: unknown;
@@ -312,12 +315,25 @@ app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
       autoUploadDecal?: unknown;
     };
     if (!isGlowupVibeId(body.vibeId)) {
-      return res.status(400).json({ error: 'Invalid or missing vibeId' });
+      return res.status(400).json({ error: 'Invalid or missing vibeId', generationId });
     }
     resolvedVibeId = body.vibeId;
     if (!firebaseUid) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(401).json({ error: 'Authentication required', generationId });
     }
+
+    // Per-IP cooldown (defense vs TikTok-raid / scraper / bot pointing at
+    // a single endpoint). Distinct from the per-firebaseUid Firestore limit.
+    const clientIp = extractClientIp(req);
+    const ipVerdict = checkIpRateLimit(clientIp, '/glowup/generate');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({
+        error: 'ip_rate_limited',
+        retryAfterMs: ipVerdict.retryAfterMs,
+        generationId,
+      });
+    }
+
     const gender = parseGender(body.gender);
     const intensity = parseIntensity(body.intensity);
 
@@ -420,26 +436,75 @@ app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
       }
     }
 
+    // Persist generation by ID (best-effort) for retry-by-ID + abuse logs.
+    void persistGlowupGeneration({
+      generationId,
+      firebaseUid,
+      vibeId: body.vibeId,
+      gender,
+      intensity,
+      robloxUserId,
+      fromCache: !!cached,
+      result,
+      decalAssetId,
+      status: 'ready',
+      createdAtMs: Date.now(),
+    });
+
     return res.json({
       ...result,
+      generationId,
+      generationStatus: 'ready' as const,
       decalAssetId,
       cached: !!cached,
       rateLimit: {
         hourlyRemaining: verdict.hourlyRemaining,
         dailyRemaining: verdict.dailyRemaining,
+        ipRemaining: ipVerdict.remaining,
       },
     });
   } catch (err) {
-    logger.error('[glowup] generate failed', err);
+    logger.error('[glowup] generate failed', { generationId, err });
     if (firebaseUid) {
       recordGlowupEvent({
         type: 'generation_failed',
         firebaseUid,
         vibeId: resolvedVibeId,
         errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        meta: { generationId },
       });
     }
-    return res.status(500).json({ error: 'Failed to generate glow-up' });
+    return res.status(500).json({
+      error: 'Failed to generate glow-up',
+      generationId,
+      generationStatus: 'failed' as const,
+    });
+  }
+});
+
+// Retrieve a previously persisted generation by its short ID. Lets the iOS
+// app re-fetch an old result without rerunning the pipeline (cheap, no
+// flux-pro / Storage / Roblox API hit). Returns 404 if not found, 403 if
+// the caller is not the original owner.
+app.get('/api/glowup/generations/:id', async (req: AuthedRequest, res) => {
+  try {
+    const firebaseUid = req.userId;
+    if (!firebaseUid) return res.status(401).json({ error: 'Authentication required' });
+    const id = req.params.id;
+    if (!isGlowupGenerationId(id)) return res.status(400).json({ error: 'Invalid generationId' });
+    const doc = await fetchPersistedGeneration(id);
+    if (!doc) return res.status(404).json({ error: 'not_found' });
+    if (doc.firebaseUid !== firebaseUid) return res.status(403).json({ error: 'forbidden' });
+    return res.json({
+      ...doc.result,
+      generationId: doc.generationId,
+      generationStatus: doc.status,
+      decalAssetId: doc.decalAssetId,
+      cached: true,
+    });
+  } catch (err) {
+    logger.error('[glowup] fetch by id failed', err);
+    return res.status(500).json({ error: 'Failed to fetch generation' });
   }
 });
 
@@ -449,6 +514,12 @@ app.post('/api/glowup/event', async (req: AuthedRequest, res) => {
   try {
     const firebaseUid = req.userId;
     if (!firebaseUid) return res.status(401).json({ error: 'Authentication required' });
+    // Per-IP cooldown lets analytics events flow at 10/min — plenty for
+    // organic taps; blocks bots looking to fill the events collection.
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/glowup/event');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
     const body = (req.body ?? {}) as { type?: unknown; vibeId?: unknown; meta?: unknown };
     const type = parseGlowupEventType(body.type);
     if (!type) return res.status(400).json({ error: 'Invalid event type' });
@@ -471,6 +542,10 @@ app.post('/api/glowup/upload-decal', async (req: AuthedRequest, res) => {
   try {
     const firebaseUid = req.userId;
     if (!firebaseUid) return res.status(401).json({ error: 'Authentication required' });
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/glowup/upload-decal');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
     const body = (req.body ?? {}) as { decalUrl?: unknown; displayName?: unknown };
     if (typeof body.decalUrl !== 'string') {
       return res.status(400).json({ error: 'Missing decalUrl' });

@@ -199,23 +199,51 @@ async function buildPreviewPNG(vibe: GlowupVibe, robloxUserId?: string): Promise
   return { buffer, fitOnUser };
 }
 
+/**
+ * Safe wrappers — each individual builder/upload is isolated so a partial
+ * failure (e.g. flux-pro down, Storage hiccup on one of four files) doesn't
+ * cascade into a full request fail. Missing pieces become solid-color
+ * fallbacks; the response always carries 4 URLs.
+ */
+async function safe<T>(label: string, work: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    logger.warn(`[glowupCompositor] ${label} failed; using fallback`, err);
+    return fallback();
+  }
+}
+
 export async function generateGlowup(input: GlowupGenerateInput): Promise<GlowupGenerateResult> {
   const vibe = getGlowupVibe(input.vibeId);
 
-  // Build the 4 PNG buffers in parallel — independent work units.
+  // Build the 4 PNG buffers in parallel — each isolated by safe() so any
+  // single builder failure becomes a solid-color fallback, never throws.
   const [shirtBuf, pantsBuf, decalBuf, preview] = await Promise.all([
-    buildShirtPNG(vibe),
-    buildPantsPNG(vibe),
-    buildDecalPNG(vibe, input.intensity),
-    buildPreviewPNG(vibe, input.robloxUserId),
+    safe('buildShirtPNG', () => buildShirtPNG(vibe), () => solidBuffer(585, 559, vibe.palette.shirtPrimaryHex)),
+    safe('buildPantsPNG', () => buildPantsPNG(vibe), () => solidBuffer(585, 559, vibe.palette.pantsPrimaryHex)),
+    safe('buildDecalPNG', () => buildDecalPNG(vibe, input.intensity), () => solidBuffer(DECAL_SIZE, DECAL_SIZE, vibe.palette.skinHex)),
+    safe('buildPreviewPNG',
+      () => buildPreviewPNG(vibe, input.robloxUserId),
+      async () => ({ buffer: await solidBuffer(PREVIEW_W, PREVIEW_H, vibe.palette.skinHex), fitOnUser: false })),
   ]);
 
-  // Upload to Firebase Storage in parallel.
+  // Upload to Firebase Storage in parallel — each upload isolated, fallback
+  // to a generic placeholder URL if Storage write fails.
+  const PLACEHOLDER_URL = 'https://api-z4yzt6dhjq-uc.a.run.app/api/glowup/placeholder.png';
   const [shirtUrl, pantsUrl, decalUrl, previewUrl] = await Promise.all([
-    uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'shirt.png', contentType: 'image/png', data: shirtBuf }),
-    uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'pants.png', contentType: 'image/png', data: pantsBuf }),
-    uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'decal.png', contentType: 'image/png', data: decalBuf }),
-    uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'preview.png', contentType: 'image/png', data: preview.buffer }),
+    safe('upload shirt',
+      () => uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'shirt.png', contentType: 'image/png', data: shirtBuf }),
+      async () => PLACEHOLDER_URL),
+    safe('upload pants',
+      () => uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'pants.png', contentType: 'image/png', data: pantsBuf }),
+      async () => PLACEHOLDER_URL),
+    safe('upload decal',
+      () => uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'decal.png', contentType: 'image/png', data: decalBuf }),
+      async () => PLACEHOLDER_URL),
+    safe('upload preview',
+      () => uploadAndSign({ firebaseUid: input.firebaseUid, vibeId: vibe.id, filename: 'preview.png', contentType: 'image/png', data: preview.buffer }),
+      async () => PLACEHOLDER_URL),
   ]);
 
   return {

@@ -9,6 +9,8 @@
 import { getGlowupVibe, listGlowupVibes, isGlowupVibeId, summarizeVibe, hexToRgbText } from './apps/functions/dist/data/glowupVibes.js';
 import { computeGlowupCacheKey } from './apps/functions/dist/glowupCache.js';
 import { parseGlowupEventType } from './apps/functions/dist/glowupAnalytics.js';
+import { mintGlowupGenerationId, isGlowupGenerationId } from './apps/functions/dist/glowupGenerationId.js';
+import { checkIpRateLimit } from './apps/functions/dist/glowupIpRateLimit.js';
 
 let failures = 0;
 function check(label, cond, detail = '') {
@@ -81,6 +83,35 @@ for (const t of validEvents) {
 check(`parseGlowupEventType("garbage") rejected`, parseGlowupEventType('garbage') === null);
 check(`parseGlowupEventType(null) rejected`, parseGlowupEventType(null) === null);
 check(`parseGlowupEventType(undefined) rejected`, parseGlowupEventType(undefined) === null);
+
+// Generation IDs
+const id1 = mintGlowupGenerationId();
+const id2 = mintGlowupGenerationId();
+check(`mintGlowupGenerationId returns "glowup_" prefix + 8 chars`, /^glowup_[0-9a-z]{8}$/.test(id1));
+check(`mintGlowupGenerationId returns unique IDs across calls`, id1 !== id2);
+check(`isGlowupGenerationId accepts minted ID`, isGlowupGenerationId(id1));
+check(`isGlowupGenerationId rejects "glowup_short"`, !isGlowupGenerationId('glowup_short'));
+check(`isGlowupGenerationId rejects "foo_12345678"`, !isGlowupGenerationId('foo_12345678'));
+check(`isGlowupGenerationId rejects ""`, !isGlowupGenerationId(''));
+check(`isGlowupGenerationId rejects null`, !isGlowupGenerationId(null));
+
+// Per-IP rate limit
+const ip = `test-${Date.now()}`;
+let allowedCount = 0;
+let blocked = false;
+for (let i = 0; i < 12; i++) {
+  const v = checkIpRateLimit(ip, '/test-endpoint');
+  if (v.allowed) allowedCount++;
+  else { blocked = true; break; }
+}
+check(`checkIpRateLimit allows first 10 requests`, allowedCount === 10, `got ${allowedCount}`);
+check(`checkIpRateLimit blocks 11th request`, blocked);
+// Different endpoint bucket — should still allow
+const v2 = checkIpRateLimit(ip, '/different-endpoint');
+check(`checkIpRateLimit isolates by endpoint key`, v2.allowed);
+// Different IP, same endpoint — should allow
+const v3 = checkIpRateLimit(`${ip}-other`, '/test-endpoint');
+check(`checkIpRateLimit isolates by IP`, v3.allowed);
 
 if (failures > 0) {
   console.error(`\n❌ ${failures} check(s) failed`);
