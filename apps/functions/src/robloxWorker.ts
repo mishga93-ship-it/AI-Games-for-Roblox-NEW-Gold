@@ -2376,7 +2376,11 @@ function buildVehicleModelManifest(
         Size: vector3(width * 0.82, Math.max(0.45, height * 0.24), length * 0.74),
         CFrame: cf(0, rootY, 0),
         Anchored: false,
-        CanCollide: profile.driveMode !== 'land_wheels' && profile.driveMode !== 'tracked',
+        // Round 20L (session 381): aircraft also gets CanCollide=false on
+        // ChassisRoot. Was true for aircraft → solid 11×0.8×9 plate at Y=1.2
+        // dragged on ground, plane never lifted (gravity won the lerp race).
+        // Now wheels are the only ground-contact parts for aircraft too.
+        CanCollide: profile.driveMode !== 'land_wheels' && profile.driveMode !== 'tracked' && profile.driveMode !== 'aircraft' && profile.driveMode !== 'rotorcraft',
         Massless: false,
         Color: primary,
         Material: enumValue('Material', vehicleType === 'boat' ? 'Wood' : 'Metal'),
@@ -3993,8 +3997,22 @@ RunService.Heartbeat:Connect(function(dt)
 \tif occupied then
 \t\tlocal target
 \t\tif DRIVE_MODE == "aircraft" then
-\t\t\tlocal lift = math.max(0, throttle) * TOP_SPEED * 0.22 + math.max(0, speed01 - 0.25) * 12
-\t\t\ttarget = forward * (math.max(throttle, 0) * TOP_SPEED) + Vector3.new(0, lift, 0)
+\t\t\t-- Round 20L (session 381): DIRECT velocity override for aircraft.
+\t\t\t-- The lerp below at alpha~0.03/frame can't outrun gravity (-3.3
+\t\t\t-- stud/frame at 60fps), so plane never lifts. Direct assign of
+\t\t\t-- AssemblyLinearVelocity overrides gravity per-frame while occupied.
+\t\t\t-- Y lift is proportional to throttle + extra above 25% airspeed.
+\t\t\tlocal lift = math.max(0, throttle) * TOP_SPEED * 0.35 + math.max(0, speed01 - 0.25) * 18
+\t\t\tlocal fwd = forward * (math.max(throttle, 0) * TOP_SPEED)
+\t\t\t-- Hold altitude when idle-coasting (throttle=0 mid-air) by keeping current Y up to gravity decay
+\t\t\tlocal yVel = throttle > 0 and lift or math.max(current.Y, -6)
+\t\t\tRoot.AssemblyLinearVelocity = Vector3.new(fwd.X, yVel, fwd.Z)
+\t\t\tif steer ~= 0 then
+\t\t\t\tRoot.AssemblyAngularVelocity = Vector3.new(0, -steer * TURN_RATE * 1.2, 0)
+\t\t\telse
+\t\t\t\tRoot.AssemblyAngularVelocity = Root.AssemblyAngularVelocity:Lerp(Vector3.zero, math.clamp(dt * 3, 0, 1))
+\t\t\tend
+\t\t\ttarget = nil  -- skip generic lerp branch below
 \t\telseif DRIVE_MODE == "rotorcraft" then
 \t\t\ttarget = forward * (math.max(throttle, 0) * TOP_SPEED * 0.45) + Vector3.new(0, throttle * TOP_SPEED * 0.42, 0)
 \t\telseif DRIVE_MODE == "hover" then
