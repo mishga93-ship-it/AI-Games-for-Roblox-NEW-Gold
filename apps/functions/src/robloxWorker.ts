@@ -2502,11 +2502,12 @@ function buildVehicleModelManifest(
     // Mesh bottom at Y=wheelRadius means wheels stick out 1.05 stud
     // below the body bottom (proper road-clearance look) AND poke
     // 1.05 stud into the body bottom (wheel wells).
-    // Round 20L v4 (session 381): for plane, lift mesh bottom HIGHER above
-    // wheels. v3 had +0.3 clearance, user still reported "наполовину утонул".
-    // Now +1.2 stud above wheel tops — plane visibly sits on gear.
+    // Round 20L v14 (session 381): plane mesh lift +3.5 stud above wheel
+    // tops. Meshy mesh bboxes include empty Y space below visible body
+    // (depending on prompt), so even +1.2 had plane sinking. +3.5 should
+    // clear most cases (max wing dihedral / hanging gear).
     const meshBottomY = vehicleType === 'plane'
-      ? profile.wheelRadius * 2 + 1.2
+      ? profile.wheelRadius * 2 + 3.5
       : profile.wheelRadius;
     const meshCenterY = meshBottomY + finalHeight * 0.5;
     // Session 373 round 8: pass WHITE (no tint) so Meshy's concept-baked
@@ -4216,16 +4217,14 @@ local function destroyHUD()
 \tend
 end
 
--- Round 20L v12 (session 381): no runtime LocalScript injection — Roblox
--- security blocks it ("Cannot write Source: lacking PluginOrOpenCloud").
--- First-person camera + mesh transparency are now handled by a baked-in
--- LocalScript child of DriveSeat (see addPlanePilotLocalScript() in
--- robloxWorker manifest builder). Server-side this function is a no-op
--- placeholder for the legacy call site.
+-- Round 20L v14 (session 381): no-op. After 13 iterations the
+-- transparency-on-sit + runtime camera lock approach proved unreliable
+-- (server Transparency set persists, security blocks LocalScript Source
+-- write at runtime, mesh bbox semantics make "inside cockpit" ambiguous).
+-- First-person camera handled by baked LocalScript in DriveSeat (see seat
+-- creation). Mesh stays opaque always.
 local function attachPilotFirstPerson(player)
-\t-- Mesh transparency stays server-side (works without script).
-\tlocal mesh = Vehicle:FindFirstChild("VehicleMeshBody", true)
-\tif mesh then mesh.Transparency = 0.55 end
+\t-- intentional no-op
 end
 
 local function buildHUDFor(player)
