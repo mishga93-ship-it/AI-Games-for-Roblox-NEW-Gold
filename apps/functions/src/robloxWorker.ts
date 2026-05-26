@@ -2698,7 +2698,9 @@ function buildVehicleModelManifest(
     });
   }
   const embeddedModels: RobloxBuildManifest['embeddedModels'] = [];
-  if (vehicleTemplateAssetId) {
+  // Round 20L v15-fix4: gate on bytes presence, not assetId. Phenom 100
+  // (local-only template) has assetId=0 but loads bytes from disk.
+  if (vehicleTemplateRbxmBase64) {
     const tplLabel = typeof metadata.vehicleTemplateLabel === 'string' ? metadata.vehicleTemplateLabel : 'Vehicle';
     const tplPreferred = typeof metadata.vehicleTemplatePreferredVariant === 'string' ? metadata.vehicleTemplatePreferredVariant : tplLabel;
     const tplFallbacksRaw = metadata.vehicleTemplateVariantFallbacks;
@@ -3453,6 +3455,11 @@ if not seat or not seat:IsA("VehicleSeat") then return end
 local me = Players.LocalPlayer
 if not me then return end
 
+local function findMesh()
+\tlocal vehicle = seat:FindFirstAncestorOfClass("Model")
+\treturn vehicle and vehicle:FindFirstChild("VehicleMeshBody", true)
+end
+
 local function isMyCharSeated()
 \tlocal occ = seat.Occupant
 \treturn occ and occ.Parent == me.Character
@@ -3468,14 +3475,17 @@ local function applyFirstPerson()
 \t\t\tcam.CameraSubject = hum
 \t\tend
 \tend
+\tlocal mesh = findMesh()
+\tif mesh then mesh.LocalTransparencyModifier = 0.55 end
 end
 
 local function revert()
 \tif me and me.Parent then me.CameraMode = Enum.CameraMode.Classic end
+\tlocal mesh = findMesh()
+\tif mesh then mesh.LocalTransparencyModifier = 0 end
 end
 
 seat:GetPropertyChangedSignal("Occupant"):Connect(function()
-\t-- Slight delay so Roblox's auto-seat-camera change settles first.
 \ttask.wait(0.1)
 \tif isMyCharSeated() then applyFirstPerson() else revert() end
 end)
@@ -4219,14 +4229,10 @@ local function destroyHUD()
 \tend
 end
 
--- Round 20L v14 (session 381): no-op. After 13 iterations the
--- transparency-on-sit + runtime camera lock approach proved unreliable
--- (server Transparency set persists, security blocks LocalScript Source
--- write at runtime, mesh bbox semantics make "inside cockpit" ambiguous).
--- First-person camera handled by baked LocalScript in DriveSeat (see seat
--- creation). Mesh stays opaque always.
+-- Round 20L v16: server-side no-op. Transparency-on-sit + first-person camera
+-- handled by baked LocalScript inside DriveSeat (client-side per-player).
 local function attachPilotFirstPerson(player)
-\t-- intentional no-op
+\t-- no-op (handled client-side in PlanePilotCameraLock LocalScript)
 end
 
 local function buildHUDFor(player)

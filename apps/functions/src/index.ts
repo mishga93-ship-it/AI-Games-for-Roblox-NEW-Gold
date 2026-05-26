@@ -27605,12 +27605,10 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // etc.), this stage emits no template — pipeline falls through to
       // procedural baseline as before. Only `car`-style vehicles match.
       const vehicleTypeForTemplate = String(vehicleType ?? '').toLowerCase();
-      // Round 20L v15 (session 381): plane returns to template path with
-      // Embraer Phenom 100 + PlaneKit. After 14 rounds of fighting Meshy
-      // single-mesh + Roblox VehicleSeat incompatibility, accepted that
-      // a proven third-party PlaneKit framework is best path. User showed
-      // Phenom 100 as their target reference. We embed + recolor body.
-      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'plane', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
+      // Round 20L v16 (session 381): user reverted — wants unique per-prompt
+      // 3D mesh, not single-template recolor. Plane back to Meshy path.
+      // We'll iterate orientation/cockpit/sound issues separately.
+      const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
       if (eligibleForTemplate) {
         await beginStage('pick_vehicle_template', 'Picking Roblox vehicle template');
         try {
