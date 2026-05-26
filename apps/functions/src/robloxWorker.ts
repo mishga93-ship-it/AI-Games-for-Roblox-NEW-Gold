@@ -2458,7 +2458,11 @@ function buildVehicleModelManifest(
     // "forward" and rotate MeshPart 90° around Y when X is the longer one.
     // KEEPS round 18's two good changes: (a) no L/H ≤ 1.8 Y-stretch
     // (preserves natural proportions), (b) DriveSeat at 30% up (in cabin).
-    const forwardIsX = natural.x > natural.z;
+    // Round 20L (session 381): plane is special — wingspan X often LONGER
+    // than fuselage Z. Heuristic "long axis = forward" works for cars but
+    // mistreats wingspan as forward for planes. For planes, always trust
+    // natural Z as forward (no rotation) so wings stay along X.
+    const forwardIsX = vehicleType === 'plane' ? false : (natural.x > natural.z);
     const mLong = Math.max(natural.x, natural.z);
     const mShort = Math.min(natural.x, natural.z);
     const mTall = natural.y;
@@ -2487,7 +2491,13 @@ function buildVehicleModelManifest(
     // Mesh bottom at Y=wheelRadius means wheels stick out 1.05 stud
     // below the body bottom (proper road-clearance look) AND poke
     // 1.05 stud into the body bottom (wheel wells).
-    const meshBottomY = profile.wheelRadius;
+    // Round 20L (session 381 v2): for plane, lift mesh bottom ABOVE wheel
+    // tops (wheelRadius*2 + 0.3 clearance) so plane sits on landing gear
+    // instead of fuselage touching ground. Old wheelRadius value put mesh
+    // bottom = wheel center, body half-sunk for low-wing/jet planes.
+    const meshBottomY = vehicleType === 'plane'
+      ? profile.wheelRadius * 2 + 0.3
+      : profile.wheelRadius;
     const meshCenterY = meshBottomY + finalHeight * 0.5;
     // Session 373 round 8: pass WHITE (no tint) so Meshy's concept-baked
     // colors show through cleanly. After Meshy multi-image-to-3d (Phase A
@@ -3376,12 +3386,11 @@ function addVehicleSeats(args: {
       : profile.driveMode === 'aircraft'
         ? -length * 0.25  // forward into cockpit area
         : -length * 0.14;
-  // Round 20L (session 381): for aircraft mesh-mode, rotate DriveSeat 90°
-  // around Y so character forward direction aligns with Meshy mesh natural
-  // nose. User reported "сидит боком" — mesh rotation heuristic
-  // (forwardIsX → meshRot [0,90,0]) aligns visual but seat default forward
-  // (-Z) doesn't always match. Empirical: rotate seat the same way as mesh.
-  const seatRotYDeg = profile.driveMode === 'aircraft' ? 90 : 0;
+  // Round 20L (session 381 v2): seat rotation should match mesh rotation.
+  // For plane we now force forwardIsX=false → no mesh rotation, so seat
+  // also stays at 0°. User reported "сидит боком" with prior 90° — that
+  // was double-rotation (mesh rotated + seat rotated → 180° off-axis).
+  const seatRotYDeg = 0;
   scene.push({
     id: driveSeatId,
     className: 'VehicleSeat',
