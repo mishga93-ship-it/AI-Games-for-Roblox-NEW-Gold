@@ -144,6 +144,7 @@ import {
   mapAnimationsForRigType,
 } from './providers.js';
 import { normalizeGlbScale } from './glbNormalize.js';
+import { generateFakeLimitedRecipe, parseFakeLimitedKind } from './fakeLimitedCrafter.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -269,6 +270,22 @@ app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'ai-roblox-gold-firebase-api', region: defaults.region });
+});
+
+// Session 382 — Fake Headless & Korblox AI Crafter (public, no auth: this is a
+// catalog-recipe endpoint that returns curated public Roblox catalog item IDs
+// + an AI-rendered preview image. No user data is read or written.)
+app.post('/api/fake-limited/recipe', async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { kind?: unknown; includePreview?: unknown };
+    const kind = parseFakeLimitedKind(body.kind);
+    const includePreview = body.includePreview !== false;
+    const recipe = await generateFakeLimitedRecipe({ kind, includePreview });
+    res.json(recipe);
+  } catch (err) {
+    logger.error('[fake-limited] recipe generation failed', err);
+    res.status(500).json({ error: 'Failed to generate fake-limited recipe' });
+  }
 });
 
 app.get('/api/templates', async (_req, res) => {

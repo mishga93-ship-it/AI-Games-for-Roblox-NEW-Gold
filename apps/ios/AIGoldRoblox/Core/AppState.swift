@@ -977,6 +977,7 @@ enum ProjectKind: String {
     case clone = "Clone"
     case ugc = "UGC"
     case analyze = "Analyze"
+    case fakeLimited = "FakeLimited"
 
     var icon: String {
         switch self {
@@ -986,6 +987,7 @@ enum ProjectKind: String {
         case .clone: return "square.on.square.fill"
         case .ugc: return "person.crop.rectangle.stack.fill"
         case .analyze: return "chart.xyaxis.line"
+        case .fakeLimited: return "theatermasks.fill"
         }
     }
 }

@@ -249,7 +249,7 @@ final class ChatStore: ObservableObject {
         static func from(_ kind: ProjectKind) -> ThreadType {
             switch kind {
             case .game, .clone: return .game
-            case .content, .ugc: return .content
+            case .content, .ugc, .fakeLimited: return .content
             case .fix, .analyze: return .other
             }
         }
@@ -893,6 +893,91 @@ final class ChatStore: ObservableObject {
                 createdAt: Date()
             )
         ]
+    }
+
+    // Session 382 — Fake Headless & Korblox AI Crafter chat handler. Parses
+    // the user's reply ("Headless" / "Korblox" / "Combo" / ru variants),
+    // calls the standalone /api/fake-limited/recipe endpoint, then appends an
+    // assistant message that embeds the recipe text + preview PNG.
+    private func handleFakeLimitedUserMessage(_ text: String) {
+        let lower = text.lowercased()
+        let kind: FakeLimitedKind?
+        if lower.contains("combo") || lower.contains("оба") || lower.contains("вместе") {
+            kind = .combo
+        } else if lower.contains("korblox") || lower.contains("корблокс") || lower.contains("нога") || lower.contains("leg") {
+            kind = .korblox
+        } else if lower.contains("headless") || lower.contains("хедлес") || lower.contains("безголов") || lower.contains("голов") {
+            kind = .headless
+        } else {
+            kind = nil
+        }
+        guard let resolvedKind = kind else {
+            let helpMessage = ChatMessage(
+                id: UUID().uuidString,
+                role: .assistant,
+                content: "Выбери, какую лимитку имитируем: **Headless**, **Korblox** или **Combo** (оба сразу).",
+                quickReplies: ["Headless", "Korblox", "Combo (Headless+Korblox)"],
+                gddRows: nil,
+                createdAt: Date()
+            )
+            messages.append(helpMessage)
+            return
+        }
+        isLoading = true
+        Task { @MainActor in
+            do {
+                let recipe = try await FakeLimitedAPI.shared.fetchRecipe(kind: resolvedKind, includePreview: true)
+                let content = Self.formatFakeLimitedRecipe(recipe)
+                let previewURL = recipe.previewImageUrl.flatMap(URL.init(string:))
+                let message = ChatMessage(
+                    id: UUID().uuidString,
+                    role: .assistant,
+                    content: content,
+                    quickReplies: ["Headless", "Korblox", "Combo (Headless+Korblox)", "Start over"],
+                    gddRows: [
+                        ("Cost", "\(recipe.totalCostRobux) R$"),
+                        ("Saved", "\(recipe.savedRobux.formatted()) R$"),
+                        ("Items", "\(recipe.items.count)"),
+                    ],
+                    createdAt: Date(),
+                    imageURL: previewURL
+                )
+                messages.append(message)
+            } catch {
+                let errMsg = ChatMessage(
+                    id: UUID().uuidString,
+                    role: .assistant,
+                    content: "Не получилось собрать рецепт: \(error.localizedDescription). Попробуй ещё раз через минуту.",
+                    quickReplies: ["Headless", "Korblox", "Combo (Headless+Korblox)"],
+                    gddRows: nil,
+                    createdAt: Date()
+                )
+                messages.append(errMsg)
+            }
+            isLoading = false
+        }
+    }
+
+    private static func formatFakeLimitedRecipe(_ recipe: FakeLimitedRecipe) -> String {
+        var lines: [String] = []
+        lines.append("**\(recipe.title)**")
+        lines.append(recipe.pitch)
+        lines.append("")
+        lines.append("💰 Cost: **\(recipe.totalCostRobux) R$** · Saved: **\(recipe.savedRobux.formatted()) R$**")
+        lines.append("")
+        lines.append("**Items:**")
+        for item in recipe.items {
+            let price = item.pricedRobux == 0 ? "FREE" : "\(item.pricedRobux) R$"
+            lines.append("• \(item.name) — \(price) · `\(item.assetId)`")
+        }
+        lines.append("")
+        lines.append("**Steps:**")
+        for step in recipe.steps {
+            lines.append("• \(step)")
+        }
+        lines.append("")
+        lines.append("_\(recipe.disclaimer)_")
+        return lines.joined(separator: "\n")
     }
 
     /// Session #095 — user confirmed weapon colors in WeaponColorPickerBubble.
@@ -2148,7 +2233,7 @@ final class ChatStore: ObservableObject {
         switch projectKind {
         case .game, .clone:
             return "пакет игры"
-        case .content, .ugc:
+        case .content, .ugc, .fakeLimited:
             return "пакет контента"
         case .fix:
             return "пакет исправлений"
@@ -3828,6 +3913,17 @@ final class ChatStore: ObservableObject {
             messages.append(userMsg)
         }
 
+        // Session 382 — Fake Headless & Korblox AI Crafter intercept.
+        // For .fakeLimited the chat doesn't go through the heavy
+        // generationJobs pipeline; we hit /api/fake-limited/recipe directly
+        // and render the recipe as a single assistant message with the
+        // preview image inline. Anything that isn't a recognized kind keyword
+        // falls through to a help prompt (no normal backend chat).
+        if projectKind == .fakeLimited {
+            handleFakeLimitedUserMessage(trimmed)
+            return
+        }
+
         let thread = currentThread ?? defaultThreads().first!
         if currentThread == nil {
             currentThread = thread
@@ -4574,7 +4670,7 @@ final class ChatStore: ObservableObject {
             ]
         }
         switch projectKind {
-        case .content, .ugc:
+        case .content, .ugc, .fakeLimited:
             if looksLikeTextureClothing && draft.isLayered3D {
                 return [
                     GenerationStage(id: "concept_image", title: "Concept image", status: "pending"),
@@ -6536,6 +6632,9 @@ final class ChatStore: ObservableObject {
             case .content, .ugc:
                 content = "Quick Generate — describe exactly what you want (type, style, colors, features) and I'll generate it right away."
                 replies = quickGenerateContentReplies()
+            case .fakeLimited:
+                content = "Fake Limiteds — выбери, какую дорогую лимитку имитируем за 0 Robux. Я подберу рецепт из бесплатных Catalog-аксессуаров и нарисую превью."
+                replies = ["Headless", "Korblox", "Combo (Headless+Korblox)"]
             case .fix:
                 content = "Quick mode — paste your script or describe the issue, I'll fix it immediately."
                 replies = ["Paste a script", "Describe the bug", "Optimize performance", "Switch to Interview"]
@@ -6549,6 +6648,8 @@ final class ChatStore: ObservableObject {
                 content = "Hey! I'm your game designer. Tell me your idea — even a single word works. I'll ask the right questions to create something amazing. What do you want to build?"
             case .content, .ugc:
                 content = smartInterviewContentWelcome()
+            case .fakeLimited:
+                content = "Привет! Я соберу иллюзию дорогих лимиток (Headless ~31 000 R$, Korblox ~17 000 R$) из бесплатных и дешёвых Catalog-аксессуаров. Что собираем?"
             case .fix:
                 content = "What needs fixing? Paste a script or describe the problem."
             case .analyze:
@@ -6603,6 +6704,8 @@ final class ChatStore: ObservableObject {
                 return specific
             }
             return ["Character", "Weapon", "Accessory", "Aura / Effect", "Decide for me", "Start over"]
+        case .fakeLimited:
+            return ["Headless", "Korblox", "Combo (Headless+Korblox)", "Start over"]
         case .fix:
             return ["Fix script", "Refactor", "Optimize", "Explain code", "Debug crash", "Start over"]
         case .analyze:
@@ -6928,7 +7031,7 @@ final class ChatStore: ObservableObject {
             return selectedAudioProvider.rawValue
         }
         switch projectKind {
-        case .content, .ugc, .fix, .analyze, .game, .clone:
+        case .content, .ugc, .fix, .analyze, .game, .clone, .fakeLimited:
             return selectedLLMProvider.rawValue
         }
     }
@@ -6965,6 +7068,8 @@ final class ChatStore: ObservableObject {
                 return "character_3d"
             }
             return "character_3d"
+        case .fakeLimited:
+            return "fake_limited"
         case .fix, .analyze:
             return "code"
         case .game, .clone:
@@ -7237,6 +7342,7 @@ final class ChatStore: ObservableObject {
         case .clone: return "clone"
         case .ugc: return "ugc"
         case .analyze: return "analyze"
+        case .fakeLimited: return "fake_limited"
         }
     }
 
@@ -7320,6 +7426,8 @@ final class ChatStore: ObservableObject {
             return "ugc_designer"
         case .analyze:
             return "game_analyst"
+        case .fakeLimited:
+            return "fake_limited_crafter"
         }
     }
 
@@ -7359,6 +7467,8 @@ final class ChatStore: ObservableObject {
             return "ugc_designer"
         case .analyze:
             return "game_analyst"
+        case .fakeLimited:
+            return "fake_limited_generation"
         }
     }
 
@@ -7499,6 +7609,8 @@ final class ChatStore: ObservableObject {
         case .fix, .analyze:
             return "script"
         case .ugc:
+            return "ugc_accessory"
+        case .fakeLimited:
             return "ugc_accessory"
         }
     }
@@ -7814,6 +7926,8 @@ private struct ProjectDraft {
             return "Generate game-ready Luau for \(title). Genre: \(genre). Scale: \(scale). Style: \(style). Systems: \(monetization)."
         case .content, .ugc:
             return "Generate a real 3D game-style asset for \(title). Output a textured GLB model with clean silhouette, creator-ready presentation, and game-friendly proportions. Genre: \(genre). Scale: \(scale). Style: \(style)."
+        case .fakeLimited:
+            return "Generate a 'Fake Limited' recipe for \(title): pick free or cheap Roblox catalog accessories that visually imitate the look of an expensive limited (Headless Horseman / Korblox Deathspeaker) for zero or near-zero Robux."
         case .game, .clone:
             return "Generate a game package brief for \(title). Genre: \(genre). Scale: \(scale). Style: \(style). Monetization: \(monetization)."
         }

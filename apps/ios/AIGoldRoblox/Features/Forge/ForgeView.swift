@@ -502,7 +502,7 @@ struct ForgeView: View {
         switch projectKind.lowercased() {
         case "game", "clone":
             return .game
-        case "content", "ugc":
+        case "content", "ugc", "fakelimited":
             return .content
         default:
             return .other
@@ -1302,6 +1302,7 @@ private extension ForgeView {
             ProjectOption(id: "npcs", title: "NPCs with AI Behavior", details: "Patrol guards, enemies, merchants, dialogue NPCs, companions, and quest givers with scripts.", kind: .content, tags: ["asset", "system", "ai", "social"]),
             // Session 001 (Track 1) — restored after T-Shirt pipeline + subcategory picker landed.
             ProjectOption(id: "clothing", title: "Clothing & Outfits", details: "Classic 2D clothing for Roblox Marketplace: T-Shirts, Shirts, Pants, full outfits — AI-generated and ready to publish.", kind: .ugc, tags: ["asset", "marketplace"]),
+            ProjectOption(id: "fake_limited", title: "Fake Headless & Korblox", details: "Иллюзия дорогих лимиток (Headless, Korblox) из бесплатных и дешёвых Catalog-аксессуаров — за 0 Robux. AI подбирает рецепт + рисует превью.", kind: .fakeLimited, tags: ["asset", "marketplace", "new", "viral", "economy"]),
             // MARK: - Hidden content categories (will be restored later)
             // ProjectOption(id: "accessories", title: "Accessories", details: "Hats, glasses, wings, backpacks, and extras.", kind: .content),
             // ProjectOption(id: "bodies", title: "Avatar Bodies & Heads", details: "Avatar body and head assets.", kind: .content),
