@@ -6795,15 +6795,13 @@ function deterministicVehicleReview(args: {
   const facts = vehicleManifestFacts(args.manifest);
   const issues: string[] = [];
   const repairActions: string[] = [];
-  // Round 20L v15 (session 381): template-embed mode bypasses DriveSeat /
-  // VehicleController / engine sound / VFX checks. Embedded marketplace
-  // templates (Phenom 100 PlaneKit, Sedan Roblox endorsed, etc.) ship
-  // their own seat (MainSeat/DriveSeat), control scripts (PlaneKit Main
-  // LocalScript, AI-Chassis Drive, etc.), and sounds. Our checks would
-  // reject them because they don't follow our naming convention.
+  // Round 20L v15-fix5 (session 381): template-embed bypass. Check both
+  // embeddedModels (preferred) AND metadata.vehicleTemplateRbxmFilename
+  // (fallback if manifest.embeddedModels not populated yet at QA time).
   const hasEmbeddedVehicleTemplate = (args.manifest.embeddedModels ?? []).some(
     (m) => m.mode === 'vehicle_template',
-  );
+  ) || (typeof args.manifest.metadata?.vehicleTemplateRbxmFilename === 'string'
+        && (args.manifest.metadata.vehicleTemplateRbxmFilename as string).length > 0);
   if (hasEmbeddedVehicleTemplate) {
     // Template ships full vehicle — skip structural checks.
     return {
