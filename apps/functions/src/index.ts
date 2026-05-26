@@ -155,6 +155,9 @@ import { checkAndConsumeGlowupRateLimit } from './glowupRateLimit.js';
 import { recordGlowupEvent, parseGlowupEventType } from './glowupAnalytics.js';
 import { mintGlowupGenerationId, persistGlowupGeneration, fetchPersistedGeneration, isGlowupGenerationId } from './glowupGenerationId.js';
 import { checkIpRateLimit, extractClientIp } from './glowupIpRateLimit.js';
+// Session 383 — 1-Click Outfit Generator
+import { assembleOutfit } from './outfitAssembler.js';
+import { isOutfitAestheticId, type OutfitGender, type OutfitStyleMode, type OutfitRemixMode } from './data/outfitAesthetics.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -742,6 +745,78 @@ app.post('/api/glowup/upload-decal', async (req: AuthedRequest, res) => {
       });
     }
     return res.status(500).json({ error: 'Failed to upload decal' });
+  }
+});
+
+// ─── Session 383 — 1-Click Outfit Generator ───
+// Lightweight catalog-curator endpoint. Takes an aesthetic (sigma/baddie/y2k/
+// goth/rich_emo/slender/softie/cyber/anime_demon) + gender + style, returns
+// a cohesive Roblox outfit assembled from curated core items + live catalog
+// search results, ranked by Anthropic. No flux/sharp/storage — strictly
+// item picking.
+
+function parseOutfitGender(raw: unknown): OutfitGender {
+  return raw === 'boys' || raw === 'girls' || raw === 'neutral' ? raw : 'neutral';
+}
+function parseOutfitStyle(raw: unknown): OutfitStyleMode {
+  return raw === 'dark' || raw === 'colorful' ? raw : 'dark';
+}
+function parseOutfitRemix(raw: unknown): OutfitRemixMode | undefined {
+  return (raw === 'remix' || raw === 'budget' || raw === 'more_cursed' || raw === 'more_clean') ? raw : undefined;
+}
+
+app.post('/api/outfit/generate', async (req: AuthedRequest, res) => {
+  const firebaseUid = req.userId;
+  try {
+    const body = (req.body ?? {}) as {
+      aestheticId?: unknown;
+      gender?: unknown;
+      style?: unknown;
+      remix?: unknown;
+      seed?: unknown;
+    };
+    if (!isOutfitAestheticId(body.aestheticId)) {
+      return res.status(400).json({ error: 'Invalid or missing aestheticId' });
+    }
+    if (!firebaseUid) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    // Per-IP cooldown (catalog API rate limits cascading bad).
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/outfit/generate');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+
+    const result = await assembleOutfit({
+      aestheticId: body.aestheticId,
+      gender: parseOutfitGender(body.gender),
+      style: parseOutfitStyle(body.style),
+      remix: parseOutfitRemix(body.remix),
+      seed: typeof body.seed === 'string' ? body.seed : undefined,
+    });
+
+    // Fire analytics event (re-using the glowup events collection — same
+    // shape; differentiator is the type field).
+    recordGlowupEvent({
+      type: 'generation_success',
+      firebaseUid,
+      vibeId: body.aestheticId,
+      gender: result.styleTagsEN[1],
+      meta: { product: 'outfit', items: result.items.length, totalCost: result.totalCostRobux },
+    });
+
+    return res.json({ ...result, generationStatus: 'ready' as const });
+  } catch (err) {
+    logger.error('[outfit] generate failed', err);
+    if (firebaseUid) {
+      recordGlowupEvent({
+        type: 'generation_failed',
+        firebaseUid,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        meta: { product: 'outfit' },
+      });
+    }
+    return res.status(500).json({ error: 'Failed to assemble outfit' });
   }
 });
 
