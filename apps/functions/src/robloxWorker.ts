@@ -2237,7 +2237,9 @@ function buildVehicleModelManifest(
     ? metadata.vehicleTemplateRbxmFilename
     : '';
   let vehicleTemplateRbxmBase64Early: string | undefined;
-  if (vehicleTemplateAssetIdEarly && vehicleTemplateFilenameEarly) {
+  // Round 20L v15 (session 381): also accept filename-only templates (e.g.
+  // Phenom100-PlaneKit.rbxm has assetId=0 since it's a local-only template).
+  if (vehicleTemplateFilenameEarly) {
     try {
       const here = pathDirname(fileURLToPath(import.meta.url));
       const candidates = [
