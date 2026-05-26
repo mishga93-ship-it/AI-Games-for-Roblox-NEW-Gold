@@ -4251,9 +4251,28 @@ local function buildHUDFor(player)
 \thint.Font = Enum.Font.Gotham; hint.TextSize = 12
 \thint.TextColor3 = Color3.fromRGB(140, 140, 140); hint.Parent = panel
 
-\t-- Round 20L v9 (session 381): rotate-plane buttons (coarse + fine).
-\t-- 90° for cardinal flips, 15° for fine-tune alignment when Meshy bakes
-\t-- nose at non-cardinal angle.
+\t-- Round 20L v10 (session 381): rotate ONLY the mesh, NOT the whole
+\t-- vehicle. v8/v9 buttons rotated the entire assembly (mesh+skeleton
+\t-- together) — they STAYED misaligned because they rotated by same
+\t-- angle. Now: unweld mesh from chassis → rotate mesh → re-weld.
+\t-- Skeleton stays facing -Z (flight direction), mesh visual aligns to it.
+\tlocal function rotateMeshOnly(angleDeg)
+\t\tlocal mesh = Vehicle:FindFirstChild("VehicleMeshBody", true)
+\t\tlocal chassis = Vehicle:FindFirstChild("ChassisRoot")
+\t\tif not mesh or not chassis then return end
+\t\t-- Find and destroy any WeldConstraint connecting mesh.
+\t\tfor _, d in ipairs(Vehicle:GetDescendants()) do
+\t\t\tif d:IsA("WeldConstraint") and (d.Part0 == mesh or d.Part1 == mesh) then
+\t\t\t\td:Destroy()
+\t\t\tend
+\t\tend
+\t\t-- Rotate mesh around its own centre Y axis.
+\t\tlocal centre = mesh.CFrame.Position
+\t\tmesh.CFrame = CFrame.new(centre) * CFrame.Angles(0, math.rad(angleDeg), 0) * (mesh.CFrame - centre)
+\t\t-- Re-weld to chassis at new orientation.
+\t\tlocal w = Instance.new("WeldConstraint")
+\t\tw.Part0 = chassis; w.Part1 = mesh; w.Parent = chassis
+\tend
 \tlocal function makeRotateBtn(name, text, xOffset, color, angleDeg)
 \t\tlocal btn = Instance.new("TextButton")
 \t\tbtn.Name = name
@@ -4267,10 +4286,7 @@ local function buildHUDFor(player)
 \t\tbtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 \t\tbtn.Parent = panel
 \t\tlocal c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 5); c.Parent = btn
-\t\tbtn.MouseButton1Click:Connect(function()
-\t\t\tlocal pivot = Vehicle:GetPivot()
-\t\t\tVehicle:PivotTo(pivot * CFrame.Angles(0, math.rad(angleDeg), 0))
-\t\tend)
+\t\tbtn.MouseButton1Click:Connect(function() rotateMeshOnly(angleDeg) end)
 \tend
 \tmakeRotateBtn("RotBigLeft", "↺ 90°", 16, Color3.fromRGB(80, 100, 160), -90)
 \tmakeRotateBtn("RotBigRight", "↻ 90°", 100, Color3.fromRGB(60, 120, 180), 90)
