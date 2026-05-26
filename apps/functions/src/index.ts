@@ -7110,11 +7110,14 @@ async function reviewVehicleManifestWithRepair(args: {
       ? (manifest.metadata.vehicleMeshThumbnailUrl as string)
       : '';
     const hasMeshBody = manifest.scene.some((node) => node.className === 'MeshPart' && /VehicleMeshBody/i.test(node.name));
-    // Session 373: VehicleSceneRoot is now an LLM-accent debug breadcrumb,
-    // NOT a marker that the body is custom. The body remains the procedural
-    // FamilyCar* baseline, so the visual heuristics + LLM critic should run
-    // and validate it. Only a real MeshPart body skips them.
-    const isCustomBody = hasMeshBody;
+    // Round 20L v15-fix6 (session 381): also skip vision QA for template-
+    // embed mode. Embedded UnionOperation bodies (PlaneKit, A-Chassis) are
+    // not rendered by our Blender-side preview renderer — vision sees only
+    // procedural placeholder, false-rejects "missing wings/etc".
+    const hasEmbeddedTemplate = (manifest.embeddedModels ?? []).some((m) => m.mode === 'vehicle_template')
+      || (typeof manifest.metadata?.vehicleTemplateRbxmFilename === 'string'
+          && (manifest.metadata.vehicleTemplateRbxmFilename as string).length > 0);
+    const isCustomBody = hasMeshBody || hasEmbeddedTemplate;
     let previewPng: Buffer | undefined;
     let llmReview: ObbyQualityReviewResult | null = null;
     // SIMPLIFIED REVIEW: skip the LLM/vision critic entirely when the body is
