@@ -3432,11 +3432,10 @@ function addVehicleSeats(args: {
   });
   weldToRoot(driveSeatId, 'DriveSeatWeld');
 
-  // Round 20L v12 (session 381): baked LocalScript inside DriveSeat for
-  // aircraft. Roblox security blocks runtime LocalScript Source-write —
-  // need to bake into rbxm at build time. Triggers first-person camera
-  // lock when LOCAL player sits in THIS seat. Mesh transparency stays
-  // server-side (set in attachPilotFirstPerson on Occupant change).
+  // Round 20L v13 (session 381): baked LocalScript inside DriveSeat for
+  // aircraft. Roblox auto-changes Camera to follow seat when player sits,
+  // which can override CameraMode. Fix: also set CameraType=Custom and
+  // CameraSubject=Humanoid so camera follows head (first-person).
   if (profile.driveMode === 'aircraft' || profile.driveMode === 'rotorcraft') {
     scene.push({
       id: uuidv4(),
@@ -3458,6 +3457,14 @@ end
 
 local function applyFirstPerson()
 \tme.CameraMode = Enum.CameraMode.LockFirstPerson
+\tlocal cam = workspace.CurrentCamera
+\tif cam and me.Character then
+\t\tlocal hum = me.Character:FindFirstChildOfClass("Humanoid")
+\t\tif hum then
+\t\t\tcam.CameraType = Enum.CameraType.Custom
+\t\t\tcam.CameraSubject = hum
+\t\tend
+\tend
 end
 
 local function revert()
@@ -3465,8 +3472,11 @@ local function revert()
 end
 
 seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+\t-- Slight delay so Roblox's auto-seat-camera change settles first.
+\ttask.wait(0.1)
 \tif isMyCharSeated() then applyFirstPerson() else revert() end
 end)
+task.wait(0.5)
 if isMyCharSeated() then applyFirstPerson() end
 `,
       },
