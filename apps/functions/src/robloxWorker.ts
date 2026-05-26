@@ -2478,15 +2478,12 @@ function buildVehicleModelManifest(
     const meshSize: [number, number, number] = forwardIsX
       ? [finalLength, finalHeight, finalWidth]
       : [finalWidth, finalHeight, finalLength];
-    // Round 20L (session 381): for aircraft, vision-detected nose direction
-    // overrides the dimension-based heuristic. vehicleMeshAutoYawDeg is set
-    // by index.ts after Claude vision detects which cardinal direction the
-    // mesh nose points to from a top-down render.
-    const visionAutoYaw = typeof metadata.vehicleMeshAutoYawDeg === 'number'
-      ? metadata.vehicleMeshAutoYawDeg as number
-      : 0;
+    // Round 20L v8 (session 381): drop vision-detect — Claude couldn't
+    // reliably read 3D nose direction from 2D 3/4-front render. Replaced
+    // with runtime UI button (controller HUD "↻ Rotate" — user clicks
+    // until plane visually faces forward). Default 0° rotation.
     const meshRot: [number, number, number] = (vehicleType === 'plane' || vehicleType === 'helicopter')
-      ? [0, visionAutoYaw, 0]
+      ? [0, 0, 0]
       : (forwardIsX ? [0, 90, 0] : [0, 0, 0]);
     // Session 373 round 6: position mesh so its bottom sits AT the wheel
     // axle level (Y = wheelRadius), not at rootY (which was 0.75 stud
@@ -4248,6 +4245,28 @@ local function buildHUDFor(player)
 \thint.BackgroundTransparency = 1; hint.Text = "W/S: throttle + lift  |  A/D: yaw"
 \thint.Font = Enum.Font.Gotham; hint.TextSize = 12
 \thint.TextColor3 = Color3.fromRGB(140, 140, 140); hint.Parent = panel
+
+\t-- Round 20L v8 (session 381): rotate-plane button. User clicks to
+\t-- rotate the entire vehicle 90° around Y. Use this when the plane
+\t-- visually faces the wrong direction after Meshy gen — Meshy bakes
+\t-- nose direction unpredictably, this lets user align in one click.
+\tlocal rotBtn = Instance.new("TextButton")
+\trotBtn.Name = "RotateBtn"
+\trotBtn.Size = UDim2.new(0, 100, 0, 30)
+\trotBtn.Position = UDim2.new(0, 16, 0, 100)
+\trotBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 180)
+\trotBtn.BorderSizePixel = 0
+\trotBtn.Text = "↻ Rotate 90°"
+\trotBtn.Font = Enum.Font.GothamBold
+\trotBtn.TextSize = 13
+\trotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+\trotBtn.Parent = panel
+\tlocal rbC = Instance.new("UICorner"); rbC.CornerRadius = UDim.new(0, 5); rbC.Parent = rotBtn
+\trotBtn.MouseButton1Click:Connect(function()
+\t\t-- Rotate whole vehicle model 90° around Y, pivoting on PrimaryPart.
+\t\tlocal pivot = Vehicle:GetPivot()
+\t\tVehicle:PivotTo(pivot * CFrame.Angles(0, math.rad(90), 0))
+\tend)
 
 \tgui.Parent = pg
 \tactiveHUD = gui; hudOwner = player
