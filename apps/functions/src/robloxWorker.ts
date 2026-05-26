@@ -2698,7 +2698,9 @@ function buildVehicleModelManifest(
     });
   }
   const embeddedModels: RobloxBuildManifest['embeddedModels'] = [];
-  if (vehicleTemplateAssetId) {
+  // Round 20L v15-fix4: gate on bytes presence, not assetId. Phenom 100
+  // (local-only template) has assetId=0 but loads bytes from disk.
+  if (vehicleTemplateRbxmBase64) {
     const tplLabel = typeof metadata.vehicleTemplateLabel === 'string' ? metadata.vehicleTemplateLabel : 'Vehicle';
     const tplPreferred = typeof metadata.vehicleTemplatePreferredVariant === 'string' ? metadata.vehicleTemplatePreferredVariant : tplLabel;
     const tplFallbacksRaw = metadata.vehicleTemplateVariantFallbacks;
