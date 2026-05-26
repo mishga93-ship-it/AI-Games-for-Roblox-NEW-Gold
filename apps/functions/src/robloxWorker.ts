@@ -3344,27 +3344,35 @@ function addVehicleSeats(args: {
   // place the cabin/interior visually around 25-35% of total bbox height
   // (the upper 65% is empty roof-space because Meshy doesn't model true
   // car interiors). 30% lands the seat inside the visible cabin.
+  // Round 20L (session 381): for aircraft mesh-mode (plane via Meshy 6),
+  // cockpit canopy is in upper-front of the mesh (~70-80% up the bbox).
+  // Old generic 30% put pilot at bottom of fuselage = visible as floating
+  // below the cabin. Aircraft override uses 70% mesh-Y for cockpit canopy.
+  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.70 : 0.30;
   const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
-    ? meshFitBottomY + meshFitHeight * 0.30
+    ? meshFitBottomY + meshFitHeight * meshSeatYFraction
     : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
-      ? rootY + meshFitHeight * 0.30
+      ? rootY + meshFitHeight * meshSeatYFraction
       : undefined;
   const seatY = meshSeatY ?? (
     profile.type === 'bus'
       ? rootY + profile.size[1] * 0.36
       : profile.type === 'car'
         ? rootY + profile.size[1] * 0.34
-        : rootY + Math.min(0.62, profile.size[1] * 0.24)
+        : profile.driveMode === 'aircraft'
+          ? rootY + profile.size[1] * 0.55  // cockpit higher in fuselage
+          : rootY + Math.min(0.62, profile.size[1] * 0.24)
   );
   const driverX = (profile.type === 'car' || profile.type === 'bus') ? -Math.min(width * 0.18, 1.25) : 0;
-  // Position driver SLIGHTLY rearward of front bumper but ahead of car centre
-  // (typical cabin position). For mesh-body cars Meshy's natural cabin is
-  // near Z=0 → Z=-0.15*length, slightly forward of centre.
+  // For plane: cockpit in front (1/4 from nose). For car: slightly forward
+  // of centre. For bus: rear of front section.
   const driverZ = profile.type === 'bus'
     ? -length * 0.28
     : profile.type === 'car'
       ? (meshFitHeight !== undefined ? -length * 0.05 : -length * 0.06)
-      : -length * 0.14;
+      : profile.driveMode === 'aircraft'
+        ? -length * 0.25  // forward into cockpit area
+        : -length * 0.14;
   scene.push({
     id: driveSeatId,
     className: 'VehicleSeat',
@@ -3475,6 +3483,19 @@ function addVehiclePhysics(args: {
     // that the user keeps perceiving as "колёса не туда" (wheels not in
     // the right place — they were at 68% from centre while body extended
     // to 100%, leaving the wheels visually orphaned).
+    // Round 20L (session 381): plane (wheelCount=3, aircraft) needs
+    // TRICYCLE landing gear — 2 main wheels under wings (left+right) + 1
+    // nose wheel front-centre. Old code put all 3 on centerline X=0 →
+    // plane wobbles/tips at rest because no left/right balance. Compute
+    // wheel positions as explicit (x,z) pairs for aircraft mode.
+    const isAircraft3Wheel = profile.driveMode === 'aircraft' && profile.wheelCount === 3;
+    const aircraftGearPositions: Array<[number, number]> = isAircraft3Wheel
+      ? [
+          [-width * 0.30, length * 0.05],   // left main, slight rear of centre
+          [width * 0.30, length * 0.05],    // right main
+          [0, -length * 0.40],              // nose wheel, front-centre
+        ]
+      : [];
     const zPositions = profile.wheelCount <= 2
       ? [-length * 0.36, length * 0.34]
       : profile.wheelCount === 3
@@ -3484,6 +3505,29 @@ function addVehiclePhysics(args: {
           : [-length * 0.42, length * 0.42];
     const sidePositions = profile.wheelCount === 2 || profile.wheelCount === 3 ? [0] : [-1, 1];
     let wheelIndex = 0;
+    // Aircraft tricycle path — short-circuit the generic loop.
+    if (isAircraft3Wheel) {
+      for (const [wx, wz] of aircraftGearPositions) {
+        const wheelY = Math.max(profile.wheelRadius, 0.45);
+        const wheelId = addPart(
+          `Wheel${wheelIndex + 1}`,
+          folders.wheels,
+          [profile.wheelRadius * 0.55, profile.wheelRadius * 2, profile.wheelRadius * 2],
+          [wx, wheelY, wz],
+          dark,
+          { shape: 'Cylinder', material: 'SmoothPlastic', canCollide: !stableLandMode, massless: stableLandMode },
+        );
+        // Weld each gear wheel rigidly to root — keeps the plane stable
+        // on ground (no rolling friction games; aircraft controller just
+        // applies AssemblyLinearVelocity for takeoff).
+        scene.push({
+          id: uuidv4(), className: 'WeldConstraint', name: `WeldGear${wheelIndex + 1}`,
+          parentId: rootId,
+          properties: { Part0: ref(rootId), Part1: ref(wheelId) },
+        });
+        wheelIndex += 1;
+      }
+    } else
     for (const z of zPositions) {
       for (const side of sidePositions) {
         if (wheelIndex >= profile.wheelCount) break;
