@@ -86,19 +86,39 @@ final class OutfitStudio: ObservableObject {
         UIApplication.shared.open(url)
     }
 
+    /// Share a TikTok-ready PNG snapshot of the outfit (rendered from a SwiftUI
+    /// poster view via ImageRenderer, iOS 16+). Falls back to a text-only
+    /// share on older iOS / render failure.
     func shareOutfit() {
         guard case let .result(resp) = step else { return }
-        let caption = resp.localizedCaption
-        let body = resp.items.map { "• \($0.name) — \($0.priceRobux) R$" }.joined(separator: "\n")
-        let text = """
-        \(resp.title) Outfit — \(resp.totalCostRobux) R$ total
-        \(caption)
+        Task { @MainActor in
+            if #available(iOS 16.0, *), let image = await renderOutfitPoster(response: resp) {
+                let caption = "\(resp.title) Outfit \(resp.totalCostRobux) R$ · \(resp.localizedCaption)\n#roblox #fyp"
+                presentActivitySheet(items: [image, caption])
+            } else {
+                // Last-resort fallback only when ImageRenderer fails.
+                let caption = resp.localizedCaption
+                let body = resp.items.map { "• \($0.name) — \($0.priceRobux) R$" }.joined(separator: "\n")
+                let text = "\(resp.title) Outfit — \(resp.totalCostRobux) R$\n\(caption)\n\n\(body)\n\n✨ Made with Kami Gold AI"
+                presentActivitySheet(items: [text])
+            }
+        }
+    }
 
-        \(body)
+    @available(iOS 16.0, *)
+    @MainActor
+    private func renderOutfitPoster(response: OutfitGenerationResponse) async -> UIImage? {
+        // Build a 1080×1920 (Instagram-Story / TikTok-friendly) poster.
+        let view = OutfitSharePoster(response: response)
+            .frame(width: 1080, height: 1920)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1.0  // already at native poster size
+        return renderer.uiImage
+    }
 
-        ✨ Made with Kami Gold AI
-        """
-        let activityVC = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+    @MainActor
+    private func presentActivitySheet(items: [Any]) {
+        let activityVC = UIActivityViewController(activityItems: items, applicationActivities: nil)
         guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene,
               let window = scene.windows.first(where: { $0.isKeyWindow }),
               var top = window.rootViewController else { return }

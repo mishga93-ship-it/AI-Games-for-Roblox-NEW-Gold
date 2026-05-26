@@ -35,6 +35,7 @@ FOLDERS_TO_ADD = {
     'OutfitStudio.swift',
     'OutfitStudioView.swift',
     'OutfitResultView.swift',
+    'OutfitSharePoster.swift',
   ],
 }
 

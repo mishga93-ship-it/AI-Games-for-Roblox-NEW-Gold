@@ -87,10 +87,17 @@ struct OutfitResultView: View {
                     .font(.appHeadline)
                     .foregroundColor(.textPrimary)
                 Spacer()
-                Text(loc(en: "Tap to open in Roblox", ru: "Тап — открыть в Roblox"))
+                Text(loc(en: "Tap → get in Roblox", ru: "Тап → получить в Roblox"))
                     .font(.caption2)
                     .foregroundColor(.textSecondary)
             }
+            Text(loc(
+                en: "How to wear:  1) Tap an item → opens its Roblox page  2) Press “Get” (some are free)  3) Open Avatar Editor → equip.",
+                ru: "Как надеть:  1) Тап по айтему → откроется страница в Roblox  2) Нажми “Get” (часть бесплатны)  3) Avatar Editor → equip."
+            ))
+                .font(.caption)
+                .foregroundColor(.textSecondary)
+                .padding(.bottom, 4)
             if response.items.isEmpty {
                 Text(loc(en: "Catalog is sparse for this aesthetic right now. Try a remix or another vibe.",
                          ru: "Каталог пуст для этой эстетики. Попробуй remix или другую vibe."))
