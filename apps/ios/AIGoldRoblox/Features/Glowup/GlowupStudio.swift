@@ -15,6 +15,29 @@ import SwiftUI
 import UIKit
 import Photos
 
+// MARK: - Localization
+
+/// English is the default. We switch to Russian ONLY when the user's iOS
+/// interface or in-app override is Russian. Mirrors the same pattern used
+/// in ForgeView.swift.
+enum GlowupLocale {
+    static var isRussian: Bool {
+        let code = UserDefaults.standard.string(forKey: "appLanguage")
+            ?? Locale.preferredLanguages.first
+            ?? ""
+        return code
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .first == "ru"
+    }
+}
+
+/// Pick the localized string. Defaults to English unless Russian is detected.
+func loc(en: String, ru: String) -> String {
+    GlowupLocale.isRussian ? ru : en
+}
+
 @MainActor
 final class GlowupStudio: ObservableObject {
     enum Step: Equatable {
@@ -108,23 +131,25 @@ final class GlowupStudio: ObservableObject {
 
     func saveImageToPhotos(urlString: String, label: String = "Image") {
         guard let url = URL(string: urlString) else {
-            toast("Не получилось — некорректный URL.")
+            toast(loc(en: "Bad URL — can't download.", ru: "Не получилось — некорректный URL."))
             return
         }
         Task.detached { [weak self] in
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
                 guard let image = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
-                // Request photos add permission lazily; system handles cached grants.
                 let status = await Self.requestAddPhotosPermission()
                 guard status == .authorized || status == .limited else {
-                    await self?.toast("Нет доступа к Фото — разреши в настройках.")
+                    await self?.toast(loc(en: "Photos access denied — enable it in Settings.",
+                                          ru: "Нет доступа к Фото — разреши в настройках."))
                     return
                 }
                 UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                await self?.toast("✅ \(label) сохранён в Фото")
+                await self?.toast(loc(en: "✅ \(label) saved to Photos",
+                                      ru: "✅ \(label) сохранён в Фото"))
             } catch {
-                await self?.toast("⚠️ Не получилось сохранить \(label): \(error.localizedDescription)")
+                await self?.toast(loc(en: "⚠️ Couldn't save \(label): \(error.localizedDescription)",
+                                      ru: "⚠️ Не получилось сохранить \(label): \(error.localizedDescription)"))
             }
         }
     }
@@ -137,10 +162,11 @@ final class GlowupStudio: ObservableObject {
                 guard let url = URL(string: resp.previewUrl) else { return }
                 let (data, _) = try await URLSession.shared.data(from: url)
                 guard let image = UIImage(data: data) else { return }
-                let caption = resp.shareCaptionRU
+                let caption = GlowupLocale.isRussian ? resp.shareCaptionRU : resp.shareCaptionEN
                 presentActivitySheet(items: [image, caption])
             } catch {
-                toast("Не получилось подготовить картинку: \(error.localizedDescription)")
+                toast(loc(en: "Couldn't prepare image: \(error.localizedDescription)",
+                          ru: "Не получилось подготовить картинку: \(error.localizedDescription)"))
             }
         }
     }
@@ -148,7 +174,8 @@ final class GlowupStudio: ObservableObject {
     func uploadDecal() async {
         guard case let .result(resp) = step else { return }
         guard oauthConnected else {
-            toast("Подключи Roblox в настройках, чтобы загрузить decal.")
+            toast(loc(en: "Connect Roblox in Settings to upload the decal.",
+                      ru: "Подключи Roblox в настройках, чтобы загрузить decal."))
             return
         }
         GlowupAPIClient.recordEvent("upload_clicked", vibe: GlowupVibe(rawValue: resp.vibeId), meta: ["target": "decal"])
@@ -157,11 +184,13 @@ final class GlowupStudio: ObservableObject {
                 decalUrl: resp.assetPack.decalUrl,
                 displayName: "\(resp.title) Glow-Up Decal"
             )
-            toast("✅ Decal загружен в Roblox (asset \(upload.assetId))")
+            toast(loc(en: "✅ Decal uploaded to Roblox (asset \(upload.assetId))",
+                      ru: "✅ Decal загружен в Roblox (asset \(upload.assetId))"))
         } catch GlowupAPIError.robloxNotConnected {
-            toast("Подключи Roblox в настройках.")
+            toast(loc(en: "Connect Roblox in Settings.", ru: "Подключи Roblox в настройках."))
         } catch {
-            toast("⚠️ Не получилось: \(error.localizedDescription)")
+            toast(loc(en: "⚠️ Failed: \(error.localizedDescription)",
+                      ru: "⚠️ Не получилось: \(error.localizedDescription)"))
         }
     }
 

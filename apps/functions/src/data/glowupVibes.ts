@@ -54,6 +54,13 @@ export interface GlowupVibe {
   appStoreHook: string;           // TikTok-bait phrase for share/caption
   /** Flux-pro prompt for the face/aura decal PNG (1024×1024, transparent). */
   decalPrompt: string;
+  /**
+   * Flux img2img prompt that takes the user's actual Roblox avatar PNG as
+   * input and restyles it into this vibe. This is what makes the preview
+   * actually visually transform — without it, the preview is just the
+   * user's plain avatar pasted on a colored background.
+   */
+  avatarRestylePrompt: string;
   palette: GlowupColorPalette;
   body: GlowupBodySettings;
   /** Pre-curated catalog accessories that finish the look. */
@@ -88,6 +95,7 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
     pitch: 'Тёмный void на месте головы. Дёшево, чисто, выглядит как лимитка за 31к Robux.',
     appStoreHook: 'OMG FREE HEADLESS',
     decalPrompt: 'A square dark void face accessory texture: pure black smooth gradient, faint dark blue cosmic dust, no facial features, no eyes, no mouth. Designed as a Roblox face accessory overlay. Transparent background, isolated, centered. NO text, NO logos. Family-friendly, no horror, no gore.',
+    avatarRestylePrompt: 'Roblox blocky avatar, COMPLETELY HEADLESS — empty dark void where the head should be, NO face visible, NO eyes, NO mouth, just a tiny dark void blob in place of head. High black turtleneck collar covers the neck stump. All-black outfit: black shirt, black pants, black shoes. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon, no horror, no gore.',
     palette: {
       skinHex: '1B2A33',          // very dark grey-blue (looks like void continuing from head)
       shirtPrimaryHex: '0A0A0A',  // near-black
@@ -133,6 +141,7 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
     pitch: 'Скелетная нога-кибер. Имитация Korblox Deathspeaker за 17к Robux — без переплаты.',
     appStoreHook: 'FREE KORBLOX LEG',
     decalPrompt: 'A square dark bone/skeleton texture overlay: black background with subtle white-blue bone fragments, vertical bone segments resembling a leg skeleton in cyber-fantasy style. Designed as a Roblox right-leg decal overlay. Transparent edges, centered. NO text, NO horror, NO gore — stylized fantasy bone art only.',
+    avatarRestylePrompt: 'Roblox blocky avatar, normal face and normal head. The RIGHT LEG is completely dark blue-black with glowing cyan-blue cyber-bone skeleton segments visible — looks like a Korblox Deathspeaker leg, magical-cyber-fantasy aesthetic. The LEFT LEG is regular skin tone. Dark tactical torso clothing, slim build. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon.',
     palette: {
       skinHex: '7C8A99',           // ash grey (good fallback under accessory)
       shirtPrimaryHex: '1A1A1A',
@@ -177,6 +186,7 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
     pitch: 'Полностью чёрный, безликий, с дымной аурой. Cursed-эстетика для TikTok-видосов.',
     appStoreHook: 'CURSED VOID AVATAR',
     decalPrompt: 'A square cursed void aesthetic decal: dark smoky aura, subtle purple-violet glow at edges, smooth gradient from pure black center to dark grey edges. Designed as a Roblox aura/back decal overlay. No facial features, no human figures, no text. Family-friendly cosmic dark art, no gore, no horror.',
+    avatarRestylePrompt: 'Roblox blocky avatar, COMPLETELY BLACK silhouette — face, body, arms, hands, legs ALL pure black. Faceless minimalist head with only the subtlest dark grey hint of eye sockets. Dark purple smoky aura wisps around the shoulders and back. All-black hoodie and pants. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Cursed void aesthetic, family-friendly stylized cartoon, no horror.',
     palette: {
       skinHex: '0A0A0A',           // pure black skin
       shirtPrimaryHex: '0A0A0A',
@@ -235,6 +245,7 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
     pitch: 'Холодный, минималистичный, в костюме без улыбки. Sigma-мейл-стайл, ноль эмоций.',
     appStoreHook: 'SIGMA CHAD MODE',
     decalPrompt: 'A square blank stoic face decal for a Roblox character: minimal facial features, neutral expression, no smile, no eyes (or very subtle dark eye dots), pale skin tone, designed as a face overlay. Photorealistic style, sharp contrast. Centered, transparent edges. No text, no logos, family-friendly.',
+    avatarRestylePrompt: 'Roblox blocky avatar, light tan skin tone, completely STOIC blank facial expression — NO smile, neutral mouth, minimal cold eyes, sharp jaw. Wearing a sharp dark grey suit jacket with white shirt collar peeking out, dark black trousers, BLACK SUNGLASSES. Tall slim sigma-male silhouette, confident pose. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon.',
     palette: {
       skinHex: 'CFC2A6',           // light tan
       shirtPrimaryHex: '1F2530',   // dark grey suit jacket

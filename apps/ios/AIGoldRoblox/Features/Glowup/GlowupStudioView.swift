@@ -64,10 +64,12 @@ private struct VibePickerSection: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Выглядим дорого за 0 Robux")
+                    Text(loc(en: "Look expensive for 0 Robux",
+                             ru: "Выглядим дорого за 0 Robux"))
                         .font(.appTitle2.bold())
                         .foregroundColor(.textPrimary)
-                    Text("Выбери vibe — AI соберёт shirt, pants, decal и инструкцию.")
+                    Text(loc(en: "Pick a vibe — AI builds the shirt, pants, decal and step-by-step.",
+                             ru: "Выбери vibe — AI соберёт shirt, pants, decal и инструкцию."))
                         .font(.appBody)
                         .foregroundColor(.textSecondary)
                 }
@@ -83,7 +85,10 @@ private struct VibePickerSection: View {
                 }
                 .padding(.horizontal, 12)
 
-                Text("Каждый vibe = реальный shirt PNG + pants PNG + AI-decal + step-by-step. Decal можно загрузить в Roblox в один тап (если подключён OAuth).")
+                Text(loc(
+                    en: "Each vibe = real shirt PNG + pants PNG + AI decal + step-by-step. Decal uploads to Roblox in one tap (with OAuth).",
+                    ru: "Каждый vibe = реальный shirt PNG + pants PNG + AI-decal + step-by-step. Decal можно загрузить в Roblox в один тап (если подключён OAuth)."
+                ))
                     .font(.appCaption)
                     .foregroundColor(.textSecondary)
                     .padding(.horizontal, 16)
@@ -124,7 +129,8 @@ private struct VibeCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "tag.fill")
                             .font(.caption2)
-                        Text("save ~\(vibe.imitatedRetailRobux.formatted()) R$")
+                        Text(loc(en: "save ~\(vibe.imitatedRetailRobux.formatted()) R$",
+                                 ru: "save ~\(vibe.imitatedRetailRobux.formatted()) R$"))
                             .font(.caption.bold())
                     }
                     .foregroundColor(.orange)
@@ -170,7 +176,7 @@ private struct CustomizeSection: View {
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Vibe")
+            Text(loc(en: "Vibe", ru: "Vibe"))
                 .font(.caption.bold())
                 .foregroundColor(.textSecondary)
             Text(vibe.displayTitle)
@@ -188,11 +194,11 @@ private struct CustomizeSection: View {
 
     private var genderPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Под кого собираем?").font(.appHeadline).foregroundColor(.textPrimary)
+            Text(loc(en: "Who's this for?", ru: "Под кого собираем?")).font(.appHeadline).foregroundColor(.textPrimary)
             HStack(spacing: 8) {
                 ForEach(GlowupGender.allCases, id: \.self) { g in
                     ChipButton(
-                        title: ruGender(g),
+                        title: localizedGender(g),
                         isSelected: studio.gender == g
                     ) { studio.gender = g }
                 }
@@ -202,11 +208,11 @@ private struct CustomizeSection: View {
 
     private var intensityPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Настроение").font(.appHeadline).foregroundColor(.textPrimary)
+            Text(loc(en: "Mood", ru: "Настроение")).font(.appHeadline).foregroundColor(.textPrimary)
             HStack(spacing: 8) {
                 ForEach(GlowupIntensity.allCases, id: \.self) { i in
                     ChipButton(
-                        title: ruIntensity(i),
+                        title: localizedIntensity(i),
                         isSelected: studio.intensity == i
                     ) { studio.intensity = i }
                 }
@@ -217,20 +223,24 @@ private struct CustomizeSection: View {
     private var usernameField: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
-                Text("Twой Roblox-ник").font(.appHeadline).foregroundColor(.textPrimary)
-                Text("(опционально)").font(.appCaption).foregroundColor(.textSecondary)
+                Text(loc(en: "Your Roblox username", ru: "Twой Roblox-ник")).font(.appHeadline).foregroundColor(.textPrimary)
+                Text(loc(en: "(optional)", ru: "(опционально)")).font(.appCaption).foregroundColor(.textSecondary)
             }
             if studio.oauthConnected {
-                Text("✅ Roblox подключён — берём твоего аватара автоматически.")
+                Text(loc(en: "✅ Roblox connected — using your avatar automatically.",
+                         ru: "✅ Roblox подключён — берём твоего аватара автоматически."))
                     .font(.appCaption).foregroundColor(.green)
             } else {
-                TextField("Напр.: builderman", text: $studio.robloxUsername)
+                TextField(loc(en: "e.g. builderman", ru: "Напр.: builderman"), text: $studio.robloxUsername)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .padding(12)
                     .background(Color.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
-                Text("Введём твой ник — увидишь СЕБЯ в этом луке. Пропусти — будет generic preview.")
+                Text(loc(
+                    en: "Enter your username — you'll see YOURSELF in this look. Skip — get a generic preview.",
+                    ru: "Введём твой ник — увидишь СЕБЯ в этом луке. Пропусти — будет generic preview."
+                ))
                     .font(.appCaption).foregroundColor(.textSecondary)
             }
         }
@@ -240,7 +250,7 @@ private struct CustomizeSection: View {
         Button(action: { Task { await studio.generate() } }) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                Text("Собрать лук")
+                Text(loc(en: "Generate look", ru: "Собрать лук"))
                     .font(.appHeadline.bold())
             }
             .frame(maxWidth: .infinity)
@@ -251,11 +261,18 @@ private struct CustomizeSection: View {
         }
     }
 
-    private func ruGender(_ g: GlowupGender) -> String {
-        switch g { case .boys: return "Парень"; case .girls: return "Девушка"; case .neutral: return "Neutral" }
+    private func localizedGender(_ g: GlowupGender) -> String {
+        switch g {
+        case .boys:    return loc(en: "Guys",    ru: "Парень")
+        case .girls:   return loc(en: "Girls",   ru: "Девушка")
+        case .neutral: return loc(en: "Neutral", ru: "Neutral")
+        }
     }
-    private func ruIntensity(_ i: GlowupIntensity) -> String {
-        switch i { case .clean: return "Чисто"; case .scary: return "Страшнее" }
+    private func localizedIntensity(_ i: GlowupIntensity) -> String {
+        switch i {
+        case .clean: return loc(en: "Clean",  ru: "Чисто")
+        case .scary: return loc(en: "Spooky", ru: "Страшнее")
+        }
     }
 }
 
@@ -288,10 +305,13 @@ private struct LoadingSection: View {
             ProgressView()
                 .scaleEffect(1.6)
                 .tint(.accentPrimary)
-            Text("Собираю твой look\(dots)")
+            Text(loc(en: "Building your look\(dots)", ru: "Собираю твой look\(dots)"))
                 .font(.appHeadline)
                 .foregroundColor(.textPrimary)
-            Text("5–15 секунд: AI рисует decal, sharp композитит shirt/pants.")
+            Text(loc(
+                en: "5–15 seconds: AI restyles your avatar, sharp composites shirt/pants.",
+                ru: "5–15 секунд: AI рисует decal, sharp композитит shirt/pants."
+            ))
                 .font(.appCaption)
                 .foregroundColor(.textSecondary)
                 .multilineTextAlignment(.center)
@@ -317,7 +337,7 @@ private struct ErrorSection: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 48))
                 .foregroundColor(.orange)
-            Text("Что-то пошло не так")
+            Text(loc(en: "Something went wrong", ru: "Что-то пошло не так"))
                 .font(.appHeadline)
                 .foregroundColor(.textPrimary)
             Text(message)
@@ -325,7 +345,7 @@ private struct ErrorSection: View {
                 .foregroundColor(.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-            Button("Попробовать снова", action: onRetry)
+            Button(loc(en: "Try again", ru: "Попробовать снова"), action: onRetry)
                 .buttonStyle(.borderedProminent)
             Spacer()
         }

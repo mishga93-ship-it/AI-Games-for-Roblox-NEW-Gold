@@ -32,10 +32,18 @@ enum GlowupVibe: String, CaseIterable, Codable, Identifiable {
     /// Marketing one-liner shown on the picker card.
     var shortPitch: String {
         switch self {
-        case .headlessShadow: return "Тёмный void на месте головы — за 0 R$"
-        case .korbloxStyle:   return "Скелетная нога — за 25 R$ вместо 17 000"
-        case .void:           return "Полностью чёрный, безликий, cursed"
-        case .sigma:          return "Sigma chad — холодный, минималистичный"
+        case .headlessShadow:
+            return loc(en: "Dark void where your head should be — for 0 R$",
+                       ru: "Тёмный void на месте головы — за 0 R$")
+        case .korbloxStyle:
+            return loc(en: "Skeleton leg — 25 R$ instead of 17,000",
+                       ru: "Скелетная нога — за 25 R$ вместо 17 000")
+        case .void:
+            return loc(en: "Pitch-black, faceless, cursed",
+                       ru: "Полностью чёрный, безликий, cursed")
+        case .sigma:
+            return loc(en: "Sigma chad — cold, minimalist",
+                       ru: "Sigma chad — холодный, минималистичный")
         }
     }
 
@@ -163,12 +171,16 @@ enum GlowupAPIError: LocalizedError {
         switch self {
         case .rateLimited(_, let reason):
             return reason == "daily"
-                ? "Лимит на сегодня закончился — попробуй завтра."
-                : "Слишком много запросов. Подожди минутку."
+                ? loc(en: "Daily limit reached — try again tomorrow.",
+                      ru: "Лимит на сегодня закончился — попробуй завтра.")
+                : loc(en: "Too many requests. Wait a minute and try again.",
+                      ru: "Слишком много запросов. Подожди минутку.")
         case .robloxNotConnected:
-            return "Подключи Roblox в настройках, чтобы загрузить decal автоматически."
+            return loc(en: "Connect Roblox in Settings to auto-upload decals.",
+                       ru: "Подключи Roblox в настройках, чтобы загрузить decal автоматически.")
         case .generationFailed:
-            return "Не получилось собрать лук. Попробуй ещё раз."
+            return loc(en: "Couldn't generate the look. Try again.",
+                       ru: "Не получилось собрать лук. Попробуй ещё раз.")
         case .underlying(let err):
             return err.localizedDescription
         }

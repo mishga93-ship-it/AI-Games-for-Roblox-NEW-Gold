@@ -62,11 +62,12 @@ struct GlowupResultView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
 
             if response.fitOnUser {
-                Label("Это ТВой аватар", systemImage: "checkmark.seal.fill")
+                Label(loc(en: "This is YOUR avatar", ru: "Это ТВой аватар"), systemImage: "checkmark.seal.fill")
                     .font(.caption.bold())
                     .foregroundColor(.green)
             } else {
-                Text("Generic preview (Roblox-ник не задан или не найден)")
+                Text(loc(en: "Generic preview (no Roblox username, or not found)",
+                         ru: "Generic preview (Roblox-ник не задан или не найден)"))
                     .font(.caption)
                     .foregroundColor(.textSecondary)
             }
@@ -97,7 +98,8 @@ struct GlowupResultView: View {
         Button(action: { studio.shareLook() }) {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.arrow.up.fill")
-                Text("Share to TikTok / Instagram")
+                Text(loc(en: "Share to TikTok / Instagram",
+                         ru: "Поделиться в TikTok / Instagram"))
                     .font(.appHeadline.bold())
             }
             .frame(maxWidth: .infinity)
@@ -110,42 +112,48 @@ struct GlowupResultView: View {
 
     private var assetPackSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Asset Pack")
+            Text(loc(en: "Asset Pack", ru: "Asset Pack"))
                 .font(.appHeadline)
                 .foregroundColor(.textPrimary)
 
             AssetRow(
                 title: "Shirt.png",
-                subtitle: "Classic Shirt — загрузи на Roblox (10 R$)",
+                subtitle: loc(en: "Classic Shirt — upload to Roblox (10 R$)",
+                              ru: "Classic Shirt — загрузи на Roblox (10 R$)"),
                 icon: "tshirt.fill",
-                primaryLabel: "Save",
+                primaryLabel: loc(en: "Save", ru: "Save"),
                 primaryIcon: "square.and.arrow.down",
                 primaryAction: { studio.saveImageToPhotos(urlString: response.assetPack.shirtUrl, label: "Shirt") },
-                secondaryLabel: "Upload",
+                secondaryLabel: loc(en: "Upload", ru: "Upload"),
                 secondaryIcon: "arrow.up.right.square",
                 secondaryAction: { studio.openRobloxUploadPage() }
             )
             AssetRow(
                 title: "Pants.png",
-                subtitle: "Classic Pants — загрузи на Roblox (10 R$)",
+                subtitle: loc(en: "Classic Pants — upload to Roblox (10 R$)",
+                              ru: "Classic Pants — загрузи на Roblox (10 R$)"),
                 icon: "figure.stand",
-                primaryLabel: "Save",
+                primaryLabel: loc(en: "Save", ru: "Save"),
                 primaryIcon: "square.and.arrow.down",
                 primaryAction: { studio.saveImageToPhotos(urlString: response.assetPack.pantsUrl, label: "Pants") },
-                secondaryLabel: "Upload",
+                secondaryLabel: loc(en: "Upload", ru: "Upload"),
                 secondaryIcon: "arrow.up.right.square",
                 secondaryAction: { studio.openRobloxUploadPage() }
             )
             AssetRow(
                 title: "Decal.png",
                 subtitle: studio.oauthConnected
-                    ? "Загружу в твой Roblox через OAuth в один тап."
-                    : "Подключи Roblox, чтобы загрузить автоматически.",
+                    ? loc(en: "I'll upload to your Roblox via OAuth in one tap.",
+                          ru: "Загружу в твой Roblox через OAuth в один тап.")
+                    : loc(en: "Connect Roblox to auto-upload.",
+                          ru: "Подключи Roblox, чтобы загрузить автоматически."),
                 icon: "face.dashed.fill",
-                primaryLabel: "Save",
+                primaryLabel: loc(en: "Save", ru: "Save"),
                 primaryIcon: "square.and.arrow.down",
                 primaryAction: { studio.saveImageToPhotos(urlString: response.assetPack.decalUrl, label: "Decal") },
-                secondaryLabel: studio.oauthConnected ? "Auto-Upload" : "Connect",
+                secondaryLabel: studio.oauthConnected
+                    ? loc(en: "Auto-Upload", ru: "Auto-Upload")
+                    : loc(en: "Connect", ru: "Connect"),
                 secondaryIcon: studio.oauthConnected ? "cloud.fill" : "link",
                 secondaryAction: {
                     if studio.oauthConnected {
@@ -160,7 +168,8 @@ struct GlowupResultView: View {
 
     private var catalogSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Эти аксессуары допиливают look")
+            Text(loc(en: "These accessories complete the look",
+                     ru: "Эти аксессуары допиливают look"))
                 .font(.appHeadline)
                 .foregroundColor(.textPrimary)
             ForEach(response.catalogItems) { item in
@@ -193,7 +202,7 @@ struct GlowupResultView: View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: { withAnimation { instructionsExpanded.toggle() } }) {
                 HStack {
-                    Text("Шаги в Avatar Editor")
+                    Text(loc(en: "Avatar Editor steps", ru: "Шаги в Avatar Editor"))
                         .font(.appHeadline)
                         .foregroundColor(.textPrimary)
                     Spacer()
@@ -202,8 +211,9 @@ struct GlowupResultView: View {
                 }
             }
             if instructionsExpanded {
+                let steps = GlowupLocale.isRussian ? response.instructionsRU : response.instructionsEN
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(response.instructionsRU.enumerated()), id: \.offset) { idx, step in
+                    ForEach(Array(steps.enumerated()), id: \.offset) { idx, step in
                         HStack(alignment: .top, spacing: 8) {
                             Text("\(idx + 1).")
                                 .font(.appBody.monospacedDigit().bold())
@@ -225,12 +235,13 @@ struct GlowupResultView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Button(action: studio.backToCustomize) {
-                    Label("Поменять параметры", systemImage: "slider.horizontal.3")
+                    Label(loc(en: "Change parameters", ru: "Поменять параметры"),
+                          systemImage: "slider.horizontal.3")
                         .font(.appBody)
                 }
                 .buttonStyle(.bordered)
                 Button(action: studio.backToPicker) {
-                    Label("Другой vibe", systemImage: "sparkles")
+                    Label(loc(en: "Another vibe", ru: "Другой vibe"), systemImage: "sparkles")
                         .font(.appBody)
                 }
                 .buttonStyle(.bordered)

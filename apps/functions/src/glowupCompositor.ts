@@ -15,9 +15,9 @@
 import { logger } from 'firebase-functions/v2';
 import sharp from 'sharp';
 import { getStorage } from 'firebase-admin/storage';
-import { generatePreviewTexture } from './providers.js';
+import { generatePreviewTexture, runFal } from './providers.js';
 import { compositeShirtTemplate, compositePantsTemplate } from './clothingCompositor.js';
-import { downloadAvatarThumbnailBuffer } from './robloxUserLookup.js';
+import { downloadAvatarThumbnailBuffer, fetchRobloxAvatarThumbnailUrl } from './robloxUserLookup.js';
 import { getGlowupVibe, summarizeVibe, type GlowupVibe, type GlowupVibeId, type GlowupGender, type GlowupIntensity } from './data/glowupVibes.js';
 
 const PREVIEW_W = 768;
@@ -173,62 +173,159 @@ async function buildDecalPNG(vibe: GlowupVibe, intensity: GlowupIntensity): Prom
 }
 
 /**
- * Build a composite preview PNG (768×1024). When robloxUserId is provided,
- * we download their current Roblox avatar thumbnail and paste it onto a
- * vibe-tinted background; otherwise we generate a generic vibe scene.
+ * Run flux img2img to RESTYLE the user's Roblox avatar PNG into the chosen
+ * vibe (Headless / Korblox / Void / Sigma). This is what makes the preview
+ * actually visually transform the user, vs. just pasting their plain avatar
+ * on a colored background.
+ *
+ * Returns the generated image URL on success, undefined on any failure
+ * (caller falls back to plain-avatar composition).
  */
-async function buildPreviewPNG(vibe: GlowupVibe, robloxUserId?: string): Promise<{ buffer: Buffer; fitOnUser: boolean }> {
-  const bg = await sharp({
-    create: {
-      width: PREVIEW_W,
-      height: PREVIEW_H,
-      channels: 4,
-      background: hexToRgba(vibe.palette.skinHex),
-    },
-  }).png().toBuffer();
+async function restyleAvatarViaImg2Img(args: {
+  vibe: GlowupVibe;
+  intensity: GlowupIntensity;
+  robloxAvatarUrl: string;
+}): Promise<string | undefined> {
+  const intensitySuffix = args.intensity === 'scary'
+    ? ' Darker mood, dramatic studio lighting, sharper contrast.'
+    : ' Clean stylized lighting, soft shadows.';
+  const prompt = args.vibe.avatarRestylePrompt + intensitySuffix +
+    ' Maintain the blocky Roblox character proportions and pose from the input image.';
+  try {
+    const result = await runFal('fal-ai/flux/dev/image-to-image', {
+      image_url: args.robloxAvatarUrl,
+      prompt,
+      // Higher strength (0.85) = more transformation room — needed because
+      // the user's plain avatar must look meaningfully different in the
+      // vibe styling (different head/body/colors). Too low (0.5) leaves the
+      // original visible; too high (0.95) loses the blocky Roblox shape.
+      strength: 0.85,
+      num_inference_steps: 30,
+      guidance_scale: 5.5,
+      num_images: 1,
+      enable_safety_checker: true,
+    });
+    return result.outputUrl;
+  } catch (err) {
+    logger.warn('[glowupCompositor] flux img2img avatar restyle failed', { vibeId: args.vibe.id, err });
+    return undefined;
+  }
+}
 
-  let avatarBuf: Buffer | null = null;
+/**
+ * Build a composite preview PNG (768×1024).
+ *
+ * Path A (best): if we have a Roblox avatar URL, run flux img2img to restyle
+ * it into the vibe — user sees themselves transformed. Then composite title
+ * banner + watermark on top.
+ *
+ * Path B (fallback): generate a text-to-image preview of the vibe character
+ * from scratch — user sees an example of the look.
+ *
+ * Path C (last resort): solid color background + title + plain avatar paste.
+ */
+async function buildPreviewPNG(
+  vibe: GlowupVibe,
+  intensity: GlowupIntensity,
+  robloxUserId?: string,
+): Promise<{ buffer: Buffer; fitOnUser: boolean }> {
+  const PREVIEW_BG_HEX = 'F5F5F5'; // soft neutral so transformed avatar stands out
+
+  let baseImage: Buffer | null = null;
   let fitOnUser = false;
+
   if (robloxUserId) {
-    avatarBuf = await downloadAvatarThumbnailBuffer({ robloxUserId, size: '720x720', kind: 'full_body' });
-    if (avatarBuf) fitOnUser = true;
+    const avatarUrl = await fetchRobloxAvatarThumbnailUrl({ robloxUserId, size: '720x720', kind: 'full_body' });
+    if (avatarUrl) {
+      const restyledUrl = await restyleAvatarViaImg2Img({ vibe, intensity, robloxAvatarUrl: avatarUrl });
+      if (restyledUrl) {
+        try {
+          const resp = await fetch(restyledUrl, { signal: AbortSignal.timeout(20_000) });
+          if (resp.ok) {
+            const ab = await resp.arrayBuffer();
+            baseImage = await sharp(Buffer.from(ab))
+              .resize(PREVIEW_W, PREVIEW_H, { fit: 'cover' })
+              .png()
+              .toBuffer();
+            fitOnUser = true;
+            logger.info('[glowupCompositor] avatar restyled via img2img', { vibeId: vibe.id });
+          }
+        } catch (err) {
+          logger.warn('[glowupCompositor] restyled image download failed', err);
+        }
+      }
+    }
   }
 
-  // Watermark SVG: small bottom-right "Kami Gold ✨"
+  // Fallback to text-to-image: generate a fresh vibe avatar from scratch.
+  if (!baseImage) {
+    const t2iUrl = await generatePreviewTexture(vibe.avatarRestylePrompt, 'roblox', 'character')
+      .catch((err: unknown) => { logger.warn('[glowupCompositor] t2i fallback failed', err); return undefined; });
+    if (t2iUrl) {
+      try {
+        const resp = await fetch(t2iUrl, { signal: AbortSignal.timeout(20_000) });
+        if (resp.ok) {
+          const ab = await resp.arrayBuffer();
+          baseImage = await sharp(Buffer.from(ab))
+            .resize(PREVIEW_W, PREVIEW_H, { fit: 'cover' })
+            .png()
+            .toBuffer();
+        }
+      } catch (err) {
+        logger.warn('[glowupCompositor] t2i image download failed', err);
+      }
+    }
+  }
+
+  // Last resort: solid background + plain user avatar (if available).
+  if (!baseImage) {
+    baseImage = await sharp({
+      create: { width: PREVIEW_W, height: PREVIEW_H, channels: 4, background: hexToRgba(PREVIEW_BG_HEX) },
+    }).png().toBuffer();
+    if (robloxUserId) {
+      const avatarBuf = await downloadAvatarThumbnailBuffer({ robloxUserId, size: '720x720', kind: 'full_body' });
+      if (avatarBuf) {
+        const sized = await sharp(avatarBuf)
+          .resize(640, 640, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+          .png()
+          .toBuffer();
+        baseImage = await sharp(baseImage)
+          .composite([{ input: sized, top: 120, left: Math.floor((PREVIEW_W - 640) / 2) }])
+          .png()
+          .toBuffer();
+      }
+    }
+  }
+
+  // Title banner + watermark overlays (always added).
+  const titleSvg = Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${PREVIEW_W}" height="60">
+      <style>
+        .t { font: bold 28px -apple-system, system-ui, sans-serif; fill: #ffffff; text-anchor: middle; }
+        .s { font: bold 28px -apple-system, system-ui, sans-serif; fill: #000000; text-anchor: middle; opacity: 0.7; }
+      </style>
+      <text x="${PREVIEW_W / 2 + 2}" y="40" class="s">${vibe.title}</text>
+      <text x="${PREVIEW_W / 2}" y="39" class="t">${vibe.title}</text>
+    </svg>
+  `);
   const watermarkSvg = Buffer.from(`
     <svg xmlns="http://www.w3.org/2000/svg" width="220" height="36">
       <style>
-        .wm { font: bold 18px -apple-system, system-ui, sans-serif; fill: #ffffff; opacity: 0.85; }
-        .wm-shadow { font: bold 18px -apple-system, system-ui, sans-serif; fill: #000000; opacity: 0.5; }
+        .wm { font: bold 18px -apple-system, system-ui, sans-serif; fill: #ffffff; opacity: 0.9; }
+        .wm-shadow { font: bold 18px -apple-system, system-ui, sans-serif; fill: #000000; opacity: 0.65; }
       </style>
       <text x="3" y="26" class="wm-shadow">✨ Kami Gold</text>
       <text x="2" y="25" class="wm">✨ Kami Gold</text>
     </svg>
   `);
-
-  // Vibe-id banner SVG: top centered
-  const titleSvg = Buffer.from(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="${PREVIEW_W}" height="60">
-      <style>
-        .t { font: bold 28px -apple-system, system-ui, sans-serif; fill: #ffffff; text-anchor: middle; }
-        .s { font: bold 28px -apple-system, system-ui, sans-serif; fill: #000000; text-anchor: middle; opacity: 0.6; }
-      </style>
-      <text x="${PREVIEW_W / 2 + 1}" y="40" class="s">${vibe.title}</text>
-      <text x="${PREVIEW_W / 2}" y="39" class="t">${vibe.title}</text>
-    </svg>
-  `);
-
-  const overlays: sharp.OverlayOptions[] = [];
-  overlays.push({ input: titleSvg, top: 20, left: 0 });
-  if (avatarBuf) {
-    // Resize Roblox avatar (720×720 typical) to fit centered in preview.
-    const sized = await sharp(avatarBuf).resize(640, 640, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
-    overlays.push({ input: sized, top: 120, left: Math.floor((PREVIEW_W - 640) / 2) });
-  }
-  overlays.push({ input: watermarkSvg, top: PREVIEW_H - 45, left: PREVIEW_W - 230 });
-
-  const buffer = await sharp(bg).composite(overlays).png().toBuffer();
-  return { buffer, fitOnUser };
+  const finalBuffer = await sharp(baseImage)
+    .composite([
+      { input: titleSvg, top: 20, left: 0 },
+      { input: watermarkSvg, top: PREVIEW_H - 45, left: PREVIEW_W - 230 },
+    ])
+    .png()
+    .toBuffer();
+  return { buffer: finalBuffer, fitOnUser };
 }
 
 /**
@@ -256,7 +353,7 @@ export async function generateGlowup(input: GlowupGenerateInput): Promise<Glowup
     safe('buildPantsPNG', () => buildPantsPNG(vibe), () => solidBuffer(585, 559, vibe.palette.pantsPrimaryHex)),
     safe('buildDecalPNG', () => buildDecalPNG(vibe, input.intensity), () => solidBuffer(DECAL_SIZE, DECAL_SIZE, vibe.palette.skinHex)),
     safe('buildPreviewPNG',
-      () => buildPreviewPNG(vibe, input.robloxUserId),
+      () => buildPreviewPNG(vibe, input.intensity, input.robloxUserId),
       async () => ({ buffer: await solidBuffer(PREVIEW_W, PREVIEW_H, vibe.palette.skinHex), fitOnUser: false })),
   ]);
 
