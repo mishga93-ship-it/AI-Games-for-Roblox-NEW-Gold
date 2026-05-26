@@ -150,6 +150,9 @@ import { generateGlowup, type GlowupGenerateResult } from './glowupCompositor.js
 import { isGlowupVibeId, type GlowupGender, type GlowupIntensity } from './data/glowupVibes.js';
 import { resolveRobloxUsername } from './robloxUserLookup.js';
 import { uploadDecalForUser, DecalUploadNotConnectedError } from './robloxDecalUpload.js';
+import { computeGlowupCacheKey, getCachedGlowup, setCachedGlowup } from './glowupCache.js';
+import { checkAndConsumeGlowupRateLimit } from './glowupRateLimit.js';
+import { recordGlowupEvent, parseGlowupEventType } from './glowupAnalytics.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -298,6 +301,8 @@ function parseIntensity(raw: unknown): GlowupIntensity {
 }
 
 app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
+  const firebaseUid = req.userId;
+  let resolvedVibeId: string | undefined;
   try {
     const body = (req.body ?? {}) as {
       vibeId?: unknown;
@@ -309,12 +314,32 @@ app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
     if (!isGlowupVibeId(body.vibeId)) {
       return res.status(400).json({ error: 'Invalid or missing vibeId' });
     }
-    const firebaseUid = req.userId;
+    resolvedVibeId = body.vibeId;
     if (!firebaseUid) {
       return res.status(401).json({ error: 'Authentication required' });
     }
     const gender = parseGender(body.gender);
     const intensity = parseIntensity(body.intensity);
+
+    // Rate limit BEFORE we spend any provider $ or Storage writes.
+    const verdict = await checkAndConsumeGlowupRateLimit(firebaseUid);
+    if (!verdict.allowed) {
+      return res.status(429).json({
+        error: 'rate_limited',
+        reason: verdict.reason,
+        retryAfterMs: verdict.retryAfterMs,
+        hourlyRemaining: verdict.hourlyRemaining,
+        dailyRemaining: verdict.dailyRemaining,
+      });
+    }
+
+    recordGlowupEvent({
+      type: 'generation_started',
+      firebaseUid,
+      vibeId: body.vibeId,
+      gender,
+      intensity,
+    });
 
     // Resolve robloxUserId: prefer OAuth-connected userId, else look up by username.
     let robloxUserId: string | undefined;
@@ -329,13 +354,39 @@ app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
       if (resolved) robloxUserId = resolved.robloxUserId;
     }
 
-    const result: GlowupGenerateResult = await generateGlowup({
-      vibeId: body.vibeId,
-      gender,
-      intensity,
-      robloxUserId,
-      firebaseUid,
-    });
+    // Cache lookup. Hit → skip flux-pro + sharp + 4 Storage uploads entirely.
+    const cacheKey = computeGlowupCacheKey({ vibeId: body.vibeId, gender, intensity, robloxUserId });
+    const cached = await getCachedGlowup(cacheKey);
+    let result: GlowupGenerateResult;
+    if (cached) {
+      result = cached;
+      recordGlowupEvent({
+        type: 'generation_cached',
+        firebaseUid,
+        vibeId: body.vibeId,
+        gender,
+        intensity,
+        fitOnUser: cached.fitOnUser,
+      });
+    } else {
+      result = await generateGlowup({
+        vibeId: body.vibeId,
+        gender,
+        intensity,
+        robloxUserId,
+        firebaseUid,
+      });
+      // Fire-and-forget cache write (don't block response on it).
+      void setCachedGlowup({ key: cacheKey, result, firebaseUid, vibeId: body.vibeId });
+      recordGlowupEvent({
+        type: 'generation_success',
+        firebaseUid,
+        vibeId: body.vibeId,
+        gender,
+        intensity,
+        fitOnUser: result.fitOnUser,
+      });
+    }
 
     // Optional inline decal upload — best-effort, doesn't fail the response.
     let decalAssetId: string | undefined;
@@ -351,20 +402,68 @@ app.post('/api/glowup/generate', async (req: AuthedRequest, res) => {
             description: `${result.pitch} — Generated via Kami Gold AI.`,
           });
           decalAssetId = upload.assetId;
+          recordGlowupEvent({ type: 'upload_success', firebaseUid, vibeId: body.vibeId, meta: { inline: true } });
         }
       } catch (err) {
         if (err instanceof DecalUploadNotConnectedError) {
           logger.info('[glowup] autoUploadDecal skipped — Roblox not connected', { firebaseUid });
         } else {
           logger.warn('[glowup] inline decal upload failed (non-fatal)', err);
+          recordGlowupEvent({
+            type: 'upload_failed',
+            firebaseUid,
+            vibeId: body.vibeId,
+            errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+            meta: { inline: true },
+          });
         }
       }
     }
 
-    return res.json({ ...result, decalAssetId });
+    return res.json({
+      ...result,
+      decalAssetId,
+      cached: !!cached,
+      rateLimit: {
+        hourlyRemaining: verdict.hourlyRemaining,
+        dailyRemaining: verdict.dailyRemaining,
+      },
+    });
   } catch (err) {
     logger.error('[glowup] generate failed', err);
+    if (firebaseUid) {
+      recordGlowupEvent({
+        type: 'generation_failed',
+        firebaseUid,
+        vibeId: resolvedVibeId,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+      });
+    }
     return res.status(500).json({ error: 'Failed to generate glow-up' });
+  }
+});
+
+// Client-fired analytics events (vibe_selected, share_clicked, upload_clicked).
+// Server-fired events are emitted directly from /generate and /upload-decal.
+app.post('/api/glowup/event', async (req: AuthedRequest, res) => {
+  try {
+    const firebaseUid = req.userId;
+    if (!firebaseUid) return res.status(401).json({ error: 'Authentication required' });
+    const body = (req.body ?? {}) as { type?: unknown; vibeId?: unknown; meta?: unknown };
+    const type = parseGlowupEventType(body.type);
+    if (!type) return res.status(400).json({ error: 'Invalid event type' });
+    recordGlowupEvent({
+      type,
+      firebaseUid,
+      vibeId: typeof body.vibeId === 'string' ? body.vibeId : undefined,
+      meta: typeof body.meta === 'object' && body.meta !== null
+        ? body.meta as Record<string, string | number | boolean | null>
+        : undefined,
+    });
+    return res.json({ recorded: true });
+  } catch (err) {
+    logger.warn('[glowup] event endpoint error (non-fatal)', err);
+    return res.status(200).json({ recorded: false });  // never fail client on analytics
   }
 });
 
@@ -385,12 +484,24 @@ app.post('/api/glowup/upload-decal', async (req: AuthedRequest, res) => {
       pngBuffer: Buffer.from(ab),
       displayName,
     });
+    recordGlowupEvent({ type: 'upload_success', firebaseUid, meta: { inline: false } });
     return res.json(upload);
   } catch (err) {
     if (err instanceof DecalUploadNotConnectedError) {
+      if (req.userId) {
+        recordGlowupEvent({ type: 'upload_failed', firebaseUid: req.userId, errorCode: 'not_connected', meta: { inline: false } });
+      }
       return res.status(409).json({ error: 'roblox_not_connected', message: 'Connect Roblox via OAuth first.' });
     }
     logger.error('[glowup] decal upload failed', err);
+    if (req.userId) {
+      recordGlowupEvent({
+        type: 'upload_failed',
+        firebaseUid: req.userId,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        meta: { inline: false },
+      });
+    }
     return res.status(500).json({ error: 'Failed to upload decal' });
   }
 });

@@ -7,6 +7,8 @@
 // needs proper credentials. Real e2e probe happens after deploy via curl.
 
 import { getGlowupVibe, listGlowupVibes, isGlowupVibeId, summarizeVibe, hexToRgbText } from './apps/functions/dist/data/glowupVibes.js';
+import { computeGlowupCacheKey } from './apps/functions/dist/glowupCache.js';
+import { parseGlowupEventType } from './apps/functions/dist/glowupAnalytics.js';
 
 let failures = 0;
 function check(label, cond, detail = '') {
@@ -60,6 +62,25 @@ check(`korblox_style palette has pantsAccentHex`, typeof korblox.palette.pantsAc
 // Void-specific: all body colors basically black
 const voidVibe = getGlowupVibe('void');
 check(`void.palette.skinHex starts with 0A or similar dark`, voidVibe.palette.skinHex.toLowerCase().startsWith('0a'));
+
+// Cache key determinism
+const k1 = computeGlowupCacheKey({ vibeId: 'headless_shadow', gender: 'boys', intensity: 'clean' });
+const k2 = computeGlowupCacheKey({ vibeId: 'headless_shadow', gender: 'boys', intensity: 'clean' });
+const k3 = computeGlowupCacheKey({ vibeId: 'headless_shadow', gender: 'girls', intensity: 'clean' });
+const k4 = computeGlowupCacheKey({ vibeId: 'headless_shadow', gender: 'boys', intensity: 'clean', robloxUserId: '12345' });
+check(`computeGlowupCacheKey deterministic (same input → same key)`, k1 === k2);
+check(`computeGlowupCacheKey differs on gender`, k1 !== k3);
+check(`computeGlowupCacheKey differs on robloxUserId`, k1 !== k4);
+check(`computeGlowupCacheKey returns 24-char hex`, /^[0-9a-f]{24}$/.test(k1));
+
+// Analytics event-type parser
+const validEvents = ['vibe_selected', 'generation_started', 'generation_success', 'generation_cached', 'generation_failed', 'upload_clicked', 'upload_success', 'upload_failed', 'share_clicked'];
+for (const t of validEvents) {
+  check(`parseGlowupEventType("${t}") accepted`, parseGlowupEventType(t) === t);
+}
+check(`parseGlowupEventType("garbage") rejected`, parseGlowupEventType('garbage') === null);
+check(`parseGlowupEventType(null) rejected`, parseGlowupEventType(null) === null);
+check(`parseGlowupEventType(undefined) rejected`, parseGlowupEventType(undefined) === null);
 
 if (failures > 0) {
   console.error(`\n❌ ${failures} check(s) failed`);
