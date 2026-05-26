@@ -196,7 +196,9 @@ async function restyleAvatarViaImg2Img(args: {
   // as a base64 data URI instead — universally accepted, no extra upload.
   const dataUri = `data:image/png;base64,${args.avatarBuffer.toString('base64')}`;
   try {
-    const result = await runFal('fal-ai/flux/dev/image-to-image', {
+    // runFal() already prepends 'fal-ai/' — pass operation without the
+    // prefix or you get '/fal-ai/fal-ai/...' → "Application not found".
+    const result = await runFal('flux/dev/image-to-image', {
       image_url: dataUri,
       prompt,
       strength: 0.85,
