@@ -114,6 +114,8 @@ struct ForgeView: View {
     // Session 382 Phase 2 — fakeLimited tile no longer opens chat; it now
     // pivots into the dedicated GlowupStudioView SwiftUI pipeline.
     @State private var isShowingGlowupStudio = false
+    // Session 383 — Outfit Generator (separate product from Glow-Up).
+    @State private var isShowingOutfitStudio = false
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -194,6 +196,9 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingGlowupStudio) {
             NavigationStack { GlowupStudioView() }
+        }
+        .fullScreenCover(isPresented: $isShowingOutfitStudio) {
+            NavigationStack { OutfitStudioView() }
         }
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
@@ -1299,6 +1304,12 @@ private extension ForgeView {
             isShowingGlowupStudio = true
             return
         }
+        if selectedOption.id == "outfit_generator" {
+            isShowingProjectPicker = false
+            isShowingChatPicker = false
+            isShowingOutfitStudio = true
+            return
+        }
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",
@@ -1341,6 +1352,15 @@ private extension ForgeView {
 
     var viralOptions: [ProjectOption] {
         [
+            ProjectOption(
+                id: "outfit_generator",
+                title: "1-Click Outfit Generator",
+                details: isRussianInterface
+                    ? "AI собирает полный outfit под популярные эстетики: Baddie, Sigma, Y2K, Goth, Cyber, Anime Demon. Реальные Roblox-айтемы из каталога — один тап → готовый TikTok-ready fit."
+                    : "AI assembles a full outfit for trending aesthetics: Baddie, Sigma, Y2K, Goth, Cyber, Anime Demon. Real Roblox catalog items — one tap → TikTok-ready fit.",
+                kind: .content,
+                tags: ["new", "viral", "ai", "tiktok"]
+            ),
             ProjectOption(
                 id: "fake_limited",
                 title: "Fake Headless & Korblox",

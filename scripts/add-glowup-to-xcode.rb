@@ -30,6 +30,12 @@ FOLDERS_TO_ADD = {
   'FakeLimited' => [
     'FakeLimitedRecipeCard.swift',
   ],
+  'Outfit' => [
+    'OutfitAPIClient.swift',
+    'OutfitStudio.swift',
+    'OutfitStudioView.swift',
+    'OutfitResultView.swift',
+  ],
 }
 
 abort("Project not found at #{PROJECT_PATH}") unless File.directory?(PROJECT_PATH)
