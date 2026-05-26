@@ -2475,13 +2475,18 @@ function buildVehicleModelManifest(
     // (Meshy emits cars with forward = +X), rotate 90° around Y so long
     // axis → Roblox -Z (chassis forward). Otherwise mesh natural axes pass
     // through.
-    const meshSize: [number, number, number] = forwardIsX
-      ? [finalLength, finalHeight, finalWidth]
-      : [finalWidth, finalHeight, finalLength];
-    // Round 20L v8 (session 381): drop vision-detect — Claude couldn't
-    // reliably read 3D nose direction from 2D 3/4-front render. Replaced
-    // with runtime UI button (controller HUD "↻ Rotate" — user clicks
-    // until plane visually faces forward). Default 0° rotation.
+    // Round 20L v9 (session 381): for plane, KEEP natural mesh axes — do
+    // NOT swap X/Z. Meshy bakes plane with wingspan on X (longer) and
+    // fuselage on Z (shorter). Our skeleton (ChassisRoot + landing gear)
+    // already has forward = -Z. Matching mesh natural Z to skeleton Z
+    // forces wings to stay on X (sides) and fuselage on Z (length).
+    // Worst case: nose is on +Z instead of -Z → user presses "↻ 90°" or
+    // "↻ 180°" Rotate button once.
+    const meshSize: [number, number, number] = (vehicleType === 'plane' || vehicleType === 'helicopter')
+      ? [natural.x * scale, finalHeight, natural.z * scale]
+      : (forwardIsX
+        ? [finalLength, finalHeight, finalWidth]
+        : [finalWidth, finalHeight, finalLength]);
     const meshRot: [number, number, number] = (vehicleType === 'plane' || vehicleType === 'helicopter')
       ? [0, 0, 0]
       : (forwardIsX ? [0, 90, 0] : [0, 0, 0]);
@@ -4246,27 +4251,31 @@ local function buildHUDFor(player)
 \thint.Font = Enum.Font.Gotham; hint.TextSize = 12
 \thint.TextColor3 = Color3.fromRGB(140, 140, 140); hint.Parent = panel
 
-\t-- Round 20L v8 (session 381): rotate-plane button. User clicks to
-\t-- rotate the entire vehicle 90° around Y. Use this when the plane
-\t-- visually faces the wrong direction after Meshy gen — Meshy bakes
-\t-- nose direction unpredictably, this lets user align in one click.
-\tlocal rotBtn = Instance.new("TextButton")
-\trotBtn.Name = "RotateBtn"
-\trotBtn.Size = UDim2.new(0, 100, 0, 30)
-\trotBtn.Position = UDim2.new(0, 16, 0, 100)
-\trotBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 180)
-\trotBtn.BorderSizePixel = 0
-\trotBtn.Text = "↻ Rotate 90°"
-\trotBtn.Font = Enum.Font.GothamBold
-\trotBtn.TextSize = 13
-\trotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-\trotBtn.Parent = panel
-\tlocal rbC = Instance.new("UICorner"); rbC.CornerRadius = UDim.new(0, 5); rbC.Parent = rotBtn
-\trotBtn.MouseButton1Click:Connect(function()
-\t\t-- Rotate whole vehicle model 90° around Y, pivoting on PrimaryPart.
-\t\tlocal pivot = Vehicle:GetPivot()
-\t\tVehicle:PivotTo(pivot * CFrame.Angles(0, math.rad(90), 0))
-\tend)
+\t-- Round 20L v9 (session 381): rotate-plane buttons (coarse + fine).
+\t-- 90° for cardinal flips, 15° for fine-tune alignment when Meshy bakes
+\t-- nose at non-cardinal angle.
+\tlocal function makeRotateBtn(name, text, xOffset, color, angleDeg)
+\t\tlocal btn = Instance.new("TextButton")
+\t\tbtn.Name = name
+\t\tbtn.Size = UDim2.new(0, 80, 0, 26)
+\t\tbtn.Position = UDim2.new(0, xOffset, 0, 100)
+\t\tbtn.BackgroundColor3 = color
+\t\tbtn.BorderSizePixel = 0
+\t\tbtn.Text = text
+\t\tbtn.Font = Enum.Font.GothamBold
+\t\tbtn.TextSize = 12
+\t\tbtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+\t\tbtn.Parent = panel
+\t\tlocal c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 5); c.Parent = btn
+\t\tbtn.MouseButton1Click:Connect(function()
+\t\t\tlocal pivot = Vehicle:GetPivot()
+\t\t\tVehicle:PivotTo(pivot * CFrame.Angles(0, math.rad(angleDeg), 0))
+\t\tend)
+\tend
+\tmakeRotateBtn("RotBigLeft", "↺ 90°", 16, Color3.fromRGB(80, 100, 160), -90)
+\tmakeRotateBtn("RotBigRight", "↻ 90°", 100, Color3.fromRGB(60, 120, 180), 90)
+\tmakeRotateBtn("RotFineLeft", "↺ 15°", 184, Color3.fromRGB(100, 140, 200), -15)
+\tmakeRotateBtn("RotFineRight", "↻ 15°", 268, Color3.fromRGB(120, 160, 220), 15)
 
 \tgui.Parent = pg
 \tactiveHUD = gui; hudOwner = player
