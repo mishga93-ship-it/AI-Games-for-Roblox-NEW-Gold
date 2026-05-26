@@ -3357,9 +3357,12 @@ function addVehicleSeats(args: {
   // place the cabin/interior visually around 25-35% of total bbox height
   // (the upper 65% is empty roof-space because Meshy doesn't model true
   // car interiors). 30% lands the seat inside the visible cabin.
-  // Round 20L v4 (session 381): aircraft seat lower — 40% inside fuselage
-  // interior (was 55%, head poked through canopy roof).
-  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.40 : 0.30;
+  // Round 20L v5 (session 381): seat low at 20% mesh Y. User reported
+  // even 40% had head sticking out. Meshy planes have tall bbox with
+  // mostly-empty top (Meshy includes wings/empty space in bbox), so
+  // visible cockpit canopy is in LOWER quarter of bbox. 20% lands seat
+  // inside actual cockpit interior.
+  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.20 : 0.30;
   const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
     ? meshFitBottomY + meshFitHeight * meshSeatYFraction
     : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
@@ -3384,13 +3387,13 @@ function addVehicleSeats(args: {
       : profile.driveMode === 'aircraft'
         ? -length * 0.25  // forward into cockpit area
         : -length * 0.14;
-  // Round 20L v4 (session 381): seat rotation experiment №3 = 180°.
-  // 0° → user "looks at wing". 90° → user "looks at wing other side".
-  // 180° = opposite of 0° → if 0° was wrong by 90° turn, 180° turn would
-  // still be wrong by 90°. Empirically guessing because Meshy mesh nose
-  // direction is unpredictable per-prompt. If 180° still wrong, exposed
-  // as model attribute "PlaneSeatYawDeg" for user manual override.
-  const seatRotYDeg = profile.driveMode === 'aircraft' ? 180 : 0;
+  // Round 20L v5 (session 381): give up auto-detecting Meshy plane nose.
+  // After 3 attempts (0°, 90°, 180°), still wrong. Mesh nose direction
+  // varies per-prompt unpredictably. Default to 0°, add a runtime script
+  // that reads Vehicle's "PlaneSeatYawDeg" attribute and rotates the seat
+  // at startup. User can edit the attribute in Studio Properties pane
+  // (0/90/180/270) until character faces forward.
+  const seatRotYDeg = 0;
   scene.push({
     id: driveSeatId,
     className: 'VehicleSeat',
@@ -3891,6 +3894,28 @@ local TURN_RATE = tonumber(cfg("TurnRate", 2.0)) or 2.0
 local WHEEL_RADIUS = math.max(tonumber(cfg("WheelRadius", 0.8)) or 0.8, 0.2)
 local DIRECT_WHEEL_MODE = DRIVE_MODE == "land_wheels"
 local TWO_WHEEL_ARCADE = VEHICLE_TYPE == "motorcycle" or VEHICLE_TYPE == "bicycle"
+
+-- Round 20L v5 (session 381): manual seat yaw override for aircraft.
+-- Mesh nose direction varies per Meshy gen unpredictably. User can edit
+-- attribute "PlaneSeatYawDeg" in Studio Properties (0/90/180/270) on the
+-- Vehicle model to rotate the DriveSeat. Default 0 = mesh natural -Z.
+if DRIVE_MODE == "aircraft" or DRIVE_MODE == "rotorcraft" then
+\tlocal initialYaw = Vehicle:GetAttribute("PlaneSeatYawDeg")
+\tif initialYaw == nil then
+\t\tVehicle:SetAttribute("PlaneSeatYawDeg", 0)
+\tend
+\tlocal function applySeatYaw()
+\t\tlocal y = tonumber(Vehicle:GetAttribute("PlaneSeatYawDeg")) or 0
+\t\tlocal seatRoot = DriveSeat
+\t\tif seatRoot then
+\t\t\t-- Rotate seat's local orientation around Y axis, preserving position.
+\t\t\tlocal pos = seatRoot.CFrame.Position
+\t\t\tseatRoot.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad(y), 0)
+\t\tend
+\tend
+\tapplySeatYaw()
+\tVehicle:GetAttributeChangedSignal("PlaneSeatYawDeg"):Connect(applySeatYaw)
+end
 
 local engine = Root:FindFirstChild("EngineLoop")
 local boostSound = Root:FindFirstChild("BoostOrHorn")
