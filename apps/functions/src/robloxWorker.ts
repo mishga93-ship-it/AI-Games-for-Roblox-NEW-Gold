@@ -2478,7 +2478,16 @@ function buildVehicleModelManifest(
     const meshSize: [number, number, number] = forwardIsX
       ? [finalLength, finalHeight, finalWidth]
       : [finalWidth, finalHeight, finalLength];
-    const meshRot: [number, number, number] = forwardIsX ? [0, 90, 0] : [0, 0, 0];
+    // Round 20L (session 381): for aircraft, vision-detected nose direction
+    // overrides the dimension-based heuristic. vehicleMeshAutoYawDeg is set
+    // by index.ts after Claude vision detects which cardinal direction the
+    // mesh nose points to from a top-down render.
+    const visionAutoYaw = typeof metadata.vehicleMeshAutoYawDeg === 'number'
+      ? metadata.vehicleMeshAutoYawDeg as number
+      : 0;
+    const meshRot: [number, number, number] = (vehicleType === 'plane' || vehicleType === 'helicopter')
+      ? [0, visionAutoYaw, 0]
+      : (forwardIsX ? [0, 90, 0] : [0, 0, 0]);
     // Session 373 round 6: position mesh so its bottom sits AT the wheel
     // axle level (Y = wheelRadius), not at rootY (which was 0.75 stud
     // above the wheel top — leaving a visible gap underneath the body
@@ -2803,7 +2812,7 @@ function resolveVehicleProfile(type: VehicleModelType, metadata: Record<string, 
     bicycle: { type, driveMode: 'land_wheels', size: [2.1, 2.4, 5.8], wheelCount: 2, seatCount: 1, topSpeed: 40, acceleration: 18, turnRate: 2.3, wheelRadius: 0.72 },
     bus: { type, driveMode: 'land_wheels', size: [7.8, 4.4, 14.5], wheelCount: 6, seatCount: 8, topSpeed: 58, acceleration: 24, turnRate: 1.05, wheelRadius: 0.98 },
     boat: { type, driveMode: 'watercraft', size: [7, 2.8, 12], wheelCount: 0, seatCount: 4, topSpeed: 62, acceleration: 22, turnRate: 1.6, wheelRadius: 0.6 },
-    plane: { type, driveMode: 'aircraft', size: [14, 3.3, 13], wheelCount: 3, seatCount: 4, topSpeed: 92, acceleration: 24, turnRate: 1.25, wheelRadius: 0.45 },
+    plane: { type, driveMode: 'aircraft', size: [14, 3.3, 13], wheelCount: 3, seatCount: 4, topSpeed: 92, acceleration: 24, turnRate: 1.25, wheelRadius: 0.85 },
     helicopter: { type, driveMode: 'rotorcraft', size: [9, 3.4, 11], wheelCount: 0, seatCount: 4, topSpeed: 68, acceleration: 22, turnRate: 1.9, wheelRadius: 0.5 },
     tank: { type, driveMode: 'tracked', size: [7.4, 3.4, 10], wheelCount: 8, seatCount: 4, topSpeed: 42, acceleration: 16, turnRate: 1.8, wheelRadius: 0.55 },
     spaceship: { type, driveMode: 'hover', size: [10, 3.2, 11], wheelCount: 0, seatCount: 4, topSpeed: 88, acceleration: 28, turnRate: 2.0, wheelRadius: 0.5 },
@@ -4135,12 +4144,34 @@ end)
 -- ---------------------------------------------------------------------------
 local activeHUD = nil
 local hudOwner = nil
+local activeHighlight = nil
 
 local function destroyHUD()
 \tif activeHUD then
 \t\tpcall(function() activeHUD:Destroy() end)
 \t\tactiveHUD = nil; hudOwner = nil
 \tend
+\tif activeHighlight then
+\t\tpcall(function() activeHighlight:Destroy() end)
+\t\tactiveHighlight = nil
+\tend
+end
+
+-- Round 20L (session 381) v6: Highlight on pilot character so player can
+-- see themselves through the opaque Meshy mesh body. Native Roblox
+-- DepthMode.AlwaysOnTop renders outline visible through any geometry.
+local function attachPilotHighlight(player)
+\tif not player or not player.Character then return end
+\tlocal h = Instance.new("Highlight")
+\th.Name = "PilotHighlight"
+\th.Adornee = player.Character
+\th.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+\th.FillColor = Color3.fromRGB(255, 240, 120)
+\th.FillTransparency = 0.55
+\th.OutlineColor = Color3.fromRGB(255, 220, 60)
+\th.OutlineTransparency = 0
+\th.Parent = player.Character
+\tactiveHighlight = h
 end
 
 local function buildHUDFor(player)
@@ -4253,14 +4284,20 @@ if DRIVE_MODE == "aircraft" or DRIVE_MODE == "rotorcraft" then
 \t\tlocal occ = DriveSeat.Occupant
 \t\tif occ and occ.Parent then
 \t\t\tlocal player = Players:GetPlayerFromCharacter(occ.Parent)
-\t\t\tif player then buildHUDFor(player) end
+\t\t\tif player then
+\t\t\t\tbuildHUDFor(player)
+\t\t\t\tattachPilotHighlight(player)
+\t\t\tend
 \t\telse
 \t\t\tdestroyHUD()
 \t\tend
 \tend)
 \tif DriveSeat.Occupant and DriveSeat.Occupant.Parent then
 \t\tlocal player = Players:GetPlayerFromCharacter(DriveSeat.Occupant.Parent)
-\t\tif player then buildHUDFor(player) end
+\t\tif player then
+\t\t\tbuildHUDFor(player)
+\t\t\tattachPilotHighlight(player)
+\t\tend
 \tend
 end
 

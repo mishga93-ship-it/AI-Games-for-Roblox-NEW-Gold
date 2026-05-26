@@ -27671,6 +27671,29 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                     jobId, error: errorMessage(qaErr),
                   });
                 }
+
+                // Round 20L (session 381): vision-detect mesh nose direction
+                // for aircraft. Meshy text-to-3d bakes nose at unpredictable
+                // angles per-prompt; vision detection auto-aligns instead of
+                // forcing user to fiddle PlaneSeatYawDeg attribute.
+                if (vehicleType === 'plane' || vehicleType === 'helicopter') {
+                  try {
+                    const noseResult = await (await import('./providers.js')).detectVehicleMeshNoseDirection({
+                      previewPngBase64: qaPreviewPng.toString('base64'),
+                      vehicleType,
+                    });
+                    (currentJob.metadata as Record<string, unknown>).vehicleMeshAutoYawDeg = noseResult.rotationDeg;
+                    (currentJob.metadata as Record<string, unknown>).vehicleMeshDetectedNose = noseResult.direction;
+                    logger.info('[Vehicle] vision orientation detected', {
+                      jobId, direction: noseResult.direction,
+                      rotationDeg: noseResult.rotationDeg, confidence: noseResult.confidence,
+                    });
+                  } catch (orientErr) {
+                    logger.warn('[Vehicle] orientation detect threw (fail-open: rotation=0)', {
+                      jobId, error: errorMessage(orientErr),
+                    });
+                  }
+                }
               }
               if (!glbBuf) {
                 const glbResp = await fetch(meshyGlbUrl);

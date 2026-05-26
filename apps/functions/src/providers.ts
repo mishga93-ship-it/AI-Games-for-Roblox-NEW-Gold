@@ -4437,6 +4437,89 @@ export async function scoreVehicleMeshPreview(args: {
   }
 }
 
+/**
+ * Round 20L (session 381): detect mesh nose direction via Claude vision.
+ * Takes a top-down render of the Meshy mesh, asks Claude which compass
+ * direction the plane's nose points to. Returns a Y-axis rotation
+ * (degrees) that aligns the natural nose with Roblox -Z (forward).
+ *
+ * Mapping (top-view: +Z=south, -Z=north, +X=east, -X=west):
+ *   nose pointing NORTH (-Z): no rotation needed, return 0
+ *   nose pointing SOUTH (+Z): rotate 180° so nose flips to -Z
+ *   nose pointing EAST (+X): rotate -90° (clockwise from top) so +X → -Z (return 270)
+ *   nose pointing WEST (-X): rotate +90° (CCW from top) so -X → -Z (return 90)
+ *
+ * Costs ~1 Claude Haiku vision call (~$0.005). Adds ~3-5s to gen.
+ * Fail-open: returns 0 if Claude unreachable, parse fails, etc.
+ */
+export async function detectVehicleMeshNoseDirection(args: {
+  previewPngBase64: string;
+  vehicleType: string;
+  timeoutMs?: number;
+}): Promise<{ rotationDeg: number; direction: string; confidence: number; rawText?: string }> {
+  try {
+    const system = [
+      'You are a 3D-asset orientation analyzer. You look at top-down renders',
+      'of vehicles and identify which compass direction the front (nose) is facing.',
+      'Answer in strict JSON only — no prose.',
+    ].join(' ');
+    const user = [
+      `Vehicle type: ${args.vehicleType}.`,
+      '',
+      'The attached image is a TOP-DOWN view of a vehicle (camera looking straight down).',
+      'In this view, NORTH is up (toward the top of the image), SOUTH is down,',
+      'EAST is to the right, WEST is to the left.',
+      '',
+      'Identify the vehicle\'s front/nose direction. For a plane: where is the propeller',
+      'or aircraft nose? For a car: where is the hood/front bumper? For a boat: where is the bow?',
+      '',
+      'Return JSON with fields:',
+      '  "direction": one of "north", "south", "east", "west" — where the nose points.',
+      '  "confidence": float 0.0-1.0 — how sure you are.',
+      '',
+      'Be precise — pick the closest cardinal direction.',
+    ].join('\n');
+
+    const result = await runAnthropicVisionStructured(
+      { system, user, images: [{ base64: args.previewPngBase64, mediaType: 'image/png' }] },
+      'claude-haiku-4-5-20251001',  // Haiku — orientation is simpler than full QA, save cost
+      args.timeoutMs ?? 30_000,
+    );
+
+    const text = (result.text ?? '').trim();
+    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    let parsed: Record<string, unknown> | null = null;
+    try { parsed = JSON.parse(stripped) as Record<string, unknown>; }
+    catch {
+      const m = stripped.match(/\{[\s\S]*\}/);
+      if (m) { try { parsed = JSON.parse(m[0]) as Record<string, unknown>; } catch { parsed = null; } }
+    }
+    if (!parsed) {
+      logger.warn('[detectVehicleMeshNoseDirection] could not parse JSON', { textPreview: text.slice(0, 200) });
+      return { rotationDeg: 0, direction: 'unknown', confidence: 0, rawText: text };
+    }
+    const direction = String(parsed.direction ?? 'north').toLowerCase().trim();
+    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+    let rotationDeg = 0;
+    switch (direction) {
+      case 'north': rotationDeg = 0; break;       // nose at -Z already (forward)
+      case 'south': rotationDeg = 180; break;     // nose at +Z, rotate to flip
+      case 'east': rotationDeg = 270; break;      // nose at +X, rotate -90 (or +270) → -Z
+      case 'west': rotationDeg = 90; break;       // nose at -X, rotate +90 → -Z
+      default: rotationDeg = 0; break;
+    }
+    logger.info('[detectVehicleMeshNoseDirection] result', {
+      vehicleType: args.vehicleType, direction, rotationDeg, confidence,
+    });
+    return { rotationDeg, direction, confidence, rawText: text };
+  } catch (err) {
+    logger.warn('[detectVehicleMeshNoseDirection] threw (fail-open)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { rotationDeg: 0, direction: 'error', confidence: 0 };
+  }
+}
+
 export async function callBlenderVehicleFix(args: {
   glbUrl: string;
   primaryHex?: string;
