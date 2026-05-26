@@ -109,7 +109,13 @@ async function uploadAndSign(args: {
   const path = `glowup/${args.firebaseUid}/${args.vibeId}/${Date.now()}-${args.filename}`;
   const file = bucket.file(path);
   await file.save(args.data, { contentType: args.contentType, resumable: false });
+  // v4 signing uses IAM SignBlob API (no local private key needed) — works
+  // out of the box on Cloud Run/Functions with the default compute SA.
+  // v2 signing requires the SA's private key to be embedded in admin SDK
+  // creds, which it isn't when initializeApp() runs with ADC. v2 produced
+  // SignatureDoesNotMatch 403 in prod (verified May 2026 e2e test).
   const [signedUrl] = await file.getSignedUrl({
+    version: 'v4',
     action: 'read',
     expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
   });
