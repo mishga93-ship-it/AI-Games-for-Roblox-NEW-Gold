@@ -3349,10 +3349,9 @@ function addVehicleSeats(args: {
   // (the upper 65% is empty roof-space because Meshy doesn't model true
   // car interiors). 30% lands the seat inside the visible cabin.
   // Round 20L (session 381): for aircraft mesh-mode (plane via Meshy 6),
-  // cockpit canopy is in upper-front of the mesh (~70-80% up the bbox).
-  // Old generic 30% put pilot at bottom of fuselage = visible as floating
-  // below the cabin. Aircraft override uses 70% mesh-Y for cockpit canopy.
-  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.70 : 0.30;
+  // cockpit area is mid-upper inside the fuselage. 70% was too high (head
+  // pokes through canopy). 55% lands inside the cockpit interior.
+  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.55 : 0.30;
   const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
     ? meshFitBottomY + meshFitHeight * meshSeatYFraction
     : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
@@ -3377,6 +3376,12 @@ function addVehicleSeats(args: {
       : profile.driveMode === 'aircraft'
         ? -length * 0.25  // forward into cockpit area
         : -length * 0.14;
+  // Round 20L (session 381): for aircraft mesh-mode, rotate DriveSeat 90°
+  // around Y so character forward direction aligns with Meshy mesh natural
+  // nose. User reported "сидит боком" — mesh rotation heuristic
+  // (forwardIsX → meshRot [0,90,0]) aligns visual but seat default forward
+  // (-Z) doesn't always match. Empirical: rotate seat the same way as mesh.
+  const seatRotYDeg = profile.driveMode === 'aircraft' ? 90 : 0;
   scene.push({
     id: driveSeatId,
     className: 'VehicleSeat',
@@ -3384,7 +3389,7 @@ function addVehicleSeats(args: {
     parentId: folders.seats,
     properties: {
       Size: vector3(1.55, 0.34, 1.55),
-      CFrame: cf(driverX, seatY, driverZ),
+      CFrame: cf(driverX, seatY, driverZ, [0, seatRotYDeg, 0]),
       Anchored: false,
       CanCollide: false,
       Massless: true,
