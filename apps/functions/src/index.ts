@@ -27624,7 +27624,16 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               // Fail-OPEN policy: if QA itself errors (Claude outage, parse
               // failure → score === NaN), proceed with the mesh. Only an
               // explicit low score (< QA_PASSING_SCORE) blocks the upload.
-              const QA_PASSING_SCORE = 0.55;
+              // Round 20L (session 381): per-type QA threshold. Cars
+              // benefit from strict 0.55 (Meshy/Tripo car quality matured).
+              // Plane/boat/tank — relax to 0.30 because mesh-AI for these
+              // is less mature than for cars, and our procedural Lego
+              // fallback is significantly worse than even a mediocre AI
+              // mesh. Better to ship a polished imperfect plane than a
+              // perfectly-judged Lego brick.
+              const QA_PASSING_SCORE = (vehicleType === 'plane' || vehicleType === 'boat' || vehicleType === 'tank' || vehicleType === 'helicopter')
+                ? 0.30
+                : 0.55;
               let qaScore = Number.NaN;
               let qaIssues: string[] = [];
               let qaSkipUpload = false;
