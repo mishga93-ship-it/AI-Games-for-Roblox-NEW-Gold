@@ -17,7 +17,7 @@ import sharp from 'sharp';
 import { getStorage } from 'firebase-admin/storage';
 import { generatePreviewTexture, runFal } from './providers.js';
 import { compositeShirtTemplate, compositePantsTemplate } from './clothingCompositor.js';
-import { downloadAvatarThumbnailBuffer, fetchRobloxAvatarThumbnailUrl } from './robloxUserLookup.js';
+import { downloadAvatarThumbnailBuffer } from './robloxUserLookup.js';
 import { getGlowupVibe, summarizeVibe, type GlowupVibe, type GlowupVibeId, type GlowupGender, type GlowupIntensity } from './data/glowupVibes.js';
 
 const PREVIEW_W = 768;
@@ -184,21 +184,21 @@ async function buildDecalPNG(vibe: GlowupVibe, intensity: GlowupIntensity): Prom
 async function restyleAvatarViaImg2Img(args: {
   vibe: GlowupVibe;
   intensity: GlowupIntensity;
-  robloxAvatarUrl: string;
+  avatarBuffer: Buffer;       // downloaded ahead-of-time; fal.ai can't hotlink Roblox CDN
 }): Promise<string | undefined> {
   const intensitySuffix = args.intensity === 'scary'
     ? ' Darker mood, dramatic studio lighting, sharper contrast.'
     : ' Clean stylized lighting, soft shadows.';
   const prompt = args.vibe.avatarRestylePrompt + intensitySuffix +
     ' Maintain the blocky Roblox character proportions and pose from the input image.';
+  // fal.ai img2img wants a downloadable URL. Roblox CDN blocks their
+  // downloader (hotlinking protection / UA filter), so we pass the avatar
+  // as a base64 data URI instead — universally accepted, no extra upload.
+  const dataUri = `data:image/png;base64,${args.avatarBuffer.toString('base64')}`;
   try {
     const result = await runFal('fal-ai/flux/dev/image-to-image', {
-      image_url: args.robloxAvatarUrl,
+      image_url: dataUri,
       prompt,
-      // Higher strength (0.85) = more transformation room — needed because
-      // the user's plain avatar must look meaningfully different in the
-      // vibe styling (different head/body/colors). Too low (0.5) leaves the
-      // original visible; too high (0.95) loses the blocky Roblox shape.
       strength: 0.85,
       num_inference_steps: 30,
       guidance_scale: 5.5,
@@ -207,7 +207,12 @@ async function restyleAvatarViaImg2Img(args: {
     });
     return result.outputUrl;
   } catch (err) {
-    logger.warn('[glowupCompositor] flux img2img avatar restyle failed', { vibeId: args.vibe.id, err });
+    const errMsg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    logger.warn('[glowupCompositor] flux img2img avatar restyle failed', {
+      vibeId: args.vibe.id,
+      error: errMsg,
+      stack: err instanceof Error ? err.stack?.split('\n').slice(0, 3).join('\n') : undefined,
+    });
     return undefined;
   }
 }
@@ -235,9 +240,9 @@ async function buildPreviewPNG(
   let fitOnUser = false;
 
   if (robloxUserId) {
-    const avatarUrl = await fetchRobloxAvatarThumbnailUrl({ robloxUserId, size: '720x720', kind: 'full_body' });
-    if (avatarUrl) {
-      const restyledUrl = await restyleAvatarViaImg2Img({ vibe, intensity, robloxAvatarUrl: avatarUrl });
+    const avatarBuf = await downloadAvatarThumbnailBuffer({ robloxUserId, size: '720x720', kind: 'full_body' });
+    if (avatarBuf) {
+      const restyledUrl = await restyleAvatarViaImg2Img({ vibe, intensity, avatarBuffer: avatarBuf });
       if (restyledUrl) {
         try {
           const resp = await fetch(restyledUrl, { signal: AbortSignal.timeout(20_000) });
