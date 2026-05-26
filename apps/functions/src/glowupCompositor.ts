@@ -67,9 +67,35 @@ async function solidBuffer(width: number, height: number, hex: string): Promise<
   return sharp({ create: { width, height, channels: 4, background: hexToRgba(hex) } }).png().toBuffer();
 }
 
-async function getStorageBucket() {
-  // Mirrors index.ts resolvedBucket pattern. Falls back to default bucket.
-  return getStorage().bucket();
+// Mirrors index.ts resolvedBucket pattern — firebase-admin initializeApp()
+// was called without a storageBucket option, so getStorage().bucket() with
+// no name returns a phantom bucket that 404s. Try the real candidates.
+const PROJECT_ID = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT ?? 'roblox-ai-generator-v2-2-ios';
+const BUCKET_CANDIDATES = [
+  'roblox-ai-gen-v2-artifacts',
+  `${PROJECT_ID}.firebasestorage.app`,
+  `${PROJECT_ID}.appspot.com`,
+];
+
+let _resolvedBucket: ReturnType<ReturnType<typeof getStorage>['bucket']> | null = null;
+
+async function getStorageBucket(): Promise<ReturnType<ReturnType<typeof getStorage>['bucket']>> {
+  if (_resolvedBucket) return _resolvedBucket;
+  for (const name of BUCKET_CANDIDATES) {
+    try {
+      const candidate = getStorage().bucket(name);
+      const [exists] = await candidate.exists();
+      if (exists) {
+        _resolvedBucket = candidate;
+        logger.info(`[glowupCompositor] resolved Storage bucket: ${name}`);
+        return candidate;
+      }
+    } catch {
+      logger.warn(`[glowupCompositor] bucket ${name} not reachable, trying next`);
+    }
+  }
+  _resolvedBucket = getStorage().bucket(BUCKET_CANDIDATES[0]);
+  return _resolvedBucket;
 }
 
 async function uploadAndSign(args: {
