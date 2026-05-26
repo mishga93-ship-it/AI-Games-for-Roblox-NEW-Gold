@@ -2491,12 +2491,11 @@ function buildVehicleModelManifest(
     // Mesh bottom at Y=wheelRadius means wheels stick out 1.05 stud
     // below the body bottom (proper road-clearance look) AND poke
     // 1.05 stud into the body bottom (wheel wells).
-    // Round 20L (session 381 v2): for plane, lift mesh bottom ABOVE wheel
-    // tops (wheelRadius*2 + 0.3 clearance) so plane sits on landing gear
-    // instead of fuselage touching ground. Old wheelRadius value put mesh
-    // bottom = wheel center, body half-sunk for low-wing/jet planes.
+    // Round 20L v4 (session 381): for plane, lift mesh bottom HIGHER above
+    // wheels. v3 had +0.3 clearance, user still reported "наполовину утонул".
+    // Now +1.2 stud above wheel tops — plane visibly sits on gear.
     const meshBottomY = vehicleType === 'plane'
-      ? profile.wheelRadius * 2 + 0.3
+      ? profile.wheelRadius * 2 + 1.2
       : profile.wheelRadius;
     const meshCenterY = meshBottomY + finalHeight * 0.5;
     // Session 373 round 8: pass WHITE (no tint) so Meshy's concept-baked
@@ -3358,10 +3357,9 @@ function addVehicleSeats(args: {
   // place the cabin/interior visually around 25-35% of total bbox height
   // (the upper 65% is empty roof-space because Meshy doesn't model true
   // car interiors). 30% lands the seat inside the visible cabin.
-  // Round 20L (session 381): for aircraft mesh-mode (plane via Meshy 6),
-  // cockpit area is mid-upper inside the fuselage. 70% was too high (head
-  // pokes through canopy). 55% lands inside the cockpit interior.
-  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.55 : 0.30;
+  // Round 20L v4 (session 381): aircraft seat lower — 40% inside fuselage
+  // interior (was 55%, head poked through canopy roof).
+  const meshSeatYFraction = profile.driveMode === 'aircraft' ? 0.40 : 0.30;
   const meshSeatY = (meshFitBottomY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
     ? meshFitBottomY + meshFitHeight * meshSeatYFraction
     : (meshFitTopY !== undefined && meshFitHeight !== undefined && meshFitHeight > 0)
@@ -3386,11 +3384,13 @@ function addVehicleSeats(args: {
       : profile.driveMode === 'aircraft'
         ? -length * 0.25  // forward into cockpit area
         : -length * 0.14;
-  // Round 20L (session 381 v2): seat rotation should match mesh rotation.
-  // For plane we now force forwardIsX=false → no mesh rotation, so seat
-  // also stays at 0°. User reported "сидит боком" with prior 90° — that
-  // was double-rotation (mesh rotated + seat rotated → 180° off-axis).
-  const seatRotYDeg = 0;
+  // Round 20L v4 (session 381): seat rotation experiment №3 = 180°.
+  // 0° → user "looks at wing". 90° → user "looks at wing other side".
+  // 180° = opposite of 0° → if 0° was wrong by 90° turn, 180° turn would
+  // still be wrong by 90°. Empirically guessing because Meshy mesh nose
+  // direction is unpredictable per-prompt. If 180° still wrong, exposed
+  // as model attribute "PlaneSeatYawDeg" for user manual override.
+  const seatRotYDeg = profile.driveMode === 'aircraft' ? 180 : 0;
   scene.push({
     id: driveSeatId,
     className: 'VehicleSeat',
@@ -4129,8 +4129,8 @@ local function buildHUDFor(player)
 
 \tlocal panel = Instance.new("Frame")
 \tpanel.Name = "Panel"
-\tpanel.Size = UDim2.new(0, 480, 0, 210)
-\tpanel.Position = UDim2.new(0.5, -240, 0, 20)
+\tpanel.Size = UDim2.new(0, 360, 0, 180)
+\tpanel.Position = UDim2.new(1, -380, 1, -200)  -- bottom-right corner, 20px margin
 \tpanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 \tpanel.BackgroundTransparency = 0.35; panel.BorderSizePixel = 0
 \tpanel.Parent = gui
