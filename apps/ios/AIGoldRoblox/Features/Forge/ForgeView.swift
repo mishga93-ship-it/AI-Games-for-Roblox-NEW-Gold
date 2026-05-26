@@ -111,6 +111,9 @@ struct ForgeView: View {
     @State private var renameText = ""
     @State private var exportShareItem: String?
     @State private var isShowingTikTokStudio = false
+    // Session 382 Phase 2 — fakeLimited tile no longer opens chat; it now
+    // pivots into the dedicated GlowupStudioView SwiftUI pipeline.
+    @State private var isShowingGlowupStudio = false
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -188,6 +191,9 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingTikTokStudio) {
             TikTokStudioView()
+        }
+        .fullScreenCover(isPresented: $isShowingGlowupStudio) {
+            NavigationStack { GlowupStudioView() }
         }
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
@@ -1283,6 +1289,14 @@ private extension ForgeView {
         if selectedOption.id == "tiktok_export" {
             isShowingProjectPicker = false
             isShowingTikTokStudio = true
+            return
+        }
+        // Session 382 Phase 2 — fakeLimited tile pivots to GlowupStudioView
+        // (vibe picker → asset pack) instead of the legacy chat flow.
+        if selectedOption.id == "fake_limited" {
+            isShowingProjectPicker = false
+            isShowingChatPicker = false
+            isShowingGlowupStudio = true
             return
         }
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
