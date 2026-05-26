@@ -1,136 +1,156 @@
 // OutfitSharePoster.swift — SwiftUI view rendered into a PNG poster by
 // ImageRenderer (iOS 16+). 1080×1920 vertical, Instagram-Story / TikTok-
-// friendly. Goal: a single shareable image that captures the entire fit
-// with branding, instead of a useless .txt file.
+// friendly. Hero render (AI-rendered avatar in this fit) is the main
+// visual; item thumbnails are pre-downloaded as UIImages so ImageRenderer
+// snapshots them synchronously (AsyncImage doesn't work inside ImageRenderer).
 
 import SwiftUI
+import UIKit
 
 @available(iOS 16.0, *)
 struct OutfitSharePoster: View {
     let response: OutfitGenerationResponse
+    let heroImage: UIImage?
+    /// Pre-downloaded item thumbnails keyed by URL string.
+    let thumbnails: [String: UIImage]
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Background gradient matched to the aesthetic accent.
+            // Background — vertical gradient from the aesthetic accent into black.
             LinearGradient(
-                colors: [posterAccent.opacity(0.85), .black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                colors: [posterAccent.opacity(0.95), .black],
+                startPoint: .top,
+                endPoint: .bottom
             )
             .ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 28) {
-                // Hook tagline
-                Text(response.appStoreHook)
-                    .font(.system(size: 38, weight: .bold))
-                    .foregroundColor(.orange)
-                    .padding(.top, 60)
-
-                // Aesthetic title
-                Text(response.title.uppercased())
-                    .font(.system(size: 96, weight: .black))
-                    .foregroundColor(.white)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(2)
-
-                Text(response.localizedCaption)
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundColor(.white.opacity(0.9))
-                    .padding(.bottom, 20)
-
-                // Item grid — up to 6 items, 2 columns
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 22),
-                    GridItem(.flexible(), spacing: 22),
-                ], spacing: 22) {
-                    ForEach(response.items.prefix(6)) { item in
-                        OutfitPosterItem(item: item)
-                    }
+            VStack(spacing: 0) {
+                // Top band: hook + title
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(response.appStoreHook)
+                        .font(.system(size: 40, weight: .bold))
+                        .foregroundColor(.orange)
+                    Text(response.title.uppercased())
+                        .font(.system(size: 112, weight: .black))
+                        .foregroundColor(.white)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text(response.localizedCaption)
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundColor(.white.opacity(0.95))
+                        .lineLimit(2)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 60)
+                .padding(.top, 80)
+
+                // Hero render — the AI-painted avatar in the fit.
+                heroBlock
+                    .padding(.horizontal, 60)
+                    .padding(.top, 32)
+
+                // Items strip — small, supportive (NOT the hero).
+                itemsStrip
+                    .padding(.horizontal, 60)
+                    .padding(.top, 32)
 
                 Spacer(minLength: 0)
 
-                // Footer: total cost + branding
-                HStack(alignment: .center, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 6) {
+                // Footer: cost + branding
+                HStack(alignment: .center, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("TOTAL")
-                            .font(.system(size: 24, weight: .semibold))
+                            .font(.system(size: 26, weight: .semibold))
                             .foregroundColor(.white.opacity(0.6))
                         Text("\(response.totalCostRobux) R$")
-                            .font(.system(size: 64, weight: .black))
+                            .font(.system(size: 72, weight: .black))
                             .foregroundColor(.green)
                     }
                     if response.savedRobux > 0 {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("SAVED")
-                                .font(.system(size: 24, weight: .semibold))
+                                .font(.system(size: 26, weight: .semibold))
                                 .foregroundColor(.white.opacity(0.6))
                             Text("\(response.savedRobux.formatted()) R$")
-                                .font(.system(size: 64, weight: .black))
+                                .font(.system(size: 72, weight: .black))
                                 .foregroundColor(.orange)
                         }
-                        .padding(.leading, 32)
                     }
                     Spacer()
                     Text("✨ Kami Gold")
-                        .font(.system(size: 32, weight: .bold))
+                        .font(.system(size: 36, weight: .bold))
                         .foregroundColor(.white)
                 }
+                .padding(.horizontal, 60)
                 .padding(.bottom, 60)
             }
-            .padding(.horizontal, 60)
         }
         .frame(width: 1080, height: 1920)
+    }
+
+    @ViewBuilder
+    private var heroBlock: some View {
+        if let hero = heroImage {
+            Image(uiImage: hero)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 960, maxHeight: 960)
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 32))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 32)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                )
+        } else {
+            // Hero unavailable — emphasize the item grid below.
+            ZStack {
+                Color.white.opacity(0.05)
+                VStack(spacing: 12) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 80))
+                        .foregroundColor(.white.opacity(0.4))
+                    Text("Outfit Assembled")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+            .frame(width: 960, height: 480)
+            .clipShape(RoundedRectangle(cornerRadius: 32))
+        }
+    }
+
+    private var itemsStrip: some View {
+        // Horizontal row of up to 5 small thumbnails — supportive caption,
+        // not the focal point. Real Roblox thumbnails come pre-downloaded.
+        HStack(spacing: 16) {
+            ForEach(response.items.prefix(5)) { item in
+                VStack(spacing: 6) {
+                    ZStack {
+                        Color.white.opacity(0.08)
+                        if let urlStr = item.thumbnailUrl, let img = thumbnails[urlStr] {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(6)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.35))
+                        }
+                    }
+                    .frame(width: 150, height: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    Text(item.priceRobux == 0 ? "FREE" : "\(item.priceRobux) R$")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(item.priceRobux == 0 ? .green : .orange)
+                }
+            }
+        }
     }
 
     private var posterAccent: Color {
         guard let a = OutfitAesthetic(rawValue: response.aestheticId) else { return .purple }
         return posterHex(a.accentHex)
-    }
-}
-
-@available(iOS 16.0, *)
-private struct OutfitPosterItem: View {
-    let item: OutfitItem
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Color.white.opacity(0.1)
-                if let urlString = item.thumbnailUrl, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let img): img.resizable().scaledToFit()
-                        default: thumbnailFallback
-                        }
-                    }
-                } else {
-                    thumbnailFallback
-                }
-            }
-            .frame(width: 200, height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-
-            Text(item.name)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .frame(maxWidth: 220)
-
-            Text(item.priceRobux == 0 ? "FREE" : "\(item.priceRobux) R$")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundColor(item.priceRobux == 0 ? .green : .orange)
-        }
-    }
-
-    private var thumbnailFallback: some View {
-        ZStack {
-            Color.white.opacity(0.05)
-            Image(systemName: "sparkles")
-                .font(.system(size: 60))
-                .foregroundColor(.white.opacity(0.4))
-        }
     }
 }
 

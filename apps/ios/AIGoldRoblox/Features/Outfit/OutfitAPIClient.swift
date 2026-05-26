@@ -121,6 +121,9 @@ struct OutfitGenerationResponse: Codable {
     let savedRobux: Int
     let rerollSeed: String
     let generationStatus: String?
+    /// AI-rendered hero preview of an avatar in this outfit (optional —
+    /// flux call may fail and the response still carries the item list).
+    let heroPreviewUrl: String?
 
     var localizedPitch: String {
         GlowupLocale.isRussian ? pitchRU : pitchEN

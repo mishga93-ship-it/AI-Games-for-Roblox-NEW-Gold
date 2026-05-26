@@ -11,6 +11,7 @@ struct OutfitResultView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                heroPreview
                 savingsBadges
                 captionCard
                 shareButton
@@ -21,6 +22,45 @@ struct OutfitResultView: View {
             .padding(.horizontal, 16)
             .padding(.top, 60)
             .padding(.bottom, 30)
+        }
+    }
+
+    @ViewBuilder
+    private var heroPreview: some View {
+        if let urlString = response.heroPreviewUrl, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFit()
+                case .failure:
+                    heroPlaceholder
+                case .empty:
+                    ZStack { heroPlaceholder; ProgressView() }
+                @unknown default:
+                    heroPlaceholder
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        } else {
+            heroPlaceholder
+                .aspectRatio(0.75, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private var heroPlaceholder: some View {
+        ZStack {
+            Color.cardBackground
+            VStack(spacing: 6) {
+                Image(systemName: "person.crop.square.filled.and.at.rectangle")
+                    .font(.system(size: 48))
+                    .foregroundColor(.textSecondary.opacity(0.35))
+                Text(loc(en: "Hero render unavailable", ru: "Hero render недоступен"))
+                    .font(.caption)
+                    .foregroundColor(.textSecondary.opacity(0.5))
+            }
         }
     }
 

@@ -13,7 +13,7 @@
 import { logger } from 'firebase-functions/v2';
 import { createRequire } from 'node:module';
 import { fetchCatalogByKeyword, type RobloxCatalogItem } from './robloxCatalog.js';
-import { runChatProvider } from './providers.js';
+import { runChatProvider, generatePreviewTexture } from './providers.js';
 
 // Static catalog pool — pre-fetched on dev machine via scripts/prefetch-outfit-pool.mjs.
 // Roblox catalog API is blocked from Cloud Run egress; this JSON is the source
@@ -59,6 +59,8 @@ export interface OutfitAssembleResult {
   totalCostRobux: number;
   savedRobux: number;
   rerollSeed: string;                   // pass back to /generate to get a different selection
+  /** AI-rendered preview of an avatar wearing this outfit (~3-5s, optional). */
+  heroPreviewUrl?: string;
 }
 
 export interface OutfitAssembleInput {
@@ -233,6 +235,62 @@ async function aiRankSelections(args: {
   }
 }
 
+// ─── Hero avatar visualization via flux text-to-image ────────────
+
+/**
+ * Render a single "AI made me this fit" hero image showing a Roblox avatar
+ * in the assembled outfit. This is what makes the feature feel like an
+ * outfit (vs. a list of items). Falls back to undefined on any failure —
+ * client renders the item grid alone.
+ */
+async function generateOutfitHeroPreview(args: {
+  aesthetic: OutfitAesthetic;
+  items: OutfitItem[];
+  gender: OutfitGender;
+  style: OutfitStyleMode;
+}): Promise<string | undefined> {
+  // Build a tight prompt from the actual picked items.
+  const itemNamesByCategory: Record<string, string> = {};
+  for (const it of args.items) {
+    // De-aestheticize the name so flux doesn't echo "y2k vamp emo vintage baddie crop top".
+    const cleaned = it.name
+      .replace(/[♡♥★☆†♪]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 60);
+    if (!itemNamesByCategory[it.slot]) itemNamesByCategory[it.slot] = cleaned;
+  }
+  const wearing = Object.entries(itemNamesByCategory)
+    .map(([slot, name]) => `${slot}: ${name}`)
+    .join(', ');
+
+  const genderClause = args.gender === 'girls'
+    ? ' Female Roblox character with feminine proportions.'
+    : args.gender === 'boys'
+      ? ' Male Roblox character with masculine proportions.'
+      : ' Roblox character.';
+
+  const styleClause = args.style === 'dark'
+    ? ' Dark, dramatic studio lighting.'
+    : ' Bright, colorful pop lighting.';
+
+  const prompt = [
+    `A Roblox blocky avatar in the "${args.aesthetic.title}" aesthetic.`,
+    args.aesthetic.pitchEN,
+    `The avatar is wearing: ${wearing}.`,
+    genderClause + styleClause,
+    'Full body 3/4 view, plain pure white background, soft studio lighting, sharp clean stylized 3D cartoon render. Family-friendly, no horror, no gore, no text, no logos.',
+  ].join(' ');
+
+  try {
+    const url = await generatePreviewTexture(prompt, 'roblox', 'character');
+    return url;
+  } catch (err) {
+    logger.warn('[outfitAssembler] hero render failed', { aestheticId: args.aesthetic.id, err: err instanceof Error ? err.message : String(err) });
+    return undefined;
+  }
+}
+
 // ─── Caption via AI ───────────────────────────────────────────────
 
 async function pickCaption(aesthetic: OutfitAesthetic, remix?: OutfitRemixMode): Promise<{ en: string; ru: string }> {
@@ -297,7 +355,11 @@ export async function assembleOutfit(input: OutfitAssembleInput): Promise<Outfit
   const totalCostRobux = items.reduce((acc, it) => acc + (it.priceRobux ?? 0), 0);
   const savedRobux = Math.max(0, aesthetic.imitatedRetailRobux - totalCostRobux);
 
-  const caption = await pickCaption(aesthetic, input.remix);
+  // Caption + hero in parallel — hero is the expensive one (~3-5s flux).
+  const [caption, heroPreviewUrl] = await Promise.all([
+    pickCaption(aesthetic, input.remix),
+    generateOutfitHeroPreview({ aesthetic, items, gender: input.gender, style: input.style }),
+  ]);
 
   return {
     aestheticId: aesthetic.id,
@@ -317,5 +379,6 @@ export async function assembleOutfit(input: OutfitAssembleInput): Promise<Outfit
     totalCostRobux,
     savedRobux,
     rerollSeed: input.seed ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    heroPreviewUrl,
   };
 }

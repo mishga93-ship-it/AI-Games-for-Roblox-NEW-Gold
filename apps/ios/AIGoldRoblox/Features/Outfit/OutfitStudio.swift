@@ -108,11 +108,37 @@ final class OutfitStudio: ObservableObject {
     @available(iOS 16.0, *)
     @MainActor
     private func renderOutfitPoster(response: OutfitGenerationResponse) async -> UIImage? {
-        // Build a 1080×1920 (Instagram-Story / TikTok-friendly) poster.
-        let view = OutfitSharePoster(response: response)
+        // ImageRenderer snapshots SwiftUI synchronously — AsyncImage inside
+        // the poster doesn't get a chance to fetch. Pre-download every
+        // network image into a UIImage dict first, then render with
+        // synchronous Image(uiImage:).
+        var thumbs: [String: UIImage] = [:]
+        let urls: [String] = response.items.compactMap { $0.thumbnailUrl }
+        await withTaskGroup(of: (String, UIImage?).self) { group in
+            for urlString in urls {
+                guard let url = URL(string: urlString) else { continue }
+                group.addTask {
+                    do {
+                        let (data, _) = try await URLSession.shared.data(from: url)
+                        return (urlString, UIImage(data: data))
+                    } catch { return (urlString, nil) }
+                }
+            }
+            for await (key, img) in group {
+                if let img { thumbs[key] = img }
+            }
+        }
+        var heroImage: UIImage? = nil
+        if let hu = response.heroPreviewUrl, let url = URL(string: hu) {
+            if let (data, _) = try? await URLSession.shared.data(from: url) {
+                heroImage = UIImage(data: data)
+            }
+        }
+
+        let view = OutfitSharePoster(response: response, heroImage: heroImage, thumbnails: thumbs)
             .frame(width: 1080, height: 1920)
         let renderer = ImageRenderer(content: view)
-        renderer.scale = 1.0  // already at native poster size
+        renderer.scale = 1.0
         return renderer.uiImage
     }
 
