@@ -65,6 +65,13 @@ FOLDERS_TO_ADD = {
     'DisasterSpawnerResultView.swift',
     'DisasterSpawnerSharePoster.swift',
   ],
+  # Session 385 round 6 — unified Recents for fire-and-forget viral
+  # generations (Outfit, Glowup, CursedUGC, VoiceAura, DisasterSpawner,
+  # FittingRoom). Toolbar button in ForgeView opens ViralLibraryView.
+  'ViralLibrary' => [
+    'ViralLibraryAPIClient.swift',
+    'ViralLibraryView.swift',
+  ],
 }
 
 abort("Project not found at #{PROJECT_PATH}") unless File.directory?(PROJECT_PATH)

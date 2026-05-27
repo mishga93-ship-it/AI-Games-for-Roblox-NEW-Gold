@@ -124,6 +124,10 @@ struct ForgeView: View {
     @State private var isShowingFittingRoom = false
     // Session 387 — Disaster Spawner.
     @State private var isShowingDisasterSpawner = false
+    // Session 385 round 6 — Recents/Library for fire-and-forget viral
+    // generations (Outfit, Glowup, CursedUGC, VoiceAura, DisasterSpawner,
+    // FittingRoom). Backend persists each into `viralGenerations` collection.
+    @State private var isShowingViralLibrary = false
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -219,6 +223,21 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingDisasterSpawner) {
             NavigationStack { DisasterSpawnerStudioView() }
+        }
+        .fullScreenCover(isPresented: $isShowingViralLibrary) {
+            NavigationStack { ViralLibraryView() }
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isShowingViralLibrary = true
+                } label: {
+                    Image(systemName: "sparkles.rectangle.stack")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.accentPrimary)
+                }
+                .accessibilityLabel(Text(isRussianInterface ? "Мои генерации" : "My Creations"))
+            }
         }
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
