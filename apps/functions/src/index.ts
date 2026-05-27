@@ -158,6 +158,9 @@ import { checkIpRateLimit, extractClientIp } from './glowupIpRateLimit.js';
 // Session 383 — 1-Click Outfit Generator
 import { assembleOutfit } from './outfitAssembler.js';
 import { isOutfitAestheticId, type OutfitGender, type OutfitStyleMode, type OutfitRemixMode } from './data/outfitAesthetics.js';
+// Session 384 — Giant & Cursed UGC Modeler
+import { generateCursedUGC } from './cursedUgcGenerator.js';
+import { isCursedUGCCategoryId, isCursedUGCStyleId, parseCursedUGCIntensity } from './data/cursedUgcCategories.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -817,6 +820,73 @@ app.post('/api/outfit/generate', async (req: AuthedRequest, res) => {
       });
     }
     return res.status(500).json({ error: 'Failed to assemble outfit' });
+  }
+});
+
+// ─── Session 384 — Giant & Cursed UGC Modeler ───
+// AI meme/cursed UGC concept generator. Generates 1 main flux image + 2
+// variations (cuter / more_cursed) in parallel, plus single Anthropic call
+// for fake marketplace metadata (title, description, tags, fake price,
+// fake stats like 'Wishlisted by 42K', 'Trending #3'). NOT real UGC —
+// strictly a viral meme/screenshot factory.
+
+app.post('/api/cursed-ugc/generate', async (req: AuthedRequest, res) => {
+  const firebaseUid = req.userId;
+  try {
+    const body = (req.body ?? {}) as {
+      categoryId?: unknown; styleId?: unknown;
+      intensity?: unknown; userPrompt?: unknown;
+    };
+    if (!isCursedUGCCategoryId(body.categoryId)) {
+      return res.status(400).json({ error: 'Invalid or missing categoryId' });
+    }
+    if (!isCursedUGCStyleId(body.styleId)) {
+      return res.status(400).json({ error: 'Invalid or missing styleId' });
+    }
+    if (!firebaseUid) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/cursed-ugc/generate');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    // Per-user limit reuses the glowup rate-limit counters.
+    const userVerdict = await checkAndConsumeGlowupRateLimit(firebaseUid);
+    if (!userVerdict.allowed) {
+      return res.status(429).json({
+        error: 'rate_limited',
+        reason: userVerdict.reason,
+        retryAfterMs: userVerdict.retryAfterMs,
+      });
+    }
+
+    const result = await generateCursedUGC({
+      categoryId: body.categoryId,
+      styleId: body.styleId,
+      intensity: parseCursedUGCIntensity(body.intensity),
+      userPrompt: typeof body.userPrompt === 'string' ? body.userPrompt : undefined,
+      firebaseUid,
+    });
+
+    recordGlowupEvent({
+      type: 'generation_success',
+      firebaseUid,
+      vibeId: body.categoryId,
+      meta: { product: 'cursed_ugc', style: body.styleId, status: result.generationStatus },
+    });
+
+    return res.json(result);
+  } catch (err) {
+    logger.error('[cursed-ugc] generate failed', err);
+    if (firebaseUid) {
+      recordGlowupEvent({
+        type: 'generation_failed',
+        firebaseUid,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        meta: { product: 'cursed_ugc' },
+      });
+    }
+    return res.status(500).json({ error: 'Failed to generate cursed UGC' });
   }
 });
 
