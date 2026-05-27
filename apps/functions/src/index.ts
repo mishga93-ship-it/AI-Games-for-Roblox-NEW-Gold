@@ -28125,21 +28125,125 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             }
             if (thumbImageUrl) {
               try {
-                const thumbArtifact = await copyExternalArtifact(
+                // Session 383 round 4: dominant-hue body recolor.
+                //
+                // Why "round 3 bodyOriginalHex match" wasn't enough: Roblox
+                // Thumbnail API serves the *pack* thumbnail, which renders
+                // the assetId's currently-promoted variant (Sedan turquoise
+                // "aqua", Supercar yellow, etc.) — NOT our preferredVariant
+                // (which is what loadAsset extracts inside Studio). So
+                // matching bodyOriginalHex = #F3F3F3 only caught the tiny
+                // background variant and left the big turquoise/red/orange
+                // body alone. User saw a turquoise sedan after asking for
+                // taxi yellow.
+                //
+                // Round 4 fix: dynamically detect the dominant body hue from
+                // the PNG itself (saturated, mid-lightness, mid-volume
+                // pixels), then recolor every pixel within ±30° hue distance
+                // to user's primaryHex (preserving per-pixel lightness so
+                // shadows + highlights survive). Independent of what variant
+                // Roblox happens to be promoting.
+                const pngResp = await fetch(thumbImageUrl);
+                if (!pngResp.ok) throw new Error(`thumbnail PNG fetch ${pngResp.status}`);
+                const originalPngBuf = Buffer.from(await pngResp.arrayBuffer());
+                const sharp = (await import('sharp')).default;
+                const { data: rawPixels, info } = await sharp(originalPngBuf)
+                  .ensureAlpha()
+                  .raw()
+                  .toBuffer({ resolveWithObject: true });
+                const targetHex = pick.primaryHex.replace('#', '');
+                const tR = parseInt(targetHex.slice(0, 2), 16);
+                const tG = parseInt(targetHex.slice(2, 4), 16);
+                const tB = parseInt(targetHex.slice(4, 6), 16);
+
+                // RGB → hue in [0, 360); -1 for greyscale.
+                const hueOf = (r: number, g: number, b: number): number => {
+                  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                  const d = max - min;
+                  if (d === 0) return -1;
+                  let h: number;
+                  if (max === r) h = ((g - b) / d) % 6;
+                  else if (max === g) h = (b - r) / d + 2;
+                  else h = (r - g) / d + 4;
+                  h *= 60;
+                  if (h < 0) h += 360;
+                  return h;
+                };
+
+                // Step 1: histogram of saturated mid-lightness pixels (= body
+                // candidates). Quantize to 32-step buckets so similar shades
+                // cluster.
+                const buckets = new Map<string, number>();
+                for (let i = 0; i < rawPixels.length; i += info.channels) {
+                  const r = rawPixels[i], g = rawPixels[i + 1], b = rawPixels[i + 2];
+                  const a = info.channels === 4 ? rawPixels[i + 3] : 255;
+                  if (a === 0) continue;
+                  if (r >= 240 && g >= 240 && b >= 240) continue;
+                  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                  const lightness = (max + min) / 510;
+                  const sat = max === 0 ? 0 : (max - min) / max;
+                  if (lightness < 0.18 || lightness > 0.95) continue;
+                  if (sat < 0.10) continue;
+                  const key = `${r >> 5}_${g >> 5}_${b >> 5}`;
+                  buckets.set(key, (buckets.get(key) ?? 0) + 1);
+                }
+                if (buckets.size === 0) {
+                  throw new Error('no dominant body color found (image too neutral)');
+                }
+                const sortedBuckets = [...buckets.entries()].sort((a, b) => b[1] - a[1]);
+                const [dR, dG, dB] = sortedBuckets[0][0].split('_').map((x) => parseInt(x) * 32 + 16);
+                const dominantHue = hueOf(dR, dG, dB);
+                logger.info('[Vehicle thumbnail] dominant body color detected', {
+                  jobId, dominantHue, dominantRGB: { r: dR, g: dG, b: dB },
+                });
+
+                // Step 2: recolor every pixel whose hue is within ±30° of
+                // dominant. Pure-grey/trim/glass have hue=-1 → skipped.
+                // Lightness preserved so chrome highlights + shadows survive.
+                let recoloredCount = 0;
+                for (let i = 0; i < rawPixels.length; i += info.channels) {
+                  const r = rawPixels[i], g = rawPixels[i + 1], b = rawPixels[i + 2];
+                  const a = info.channels === 4 ? rawPixels[i + 3] : 255;
+                  if (a === 0) continue;
+                  if (r >= 245 && g >= 245 && b >= 245) continue;
+                  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                  const lightness = (max + min) / 510;
+                  const sat = max === 0 ? 0 : (max - min) / max;
+                  if (lightness < 0.15) continue; // shadows / wheels
+                  if (sat < 0.05) continue;        // greys / interior
+                  const pixHue = hueOf(r, g, b);
+                  if (pixHue < 0) continue;
+                  let hueDist = Math.abs(pixHue - dominantHue);
+                  if (hueDist > 180) hueDist = 360 - hueDist;
+                  if (hueDist > 30) continue;
+                  const scale = lightness * 1.45;
+                  rawPixels[i]     = Math.max(0, Math.min(255, Math.round(tR * scale)));
+                  rawPixels[i + 1] = Math.max(0, Math.min(255, Math.round(tG * scale)));
+                  rawPixels[i + 2] = Math.max(0, Math.min(255, Math.round(tB * scale)));
+                  recoloredCount++;
+                }
+                const recoloredBuf = await sharp(rawPixels, {
+                  raw: { width: info.width, height: info.height, channels: info.channels },
+                }).png().toBuffer();
+                const thumbArtifact = await uploadBinaryArtifact(
                   currentJob,
-                  thumbImageUrl,
-                  'image/png',
+                  recoloredBuf,
                   {
-                    name: `${titleForThumb}-template-preview.png`,
-                    previewText: `Roblox preview of ${pick.config.label} template (Thumbnail API)`,
+                    type: 'png',
+                    extension: 'png',
+                    mimeType: 'image/png',
+                    name: `${titleForThumb}-template-preview-recolored.png`,
+                    previewText: `Roblox preview of ${pick.config.label} recolored to ${pick.primaryHex}`,
                     stageId: 'pick_vehicle_template',
                     artifactRole: 'preview_texture',
                     metadata: {
                       isPreviewTexture: true,
                       vehicleTemplateName: pick.templateName,
                       vehicleTemplateAssetId: pick.config.assetId,
-                      thumbnailSource: 'roblox_thumbnails_v1',
+                      thumbnailSource: 'roblox_thumbnails_v1_recolored',
                       thumbnailFinalState: thumbState,
+                      recoloredPixels: recoloredCount,
+                      bodyHexTarget: pick.primaryHex,
                     },
                   },
                 );
@@ -28151,16 +28255,57 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                     ...(currentJob.metadata ?? {}),
                     previewImageUrl: thumbUrl,
                     vehiclePreviewImageUrl: thumbUrl,
-                    vehiclePreviewMode: 'roblox_thumbnail_api',
+                    vehiclePreviewMode: 'roblox_thumbnail_recolored',
                   },
                 };
-                logger.info('[Vehicle thumbnail] uploaded as preview', {
-                  jobId, assetId: pick.config.assetId, thumbUrl, finalState: thumbState,
+                logger.info('[Vehicle thumbnail] recolored + uploaded as preview', {
+                  jobId,
+                  assetId: pick.config.assetId,
+                  thumbUrl,
+                  finalState: thumbState,
+                  recoloredPixels: recoloredCount,
+                  totalPixels: (rawPixels.length / info.channels) | 0,
                 });
-              } catch (copyErr) {
-                logger.warn('[Vehicle thumbnail] copyExternalArtifact failed — continuing without preview', {
-                  jobId, assetId: pick.config.assetId, error: errorMessage(copyErr),
+              } catch (recolorErr) {
+                logger.warn('[Vehicle thumbnail] recolor failed — falling back to original PNG', {
+                  jobId, assetId: pick.config.assetId, error: errorMessage(recolorErr),
                 });
+                // Fallback: original PNG without recolor (still better than nothing).
+                try {
+                  const thumbArtifact = await copyExternalArtifact(
+                    currentJob,
+                    thumbImageUrl,
+                    'image/png',
+                    {
+                      name: `${titleForThumb}-template-preview.png`,
+                      previewText: `Roblox preview of ${pick.config.label} template (Thumbnail API)`,
+                      stageId: 'pick_vehicle_template',
+                      artifactRole: 'preview_texture',
+                      metadata: {
+                        isPreviewTexture: true,
+                        vehicleTemplateName: pick.templateName,
+                        vehicleTemplateAssetId: pick.config.assetId,
+                        thumbnailSource: 'roblox_thumbnails_v1_original_fallback',
+                        thumbnailFinalState: thumbState,
+                      },
+                    },
+                  );
+                  const thumbUrl = thumbArtifact.downloadUrl ?? thumbArtifact.url;
+                  currentJob = {
+                    ...currentJob,
+                    artifacts: [...currentJob.artifacts, thumbArtifact],
+                    metadata: {
+                      ...(currentJob.metadata ?? {}),
+                      previewImageUrl: thumbUrl,
+                      vehiclePreviewImageUrl: thumbUrl,
+                      vehiclePreviewMode: 'roblox_thumbnail_api',
+                    },
+                  };
+                } catch (copyErr) {
+                  logger.warn('[Vehicle thumbnail] fallback copyExternalArtifact also failed', {
+                    jobId, error: errorMessage(copyErr),
+                  });
+                }
               }
             } else {
               logger.warn('[Vehicle thumbnail] all 3 retries exhausted — no imageUrl from Roblox', {

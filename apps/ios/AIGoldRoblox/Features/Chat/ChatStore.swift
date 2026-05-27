@@ -5642,16 +5642,27 @@ final class ChatStore: ObservableObject {
         }
 
         if isVehicleProject, let nativeRobloxArtifact {
-            // Session 383 Round 2: prefer interactive SceneKit 3D preview when
-            // the backend attached vehicleSpecJSON (parts of the picked Roblox
-            // template, body recolored to user's primaryHex). Same renderer
-            // used for furniture/props — FurnitureSpecPayload format.
-            if let vehicleSpecJSON = job.metadata?.vehicleSpecJSON,
-               let vehicleSpec = FurnitureSpecPayload.decode(from: vehicleSpecJSON) {
+            // Session 383 Round 3: prefer the recolored Roblox Thumbnail PNG
+            // (matches the high-quality CSG Union geometry of the actual
+            // Roblox template, with body pixels shifted to user's primaryHex
+            // via Sharp). The interactive SceneKit 3D path from Round 2 is
+            // kept as a fallback for jobs where the PNG isn't available
+            // (assetId=0 templates like Phenom 100), since user feedback
+            // showed bbox blocks didn't read as the actual vehicle shape.
+            let vehiclePreviewArtifact = job.artifacts.first(where: {
+                $0.metadata?.role == "vehicle_preview_scene_render"
+                    || ($0.artifactRole == "preview_texture"
+                        && ($0.stageId == "pick_vehicle_template" || $0.stageId == "export_rbxm")
+                        && ($0.type == "png" || ($0.mimeType ?? "").contains("image")))
+            }) ?? thumbnailArtifact
+            let previewImageURL = (vehiclePreviewArtifact?.downloadUrl
+                ?? vehiclePreviewArtifact?.url
+                ?? job.metadata?.previewImageUrl).flatMap(URL.init(string:))
+            if let previewImageURL {
                 let vehicleType = job.metadata?.vehicleType ?? draft.vehicleType ?? "vehicle"
                 let driveMode = job.metadata?.driveMode ?? "land_wheels"
                 var notes: [String] = [
-                    "Interactive 3D preview of the actual Roblox template you'll get in Studio.",
+                    "Real Roblox-rendered preview, recolored to match your prompt.",
                     "Playable \(vehicleType) with DriveSeat, physics, engine sound, and VFX.",
                     "Tap Export Vehicle RBXM, drag into Workspace in Studio, press Play, and sit in DriveSeat."
                 ]
@@ -5663,7 +5674,7 @@ final class ChatStore: ObservableObject {
                 }
                 return PreviewPayload(
                     title: draft.title.isEmpty ? "Vehicle Preview" : "\(draft.title) Vehicle",
-                    artifactType: .blockyFurniture3D(spec: vehicleSpec, furnitureType: vehicleType, notes: notes),
+                    artifactType: .media(kind: "vehicle_preview", remoteURL: previewImageURL),
                     exportFileType: nativeRobloxArtifact.type,
                     artifactIds: artifactIds,
                     shareDescription: shareDescription,
@@ -5677,34 +5688,25 @@ final class ChatStore: ObservableObject {
                 )
             }
 
-            // Legacy fallback — PNG preview (Roblox Thumbnail API or blocky
-            // manifest render) when the template parts JSON wasn't attached
-            // (jobs pre-dating Session 383 Round 2 deploy).
-            let vehiclePreviewArtifact = job.artifacts.first(where: {
-                $0.metadata?.role == "vehicle_preview_scene_render"
-                    || ($0.artifactRole == "preview_texture" && $0.stageId == "export_rbxm" && ($0.type == "png" || ($0.mimeType ?? "").contains("image")))
-            }) ?? thumbnailArtifact
-            let previewImageURL = (vehiclePreviewArtifact?.downloadUrl
-                ?? vehiclePreviewArtifact?.url
-                ?? job.metadata?.previewImageUrl).flatMap(URL.init(string:))
-            if let previewImageURL {
+            // No PNG preview (e.g. Phenom 100 assetId=0 — Roblox Thumbnail
+            // API doesn't work for local-only templates). Fall back to the
+            // Round-2 SceneKit 3D blocky preview from vehicleSpecJSON. It's
+            // less polished than the recolored PNG but better than nothing.
+            if let vehicleSpecJSON = job.metadata?.vehicleSpecJSON,
+               let vehicleSpec = FurnitureSpecPayload.decode(from: vehicleSpecJSON) {
                 let vehicleType = job.metadata?.vehicleType ?? draft.vehicleType ?? "vehicle"
                 let driveMode = job.metadata?.driveMode ?? "land_wheels"
                 var notes: [String] = [
-                    "Blocky 3D preview rendered from the exact RBXM Parts model.",
-                    "Playable \(vehicleType) with DriveSeat, stabilized acceleration, passenger seats, engine sound, wheel dust, and exhaust VFX.",
-                    "Interior includes cabin parts, dashboard, steering wheel, seats, mirrors, lights, and trim.",
+                    "3D blocky preview (Roblox doesn't ship marketplace thumbnails for this template).",
+                    "Playable \(vehicleType) with DriveSeat, physics, engine sound, and VFX.",
                     "Tap Export Vehicle RBXM, drag into Workspace in Studio, press Play, and sit in DriveSeat."
                 ]
                 if let seatCount = job.metadata?.seatCount {
                     notes.insert("Seats: \(seatCount) | Mode: \(driveMode)", at: 1)
                 }
-                if let qualityMessage = job.metadata?.qualityReviewMessage, !qualityMessage.isEmpty {
-                    notes.append("Quality review: \(qualityMessage)")
-                }
                 return PreviewPayload(
                     title: draft.title.isEmpty ? "Vehicle Preview" : "\(draft.title) Vehicle",
-                    artifactType: .media(kind: "vehicle_preview", remoteURL: previewImageURL),
+                    artifactType: .blockyFurniture3D(spec: vehicleSpec, furnitureType: vehicleType, notes: notes),
                     exportFileType: nativeRobloxArtifact.type,
                     artifactIds: artifactIds,
                     shareDescription: shareDescription,
