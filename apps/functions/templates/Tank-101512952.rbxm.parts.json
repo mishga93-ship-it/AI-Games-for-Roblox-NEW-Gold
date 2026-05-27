@@ -1,0 +1,81 @@
+{
+  "bodyContainerName": "DrivableTank",
+  "partCount": 4,
+  "parts": [
+    {
+      "color": "#F2F3F3",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Car",
+      "position": [
+        -672.5001220703125,
+        143.16558837890625,
+        -1262.39990234375
+      ],
+      "shape": "Block",
+      "size": [
+        11,
+        8.80000114440918,
+        4
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#F2F3F3",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Car",
+      "position": [
+        -672.5001831054688,
+        146.66555786132812,
+        -1261.999755859375
+      ],
+      "shape": "Block",
+      "size": [
+        11,
+        8,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Seat",
+      "material": "Plastic",
+      "name": "VehicleSeat",
+      "position": [
+        -672.4999389648438,
+        141.6659698486328,
+        -1269
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        1,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#F2F3F3",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Car",
+      "position": [
+        -672.5001220703125,
+        145.66580200195312,
+        -1266.19970703125
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        0.4000000059604645,
+        1
+      ],
+      "transparency": 0
+    }
+  ],
+  "rootModelName": "DrivableTank",
+  "totalPartsBeforeCap": 4,
+  "variantName": "DrivableTank"
+}

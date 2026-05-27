@@ -482,6 +482,94 @@ export function readVehicleTemplateBase64(filename: string): string | null {
   }
 }
 
+/**
+ * Session 383: read the pre-extracted parts JSON next to each template
+ * (produced by apps/functions/scripts/extract-all-template-parts.mjs).
+ *
+ * Returns the raw `{ parts, variantName, ... }` object or null when the
+ * sidecar JSON is missing (caller falls back to Roblox Thumbnail API PNG).
+ *
+ * Sidecar filename convention: `<templateRbxmFilename>.parts.json` (e.g.
+ * `Sedan-6418239833.rbxm.parts.json`). Bundled with the function deploy
+ * so it's available at request time without spawning Lune.
+ */
+export interface TemplateVisualPart {
+  name: string;
+  kind: 'Part' | 'Seat';
+  shape: 'Block' | 'Cylinder' | 'Ball' | 'Wedge' | 'CornerWedge';
+  position: [number, number, number];
+  size: [number, number, number];
+  color: string; // hex like "#F3F3F3"
+  transparency: number;
+  material: string;
+}
+export interface TemplateVisualPartsBundle {
+  variantName: string;
+  rootModelName: string;
+  bodyContainerName: string;
+  partCount: number;
+  totalPartsBeforeCap: number;
+  parts: TemplateVisualPart[];
+}
+export function readVehicleTemplateParts(filename: string): TemplateVisualPartsBundle | null {
+  const sidecar = `${filename}.parts.json`;
+  const candidatePaths = [
+    resolvePath(__dirname, '..', 'templates', sidecar),
+    resolvePath(__dirname, 'templates', sidecar),
+  ];
+  for (const p of candidatePaths) {
+    try {
+      const text = readFileSync(p, 'utf8');
+      const parsed = JSON.parse(text) as TemplateVisualPartsBundle;
+      if (parsed && Array.isArray(parsed.parts)) {
+        logger.info('[vehicleTemplateRouter] read template parts JSON', {
+          filename, path: p, partCount: parsed.parts.length,
+        });
+        return parsed;
+      }
+    } catch {
+      // try next path
+    }
+  }
+  logger.warn('[vehicleTemplateRouter] template parts JSON not found', {
+    filename, sidecar, tried: candidatePaths,
+  });
+  return null;
+}
+
+/**
+ * Recolor body-coloured parts in-place to `primaryHex` so the 3D preview
+ * matches what the loader script does at runtime in Studio. Tolerance: any
+ * part whose RGB is within `tolerance` of bodyOriginalHex (per channel)
+ * is treated as a body panel and recolored.
+ */
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = hex.replace('#', '').match(/^([0-9A-F]{6})$/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+export function recolorVisualPartsBody(
+  bundle: TemplateVisualPartsBundle,
+  bodyOriginalHex: string,
+  primaryHex: string,
+  tolerance = 20,
+): TemplateVisualPartsBundle {
+  const orig = hexToRgb(bodyOriginalHex);
+  const target = hexToRgb(primaryHex);
+  if (!orig || !target) return bundle;
+  const recolored = bundle.parts.map((p) => {
+    const c = hexToRgb(p.color);
+    if (!c) return p;
+    const close = Math.abs(c.r - orig.r) <= tolerance
+      && Math.abs(c.g - orig.g) <= tolerance
+      && Math.abs(c.b - orig.b) <= tolerance;
+    if (!close) return p;
+    return { ...p, color: primaryHex.startsWith('#') ? primaryHex : `#${primaryHex}` };
+  });
+  return { ...bundle, parts: recolored };
+}
+
 export function pickVehicleTemplate(args: {
   prompt: string;
   title?: string;

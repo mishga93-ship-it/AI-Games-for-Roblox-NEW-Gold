@@ -473,6 +473,13 @@ enum AIWorkspaceAPI {
         let vehicleType: String?
         let driveMode: String?
         let seatCount: Int?
+        /// Session 383: pre-extracted parts JSON from the picked Roblox vehicle
+        /// template (Sedan / Phenom 100 / Tank / …), body parts already
+        /// recolored to the user's primaryHex. iOS feeds this string into
+        /// FurnitureSpecPayload.decode(from:) and renders the SAME interactive
+        /// SceneKit 3D preview used for furniture/props.
+        let vehicleSpecJSON: String?
+        let vehicleSpecPartCount: Int?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: DynamicCodingKey.self)
@@ -544,6 +551,8 @@ enum AIWorkspaceAPI {
             } else {
                 seatCount = nil
             }
+            vehicleSpecJSON = try? container.decode(String.self, forKey: .init("vehicleSpecJSON"))
+            vehicleSpecPartCount = try? container.decode(Int.self, forKey: .init("vehicleSpecPartCount"))
         }
 
         private struct DynamicCodingKey: CodingKey {

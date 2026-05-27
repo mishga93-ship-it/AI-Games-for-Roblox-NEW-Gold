@@ -1,0 +1,1053 @@
+{
+  "bodyContainerName": "Model",
+  "partCount": 58,
+  "parts": [
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Engine",
+      "position": [
+        6,
+        4.400000095367432,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        11,
+        2.4000000953674316,
+        20
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        1,
+        6.200000286102295,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        10,
+        1.2000000476837158,
+        13
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -2,
+        7.40000057220459,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        5,
+        1.2000000476837158,
+        16
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Engine",
+      "position": [
+        6.5,
+        2,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        2.4000000953674316,
+        11
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -7,
+        4.400000095367432,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        5,
+        2.4000000953674316,
+        6
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        17.5,
+        4.400000095367432,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        9,
+        2.4000000953674316,
+        3
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#0D69AC",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Window",
+      "position": [
+        7,
+        9.200000762939453,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        13,
+        2.4000000953674316,
+        2
+      ],
+      "transparency": 0.699999988079071
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        7,
+        6.800000190734863,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        2.4000000953674316,
+        11
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        6,
+        4.400000095367432,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        20,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        6,
+        4.400000095367432,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        20,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -1.5,
+        2,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        2.4000000953674316,
+        5
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -1,
+        7.40000057220459,
+        19
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        1.2000000476837158,
+        14
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -1,
+        7.40000057220459,
+        12
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        1.2000000476837158,
+        14
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        14,
+        2,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        2.4000000953674316,
+        4
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -5,
+        6.200000762939453,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        1.2000000476837158,
+        11
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        11,
+        6.800000190734863,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        10,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        11,
+        6.800000190734863,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        10,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        18.5,
+        6.800000190734863,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        9,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -7,
+        6.200000762939453,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        1.2000000476837158,
+        9
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#1B2A35",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        17.5,
+        6.800000190734863,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        9,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -6,
+        4.400000095367432,
+        12
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        2.4000000953674316,
+        4
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -6,
+        4.400000095367432,
+        19
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        2.4000000953674316,
+        4
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        0,
+        7.40000057220459,
+        20.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        1.2000000476837158,
+        12
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        0,
+        7.40000057220459,
+        10.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        1.2000000476837158,
+        12
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        1,
+        7.40000057220459,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        1.2000000476837158,
+        10
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        1,
+        7.40000057220459,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        1.2000000476837158,
+        10
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -9,
+        6.200000762939453,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        1.2000000476837158,
+        5
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#1B2A35",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        12.5,
+        6.800000190734863,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#635F62",
+      "kind": "Seat",
+      "material": "Plastic",
+      "name": "VehicleSeat",
+      "position": [
+        11,
+        6.100000381469727,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        1,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        16.5,
+        13.800000190734863,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        13,
+        0.4000000059604645,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        8.5,
+        10.600000381469727,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        13,
+        0.4000000059604645,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        17,
+        6.800000190734863,
+        10.5
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -5,
+        4.400000095367432,
+        20.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        -5,
+        4.400000095367432,
+        10.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        17,
+        6.800000190734863,
+        20.5
+      ],
+      "shape": "Block",
+      "size": [
+        2,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        17,
+        4.400000095367432,
+        10.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        17,
+        4.400000095367432,
+        20.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#1B2A35",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        11.5,
+        6.200000286102295,
+        17.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        1.2000000476837158,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#1B2A35",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        11.5,
+        6.200000286102295,
+        13.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        1.2000000476837158,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        10.5,
+        9.399999618530273,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        14.5,
+        9.399999618530273,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        15.5,
+        9.399999618530273,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        15.5,
+        12.199999809265137,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        16.5,
+        12.199999809265137,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        15.5,
+        9.399999618530273,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        10.5,
+        9.399999618530273,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        14.5,
+        9.399999618530273,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        16.5,
+        12.199999809265137,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        15.5,
+        12.199999809265137,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.799999952316284,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        8.5,
+        9.200000762939453,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        8.5,
+        9.200000762939453,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#0D69AC",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        9.5,
+        9.200000762939453,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0.5
+    },
+    {
+      "color": "#0D69AC",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        9.5,
+        9.200000762939453,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        2.4000000953674316,
+        1
+      ],
+      "transparency": 0.5
+    },
+    {
+      "color": "#1B2A35",
+      "kind": "Seat",
+      "material": "Plastic",
+      "name": "Seat",
+      "position": [
+        16,
+        5.800000190734863,
+        12.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        0.4000000059604645,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#1B2A35",
+      "kind": "Seat",
+      "material": "Plastic",
+      "name": "Seat",
+      "position": [
+        16,
+        5.800000190734863,
+        15.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        0.4000000059604645,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#1B2A35",
+      "kind": "Seat",
+      "material": "Plastic",
+      "name": "Seat",
+      "position": [
+        16,
+        5.800000190734863,
+        18.5
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        0.4000000059604645,
+        2
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        9.5,
+        10.600000381469727,
+        9.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        0.4000000059604645,
+        1
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFCC99",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "Smooth Block Model",
+      "position": [
+        9.5,
+        10.600000381469727,
+        21.5
+      ],
+      "shape": "Block",
+      "size": [
+        1,
+        0.4000000059604645,
+        1
+      ],
+      "transparency": 0
+    }
+  ],
+  "rootModelName": "Model",
+  "totalPartsBeforeCap": 58,
+  "variantName": "Model"
+}

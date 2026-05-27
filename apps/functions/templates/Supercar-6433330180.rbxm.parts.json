@@ -1,0 +1,567 @@
+{
+  "bodyContainerName": "Body",
+  "partCount": 31,
+  "parts": [
+    {
+      "color": "#3E3E3E",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "trim_black",
+      "position": [
+        -1.78179931640625,
+        13.365419387817383,
+        11.88128662109375
+      ],
+      "shape": "Block",
+      "size": [
+        8.964996337890625,
+        4.578499794006348,
+        20.12701416015625
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#202021",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "trim_undercar",
+      "position": [
+        -1.7819480895996094,
+        13.117532730102539,
+        11.901779174804688
+      ],
+      "shape": "Block",
+      "size": [
+        8.926902770996094,
+        4.082746982574463,
+        19.358001708984375
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "fenders",
+      "position": [
+        -1.7819480895996094,
+        12.834004402160645,
+        11.948272705078125
+      ],
+      "shape": "Block",
+      "size": [
+        8.926902770996094,
+        3.257930040359497,
+        17.9010009765625
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "roof",
+      "position": [
+        -1.78179931640625,
+        13.519359588623047,
+        12.63677978515625
+      ],
+      "shape": "Block",
+      "size": [
+        8.4364013671875,
+        3.96127986907959,
+        8.7340087890625
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#454546",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "interior",
+      "position": [
+        -1.7818489074707031,
+        13.426129341125488,
+        11.611785888671875
+      ],
+      "shape": "Block",
+      "size": [
+        8.533500671386719,
+        3.9036800861358643,
+        8.44598388671875
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "light_glass",
+      "position": [
+        -1.7818489074707031,
+        13.47270393371582,
+        12.099288940429688
+      ],
+      "shape": "Block",
+      "size": [
+        8.076301574707031,
+        1.4573699235916138,
+        19.636993408203125
+      ],
+      "transparency": 0.6000000238418579
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "bumper",
+      "position": [
+        -1.7818450927734375,
+        12.781295776367188,
+        4.6087799072265625
+      ],
+      "shape": "Block",
+      "size": [
+        8.101699829101562,
+        3.152492046356201,
+        6.652008056640625
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "trunk",
+      "position": [
+        -1.7819442749023438,
+        13.883073806762695,
+        18.896774291992188
+      ],
+      "shape": "Block",
+      "size": [
+        7.5177001953125,
+        2.446169853210449,
+        6.235992431640625
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "L_door",
+      "position": [
+        -5.194999694824219,
+        13.343818664550781,
+        12.159271240234375
+      ],
+      "shape": "Block",
+      "size": [
+        1.703399658203125,
+        3.044297933578491,
+        7.25299072265625
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "R_door",
+      "position": [
+        1.6310539245605469,
+        13.343965530395508,
+        12.159774780273438
+      ],
+      "shape": "Block",
+      "size": [
+        1.7034988403320312,
+        3.044232130050659,
+        7.251983642578125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#222223",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "glass",
+      "position": [
+        -1.7819480895996094,
+        14.760726928710938,
+        9.082290649414062
+      ],
+      "shape": "Block",
+      "size": [
+        6.858497619628906,
+        1.2345240116119385,
+        3.386993408203125
+      ],
+      "transparency": 0.5
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "hood_scoop",
+      "position": [
+        -1.78179931640625,
+        13.466348648071289,
+        4.00927734375
+      ],
+      "shape": "Block",
+      "size": [
+        4.51519775390625,
+        1.1441980600357056,
+        3.2230224609375
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#222223",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "L_door_glass",
+      "position": [
+        -4.915996551513672,
+        14.52161979675293,
+        12.18377685546875
+      ],
+      "shape": "Block",
+      "size": [
+        1.1187973022460938,
+        1.4276189804077148,
+        7.302001953125
+      ],
+      "transparency": 0.5
+    },
+    {
+      "color": "#222223",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "R_door_glass",
+      "position": [
+        1.35205078125,
+        14.521760940551758,
+        12.184280395507812
+      ],
+      "shape": "Block",
+      "size": [
+        1.118896484375,
+        1.427575945854187,
+        7.300994873046875
+      ],
+      "transparency": 0.5
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        -5.570843696594238,
+        11.849175453186035,
+        17.96282958984375
+      ],
+      "shape": "Block",
+      "size": [
+        1.24969482421875,
+        3.0000269412994385,
+        3
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        -5.570710182189941,
+        11.84915828704834,
+        6.160828113555908
+      ],
+      "shape": "Block",
+      "size": [
+        1.2495956420898438,
+        3.000028133392334,
+        3
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        2.0067758560180664,
+        11.849325180053711,
+        6.16082763671875
+      ],
+      "shape": "Block",
+      "size": [
+        1.2495956420898438,
+        3.000025987625122,
+        3
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        2.0069284439086914,
+        11.849343299865723,
+        17.96282958984375
+      ],
+      "shape": "Block",
+      "size": [
+        1.2495956420898438,
+        3.000020980834961,
+        3
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A9A8AB",
+      "kind": "Part",
+      "material": "Neon",
+      "name": "light_white",
+      "position": [
+        -1.7818489074707031,
+        13.135051727294922,
+        3.59228515625
+      ],
+      "shape": "Block",
+      "size": [
+        8.024696350097656,
+        0.6422449946403503,
+        2.06500244140625
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3E3E3E",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "L_door_trim",
+      "position": [
+        -5.913295745849609,
+        13.785186767578125,
+        12.133285522460938
+      ],
+      "shape": "Block",
+      "size": [
+        1.0304031372070312,
+        1.067853569984436,
+        7.201019287109375
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3E3E3E",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "R_door_trim",
+      "position": [
+        2.3493003845214844,
+        13.785370826721191,
+        12.13427734375
+      ],
+      "shape": "Block",
+      "size": [
+        1.0304031372070312,
+        1.0678428411483765,
+        7.20098876953125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#303031",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RR_wheel",
+      "position": [
+        2.107926368713379,
+        11.849352836608887,
+        17.962844848632812
+      ],
+      "shape": "Block",
+      "size": [
+        1.0464019775390625,
+        2.4174399375915527,
+        2.417999267578125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#303031",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LR_wheel",
+      "position": [
+        -5.672486305236816,
+        11.849162101745605,
+        17.962844848632812
+      ],
+      "shape": "Block",
+      "size": [
+        1.0463943481445312,
+        2.4174399375915527,
+        2.417999267578125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#303031",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RF_wheel",
+      "position": [
+        2.107815742492676,
+        11.849336624145508,
+        6.1608428955078125
+      ],
+      "shape": "Block",
+      "size": [
+        1.0463027954101562,
+        2.417449951171875,
+        2.417999267578125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#303031",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LF_wheel",
+      "position": [
+        -5.672307014465332,
+        11.84914493560791,
+        6.160339832305908
+      ],
+      "shape": "Block",
+      "size": [
+        1.0463943481445312,
+        2.4174399375915527,
+        2.4169921875
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FF0000",
+      "kind": "Part",
+      "material": "Neon",
+      "name": "light_red",
+      "position": [
+        -1.7819480895996094,
+        13.86835765838623,
+        21.11376953125
+      ],
+      "shape": "Block",
+      "size": [
+        7.051902770996094,
+        0.577733039855957,
+        1.37200927734375
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RF_wheel_trim",
+      "position": [
+        2.339413642883301,
+        11.845016479492188,
+        6.16033935546875
+      ],
+      "shape": "Block",
+      "size": [
+        0.31870269775390625,
+        2.261970043182373,
+        2.2130126953125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RR_wheel_trim",
+      "position": [
+        2.339573860168457,
+        11.845027923583984,
+        17.963348388671875
+      ],
+      "shape": "Block",
+      "size": [
+        0.31870269775390625,
+        2.261970043182373,
+        2.2130126953125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LF_wheel_trim",
+      "position": [
+        -5.903454780578613,
+        11.844829559326172,
+        6.160339832305908
+      ],
+      "shape": "Block",
+      "size": [
+        0.31870269775390625,
+        2.261970043182373,
+        2.2130126953125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FFB000",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LR_wheel_trim",
+      "position": [
+        -5.903637886047363,
+        11.844846725463867,
+        17.963348388671875
+      ],
+      "shape": "Block",
+      "size": [
+        0.318695068359375,
+        2.261970043182373,
+        2.2130126953125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "exhaust",
+      "position": [
+        -1.7819480895996094,
+        12.170674324035645,
+        21.323272705078125
+      ],
+      "shape": "Block",
+      "size": [
+        2.3508987426757812,
+        0.2407701015472412,
+        0.322998046875
+      ],
+      "transparency": 0
+    }
+  ],
+  "rootModelName": "Supercar (yellow)",
+  "totalPartsBeforeCap": 31,
+  "variantName": "Supercar (yellow)"
+}

@@ -1,0 +1,423 @@
+{
+  "bodyContainerName": "Body",
+  "partCount": 23,
+  "parts": [
+    {
+      "color": "#3E3E3E",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "trim_grey_dark",
+      "position": [
+        -16.983734130859375,
+        4.3716254234313965,
+        5.33026123046875
+      ],
+      "shape": "Block",
+      "size": [
+        9.3599853515625,
+        5.061050891876221,
+        16.744359970092773
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3E3E3E",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "trim_black",
+      "position": [
+        -16.986221313476562,
+        3.0593924522399902,
+        5.552887439727783
+      ],
+      "shape": "Block",
+      "size": [
+        7.8809967041015625,
+        2.8143937587738037,
+        14.873000144958496
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3E3E3E",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "interiior",
+      "position": [
+        -16.983734130859375,
+        4.7201714515686035,
+        5.803741455078125
+      ],
+      "shape": "Block",
+      "size": [
+        6.329986572265625,
+        5.602792739868164,
+        8.033710479736328
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Neon",
+      "name": "light_white",
+      "position": [
+        -16.983734130859375,
+        5.340843677520752,
+        1.9747624397277832
+      ],
+      "shape": "Block",
+      "size": [
+        5.239990234375,
+        4.208930969238281,
+        7.356750011444092
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#D1BEA6",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "fender_rear",
+      "position": [
+        -16.983734130859375,
+        3.6133430004119873,
+        10.258216857910156
+      ],
+      "shape": "Block",
+      "size": [
+        7.334014892578125,
+        3.106989860534668,
+        6.485309600830078
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#D1BEA6",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "fender_front",
+      "position": [
+        -16.983734130859375,
+        3.375406503677368,
+        0.5993962287902832
+      ],
+      "shape": "Block",
+      "size": [
+        6.10400390625,
+        2.783548355102539,
+        6.525819778442383
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "spare_tire",
+      "position": [
+        -16.990737915039062,
+        5.899283409118652,
+        12.08782958984375
+      ],
+      "shape": "Block",
+      "size": [
+        3,
+        1.4389100074768066,
+        3.034440040588379
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        -20.95071792602539,
+        2.001004219055176,
+        0.24508695304393768
+      ],
+      "shape": "Block",
+      "size": [
+        1.2140047550201416,
+        3,
+        3.000030517578125
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        -13.016748428344727,
+        2.000143527984619,
+        0.24520891904830933
+      ],
+      "shape": "Block",
+      "size": [
+        1.2140042781829834,
+        3,
+        3.000030040740967
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        -13.016749382019043,
+        2.0000131130218506,
+        11.131317138671875
+      ],
+      "shape": "Block",
+      "size": [
+        1.2140042781829834,
+        3,
+        3.000030040740967
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#A3A2A5",
+      "kind": "Part",
+      "material": "Plastic",
+      "name": "tire",
+      "position": [
+        -20.951725006103516,
+        2.000871419906616,
+        11.130950927734375
+      ],
+      "shape": "Block",
+      "size": [
+        1.2140047550201416,
+        3,
+        3.0000200271606445
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#79787A",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "exhaust",
+      "position": [
+        -16.983734130859375,
+        3.5824294090270996,
+        11.999603271484375
+      ],
+      "shape": "Block",
+      "size": [
+        6.57000732421875,
+        0.6806991100311279,
+        1.9452900886535645
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3C3C3D",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "spare_tire_wheel",
+      "position": [
+        -16.990219116210938,
+        6.139003276824951,
+        12.15936279296875
+      ],
+      "shape": "Block",
+      "size": [
+        1.6529998779296875,
+        0.7226896286010742,
+        1.6444497108459473
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3C3C3D",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RR_wheel",
+      "position": [
+        -12.77375316619873,
+        1.9997800588607788,
+        11.131195068359375
+      ],
+      "shape": "Block",
+      "size": [
+        0.5720062255859375,
+        1.6526540517807007,
+        1.6526598930358887
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3C3C3D",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LF_wheel",
+      "position": [
+        -21.194217681884766,
+        2.0011441707611084,
+        0.24502591788768768
+      ],
+      "shape": "Block",
+      "size": [
+        0.5709991455078125,
+        1.652662992477417,
+        1.6526603698730469
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3C3C3D",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RF_wheel",
+      "position": [
+        -12.773248672485352,
+        2.0000693798065186,
+        0.24526995420455933
+      ],
+      "shape": "Block",
+      "size": [
+        0.5709991455078125,
+        1.6526548862457275,
+        1.6526603698730469
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#3C3C3D",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LR_wheel",
+      "position": [
+        -21.19522476196289,
+        2.0010175704956055,
+        11.130919456481934
+      ],
+      "shape": "Block",
+      "size": [
+        0.5709991455078125,
+        1.6526530981063843,
+        1.6526598930358887
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#FF0000",
+      "kind": "Part",
+      "material": "Neon",
+      "name": "light_red",
+      "position": [
+        -16.983734130859375,
+        3.974506378173828,
+        12.697845458984375
+      ],
+      "shape": "Block",
+      "size": [
+        6.3699951171875,
+        0.38690996170043945,
+        0.500119686126709
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#B6B5B8",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "spare_tire_trim",
+      "position": [
+        -16.990234375,
+        6.431379318237305,
+        12.1650390625
+      ],
+      "shape": "Block",
+      "size": [
+        1.6409912109375,
+        0.20325994491577148,
+        1.6211895942687988
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#B6B5B8",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RF_wheel_trim",
+      "position": [
+        -12.467248916625977,
+        1.9963364601135254,
+        0.24526995420455933
+      ],
+      "shape": "Block",
+      "size": [
+        0.0670013427734375,
+        1.6310269832611084,
+        1.6404595375061035
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#B6B5B8",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "RR_wheel_trim",
+      "position": [
+        -12.467249870300293,
+        1.995780110359192,
+        11.131195068359375
+      ],
+      "shape": "Block",
+      "size": [
+        0.0670013427734375,
+        1.631032943725586,
+        1.6404500007629395
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#B6B5B8",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LF_wheel_trim",
+      "position": [
+        -21.50021743774414,
+        1.9974071979522705,
+        0.24502591788768768
+      ],
+      "shape": "Block",
+      "size": [
+        0.0670013427734375,
+        1.6310269832611084,
+        1.6404504776000977
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#B6B5B8",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "LR_wheel_trim",
+      "position": [
+        -21.500736236572266,
+        1.9972764253616333,
+        11.130919456481934
+      ],
+      "shape": "Block",
+      "size": [
+        0.066009521484375,
+        1.6310279369354248,
+        1.6404600143432617
+      ],
+      "transparency": 0
+    }
+  ],
+  "rootModelName": "Dune Buggy (beige)",
+  "totalPartsBeforeCap": 23,
+  "variantName": "Dune Buggy (beige)"
+}

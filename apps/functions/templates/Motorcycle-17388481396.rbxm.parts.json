@@ -1,0 +1,99 @@
+{
+  "bodyContainerName": "Body",
+  "partCount": 5,
+  "parts": [
+    {
+      "color": "#111111",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "MeshPart",
+      "position": [
+        -235.68572998046875,
+        3.0998010635375977,
+        -210.73634338378906
+      ],
+      "shape": "Block",
+      "size": [
+        2.3088903427124023,
+        3.9757022857666016,
+        4.86906099319458
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#111111",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "MeshPart",
+      "position": [
+        -236.62850952148438,
+        3.228997230529785,
+        -211.29441833496094
+      ],
+      "shape": "Block",
+      "size": [
+        1.7737637758255005,
+        3.673722267150879,
+        5.592555046081543
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#111111",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "MeshPart",
+      "position": [
+        -238.5341796875,
+        3.901230812072754,
+        -211.23362731933594
+      ],
+      "shape": "Block",
+      "size": [
+        3.2733027935028076,
+        2.509840250015259,
+        3.8924362659454346
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#111111",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "MeshPart",
+      "position": [
+        -237.04629516601562,
+        2.7332239151000977,
+        -211.22608947753906
+      ],
+      "shape": "Block",
+      "size": [
+        1.7112210988998413,
+        3.0679118633270264,
+        5.776111602783203
+      ],
+      "transparency": 0
+    },
+    {
+      "color": "#111111",
+      "kind": "Part",
+      "material": "SmoothPlastic",
+      "name": "MeshPart",
+      "position": [
+        -235.345703125,
+        1.7407317161560059,
+        -210.94932556152344
+      ],
+      "shape": "Block",
+      "size": [
+        0.12730538845062256,
+        1.2508493661880493,
+        3.033494710922241
+      ],
+      "transparency": 0
+    }
+  ],
+  "rootModelName": "Dirt bike.",
+  "totalPartsBeforeCap": 5,
+  "variantName": "Dirt bike."
+}
