@@ -44,6 +44,13 @@ FOLDERS_TO_ADD = {
     'CursedUGCResultView.swift',
     'CursedUGCSharePoster.swift',
   ],
+  'VoiceAura' => [
+    'VoiceAuraAPIClient.swift',
+    'VoiceAuraStudio.swift',
+    'VoiceAuraStudioView.swift',
+    'VoiceAuraResultView.swift',
+    'VoiceAuraSharePoster.swift',
+  ],
 }
 
 abort("Project not found at #{PROJECT_PATH}") unless File.directory?(PROJECT_PATH)

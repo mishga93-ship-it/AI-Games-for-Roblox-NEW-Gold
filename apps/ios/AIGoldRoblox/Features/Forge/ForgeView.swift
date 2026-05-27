@@ -118,6 +118,8 @@ struct ForgeView: View {
     @State private var isShowingOutfitStudio = false
     // Session 384 — Cursed UGC Modeler.
     @State private var isShowingCursedUGCStudio = false
+    // Session 385 — Voice-to-Aura.
+    @State private var isShowingVoiceAuraStudio = false
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -204,6 +206,9 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingCursedUGCStudio) {
             NavigationStack { CursedUGCStudioView() }
+        }
+        .fullScreenCover(isPresented: $isShowingVoiceAuraStudio) {
+            NavigationStack { VoiceAuraStudioView() }
         }
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
@@ -1321,6 +1326,12 @@ private extension ForgeView {
             isShowingCursedUGCStudio = true
             return
         }
+        if selectedOption.id == "voice_aura" {
+            isShowingProjectPicker = false
+            isShowingChatPicker = false
+            isShowingVoiceAuraStudio = true
+            return
+        }
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",
@@ -1363,6 +1374,15 @@ private extension ForgeView {
 
     var viralOptions: [ProjectOption] {
         [
+            ProjectOption(
+                id: "voice_aura",
+                title: "Voice-to-Aura",
+                details: isRussianInterface
+                    ? "Скажи или введи нужную auru — AI генерит концепт-картинку + безопасный Roblox Lua скрипт для частиц. Drop-in для Roblox Studio. «Aura like Sukuna but cooler»."
+                    : "Say or type the aura you want — AI generates the concept art + a safe Roblox Lua particle script. Drop-in for Roblox Studio. 'Aura like Sukuna but cooler'.",
+                kind: .content,
+                tags: ["new", "viral", "ai", "tiktok", "anime"]
+            ),
             ProjectOption(
                 id: "cursed_ugc",
                 title: "Giant & Cursed UGC Modeler",

@@ -76,6 +76,8 @@
 	<string>Allow this app to access your Photos library.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow this app to record voice prompts for AI transcription and game planning.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Allow this app to transcribe your voice into prompts for AI aura/effect generation.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

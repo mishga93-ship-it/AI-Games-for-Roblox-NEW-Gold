@@ -13,6 +13,7 @@
 		377B25250B6E8D2FEFCFFBFF /* CursedUGCAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EC5F33C52AC5931C386998 /* CursedUGCAPIClient.swift */; };
 		38D33571F10E8020727936A7 /* GlowupStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */; };
 		3C888E647FA964F3BE0A2562 /* OutfitStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACBFF49A8E26CF2719A9ADB8 /* OutfitStudio.swift */; };
+		4ED86AEF0D2E81D224BFF924 /* VoiceAuraResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC755C8DE56569944BFCEFE3 /* VoiceAuraResultView.swift */; };
 		521B99252F712F4200A973DE /* R15_men.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B99232F712F4200A973DE /* R15_men.obj */; };
 		521B99292F712FBF00A973DE /* R15_men.scn in Resources */ = {isa = PBXBuildFile; fileRef = 521B99282F712FBF00A973DE /* R15_men.scn */; };
 		521B992F2F71317B00A973DE /* women.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B992E2F71317B00A973DE /* women.obj */; };
@@ -24,6 +25,7 @@
 		526F84A72FA8A32500CB2F66 /* TikTokOpenShareSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 526F84A62FA8A32500CB2F66 /* TikTokOpenShareSDK */; };
 		536A1071B96ED2CC5B7B55EE /* CursedUGCResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6DC05E63C99E35689732B6D /* CursedUGCResultView.swift */; };
 		5D8589296E3FDB0AB484DA00 /* GlowupAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AE650C5D1A3D03B57FB514B /* GlowupAPIClient.swift */; };
+		6DDC7A3EB105299A7872DC57 /* VoiceAuraStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95F0451D899DF907E285FF3F /* VoiceAuraStudioView.swift */; };
 		7BBEB71B6524935845FB39A1 /* CursedUGCStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */; };
 		7C3C377CD963C3C3F50400CF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */; };
 		89035988E5CCC6A34689C4DA /* FakeLimitedRecipeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */; };
@@ -106,12 +108,15 @@
 		B001C4D1 /* BlockyPet3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C4D1 /* BlockyPet3DSceneView.swift */; };
 		B001C500 /* VoiceFirstOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C500 /* VoiceFirstOverlay.swift */; };
 		B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C5D1 /* BlockyFurniture3DSceneView.swift */; };
+		D5243D01B92D0947CBAFF83A /* VoiceAuraAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 535EB580241F044F1AD6AE64 /* VoiceAuraAPIClient.swift */; };
 		D76A784D0C82A1449CF30D5C /* CursedUGCSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F57880F376C5711A1E82062 /* CursedUGCSharePoster.swift */; };
+		D777D473179CAFFFD6A0C8FF /* VoiceAuraStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4760317000E26765FB9C912 /* VoiceAuraStudio.swift */; };
 		DC50831974D128D066E49DC0 /* GlowupStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */; };
 		DD8C3E25B616C916B6D3712E /* OutfitStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76EC5C18C78F2DDED682E861 /* OutfitStudioView.swift */; };
 		E1D34091A257C4AC016E9C25 /* OutfitResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEAB4BF2B533DF33B5B91DFE /* OutfitResultView.swift */; };
 		EAED78FB2F4108DE8F6ABA7A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 87F8C902F756A98F181E73B2 /* FirebaseCore */; };
 		F71843F8C6293040F593F202 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 83543555B341FB276A0DAE54 /* FirebaseAuth */; };
+		FE926696FE2920B8C1C20637 /* VoiceAuraSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93CC9039BD389C89CD1F97C1 /* VoiceAuraSharePoster.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -125,14 +130,19 @@
 		521B99302F71318700A973DE /* women.scn */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = women.scn; sourceTree = "<group>"; };
 		521B99322F7131CA00A973DE /* basic.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = basic.obj; sourceTree = "<group>"; };
 		521B99342F7131D300A973DE /* basic.scn */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = basic.scn; sourceTree = "<group>"; };
+		535EB580241F044F1AD6AE64 /* VoiceAuraAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraAPIClient.swift; sourceTree = "<group>"; };
 		6AE650C5D1A3D03B57FB514B /* GlowupAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupAPIClient.swift; sourceTree = "<group>"; };
 		76EC5C18C78F2DDED682E861 /* OutfitStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitStudioView.swift; sourceTree = "<group>"; };
+		93CC9039BD389C89CD1F97C1 /* VoiceAuraSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraSharePoster.swift; sourceTree = "<group>"; };
+		95F0451D899DF907E285FF3F /* VoiceAuraStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraStudioView.swift; sourceTree = "<group>"; };
 		ACBFF49A8E26CF2719A9ADB8 /* OutfitStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitStudio.swift; sourceTree = "<group>"; };
 		AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FakeLimitedRecipeCard.swift; sourceTree = "<group>"; };
 		AE5AD6306DB7FFD6BEFF02E0 /* OutfitAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitAPIClient.swift; sourceTree = "<group>"; };
 		AF4E508313D8D1C323688B4A /* OutfitSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitSharePoster.swift; sourceTree = "<group>"; };
 		BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudio.swift; sourceTree = "<group>"; };
+		C4760317000E26765FB9C912 /* VoiceAuraStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraStudio.swift; sourceTree = "<group>"; };
 		C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCStudioView.swift; sourceTree = "<group>"; };
+		DC755C8DE56569944BFCEFE3 /* VoiceAuraResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraResultView.swift; sourceTree = "<group>"; };
 		E0010000 /* AIGoldRoblox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIGoldRoblox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6DC05E63C99E35689732B6D /* CursedUGCResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCResultView.swift; sourceTree = "<group>"; };
 		E985E0D03312E2C86837EEAC /* GlowupResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupResultView.swift; sourceTree = "<group>"; };
@@ -246,6 +256,19 @@
 			);
 			name = CursedUGC;
 			path = CursedUGC;
+			sourceTree = "<group>";
+		};
+		2BCB3319580DDE28D7A28888 /* VoiceAura */ = {
+			isa = PBXGroup;
+			children = (
+				535EB580241F044F1AD6AE64 /* VoiceAuraAPIClient.swift */,
+				C4760317000E26765FB9C912 /* VoiceAuraStudio.swift */,
+				95F0451D899DF907E285FF3F /* VoiceAuraStudioView.swift */,
+				DC755C8DE56569944BFCEFE3 /* VoiceAuraResultView.swift */,
+				93CC9039BD389C89CD1F97C1 /* VoiceAuraSharePoster.swift */,
+			);
+			name = VoiceAura;
+			path = VoiceAura;
 			sourceTree = "<group>";
 		};
 		2EFBF205CD2EE9163F774830 /* Outfit */ = {
@@ -365,6 +388,7 @@
 				3DBC8835015C219196E96B77 /* FakeLimited */,
 				2EFBF205CD2EE9163F774830 /* Outfit */,
 				09B4744579CDE9EDB179A3F9 /* CursedUGC */,
+				2BCB3319580DDE28D7A28888 /* VoiceAura */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -824,6 +848,11 @@
 				7BBEB71B6524935845FB39A1 /* CursedUGCStudioView.swift in Sources */,
 				536A1071B96ED2CC5B7B55EE /* CursedUGCResultView.swift in Sources */,
 				D76A784D0C82A1449CF30D5C /* CursedUGCSharePoster.swift in Sources */,
+				D5243D01B92D0947CBAFF83A /* VoiceAuraAPIClient.swift in Sources */,
+				D777D473179CAFFFD6A0C8FF /* VoiceAuraStudio.swift in Sources */,
+				6DDC7A3EB105299A7872DC57 /* VoiceAuraStudioView.swift in Sources */,
+				4ED86AEF0D2E81D224BFF924 /* VoiceAuraResultView.swift in Sources */,
+				FE926696FE2920B8C1C20637 /* VoiceAuraSharePoster.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
