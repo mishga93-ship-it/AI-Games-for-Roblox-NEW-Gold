@@ -58,6 +58,13 @@ FOLDERS_TO_ADD = {
     'FittingRoomResultView.swift',
     'FittingRoomSharePoster.swift',
   ],
+  'DisasterSpawner' => [
+    'DisasterSpawnerAPIClient.swift',
+    'DisasterSpawnerStudio.swift',
+    'DisasterSpawnerStudioView.swift',
+    'DisasterSpawnerResultView.swift',
+    'DisasterSpawnerSharePoster.swift',
+  ],
 }
 
 abort("Project not found at #{PROJECT_PATH}") unless File.directory?(PROJECT_PATH)

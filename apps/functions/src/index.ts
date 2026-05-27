@@ -166,6 +166,14 @@ import { generateAura } from './auraGenerator.js';
 import { isAuraStyleId, parseAuraIntensity, parseAuraSize, parseAuraTone } from './data/auraStyles.js';
 // Session 386 — Zero-Robux UGC Fitting Room
 import { startFittingRoomJob, fetchFittingRoomDoc } from './fittingRoomRenderer.js';
+// Session 387 — Voice-Controlled Survival Disaster Spawner
+import { generateDisaster } from './disasterGenerator.js';
+import {
+  isDisasterMode,
+  parseDisasterChaos,
+  parseDisasterSize,
+  parseDisasterFrequency,
+} from './data/disasterStyles.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -1052,6 +1060,80 @@ app.get('/api/fitting-room/:id', async (req: AuthedRequest, res) => {
   } catch (err) {
     logger.error('[fitting-room] status failed', err);
     return res.status(500).json({ error: 'Failed to fetch fitting room status' });
+  }
+});
+
+// ─── Session 387 — Voice-Controlled Survival Disaster Spawner ───
+// Voice or text → AI generates concept art + safe Roblox Lua loop +
+// metadata + drop-in .rbxmx. Returns a single bundle (not progressive
+// like fitting-room) because the user expects a result in ~5-12s and
+// the heavy work (3 flux + Anthropic Lua + Anthropic metadata) runs in
+// parallel.
+
+app.post('/api/disaster-spawner/generate', async (req: AuthedRequest, res) => {
+  const firebaseUid = req.userId;
+  try {
+    const body = (req.body ?? {}) as {
+      prompt?: unknown; mode?: unknown; chaos?: unknown;
+      size?: unknown; frequency?: unknown; inputMode?: unknown;
+    };
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    if (!prompt) {
+      return res.status(400).json({ error: 'Missing prompt' });
+    }
+    if (!isDisasterMode(body.mode)) {
+      return res.status(400).json({ error: 'Invalid or missing mode' });
+    }
+    if (!firebaseUid) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/disaster-spawner/generate');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const userVerdict = await checkAndConsumeGlowupRateLimit(firebaseUid);
+    if (!userVerdict.allowed) {
+      return res.status(429).json({ error: 'rate_limited', reason: userVerdict.reason, retryAfterMs: userVerdict.retryAfterMs });
+    }
+
+    const inputMode = body.inputMode === 'voice' ? 'voice' as const : 'text' as const;
+
+    const result = await generateDisaster({
+      userPrompt: prompt,
+      mode: body.mode,
+      chaos: parseDisasterChaos(body.chaos),
+      size: parseDisasterSize(body.size),
+      frequency: parseDisasterFrequency(body.frequency),
+      inputMode,
+      firebaseUid,
+    });
+
+    recordGlowupEvent({
+      type: 'generation_success',
+      firebaseUid,
+      vibeId: body.mode,
+      meta: {
+        product: 'disaster_spawner',
+        chaos: result.chaos,
+        difficulty: result.difficulty,
+        usedFallback: result.usedFallback,
+        generationStatus: result.generationStatus,
+        inputMode,
+      },
+    });
+
+    return res.json(result);
+  } catch (err) {
+    logger.error('[disaster-spawner] generate failed', err);
+    if (firebaseUid) {
+      recordGlowupEvent({
+        type: 'generation_failed',
+        firebaseUid,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        meta: { product: 'disaster_spawner' },
+      });
+    }
+    return res.status(500).json({ error: 'Failed to generate disaster' });
   }
 });
 

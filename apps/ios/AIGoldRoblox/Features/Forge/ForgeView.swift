@@ -122,6 +122,8 @@ struct ForgeView: View {
     @State private var isShowingVoiceAuraStudio = false
     // Session 386 — Zero-Robux Fitting Room.
     @State private var isShowingFittingRoom = false
+    // Session 387 — Disaster Spawner.
+    @State private var isShowingDisasterSpawner = false
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -214,6 +216,9 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingFittingRoom) {
             NavigationStack { FittingRoomStudioView() }
+        }
+        .fullScreenCover(isPresented: $isShowingDisasterSpawner) {
+            NavigationStack { DisasterSpawnerStudioView() }
         }
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
@@ -1343,6 +1348,12 @@ private extension ForgeView {
             isShowingFittingRoom = true
             return
         }
+        if selectedOption.id == "disaster_spawner" {
+            isShowingProjectPicker = false
+            isShowingChatPicker = false
+            isShowingDisasterSpawner = true
+            return
+        }
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",
@@ -1385,6 +1396,15 @@ private extension ForgeView {
 
     var viralOptions: [ProjectOption] {
         [
+            ProjectOption(
+                id: "disaster_spawner",
+                title: "Voice-Controlled Disaster Spawner",
+                details: isRussianInterface
+                    ? "Скажи или введи свой disaster — AI генерит концепт-арт + safe Roblox Lua loop с auto-cleanup. «Spawn giant ducks every 45 sec». Drop-in .rbxmx для Studio."
+                    : "Say or type the disaster you want — AI cooks the concept art + a safe Roblox Lua loop with auto-cleanup. 'Spawn giant ducks every 45 sec'. Drop-in .rbxmx for Studio.",
+                kind: .content,
+                tags: ["new", "viral", "ai", "tiktok", "survival"]
+            ),
             ProjectOption(
                 id: "fitting_room",
                 title: "Zero-Robux Fitting Room",
