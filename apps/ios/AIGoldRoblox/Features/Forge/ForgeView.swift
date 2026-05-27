@@ -116,6 +116,8 @@ struct ForgeView: View {
     @State private var isShowingGlowupStudio = false
     // Session 383 — Outfit Generator (separate product from Glow-Up).
     @State private var isShowingOutfitStudio = false
+    // Session 384 — Cursed UGC Modeler.
+    @State private var isShowingCursedUGCStudio = false
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -199,6 +201,9 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingOutfitStudio) {
             NavigationStack { OutfitStudioView() }
+        }
+        .fullScreenCover(isPresented: $isShowingCursedUGCStudio) {
+            NavigationStack { CursedUGCStudioView() }
         }
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
@@ -1310,6 +1315,12 @@ private extension ForgeView {
             isShowingOutfitStudio = true
             return
         }
+        if selectedOption.id == "cursed_ugc" {
+            isShowingProjectPicker = false
+            isShowingChatPicker = false
+            isShowingCursedUGCStudio = true
+            return
+        }
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",
@@ -1352,6 +1363,15 @@ private extension ForgeView {
 
     var viralOptions: [ProjectOption] {
         [
+            ProjectOption(
+                id: "cursed_ugc",
+                title: "Giant & Cursed UGC Modeler",
+                details: isRussianInterface
+                    ? "AI генерит абсурдные cursed UGC-концепты: гигантские рюкзаки, безумные маски, brainrot-питомцы. Один тап → fake marketplace card готов для TikTok-шера. «bro Roblox needs to add this 💀»."
+                    : "AI cooks up absurd cursed UGC concepts: giant backpacks, weird masks, brainrot pets. One tap → fake marketplace card ready for TikTok share. 'bro Roblox needs to add this 💀'.",
+                kind: .content,
+                tags: ["new", "viral", "ai", "tiktok", "meme"]
+            ),
             ProjectOption(
                 id: "outfit_generator",
                 title: "1-Click Outfit Generator",

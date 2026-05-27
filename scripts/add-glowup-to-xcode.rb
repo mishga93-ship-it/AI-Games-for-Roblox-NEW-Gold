@@ -37,6 +37,13 @@ FOLDERS_TO_ADD = {
     'OutfitResultView.swift',
     'OutfitSharePoster.swift',
   ],
+  'CursedUGC' => [
+    'CursedUGCAPIClient.swift',
+    'CursedUGCStudio.swift',
+    'CursedUGCStudioView.swift',
+    'CursedUGCResultView.swift',
+    'CursedUGCSharePoster.swift',
+  ],
 }
 
 abort("Project not found at #{PROJECT_PATH}") unless File.directory?(PROJECT_PATH)

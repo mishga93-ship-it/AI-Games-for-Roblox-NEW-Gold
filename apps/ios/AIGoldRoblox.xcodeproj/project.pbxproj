@@ -10,6 +10,7 @@
 		001BE630E2EF6147E06B01E4 /* OutfitSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4E508313D8D1C323688B4A /* OutfitSharePoster.swift */; };
 		15E3019F2EFCB50EBA4583FA /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 78503588726555E66056D11D /* GoogleSignIn */; };
 		25890D9EE6A67CC7F950F596 /* GlowupResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E985E0D03312E2C86837EEAC /* GlowupResultView.swift */; };
+		377B25250B6E8D2FEFCFFBFF /* CursedUGCAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EC5F33C52AC5931C386998 /* CursedUGCAPIClient.swift */; };
 		38D33571F10E8020727936A7 /* GlowupStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */; };
 		3C888E647FA964F3BE0A2562 /* OutfitStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACBFF49A8E26CF2719A9ADB8 /* OutfitStudio.swift */; };
 		521B99252F712F4200A973DE /* R15_men.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B99232F712F4200A973DE /* R15_men.obj */; };
@@ -21,9 +22,12 @@
 		526F84A32FA8A32500CB2F66 /* TikTokOpenAuthSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 526F84A22FA8A32500CB2F66 /* TikTokOpenAuthSDK */; };
 		526F84A52FA8A32500CB2F66 /* TikTokOpenSDKCore in Frameworks */ = {isa = PBXBuildFile; productRef = 526F84A42FA8A32500CB2F66 /* TikTokOpenSDKCore */; };
 		526F84A72FA8A32500CB2F66 /* TikTokOpenShareSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 526F84A62FA8A32500CB2F66 /* TikTokOpenShareSDK */; };
+		536A1071B96ED2CC5B7B55EE /* CursedUGCResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6DC05E63C99E35689732B6D /* CursedUGCResultView.swift */; };
 		5D8589296E3FDB0AB484DA00 /* GlowupAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AE650C5D1A3D03B57FB514B /* GlowupAPIClient.swift */; };
+		7BBEB71B6524935845FB39A1 /* CursedUGCStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */; };
 		7C3C377CD963C3C3F50400CF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */; };
 		89035988E5CCC6A34689C4DA /* FakeLimitedRecipeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */; };
+		9BC7A330021EE297E0BACB22 /* CursedUGCStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41679A209C10DF2EB04F4BBA /* CursedUGCStudio.swift */; };
 		A4B9C3E12F5A07D3E8F1B604 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = D7E2F1A84C3B95E6F0A2D718 /* FirebaseMessaging */; };
 		A7F89BBBBC37FC75D4D9914B /* OutfitAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5AD6306DB7FFD6BEFF02E0 /* OutfitAPIClient.swift */; };
 		B0010001 /* AIGoldRobloxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010001 /* AIGoldRobloxApp.swift */; };
@@ -102,6 +106,7 @@
 		B001C4D1 /* BlockyPet3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C4D1 /* BlockyPet3DSceneView.swift */; };
 		B001C500 /* VoiceFirstOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C500 /* VoiceFirstOverlay.swift */; };
 		B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C5D1 /* BlockyFurniture3DSceneView.swift */; };
+		D76A784D0C82A1449CF30D5C /* CursedUGCSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F57880F376C5711A1E82062 /* CursedUGCSharePoster.swift */; };
 		DC50831974D128D066E49DC0 /* GlowupStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */; };
 		DD8C3E25B616C916B6D3712E /* OutfitStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76EC5C18C78F2DDED682E861 /* OutfitStudioView.swift */; };
 		E1D34091A257C4AC016E9C25 /* OutfitResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEAB4BF2B533DF33B5B91DFE /* OutfitResultView.swift */; };
@@ -110,6 +115,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		15EC5F33C52AC5931C386998 /* CursedUGCAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCAPIClient.swift; sourceTree = "<group>"; };
+		3F57880F376C5711A1E82062 /* CursedUGCSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCSharePoster.swift; sourceTree = "<group>"; };
+		41679A209C10DF2EB04F4BBA /* CursedUGCStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCStudio.swift; sourceTree = "<group>"; };
 		4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudioView.swift; sourceTree = "<group>"; };
 		521B99232F712F4200A973DE /* R15_men.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = R15_men.obj; sourceTree = "<group>"; };
 		521B99282F712FBF00A973DE /* R15_men.scn */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = R15_men.scn; sourceTree = "<group>"; };
@@ -124,7 +132,9 @@
 		AE5AD6306DB7FFD6BEFF02E0 /* OutfitAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitAPIClient.swift; sourceTree = "<group>"; };
 		AF4E508313D8D1C323688B4A /* OutfitSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitSharePoster.swift; sourceTree = "<group>"; };
 		BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudio.swift; sourceTree = "<group>"; };
+		C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCStudioView.swift; sourceTree = "<group>"; };
 		E0010000 /* AIGoldRoblox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIGoldRoblox.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E6DC05E63C99E35689732B6D /* CursedUGCResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCResultView.swift; sourceTree = "<group>"; };
 		E985E0D03312E2C86837EEAC /* GlowupResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupResultView.swift; sourceTree = "<group>"; };
 		EEAB4BF2B533DF33B5B91DFE /* OutfitResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitResultView.swift; sourceTree = "<group>"; };
 		F0010001 /* AIGoldRobloxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIGoldRobloxApp.swift; sourceTree = "<group>"; };
@@ -225,6 +235,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		09B4744579CDE9EDB179A3F9 /* CursedUGC */ = {
+			isa = PBXGroup;
+			children = (
+				15EC5F33C52AC5931C386998 /* CursedUGCAPIClient.swift */,
+				41679A209C10DF2EB04F4BBA /* CursedUGCStudio.swift */,
+				C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */,
+				E6DC05E63C99E35689732B6D /* CursedUGCResultView.swift */,
+				3F57880F376C5711A1E82062 /* CursedUGCSharePoster.swift */,
+			);
+			name = CursedUGC;
+			path = CursedUGC;
+			sourceTree = "<group>";
+		};
 		2EFBF205CD2EE9163F774830 /* Outfit */ = {
 			isa = PBXGroup;
 			children = (
@@ -341,6 +364,7 @@
 				5A21117D858AEE907750603A /* Glowup */,
 				3DBC8835015C219196E96B77 /* FakeLimited */,
 				2EFBF205CD2EE9163F774830 /* Outfit */,
+				09B4744579CDE9EDB179A3F9 /* CursedUGC */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -795,6 +819,11 @@
 				DD8C3E25B616C916B6D3712E /* OutfitStudioView.swift in Sources */,
 				E1D34091A257C4AC016E9C25 /* OutfitResultView.swift in Sources */,
 				001BE630E2EF6147E06B01E4 /* OutfitSharePoster.swift in Sources */,
+				377B25250B6E8D2FEFCFFBFF /* CursedUGCAPIClient.swift in Sources */,
+				9BC7A330021EE297E0BACB22 /* CursedUGCStudio.swift in Sources */,
+				7BBEB71B6524935845FB39A1 /* CursedUGCStudioView.swift in Sources */,
+				536A1071B96ED2CC5B7B55EE /* CursedUGCResultView.swift in Sources */,
+				D76A784D0C82A1449CF30D5C /* CursedUGCSharePoster.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
