@@ -139,11 +139,26 @@ function looksTruncatedOrEmpty(lua: string): boolean {
 const FALLBACK_LUA = `-- Safe fallback disaster (used when LLM generation didn't pass safety check)
 -- ServerScriptService → new Script → paste this → Play.
 local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
 local MAX_ALIVE = 30
-local INTERVAL = 30           -- seconds between disaster ticks
+local INTERVAL = 8            -- seconds between disaster ticks (short so you SEE it)
 local LIFETIME = 60           -- per-spawn TTL
 
 local alive = {}
+
+-- Pick a spawn point near a random player, fall back to origin if empty server.
+local function spawnAnchor()
+\tlocal players = Players:GetPlayers()
+\tfor _ = 1, #players do
+\t\tlocal p = players[math.random(1, #players)]
+\t\tlocal char = p and p.Character
+\t\tlocal hrp = char and char:FindFirstChild("HumanoidRootPart")
+\t\tif hrp then
+\t\t\treturn hrp.Position + Vector3.new(math.random(-40, 40), 80, math.random(-40, 40))
+\t\tend
+\tend
+\treturn Vector3.new(math.random(-50, 50), 80, math.random(-50, 50))
+end
 
 local function spawnEntity()
 \t-- Population cap: kill oldest if at capacity.
@@ -152,23 +167,27 @@ local function spawnEntity()
 \t\tif old and old.Parent then old:Destroy() end
 \tend
 
+\tlocal pos = spawnAnchor()
 \tlocal p = Instance.new("Part")
 \tp.Size = Vector3.new(6, 6, 6)
-\tp.Position = Vector3.new(math.random(-100, 100), 80, math.random(-100, 100))
+\tp.Position = pos
 \tp.Color = Color3.fromRGB(255, math.random(60, 200), 60)
 \tp.Material = Enum.Material.Neon
 \tp.Anchored = false
 \tp.Parent = workspace
 \ttable.insert(alive, p)
+\tprint("[DisasterSpawner] spawned @ " .. tostring(pos))
 
 \tDebris:AddItem(p, LIFETIME)
 end
 
+print("[DisasterSpawner] fallback loaded — first event in 2s, then every " .. INTERVAL .. "s")
+task.wait(2)
 while true do
-\ttask.wait(INTERVAL)
 \tfor _ = 1, 3 do
 \t\tspawnEntity()
 \tend
+\ttask.wait(INTERVAL)
 end
 `;
 
