@@ -2758,7 +2758,11 @@ function buildVehicleModelManifest(
         scriptType: 'Script',
         container: 'WorkspaceRoot',
         source: buildVehicleTemplateLoaderScript({
-          templateAssetId: vehicleTemplateAssetId,
+          // Round 20L v15-fix7: TS narrow — outer if checks bytes, else
+          // means runtime-load fallback. assetId may be undefined when no
+          // bytes AND no assetId (shouldn't happen in practice, but TS
+          // needs explicit narrow). 0 is the "invalid sentinel".
+          templateAssetId: vehicleTemplateAssetId ?? 0,
           templateLabel: tplLabel,
           preferredVariant: tplPreferred,
           variantFallbacks: tplFallbacks,
