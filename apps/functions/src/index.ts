@@ -27303,6 +27303,36 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                   if (extracted === null) {
                     logger.info('[Weapon mesh] Engine API not configured — keeping runtime InsertService loader', { jobId: job.id });
                   } else if (extracted.state === 'COMPLETE' && extracted.meshId) {
+                    // CRITICAL (session 386 round 2): Open Cloud upload of a Model
+                    // creates an inner Mesh asset that defaults to "restricted"
+                    // privacy. Without grantAssetOpenUse on the inner mesh,
+                    // non-owner Studio sessions (and any place whose creator ≠
+                    // ROBLOX_CREATOR_ID) get HTTP 403 when fetching the mesh →
+                    // SpecialMesh.MeshId renders as nothing (Handle stays its
+                    // raw Cylinder shape, often invisible because the AI mesh
+                    // Handle is sized [0.5, 0.8, 3]). Same fix vehicles use
+                    // (index.ts:28633). Engine API key is the apiKey we already
+                    // resolved for the upload above.
+                    const grantApiKey = robloxAuth ? null : systemApiKey;
+                    if (grantApiKey) {
+                      try {
+                        const meshGranted = await grantAssetOpenUse({ apiKey: grantApiKey, assetId: extracted.meshId });
+                        if (!meshGranted) {
+                          logger.warn('[Weapon mesh] grantAssetOpenUse returned false — mesh may render invisible in non-owner Studio', {
+                            jobId: job.id, meshId: extracted.meshId,
+                          });
+                        }
+                        if (extracted.textureId) {
+                          try { await grantAssetOpenUse({ apiKey: grantApiKey, assetId: extracted.textureId }); } catch { /* non-fatal */ }
+                        }
+                      } catch (grantErr) {
+                        logger.warn('[Weapon mesh] grantAssetOpenUse threw — mesh may render invisible in non-owner Studio', {
+                          jobId: job.id, meshId: extracted.meshId, error: errorMessage(grantErr),
+                        });
+                      }
+                    } else {
+                      logger.info('[Weapon mesh] no system Open Cloud key — skipping grantAssetOpenUse (user OAuth upload — assumed already accessible to owner)', { jobId: job.id });
+                    }
                     currentJob.metadata = {
                       ...(currentJob.metadata ?? {}),
                       weaponRealMeshId: `${extracted.meshId}`,
