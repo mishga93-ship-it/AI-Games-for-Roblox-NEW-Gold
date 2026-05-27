@@ -123,12 +123,33 @@ private struct AuraInputSection: View {
                 Spacer()
             }
 
-            TextEditor(text: $studio.prompt)
-                .font(.appBody)
-                .frame(minHeight: 80, maxHeight: 120)
-                .padding(8)
-                .background(Color.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+            ZStack(alignment: .topLeading) {
+                // .scrollContentBackground(.hidden) is needed on iOS 16+ to
+                // hide the system default TextEditor background (which
+                // renders as a black block on some configurations) so our
+                // own .cardBackground shows through.
+                TextEditor(text: $studio.prompt)
+                    .font(.appBody)
+                    .foregroundColor(.textPrimary)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 4)
+                    .frame(minHeight: 80, maxHeight: 120)
+                if studio.prompt.isEmpty {
+                    Text(loc(en: "Type or speak the aura you want…",
+                             ru: "Введи или скажи какую auru хочешь…"))
+                        .font(.appBody)
+                        .foregroundColor(.textSecondary.opacity(0.6))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 12)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(4)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.bubbleBorder.opacity(0.25), lineWidth: 1))
         }
     }
 
