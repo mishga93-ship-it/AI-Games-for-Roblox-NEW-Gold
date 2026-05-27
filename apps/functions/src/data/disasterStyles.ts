@@ -110,6 +110,12 @@ export interface DisasterPromptInput {
   chaos: DisasterChaosLevel;
   size: DisasterSize;
   frequency: DisasterFrequency;
+  /** Optional event title from metadata pass (e.g. "Banana Rain Apocalypse").
+   * When present, the Lua prompt requires spawn entities to LITERALLY match
+   * the nouns in the title — otherwise the LLM picks generic "Brainrot
+   * Approved" objects (ducks/toilets/fridges) that don't match the concept
+   * art or the shareable title the user sees in the UI. */
+  title?: string;
 }
 
 export function buildDisasterImagePrompt(input: DisasterPromptInput, variation?: 'balanced' | 'extreme' | 'cursed'): string {
@@ -145,6 +151,9 @@ export function buildDisasterLuaPrompt(input: DisasterPromptInput): string {
   const userClause = input.userPrompt.trim()
     ? `\nUser brief: "${input.userPrompt.trim().slice(0, 240)}"`
     : '';
+  const titleClause = input.title && input.title.trim()
+    ? `\nEvent title (shown to the user in the app): "${input.title.trim()}"\n→ THIS IS THE CONTRACT. The spawned objects MUST be literally what the title describes. If the title is "Banana Rain Apocalypse", you spawn yellow banana-shaped Parts. If it is "Giant Spider Invasion", you spawn spider-shaped Parts. NEVER ship a script with rubber ducks when the title says bananas — the user will see a mismatch between the concept art and the actual game.`
+    : '';
   return [
     'You are a SAFE Roblox Lua disaster-spawner generator. Output ONLY a complete Lua script wrapped in ```lua ... ``` — no preamble.',
     '',
@@ -152,7 +161,7 @@ export function buildDisasterLuaPrompt(input: DisasterPromptInput): string {
     `Mode: ${mode.titleEN}. Theme hint: ${mode.themeHint}`,
     `Chaos level: ${input.chaos}. ${CHAOS_GUIDANCE[input.chaos]}`,
     `Size: ${input.size}. ${SIZE_GUIDANCE[input.size]}`,
-    `Frequency: ${input.frequency}. ${FREQUENCY_GUIDANCE[input.frequency]}${userClause}`,
+    `Frequency: ${input.frequency}. ${FREQUENCY_GUIDANCE[input.frequency]}${titleClause}${userClause}`,
     '',
     'STRICT RULES (the script will be deployed by a beginner — must be safe):',
     '1) Place the Script in ServerScriptService. Single file.',

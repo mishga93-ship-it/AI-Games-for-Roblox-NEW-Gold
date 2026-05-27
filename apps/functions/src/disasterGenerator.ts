@@ -197,6 +197,7 @@ async function generateLuaScript(input: {
   chaos: DisasterChaosLevel;
   size: DisasterSize;
   frequency: DisasterFrequency;
+  title?: string;
 }): Promise<{ lua: string; usedFallback: boolean }> {
   const prompt = buildDisasterLuaPrompt(input);
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -350,12 +351,20 @@ export async function generateDisaster(input: DisasterGenerateInput): Promise<Di
   const extremePrompt  = buildDisasterImagePrompt(baseInput, 'extreme');
   const cursedPrompt   = buildDisasterImagePrompt(baseInput, 'cursed');
 
-  const [previewUrl, extremeUrl, cursedUrl, luaResult, meta] = await Promise.all([
+  // PHASE 1: metadata first (short ~5s call). We need meta.titleEN before
+  // generating the Lua, otherwise the spawn entities don't match the title
+  // shown in the app — e.g. "Banana Rain Apocalypse" shipped a script that
+  // spawned rubber ducks / toilets / fridges, because the Lua LLM never saw
+  // the title. (User repro: BananaRainApocalypse.rbxmx → "по факту камни
+  // падают не одного банана".)
+  const meta = await generateMetadata({ userPrompt: input.userPrompt, modeId: input.mode, chaos: input.chaos });
+
+  // PHASE 2: 3 flux images + Lua (now with title) in parallel.
+  const [previewUrl, extremeUrl, cursedUrl, luaResult] = await Promise.all([
     fluxToSignedUrl({ prompt: mainPrompt,    firebaseUid: input.firebaseUid, filename: 'main.png' }),
     fluxToSignedUrl({ prompt: extremePrompt, firebaseUid: input.firebaseUid, filename: 'extreme.png' }),
     fluxToSignedUrl({ prompt: cursedPrompt,  firebaseUid: input.firebaseUid, filename: 'cursed.png' }),
-    generateLuaScript(baseInput),
-    generateMetadata({ userPrompt: input.userPrompt, modeId: input.mode, chaos: input.chaos }),
+    generateLuaScript({ ...baseInput, title: meta.titleEN }),
   ]);
 
   const rbxmxUrl = await uploadRbxmx({
