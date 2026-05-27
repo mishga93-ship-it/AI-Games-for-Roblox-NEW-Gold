@@ -23944,48 +23944,21 @@ if AI_MESH_MODEL_ID > 0 then
 \t\t-- that's perpendicular to blade direction in world (sideways through the
 \t\t-- character body), so the visual was wrong. Non-blade path (ranged/staff)
 \t\t-- still uses the same Z→barrel-forward convention via session 199 ranged fix.
-\t\tlocal orientCF
-\t\tlocal axisTag
-\t\tif size.Y >= size.X and size.Y >= size.Z then
-\t\t\tif BLADE_LIKE_WEAPON then
-\t\t\t\t-- mesh +Y -> primary +Z = Handle's +Z = blade-direction
-\t\t\t\torientCF = CFrame.Angles(math.pi / 2, 0, 0)
-\t\t\t\taxisTag = "Y→Z(blade)"
-\t\t\telse
-\t\t\t\torientCF = CFrame.Angles(math.pi / 2, 0, 0)
-\t\t\t\taxisTag = "Y(+π/2 staff/ranged)"
-\t\t\tend
-\t\telseif size.Z >= size.X then
-\t\t\tif BLADE_LIKE_WEAPON then
-\t\t\t\t-- mesh +Z already aligned with primary +Z; no rotation
-\t\t\t\torientCF = CFrame.new()
-\t\t\t\taxisTag = "Z(blade)"
-\t\t\telse
-\t\t\t\torientCF = CFrame.new()
-\t\t\t\taxisTag = "Z(compensated)"
-\t\t\tend
-\t\telse
-\t\t\tif BLADE_LIKE_WEAPON then
-\t\t\t\t-- mesh +X -> primary +Z (rotate -π/2 around Y)
-\t\t\t\torientCF = CFrame.Angles(0, -math.pi / 2, 0)
-\t\t\t\taxisTag = "X→Z(blade)"
-\t\t\telse
-\t\t\t\torientCF = CFrame.Angles(0, 0, math.pi / 2)
-\t\t\t\taxisTag = "X(compensated)"
-\t\t\tend
-\t\tend
-
-\t\t-- Session 207: pivot RELATIVE to Handle so the WeldConstraint freezes a clean
-\t\t-- offset; when Handle moves to the hand on equip the mesh follows. Center the
-\t\t-- mesh at Handle.origin (no extra hiltShift) — same convention as the built-in
-\t\t-- ClassicSword sword.mesh, which is centered on Handle and relies on Tool.Grip's
-\t\t-- (0, 0, -1.5) Z-offset to push the visual forward of the hand. Trying to anchor
-\t\t-- the hilt manually requires knowing each mesh's hilt-end convention (varies by
-\t\t-- exporter), and getting it wrong sent the blade through the body or off to the
-\t\t-- side in sessions 205/206. Centered behaviour matches the reference baseline.
+\t\t-- Session 386 round 4: drop the longest-axis auto-detect that tipped meshes
+\t\t-- onto their side, and instead anchor the BOTTOM of the mesh bbox at the
+\t\t-- Handle's origin. AI providers (Meshy/Tripo) export weapons with handle/hilt
+\t\t-- at the bottom Y of the mesh in their local coordinate system, so by lifting
+\t\t-- the mesh up by half its height we place the hilt in the player's hand and
+\t\t-- let the blade/barrel/body extend upward (and Tool.Grip rotates that "up"
+\t\t-- into the natural hold direction for the weapon class). This single rule
+\t\t-- works for both blade-like (sword/katana/spatula-katana) and ranged staff
+\t\t-- shapes — replaces the four-branch convention that varied by bbox proportion.
+\t\tlocal orientCF = CFrame.new()
+\t\tlocal axisTag = "identity"
 \t\ttmp:PivotTo(Handle.CFrame * orientCF)
+\t\ttmp:TranslateBy(Handle.CFrame.UpVector * (size.Y / 2))
 \t\tif BLADE_LIKE_WEAPON then
-\t\t\taxisTag = axisTag .. "/handle-relative-centered"
+\t\t\taxisTag = axisTag .. "/bottom-anchored"
 \t\tend
 
 \t\t-- Hide the manifest's built-in sword mesh; AI mesh takes over visually.
