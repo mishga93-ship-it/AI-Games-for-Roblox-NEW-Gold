@@ -14,6 +14,7 @@
 import { logger } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
 import { generatePreviewTexture, runChatProvider } from './providers.js';
+import { wrapGenericScriptAsRbxmx } from './uiTemplates.js';
 import {
   buildAuraImagePrompt,
   buildAuraLuaPrompt,
@@ -42,17 +43,39 @@ async function bucket() {
   return _bucket;
 }
 
-async function uploadSigned(args: { firebaseUid: string; filename: string; buf: Buffer }): Promise<string> {
+async function uploadSigned(args: { firebaseUid: string; filename: string; buf: Buffer; contentType?: string }): Promise<string> {
   const b = await bucket();
   const path = `voice-aura/${args.firebaseUid}/${Date.now()}-${args.filename}`;
   const file = b.file(path);
-  await file.save(args.buf, { contentType: 'image/png', resumable: false });
+  await file.save(args.buf, { contentType: args.contentType ?? 'image/png', resumable: false });
   const [url] = await file.getSignedUrl({
     version: 'v4',
     action: 'read',
     expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
   });
   return url;
+}
+
+/**
+ * Wrap the Lua source in a .rbxmx model file (Server Script targeting
+ * ServerScriptService) and upload it. User drag-and-drops the file into
+ * Roblox Studio — Script appears auto-parented, no copy-paste needed.
+ */
+async function uploadRbxmx(args: { firebaseUid: string; lua: string; title: string }): Promise<string | undefined> {
+  try {
+    const scriptName = args.title.replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) || 'AuraScript';
+    const rbxmxXml = wrapGenericScriptAsRbxmx(args.lua, scriptName, 'ServerScriptService', 'Script');
+    const buf = Buffer.from(rbxmxXml, 'utf8');
+    return await uploadSigned({
+      firebaseUid: args.firebaseUid,
+      filename: `${scriptName}.rbxmx`,
+      buf,
+      contentType: 'application/xml',
+    });
+  } catch (err) {
+    logger.warn('[auraGenerator] rbxmx upload failed', { err: err instanceof Error ? err.message : String(err) });
+    return undefined;
+  }
 }
 
 async function fluxToSignedUrl(args: { prompt: string; firebaseUid: string; filename: string }): Promise<string | undefined> {
@@ -225,7 +248,8 @@ async function generateMetadata(args: {
 function buildSetupInstructions(en: boolean): string[] {
   if (en) {
     return [
-      'Open Roblox Studio with your place.',
+      'FASTEST: Download the .rbxmx file → open Roblox Studio → drag the file into ServerScriptService. The Script auto-parents. Press Play (▶). Done.',
+      'OR MANUAL: Open Roblox Studio with your place.',
       'In the Explorer panel, find ServerScriptService.',
       'Right-click → Insert Object → Script.',
       'Paste the Lua code below into that Script.',
@@ -234,7 +258,8 @@ function buildSetupInstructions(en: boolean): string[] {
     ];
   }
   return [
-    'Открой Roblox Studio со своим place.',
+    'БЫСТРО: Скачай .rbxmx файл → открой Roblox Studio → перетащи файл в ServerScriptService. Script появится сам. Нажми Play (▶). Готово.',
+    'ИЛИ ВРУЧНУЮ: Открой Roblox Studio со своим place.',
     'В Explorer найди ServerScriptService.',
     'Правый клик → Insert Object → Script.',
     'Вставь Lua-код ниже в этот Script.',
@@ -264,6 +289,12 @@ export interface AuraGenerateResult extends AuraMetadata {
   previewUrl?: string;
   variations: Array<{ label: 'op' | 'cursed'; imageUrl?: string }>;
   luaScript: string;
+  /**
+   * Drag-and-drop .rbxmx model wrapping the Lua as a Script targeting
+   * ServerScriptService. User drops this file into Roblox Studio and the
+   * Script auto-appears — no copy-paste flow needed.
+   */
+  rbxmxUrl?: string;
   safeUsedFallback: boolean;
   instructionsEN: string[];
   instructionsRU: string[];
@@ -286,6 +317,15 @@ export async function generateAura(input: AuraGenerateInput): Promise<AuraGenera
     generateMetadata({ userPrompt: input.userPrompt, styleId: input.style, intensity: input.intensity }),
   ]);
 
+  // Wrap the Lua as a drag-drop .rbxmx so the user has both flows:
+  // (a) Copy Lua → paste into Roblox Studio Script, OR
+  // (b) Download .rbxmx → drag into Studio → Script auto-parents.
+  const rbxmxUrl = await uploadRbxmx({
+    firebaseUid: input.firebaseUid,
+    lua: luaResult.lua,
+    title: meta.titleEN,
+  });
+
   const status: 'ready' | 'partial' | 'failed' =
     previewUrl ? (opUrl && cursedUrl ? 'ready' : 'partial') : 'failed';
 
@@ -301,6 +341,7 @@ export async function generateAura(input: AuraGenerateInput): Promise<AuraGenera
       { label: 'cursed', imageUrl: cursedUrl },
     ],
     luaScript: luaResult.lua,
+    rbxmxUrl,
     safeUsedFallback: luaResult.safeUsedFallback,
     instructionsEN: buildSetupInstructions(true),
     instructionsRU: buildSetupInstructions(false),

@@ -195,6 +195,33 @@ final class VoiceAuraStudio: NSObject, ObservableObject {
         UIApplication.shared.open(url)
     }
 
+    /// Download the .rbxmx model from backend and push it to the iOS Share
+    /// Sheet — user can save to Files / iCloud Drive / AirDrop to Mac
+    /// (where Roblox Studio runs) → drag into ServerScriptService.
+    func shareRbxmx(urlString: String?) {
+        guard let urlString, let url = URL(string: urlString) else {
+            toast(loc(en: "No .rbxmx file generated for this aura.",
+                      ru: "Нет .rbxmx для этой ауры."))
+            return
+        }
+        Task { @MainActor in
+            do {
+                let (tmpUrl, _) = try await URLSession.shared.download(from: url)
+                // Move to a meaningful name so the share sheet shows e.g. CrimsonAura.rbxmx
+                let suggestedName = (urlString.split(separator: "?").first.map(String.init) ?? "")
+                    .split(separator: "/").last.map(String.init)
+                    ?? "Aura.rbxmx"
+                let dest = FileManager.default.temporaryDirectory.appendingPathComponent(suggestedName)
+                try? FileManager.default.removeItem(at: dest)
+                try FileManager.default.moveItem(at: tmpUrl, to: dest)
+                presentActivitySheet(items: [dest])
+            } catch {
+                toast(loc(en: "Download failed: \(error.localizedDescription)",
+                          ru: "Загрузка не удалась: \(error.localizedDescription)"))
+            }
+        }
+    }
+
     func savePreviewToPhotos(urlString: String?) {
         guard let urlString, let url = URL(string: urlString) else {
             toast(loc(en: "Bad URL — can't save.", ru: "Некорректный URL."))

@@ -14,7 +14,10 @@ import UIKit
 struct VoiceAuraResultView: View {
     @ObservedObject var studio: VoiceAuraStudio
     let response: AuraGenerationResponse
-    @State private var luaExpanded = true
+    /// Lua block defaults COLLAPSED — primary path is the .rbxmx
+    /// drag-and-drop card above. Lua expands only if user explicitly wants
+    /// manual paste flow.
+    @State private var luaExpanded = false
     @State private var instructionsExpanded = false
 
     var body: some View {
@@ -23,7 +26,8 @@ struct VoiceAuraResultView: View {
                 heroCard
                 titleAndStats
                 shareButton
-                luaSection
+                dropInRbxmxCard           // ← drag-and-drop file (PRIMARY path)
+                luaSection                // ← manual copy-paste (alt path)
                 instructionsSection
                 variationsStrip
                 makeMoreOPButton
@@ -32,6 +36,50 @@ struct VoiceAuraResultView: View {
             .padding(.horizontal, 16)
             .padding(.top, 60)
             .padding(.bottom, 30)
+        }
+    }
+
+    /// PRIMARY "use in Studio" path: download the .rbxmx → drag into
+    /// ServerScriptService → Script auto-parents. Much friendlier than
+    /// copy-paste for beginners.
+    @ViewBuilder
+    private var dropInRbxmxCard: some View {
+        if let urlStr = response.rbxmxUrl {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.doc.fill")
+                        .foregroundColor(.green)
+                    Text(loc(en: "Drag-and-drop into Studio", ru: "Drag-and-drop в Studio"))
+                        .font(.appHeadline)
+                        .foregroundColor(.textPrimary)
+                    Spacer()
+                    Text(loc(en: "FASTEST", ru: "БЫСТРО"))
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                }
+                Text(loc(
+                    en: "Download the .rbxmx → open Roblox Studio → drag into ServerScriptService. Script auto-appears. Press Play. Done.",
+                    ru: "Скачай .rbxmx → открой Roblox Studio → перетащи в ServerScriptService. Script появится сам. Нажми Play. Готово."
+                ))
+                    .font(.appCaption)
+                    .foregroundColor(.textSecondary)
+                Button(action: { studio.shareRbxmx(urlString: urlStr) }) {
+                    Label(loc(en: "Download .rbxmx", ru: "Скачать .rbxmx"), systemImage: "square.and.arrow.down.fill")
+                        .font(.appHeadline.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(LinearGradient(colors: [.green, .teal], startPoint: .leading, endPoint: .trailing))
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .padding(12)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.4), lineWidth: 1.5))
         }
     }
 
@@ -114,10 +162,10 @@ struct VoiceAuraResultView: View {
     private var luaSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: { withAnimation { luaExpanded.toggle() } }) {
-                HStack {
+                HStack(spacing: 6) {
                     Image(systemName: "chevron.left.forwardslash.chevron.right")
                         .foregroundColor(.accentPrimary)
-                    Text(loc(en: "Roblox Lua Script", ru: "Roblox Lua Script"))
+                    Text(loc(en: "Or copy Lua manually", ru: "Или скопируй Lua вручную"))
                         .font(.appHeadline).foregroundColor(.textPrimary)
                     Spacer()
                     Image(systemName: luaExpanded ? "chevron.up" : "chevron.down")

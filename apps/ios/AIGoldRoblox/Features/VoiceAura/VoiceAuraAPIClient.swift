@@ -110,6 +110,9 @@ struct AuraGenerationResponse: Codable {
     let previewUrl: String?
     let variations: [AuraVariation]
     let luaScript: String
+    /// Drag-and-drop .rbxmx (XML model) wrapping the Lua. Optional; if
+    /// backend failed to upload the wrapper, falls back to copy-paste UX.
+    let rbxmxUrl: String?
     let safeUsedFallback: Bool
     let instructionsEN: [String]
     let instructionsRU: [String]
