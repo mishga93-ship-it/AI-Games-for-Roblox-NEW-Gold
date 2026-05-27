@@ -14,6 +14,7 @@
 		2DEF776E1B7A9CC8FC5DE4D2 /* FittingRoomAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3DFDBDFD69BB149E5B20418 /* FittingRoomAPIClient.swift */; };
 		377B25250B6E8D2FEFCFFBFF /* CursedUGCAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EC5F33C52AC5931C386998 /* CursedUGCAPIClient.swift */; };
 		38D33571F10E8020727936A7 /* GlowupStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */; };
+		3A0FB0D11CD12C9C3151336F /* DisasterSpawnerStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCEFEBD3C2196F9ABCB8A060 /* DisasterSpawnerStudioView.swift */; };
 		3C888E647FA964F3BE0A2562 /* OutfitStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACBFF49A8E26CF2719A9ADB8 /* OutfitStudio.swift */; };
 		4ED86AEF0D2E81D224BFF924 /* VoiceAuraResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC755C8DE56569944BFCEFE3 /* VoiceAuraResultView.swift */; };
 		521B99252F712F4200A973DE /* R15_men.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B99232F712F4200A973DE /* R15_men.obj */; };
@@ -31,7 +32,9 @@
 		6DDC7A3EB105299A7872DC57 /* VoiceAuraStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95F0451D899DF907E285FF3F /* VoiceAuraStudioView.swift */; };
 		7BBEB71B6524935845FB39A1 /* CursedUGCStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */; };
 		7C3C377CD963C3C3F50400CF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */; };
+		84D9A5D8A68F34206816ABCE /* DisasterSpawnerSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7791B40F5B81DD8EA8D2384D /* DisasterSpawnerSharePoster.swift */; };
 		89035988E5CCC6A34689C4DA /* FakeLimitedRecipeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */; };
+		89184007676BFB4DCAC0E597 /* DisasterSpawnerAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C80E30CB0218ECF1C44336B /* DisasterSpawnerAPIClient.swift */; };
 		97C26B5DB939F5A66B123723 /* FittingRoomResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45354474DFD78C6A56B51118 /* FittingRoomResultView.swift */; };
 		9BC7A330021EE297E0BACB22 /* CursedUGCStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41679A209C10DF2EB04F4BBA /* CursedUGCStudio.swift */; };
 		A4B9C3E12F5A07D3E8F1B604 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = D7E2F1A84C3B95E6F0A2D718 /* FirebaseMessaging */; };
@@ -113,12 +116,14 @@
 		B001C500 /* VoiceFirstOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C500 /* VoiceFirstOverlay.swift */; };
 		B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C5D1 /* BlockyFurniture3DSceneView.swift */; };
 		B4DAB3D069EFB868C0849B9E /* FittingRoomStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 283042B7E3E14134A9F3EB66 /* FittingRoomStudio.swift */; };
+		C5159EC0F50CD96C90195EB4 /* DisasterSpawnerResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B492635C29A79A9E7F35A327 /* DisasterSpawnerResultView.swift */; };
 		D5243D01B92D0947CBAFF83A /* VoiceAuraAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 535EB580241F044F1AD6AE64 /* VoiceAuraAPIClient.swift */; };
 		D76A784D0C82A1449CF30D5C /* CursedUGCSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F57880F376C5711A1E82062 /* CursedUGCSharePoster.swift */; };
 		D777D473179CAFFFD6A0C8FF /* VoiceAuraStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4760317000E26765FB9C912 /* VoiceAuraStudio.swift */; };
 		DC50831974D128D066E49DC0 /* GlowupStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */; };
 		DD8C3E25B616C916B6D3712E /* OutfitStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76EC5C18C78F2DDED682E861 /* OutfitStudioView.swift */; };
 		E1D34091A257C4AC016E9C25 /* OutfitResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEAB4BF2B533DF33B5B91DFE /* OutfitResultView.swift */; };
+		E87D4EC327CB6543AEAD96B1 /* DisasterSpawnerStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DE6D3A0B3EA6507E9FCF166 /* DisasterSpawnerStudio.swift */; };
 		EAED78FB2F4108DE8F6ABA7A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 87F8C902F756A98F181E73B2 /* FirebaseCore */; };
 		F71843F8C6293040F593F202 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 83543555B341FB276A0DAE54 /* FirebaseAuth */; };
 		FE926696FE2920B8C1C20637 /* VoiceAuraSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93CC9039BD389C89CD1F97C1 /* VoiceAuraSharePoster.swift */; };
@@ -130,6 +135,7 @@
 		3F57880F376C5711A1E82062 /* CursedUGCSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCSharePoster.swift; sourceTree = "<group>"; };
 		41679A209C10DF2EB04F4BBA /* CursedUGCStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCStudio.swift; sourceTree = "<group>"; };
 		45354474DFD78C6A56B51118 /* FittingRoomResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomResultView.swift; sourceTree = "<group>"; };
+		4C80E30CB0218ECF1C44336B /* DisasterSpawnerAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisasterSpawnerAPIClient.swift; sourceTree = "<group>"; };
 		4D37D5DE0713EEE84C88A0B4 /* GlowupStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudioView.swift; sourceTree = "<group>"; };
 		4D3B59C9E269672A4FAC86B2 /* FittingRoomSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomSharePoster.swift; sourceTree = "<group>"; };
 		521B99232F712F4200A973DE /* R15_men.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = R15_men.obj; sourceTree = "<group>"; };
@@ -141,6 +147,8 @@
 		535EB580241F044F1AD6AE64 /* VoiceAuraAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraAPIClient.swift; sourceTree = "<group>"; };
 		6AE650C5D1A3D03B57FB514B /* GlowupAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupAPIClient.swift; sourceTree = "<group>"; };
 		76EC5C18C78F2DDED682E861 /* OutfitStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitStudioView.swift; sourceTree = "<group>"; };
+		7791B40F5B81DD8EA8D2384D /* DisasterSpawnerSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisasterSpawnerSharePoster.swift; sourceTree = "<group>"; };
+		7DE6D3A0B3EA6507E9FCF166 /* DisasterSpawnerStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisasterSpawnerStudio.swift; sourceTree = "<group>"; };
 		93CC9039BD389C89CD1F97C1 /* VoiceAuraSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraSharePoster.swift; sourceTree = "<group>"; };
 		95F0451D899DF907E285FF3F /* VoiceAuraStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraStudioView.swift; sourceTree = "<group>"; };
 		A097B3CAAE71961C8905C460 /* FittingRoomStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomStudioView.swift; sourceTree = "<group>"; };
@@ -148,6 +156,7 @@
 		AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FakeLimitedRecipeCard.swift; sourceTree = "<group>"; };
 		AE5AD6306DB7FFD6BEFF02E0 /* OutfitAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitAPIClient.swift; sourceTree = "<group>"; };
 		AF4E508313D8D1C323688B4A /* OutfitSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitSharePoster.swift; sourceTree = "<group>"; };
+		B492635C29A79A9E7F35A327 /* DisasterSpawnerResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisasterSpawnerResultView.swift; sourceTree = "<group>"; };
 		BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudio.swift; sourceTree = "<group>"; };
 		C4760317000E26765FB9C912 /* VoiceAuraStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraStudio.swift; sourceTree = "<group>"; };
 		C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCStudioView.swift; sourceTree = "<group>"; };
@@ -234,6 +243,7 @@
 		F001C500 /* VoiceFirstOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFirstOverlay.swift; sourceTree = "<group>"; };
 		F001C5D1 /* BlockyFurniture3DSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockyFurniture3DSceneView.swift; sourceTree = "<group>"; };
 		F3DFDBDFD69BB149E5B20418 /* FittingRoomAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomAPIClient.swift; sourceTree = "<group>"; };
+		FCEFEBD3C2196F9ABCB8A060 /* DisasterSpawnerStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisasterSpawnerStudioView.swift; sourceTree = "<group>"; };
 		FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -313,6 +323,19 @@
 			);
 			name = Glowup;
 			path = Glowup;
+			sourceTree = "<group>";
+		};
+		8FF7EA01AFB43AA495CD50A8 /* DisasterSpawner */ = {
+			isa = PBXGroup;
+			children = (
+				4C80E30CB0218ECF1C44336B /* DisasterSpawnerAPIClient.swift */,
+				7DE6D3A0B3EA6507E9FCF166 /* DisasterSpawnerStudio.swift */,
+				FCEFEBD3C2196F9ABCB8A060 /* DisasterSpawnerStudioView.swift */,
+				B492635C29A79A9E7F35A327 /* DisasterSpawnerResultView.swift */,
+				7791B40F5B81DD8EA8D2384D /* DisasterSpawnerSharePoster.swift */,
+			);
+			name = DisasterSpawner;
+			path = DisasterSpawner;
 			sourceTree = "<group>";
 		};
 		B7F7BA1AC8B986F2AE9CA02F /* FittingRoom */ = {
@@ -413,6 +436,7 @@
 				09B4744579CDE9EDB179A3F9 /* CursedUGC */,
 				2BCB3319580DDE28D7A28888 /* VoiceAura */,
 				B7F7BA1AC8B986F2AE9CA02F /* FittingRoom */,
+				8FF7EA01AFB43AA495CD50A8 /* DisasterSpawner */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -882,6 +906,11 @@
 				1758DAD06569C1B3A30F57D1 /* FittingRoomStudioView.swift in Sources */,
 				97C26B5DB939F5A66B123723 /* FittingRoomResultView.swift in Sources */,
 				586E5AC7D679D3619C1192FC /* FittingRoomSharePoster.swift in Sources */,
+				89184007676BFB4DCAC0E597 /* DisasterSpawnerAPIClient.swift in Sources */,
+				E87D4EC327CB6543AEAD96B1 /* DisasterSpawnerStudio.swift in Sources */,
+				3A0FB0D11CD12C9C3151336F /* DisasterSpawnerStudioView.swift in Sources */,
+				C5159EC0F50CD96C90195EB4 /* DisasterSpawnerResultView.swift in Sources */,
+				84D9A5D8A68F34206816ABCE /* DisasterSpawnerSharePoster.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
