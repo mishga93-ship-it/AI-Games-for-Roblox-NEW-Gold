@@ -129,8 +129,10 @@ final class CursedUGCStudio: ObservableObject {
         guard case let .result(resp) = step else { return }
         Task { @MainActor in
             if #available(iOS 16.0, *), let image = await renderPoster(resp: resp) {
-                let caption = Self.shareCaption(for: resp)
-                presentActivitySheet(items: [image, caption])
+                // Image-only — see OutfitStudio.shareOutfit() for rationale.
+                // Caption is baked into the poster image, so no info loss.
+                _ = Self.shareCaption(for: resp)
+                presentActivitySheet(items: [image])
             } else {
                 presentActivitySheet(items: [Self.shareCaption(for: resp)])
             }

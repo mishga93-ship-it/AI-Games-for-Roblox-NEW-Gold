@@ -162,8 +162,11 @@ final class GlowupStudio: ObservableObject {
                 guard let url = URL(string: resp.previewUrl) else { return }
                 let (data, _) = try await URLSession.shared.data(from: url)
                 guard let image = UIImage(data: data) else { return }
-                let caption = GlowupLocale.isRussian ? resp.shareCaptionRU : resp.shareCaptionEN
-                presentActivitySheet(items: [image, caption])
+                // Image-only — when [UIImage, String] is passed, iOS shows the
+                // text as lockup title and the share looks like a text file.
+                // Caption is rendered on the poster image itself.
+                _ = GlowupLocale.isRussian ? resp.shareCaptionRU : resp.shareCaptionEN
+                presentActivitySheet(items: [image])
             } catch {
                 toast(loc(en: "Couldn't prepare image: \(error.localizedDescription)",
                           ru: "Не получилось подготовить картинку: \(error.localizedDescription)"))

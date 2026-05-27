@@ -225,7 +225,10 @@ final class DisasterSpawnerStudio: NSObject, ObservableObject {
         guard case let .result(resp) = step else { return }
         Task { @MainActor in
             if #available(iOS 16.0, *), let image = await renderPoster(resp: resp) {
-                presentActivitySheet(items: [image, Self.shareCaption(resp)])
+                // Image-only — see OutfitStudio.shareOutfit() for rationale.
+                // The caption (title + rarity + #hashtags) is already
+                // rendered onto the 1080×1920 poster as visible text.
+                presentActivitySheet(items: [image])
             } else {
                 presentActivitySheet(items: [Self.shareCaption(resp)])
             }

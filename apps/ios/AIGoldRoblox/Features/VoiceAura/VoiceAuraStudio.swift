@@ -249,7 +249,9 @@ final class VoiceAuraStudio: NSObject, ObservableObject {
         guard case let .result(resp) = step else { return }
         Task { @MainActor in
             if #available(iOS 16.0, *), let image = await renderPoster(resp: resp) {
-                presentActivitySheet(items: [image, Self.shareCaption(resp)])
+                // Image-only — see OutfitStudio.shareOutfit() for rationale.
+                // Caption is baked into the poster.
+                presentActivitySheet(items: [image])
             } else {
                 presentActivitySheet(items: [Self.shareCaption(resp)])
             }

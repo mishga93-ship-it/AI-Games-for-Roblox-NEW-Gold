@@ -93,7 +93,12 @@ final class OutfitStudio: ObservableObject {
         guard case let .result(resp) = step else { return }
         Task { @MainActor in
             if #available(iOS 16.0, *), let image = await renderOutfitPoster(response: resp) {
-                presentActivitySheet(items: [image, Self.tiktokCaption(for: resp)])
+                // Image-only: when both UIImage and String are in activityItems,
+                // iOS shows the String as the lockup title (user reported it
+                // looks like "sharing a text file"). The caption is already
+                // visually baked into the poster (title + badges), so the user
+                // doesn't lose information by dropping the separate text item.
+                presentActivitySheet(items: [image])
             } else {
                 // Last-resort fallback only when ImageRenderer fails.
                 let caption = resp.localizedCaption

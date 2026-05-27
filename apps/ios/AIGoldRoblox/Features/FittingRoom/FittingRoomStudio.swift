@@ -167,8 +167,10 @@ final class FittingRoomStudio: ObservableObject {
         guard case let .result(resp) = step else { return }
         Task { @MainActor in
             if #available(iOS 16.0, *), let image = await renderPoster(resp: resp) {
-                let caption = Self.shareCaption(resp)
-                presentActivitySheet(items: [image, caption])
+                // Image-only — see OutfitStudio.shareOutfit() for rationale.
+                // Caption is rendered on the poster.
+                _ = Self.shareCaption(resp)
+                presentActivitySheet(items: [image])
             } else {
                 presentActivitySheet(items: [Self.shareCaption(resp)])
             }
