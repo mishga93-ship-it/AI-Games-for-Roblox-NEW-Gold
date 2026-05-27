@@ -21741,7 +21741,7 @@ async function callArchitectAgent(
     const chatProvider: AIProvider = (candidates.find((c) => ['openai', 'anthropic', 'gemini'].includes(c)) || 'gemini') as AIProvider;
     const modelHint = chatProvider === 'anthropic' ? undefined
       : chatProvider === 'openai' ? undefined
-      : 'gemini-3-pro-preview';
+      : 'gemini-2.5-pro';
     logger.info('[Building] Architect using provider', { chatProvider, modelHint });
     const result = await Promise.race([
       runChatProvider(chatProvider, llmPrompt, modelHint),

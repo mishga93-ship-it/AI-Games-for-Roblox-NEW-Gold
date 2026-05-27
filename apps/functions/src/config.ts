@@ -71,7 +71,7 @@ export const defaults = {
   chatProvider: 'gemini',
   chatModel: 'gpt-5.4',
   anthropicModel: 'claude-opus-4-1-20250805',
-  geminiModel: 'gemini-3-pro-preview',
+  geminiModel: 'gemini-2.5-pro',
 };
 
 function readStringParam(value: string, fallback?: string): string | undefined {
