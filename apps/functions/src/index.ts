@@ -24583,26 +24583,16 @@ ${_bowMode ? `\t\tif size.Y >= size.X and size.Y >= size.Z then
 \t\t\torientCF = CFrame.Angles(0, 0, math.pi / 2); axisTag = "X(bow)"
 \t\tend
 \t\t-- Bow held in the middle — center mesh at Handle.origin (no back-shift).
-\t\ttmp:PivotTo(Handle.CFrame * orientCF)` : `\t\tlocal pSize = primary.Size
-\t\tlocal barrelLen
-\t\tif pSize.Y >= pSize.X and pSize.Y >= pSize.Z then
-\t\t\t-- mesh +Y -> Handle's -Z (rotate -π/2 around X)
-\t\t\torientCF = CFrame.Angles(-math.pi / 2, 0, 0); axisTag = "Y(-π/2 primary)"; barrelLen = pSize.Y
-\t\telseif pSize.Z >= pSize.X then
-\t\t\t-- mesh +Z -> Handle's -Z (180° around Y flips +Z to -Z)
-\t\t\torientCF = CFrame.Angles(0, math.pi, 0); axisTag = "Z(π primary)"; barrelLen = pSize.Z
-\t\telse
-\t\t\t-- mesh +X -> Handle's -Z (rotate +π/2 around Y sends +X to -Z)
-\t\t\torientCF = CFrame.Angles(0, math.pi / 2, 0); axisTag = "X(+π/2 primary)"; barrelLen = pSize.X
-\t\tend
-\t\t-- Session 204: anchor BACK end of barrel (= grip area on a gun) at Handle.origin
-\t\t-- so the hand grips the rear of the gun, not the middle. Shift mesh forward by
-\t\t-- barrelLen/2 along Handle's local -Z (LookVector). Front of barrel extends
-\t\t-- forward away from hand. Without this shift, mesh center sat at Handle.origin
-\t\t-- and the hand visually held the gun by its body, not the grip.
-\t\tlocal backShift = CFrame.new(0, 0, -barrelLen / 2)
-\t\ttmp:PivotTo(Handle.CFrame * backShift * orientCF)
-\t\taxisTag = axisTag .. "/back-anchored"`}
+\t\ttmp:PivotTo(Handle.CFrame * orientCF)` : `\t\t-- Session 386 round 3: drop the auto-detect axis logic. AI meshes from
+\t\t-- Meshy/Tripo (especially "character holding weapon" style like Baby Yoda
+\t\t-- holding a blaster) have longest axis = body height, NOT barrel direction,
+\t\t-- so the auto-rotate -π/2 around X tipped the figure over sideways. Keep
+\t\t-- mesh in its natural orientation and centered on Handle origin (no
+\t\t-- back-shift). Users confirmed this produces correct grip on Yoda-style
+\t\t-- ranged weapons. If a future provider needs barrel-axis snapping, gate it
+\t\t-- behind a metadata flag rather than auto-detecting from bbox proportions.
+\t\torientCF = CFrame.new(); axisTag = "identity"
+\t\ttmp:PivotTo(Handle.CFrame * orientCF)`}
 \t\tHandle.Transparency = 1
 \t\tlocal oldSm = Handle:FindFirstChildOfClass("SpecialMesh")
 \t\tif oldSm then oldSm:Destroy() end
