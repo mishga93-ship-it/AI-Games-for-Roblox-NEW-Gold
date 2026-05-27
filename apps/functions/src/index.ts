@@ -164,6 +164,8 @@ import { isCursedUGCCategoryId, isCursedUGCStyleId, parseCursedUGCIntensity } fr
 // Session 385 — Voice-to-Aura Particle Engine
 import { generateAura } from './auraGenerator.js';
 import { isAuraStyleId, parseAuraIntensity, parseAuraSize, parseAuraTone } from './data/auraStyles.js';
+// Session 386 — Zero-Robux UGC Fitting Room
+import { startFittingRoomJob, fetchFittingRoomDoc } from './fittingRoomRenderer.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -962,6 +964,94 @@ app.post('/api/voice-aura/generate', async (req: AuthedRequest, res) => {
       });
     }
     return res.status(500).json({ error: 'Failed to generate aura' });
+  }
+});
+
+// ─── Session 386 — Zero-Robux UGC Fitting Room ───
+// Two endpoints follow a polling pattern so iOS can show angles as they
+// complete (front first, then 3/4, then back).
+//
+//   POST /api/fitting-room/start  — kicks off async render, returns
+//                                   { generationId } immediately
+//   GET  /api/fitting-room/:id    — returns current Firestore doc
+//                                   (renders dict + items + cost + status)
+
+app.post('/api/fitting-room/start', async (req: AuthedRequest, res) => {
+  const firebaseUid = req.userId;
+  try {
+    const body = (req.body ?? {}) as {
+      aestheticId?: unknown; gender?: unknown; style?: unknown;
+      remix?: unknown; robloxUsername?: unknown;
+    };
+    if (!isOutfitAestheticId(body.aestheticId)) {
+      return res.status(400).json({ error: 'Invalid or missing aestheticId' });
+    }
+    if (!firebaseUid) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/fitting-room/start');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const userVerdict = await checkAndConsumeGlowupRateLimit(firebaseUid);
+    if (!userVerdict.allowed) {
+      return res.status(429).json({ error: 'rate_limited', reason: userVerdict.reason, retryAfterMs: userVerdict.retryAfterMs });
+    }
+
+    const remix = (body.remix === 'remix' || body.remix === 'budget' || body.remix === 'more_cursed' || body.remix === 'more_clean')
+      ? body.remix
+      : undefined;
+    const robloxUsername = typeof body.robloxUsername === 'string' && body.robloxUsername.trim().length > 0
+      ? body.robloxUsername.trim()
+      : undefined;
+
+    const result = await startFittingRoomJob({
+      aestheticId: body.aestheticId,
+      gender: (body.gender === 'boys' || body.gender === 'girls' || body.gender === 'neutral') ? body.gender : 'neutral',
+      style: body.style === 'colorful' ? 'colorful' : 'dark',
+      remix,
+      robloxUsername,
+      firebaseUid,
+    });
+
+    recordGlowupEvent({
+      type: 'generation_started',
+      firebaseUid,
+      vibeId: body.aestheticId,
+      meta: { product: 'fitting_room', remix: remix ?? null, generationId: result.generationId },
+    });
+
+    return res.json(result);
+  } catch (err) {
+    logger.error('[fitting-room] start failed', err);
+    if (firebaseUid) {
+      recordGlowupEvent({
+        type: 'generation_failed',
+        firebaseUid,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        meta: { product: 'fitting_room' },
+      });
+    }
+    return res.status(500).json({ error: 'Failed to start fitting room job' });
+  }
+});
+
+app.get('/api/fitting-room/:id', async (req: AuthedRequest, res) => {
+  try {
+    const id = req.params.id;
+    if (typeof id !== 'string' || !id.startsWith('fit_')) {
+      return res.status(400).json({ error: 'Invalid generationId' });
+    }
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const doc = await fetchFittingRoomDoc(id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    if (doc.firebaseUid !== req.userId) return res.status(403).json({ error: 'Forbidden' });
+    return res.json(doc);
+  } catch (err) {
+    logger.error('[fitting-room] status failed', err);
+    return res.status(500).json({ error: 'Failed to fetch fitting room status' });
   }
 });
 
