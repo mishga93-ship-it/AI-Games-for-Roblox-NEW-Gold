@@ -120,6 +120,8 @@ struct ForgeView: View {
     @State private var isShowingCursedUGCStudio = false
     // Session 385 — Voice-to-Aura.
     @State private var isShowingVoiceAuraStudio = false
+    // Session 386 — Zero-Robux Fitting Room.
+    @State private var isShowingFittingRoom = false
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -209,6 +211,9 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingVoiceAuraStudio) {
             NavigationStack { VoiceAuraStudioView() }
+        }
+        .fullScreenCover(isPresented: $isShowingFittingRoom) {
+            NavigationStack { FittingRoomStudioView() }
         }
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
@@ -1332,6 +1337,12 @@ private extension ForgeView {
             isShowingVoiceAuraStudio = true
             return
         }
+        if selectedOption.id == "fitting_room" {
+            isShowingProjectPicker = false
+            isShowingChatPicker = false
+            isShowingFittingRoom = true
+            return
+        }
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",
@@ -1374,6 +1385,15 @@ private extension ForgeView {
 
     var viralOptions: [ProjectOption] {
         [
+            ProjectOption(
+                id: "fitting_room",
+                title: "Zero-Robux Fitting Room",
+                details: isRussianInterface
+                    ? "Примерь любой fit на СВОЁМ Roblox-аватаре. AI рисует 3 ракурса (спереди/3-4/сзади), swipe чтобы крутить — pseudo-3D в кармане. Cost breakdown + fake \"saved\" + share poster."
+                    : "Try any fit on YOUR Roblox avatar. AI renders 3 angles (front/3-4/back), swipe to rotate — pseudo-3D in your pocket. Cost breakdown + fake 'saved' + share poster.",
+                kind: .content,
+                tags: ["new", "viral", "ai", "tiktok"]
+            ),
             ProjectOption(
                 id: "voice_aura",
                 title: "Voice-to-Aura",

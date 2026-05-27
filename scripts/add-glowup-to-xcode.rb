@@ -51,6 +51,13 @@ FOLDERS_TO_ADD = {
     'VoiceAuraResultView.swift',
     'VoiceAuraSharePoster.swift',
   ],
+  'FittingRoom' => [
+    'FittingRoomAPIClient.swift',
+    'FittingRoomStudio.swift',
+    'FittingRoomStudioView.swift',
+    'FittingRoomResultView.swift',
+    'FittingRoomSharePoster.swift',
+  ],
 }
 
 abort("Project not found at #{PROJECT_PATH}") unless File.directory?(PROJECT_PATH)
