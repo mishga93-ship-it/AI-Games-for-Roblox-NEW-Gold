@@ -4241,8 +4241,12 @@ export async function generateAnimationPreviewVideo(
     const responseUrl = submitResp.response_url as string | undefined;
     logger.info('AnimateDiff queued', { requestId });
 
-    // Max 24 attempts × 5s = 120s timeout for animation preview (non-critical)
-    const raw = await pollFalRequest(apiKey, endpoint, requestId, statusUrl, responseUrl, 24);
+    // Max 6 attempts × 5s = 30s timeout — animation preview is non-critical and
+    // blocks the chat pipeline between convert_fbx ✓ and upload_roblox. If
+    // AnimateDiff doesn't deliver in 30s, fall through to the Flux Schnell
+    // static-image fallback (which usually answers in <10s) so the rest of
+    // the animation pipeline (Roblox publish + .rbxm build) can run.
+    const raw = await pollFalRequest(apiKey, endpoint, requestId, statusUrl, responseUrl, 6);
 
     // Response: { video: { url: string } }
     const videoUrl = (raw.video as Record<string, unknown> | undefined)?.url as string | undefined;
