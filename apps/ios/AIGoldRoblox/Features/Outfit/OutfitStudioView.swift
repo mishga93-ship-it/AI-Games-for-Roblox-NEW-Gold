@@ -57,14 +57,16 @@ struct OutfitStudioView: View {
 
 private struct OutfitPickerSection: View {
     @ObservedObject var studio: OutfitStudio
-    private let columns: [GridItem] = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+    // Round 6 redesign: 16pt spacing (was 12) for more breathing room
+    // between cards — matches the larger 170pt tile height.
+    private let columns: [GridItem] = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(loc(en: "AI built your TikTok fit", ru: "AI собрал твой TikTok fit"))
-                        .font(.appTitle2.bold())
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundColor(.textPrimary)
                     Text(loc(
                         en: "One tap → a full outfit assembled from real Roblox catalog items.",
@@ -72,17 +74,18 @@ private struct OutfitPickerSection: View {
                     ))
                         .font(.appBody)
                         .foregroundColor(.textSecondary)
+                        .lineSpacing(2)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 18)
                 .padding(.top, 60)
 
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(studio.allAesthetics) { a in
                         AestheticCard(aesthetic: a) { studio.selectAesthetic(a) }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 30)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 40)
             }
         }
     }
@@ -91,37 +94,98 @@ private struct OutfitPickerSection: View {
 private struct AestheticCard: View {
     let aesthetic: OutfitAesthetic
     let onTap: () -> Void
+    @State private var isPressed = false
+
+    private var accent: Color { hex(aesthetic.accentHex) }
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Hero tile — bigger (170 vs 120), richer gradient, larger
+                // glow-y SF Symbol with per-vibe accent shadow. Decorative
+                // sparkle in the top-right corner adds Kami brand language
+                // (the design system uses sparkle/star motifs throughout).
                 ZStack {
-                    LinearGradient(colors: [hex(aesthetic.accentHex), .black.opacity(0.6)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Image(systemName: aesthetic.iconSymbol)
-                        .font(.system(size: 50))
-                        .foregroundColor(.white.opacity(0.95))
-                }
-                .frame(height: 120)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                    LinearGradient(
+                        colors: [accent, accent.opacity(0.55), .black.opacity(0.78)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
 
-                VStack(alignment: .leading, spacing: 4) {
+                    // Soft inner glow blob behind the icon — adds depth that
+                    // the old flat gradient lacked.
+                    Circle()
+                        .fill(accent.opacity(0.55))
+                        .frame(width: 130, height: 130)
+                        .blur(radius: 38)
+                        .offset(y: 6)
+
+                    Image(systemName: aesthetic.iconSymbol)
+                        .font(.system(size: 64, weight: .bold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.white, .white.opacity(0.82)],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        )
+                        .shadow(color: accent.opacity(0.85), radius: 12, y: 4)
+                        .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+
+                    // Decorative sparkle top-right — picks up Kami brand mark
+                    // motif without overpowering the main icon.
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 12, weight: .black))
+                                .foregroundColor(.white.opacity(0.55))
+                                .padding(.top, 10)
+                                .padding(.trailing, 10)
+                        }
+                        Spacer()
+                    }
+                }
+                .frame(height: 170)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 5) {
                     Text(aesthetic.displayTitle)
-                        .font(.appHeadline)
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundColor(.textPrimary)
                     Text(aesthetic.shortPitch)
-                        .font(.appCaption)
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(.textSecondary)
                         .lineLimit(2)
+                        .lineSpacing(1)
+                        .multilineTextAlignment(.leading)
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 6)
             }
-            .padding(8)
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.bubbleBorder.opacity(0.25), lineWidth: 1))
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white.opacity(0.96))
+            )
+            .overlay(
+                // Per-vibe accent stroke (was generic cyan). Hairline so it
+                // reads as accent, not as a frame.
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(accent.opacity(0.45), lineWidth: 1.2)
+            )
+            // Per-vibe glow shadow — this is the single biggest "premium"
+            // upgrade: tiles now feel like they belong to their vibe,
+            // instead of being identical white rectangles.
+            .shadow(color: accent.opacity(0.32), radius: 14, y: 6)
+            .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+            .scaleEffect(isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
     }
 }
 
