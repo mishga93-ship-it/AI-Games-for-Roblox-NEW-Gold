@@ -161,6 +161,9 @@ import { isOutfitAestheticId, type OutfitGender, type OutfitStyleMode, type Outf
 // Session 384 — Giant & Cursed UGC Modeler
 import { generateCursedUGC } from './cursedUgcGenerator.js';
 import { isCursedUGCCategoryId, isCursedUGCStyleId, parseCursedUGCIntensity } from './data/cursedUgcCategories.js';
+// Session 385 — Voice-to-Aura Particle Engine
+import { generateAura } from './auraGenerator.js';
+import { isAuraStyleId, parseAuraIntensity, parseAuraSize, parseAuraTone } from './data/auraStyles.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -887,6 +890,78 @@ app.post('/api/cursed-ugc/generate', async (req: AuthedRequest, res) => {
       });
     }
     return res.status(500).json({ error: 'Failed to generate cursed UGC' });
+  }
+});
+
+// ─── Session 385 — Voice-to-Aura Particle Engine ───
+// Input: free-form prompt (voice transcript or text) + style + intensity +
+// size + tone. Output: concept image + 2 variations (op/cursed) + SAFE
+// Roblox Lua particle script + metadata.
+
+app.post('/api/voice-aura/generate', async (req: AuthedRequest, res) => {
+  const firebaseUid = req.userId;
+  try {
+    const body = (req.body ?? {}) as {
+      prompt?: unknown; style?: unknown; intensity?: unknown;
+      size?: unknown; tone?: unknown; inputMode?: unknown;
+    };
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    if (!prompt) {
+      return res.status(400).json({ error: 'Missing prompt' });
+    }
+    if (!isAuraStyleId(body.style)) {
+      return res.status(400).json({ error: 'Invalid or missing style' });
+    }
+    if (!firebaseUid) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    // Per-IP cooldown + per-user limit.
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/voice-aura/generate');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const userVerdict = await checkAndConsumeGlowupRateLimit(firebaseUid);
+    if (!userVerdict.allowed) {
+      return res.status(429).json({ error: 'rate_limited', reason: userVerdict.reason, retryAfterMs: userVerdict.retryAfterMs });
+    }
+
+    const inputMode = body.inputMode === 'voice' ? 'voice' as const : 'text' as const;
+
+    const result = await generateAura({
+      userPrompt: prompt,
+      style: body.style,
+      intensity: parseAuraIntensity(body.intensity),
+      size: parseAuraSize(body.size),
+      tone: parseAuraTone(body.tone),
+      inputMode,
+      firebaseUid,
+    });
+
+    recordGlowupEvent({
+      type: 'generation_success',
+      firebaseUid,
+      vibeId: body.style,
+      meta: {
+        product: 'voice_aura',
+        intensity: result.intensity,
+        difficulty: result.difficulty,
+        usedFallback: result.safeUsedFallback,
+        inputMode,
+      },
+    });
+
+    return res.json(result);
+  } catch (err) {
+    logger.error('[voice-aura] generate failed', err);
+    if (firebaseUid) {
+      recordGlowupEvent({
+        type: 'generation_failed',
+        firebaseUid,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        meta: { product: 'voice_aura' },
+      });
+    }
+    return res.status(500).json({ error: 'Failed to generate aura' });
   }
 });
 
