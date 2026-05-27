@@ -27283,6 +27283,51 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                   });
                 }
               }
+
+              // Session 386 — Weapon AI Mesh path (analog to furniture above).
+              // Without this, buildWeaponToolManifest falls back to the hardcoded
+              // classic gun mesh (94219391) for ranged / built-in sword.mesh for
+              // melee/magic. ShootServer.luau tries to swap the SpecialMesh at
+              // Equipped time via InsertService:LoadAsset(<Model wrapper id>), but
+              // that path silently fails in many real-world tests: when the place
+              // creator ≠ asset creator (Open Cloud upload uses ROBLOX_CREATOR_ID),
+              // when the asset is still pending moderation, or when the .rbxm is
+              // dropped into a third-party place via Insert From File. Result: the
+              // user sees the fallback shotgun instead of the mesh they generated.
+              // Engine API gives us the inner numeric MeshId from the Model wrapper
+              // so we bake it straight into Handle.SpecialMesh.MeshId — visible in
+              // Studio Edit-mode immediately, no runtime swap needed.
+              if (isWeapon) {
+                try {
+                  const extracted = await extractMeshIdFromModel(Number(finalAssetId));
+                  if (extracted === null) {
+                    logger.info('[Weapon mesh] Engine API not configured — keeping runtime InsertService loader', { jobId: job.id });
+                  } else if (extracted.state === 'COMPLETE' && extracted.meshId) {
+                    currentJob.metadata = {
+                      ...(currentJob.metadata ?? {}),
+                      weaponRealMeshId: `${extracted.meshId}`,
+                      ...(extracted.textureId ? { weaponRealTextureId: `${extracted.textureId}` } : {}),
+                    };
+                    logger.info('[Weapon mesh] real numeric MeshId extracted via Engine API', {
+                      jobId: job.id,
+                      modelAssetId: finalAssetId,
+                      realMeshId: extracted.meshId,
+                      realTextureId: extracted.textureId,
+                    });
+                  } else {
+                    logger.warn('[Weapon mesh] Engine API extraction did not produce a numeric MeshId — keeping runtime loader fallback', {
+                      jobId: job.id,
+                      state: extracted.state,
+                      error: extracted.error,
+                    });
+                  }
+                } catch (extractErr) {
+                  logger.warn('[Weapon mesh] extractMeshIdFromModel threw — keeping runtime loader fallback', {
+                    jobId: job.id,
+                    error: errorMessage(extractErr),
+                  });
+                }
+              }
             } else {
               await finishStage('upload_roblox', 'skipped', [], ['Upload succeeded but asset ID not yet available']);
             }

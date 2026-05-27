@@ -5592,20 +5592,58 @@ function buildWeaponToolManifest(
   ];
 
   if (weaponType !== 'defense' && weaponType !== 'throwable') {
+    // Session 386 — Weapon AI Mesh path. metadata.weaponRealMeshId is the inner
+    // numeric MeshId extracted from the uploaded Model wrapper via the Roblox
+    // Open Cloud Engine API (index.ts upload_roblox stage, Session 386 block).
+    // When present, bake it straight into the static SpecialMesh so the .rbxm
+    // shows the AI-generated mesh immediately in Studio Edit-mode — no reliance
+    // on ShootServer's runtime InsertService:LoadAsset path (which silently
+    // fails when place creator ≠ asset creator, when asset moderation is
+    // pending, or when the .rbxm is imported into a third-party place via
+    // Insert From File). Fallback: built-in classic gun (94219391) for ranged,
+    // built-in sword.mesh for melee/magic — the previous static behaviour.
+    const rawWeaponRealMeshId = typeof metadata.weaponRealMeshId === 'string'
+      ? metadata.weaponRealMeshId.trim()
+      : '';
+    const rawWeaponRealTextureId = typeof metadata.weaponRealTextureId === 'string'
+      ? metadata.weaponRealTextureId.trim()
+      : '';
+    const weaponRealMeshDigits = rawWeaponRealMeshId.match(/\d+/)?.[0];
+    const isValidWeaponRealMesh = !!(weaponRealMeshDigits && weaponRealMeshDigits.length >= 5 && weaponRealMeshDigits.length <= 16);
+    const weaponRealTextureDigits = rawWeaponRealTextureId.match(/\d+/)?.[0];
+    const isValidWeaponRealTexture = !!(weaponRealTextureDigits && weaponRealTextureDigits.length >= 5 && weaponRealTextureDigits.length <= 16);
+
+    const meshIdValue = isValidWeaponRealMesh
+      ? `rbxassetid://${weaponRealMeshDigits}`
+      : weaponType === 'ranged'
+        ? 'http://www.roblox.com/asset/?id=94219391'
+        : 'rbxasset://fonts/sword.mesh';
+
+    // AI meshes ship with their own baked PBR texture (Meshy/Tripo). Only apply
+    // the built-in sword texture for the melee fallback path; for AI meshes
+    // attach the extracted TextureID if Engine API returned one, otherwise
+    // leave blank so the baked texture inside the MeshPart asset wins.
+    const textureIdValue = isValidWeaponRealMesh
+      ? (isValidWeaponRealTexture ? `rbxassetid://${weaponRealTextureDigits}` : '')
+      : (weaponType === 'melee' ? 'rbxasset://textures/SwordTexture.png' : '');
+
+    // When AI mesh has baked colors, neutralize VertexColor (1,1,1) so we don't
+    // multiply-tint over the existing texture. For the fallback meshes keep
+    // user-picked primary color via VertexColor — same behaviour as before.
+    const vertexColor = isValidWeaponRealMesh
+      ? { __type: 'Vector3', x: 1, y: 1, z: 1 }
+      : { __type: 'Vector3', x: primaryRgb.r, y: primaryRgb.g, z: primaryRgb.b };
+
     scene.push({
       id: uuidv4(),
       className: 'SpecialMesh',
       name: 'Mesh',
       parentId: handleId,
       properties: {
-        MeshId: weaponType === 'ranged'
-          ? 'http://www.roblox.com/asset/?id=94219391'
-          : 'rbxasset://fonts/sword.mesh',
+        MeshId: meshIdValue,
         MeshType: { __type: 'Enum', enumType: 'MeshType', enumName: 'FileMesh', value: 5 },
-        // Keep fallback texture only for the built-in melee mesh. Runtime AI Model
-        // loading destroys this SpecialMesh and force-tints the loaded MeshParts.
-        TextureId: weaponType === 'melee' ? 'rbxasset://textures/SwordTexture.png' : '',
-        VertexColor: { __type: 'Vector3', x: primaryRgb.r, y: primaryRgb.g, z: primaryRgb.b },
+        TextureId: textureIdValue,
+        VertexColor: vertexColor,
         Scale: { __type: 'Vector3', x: 1, y: 1, z: 1 },
       },
     });
