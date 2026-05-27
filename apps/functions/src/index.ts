@@ -29414,6 +29414,18 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       if (isVehicle) {
         try {
           const vehiclePreviewScene = createVehiclePreviewSceneFromManifest(manifest, title);
+          // Round 20L v17 (session 382): if manifest has embedded template
+          // (Phenom 100, Sedan, etc.), the unboxed parts in manifest.scene
+          // are only ChassisRoot + invisible wheels — blocky render would be
+          // nearly empty and override the much-better Flux concept image.
+          // Skip blocky preview for template-embed mode, keep concept image.
+          const hasEmbeddedVehicleTemplate = (manifest.embeddedModels ?? []).some((m) => m.mode === 'vehicle_template')
+            || (typeof manifest.metadata?.vehicleTemplateRbxmFilename === 'string'
+                && (manifest.metadata.vehicleTemplateRbxmFilename as string).length > 0);
+          if (hasEmbeddedVehicleTemplate) {
+            logger.info('[VehiclePreview] template-embed mode: keeping concept image as preview, skipping blocky render');
+            throw new Error('skip-blocky-for-template-embed'); // jump to catch which logs and continues
+          }
           const previewBuffer = createFurniturePreviewPng(vehiclePreviewScene, title);
           const previewArtifact = await uploadBinaryArtifact(job, previewBuffer, {
             type: 'png',
