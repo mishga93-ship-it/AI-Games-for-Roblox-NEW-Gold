@@ -101,11 +101,39 @@ function sanitizeLua(lua: string): { ok: boolean; rejected: string[] } {
 }
 
 function extractLuaBlock(text: string): string | undefined {
-  const m = text.match(/```lua\s*([\s\S]*?)```/i);
-  if (m && m[1]) return m[1].trim();
-  const trimmed = text.trim();
-  if (trimmed.includes('Instance.new(') && trimmed.includes('task.wait')) return trimmed;
+  // Prefer a complete ```lua … ``` fence pair.
+  const paired = text.match(/```lua\s*([\s\S]*?)```/i);
+  if (paired && paired[1]) return paired[1].trim();
+
+  // Fallback: LLM response was truncated mid-fence (e.g. max_tokens hit
+  // before closing ```). Strip any leading ```lua/``` and trailing ``` we
+  // still see, so the .rbxmx CDATA doesn't end up with literal backticks
+  // at the top — that's a Lua syntax error on line 1 and the script
+  // silently does nothing on Play (session 385 user repro).
+  let stripped = text.trim();
+  stripped = stripped.replace(/^```lua\s*\n?/i, '');
+  stripped = stripped.replace(/^```\s*\n?/, '');
+  stripped = stripped.replace(/\n?\s*```\s*$/, '');
+  stripped = stripped.trim();
+
+  if (stripped.includes('Instance.new(') && stripped.includes('task.wait')) {
+    return stripped;
+  }
   return undefined;
+}
+
+// A spawner Lua that doesn't loop (no `while … do` driver) silently spawns
+// nothing on Play. A Lua that ends mid-call (no terminal `end` / `)` on the
+// last non-comment line) is truncated. Either case → reject so we retry or
+// fall back to FALLBACK_LUA instead of shipping a dud .rbxmx.
+function looksTruncatedOrEmpty(lua: string): boolean {
+  if (lua.length < 200) return true;
+  if (!/\bwhile\b[\s\S]+?\bdo\b/.test(lua) && !/\btask\.spawn\b/.test(lua)) return true;
+  // Last non-comment, non-blank line should end with `end`, `)` or `}`.
+  const lines = lua.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0 && !l.startsWith('--'));
+  const last = lines[lines.length - 1] ?? '';
+  if (!/[)}]\s*$/.test(last) && !/\bend\b\s*$/.test(last)) return true;
+  return false;
 }
 
 const FALLBACK_LUA = `-- Safe fallback disaster (used when LLM generation didn't pass safety check)
@@ -154,10 +182,18 @@ async function generateLuaScript(input: {
   const prompt = buildDisasterLuaPrompt(input);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await runChatProvider('anthropic', prompt, undefined, { timeoutMs: 20_000 });
+      const r = await runChatProvider('anthropic', prompt, undefined, { timeoutMs: 30_000 });
       const text = (r.text ?? '').trim();
       const lua = extractLuaBlock(text);
-      if (!lua) { logger.warn('[disasterGenerator] no Lua block, retrying'); continue; }
+      if (!lua) { logger.warn('[disasterGenerator] no Lua block, retrying', { attempt }); continue; }
+      if (looksTruncatedOrEmpty(lua)) {
+        logger.warn('[disasterGenerator] Lua looks truncated or missing main loop, retrying', {
+          attempt,
+          length: lua.length,
+          lastChars: lua.slice(-80),
+        });
+        continue;
+      }
       const sanity = sanitizeLua(lua);
       if (!sanity.ok) {
         logger.warn('[disasterGenerator] sanitizer rejected', { rejected: sanity.rejected, attempt });

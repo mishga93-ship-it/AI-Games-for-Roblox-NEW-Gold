@@ -184,7 +184,11 @@ async function runAnthropic(prompt: string, model: string, timeoutMs?: number): 
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1024,
+      // 4096 to fit longer outputs (Lua disaster scripts, multi-block JSON) —
+      // Anthropic bills by actual usage, not by the cap, so raising max_tokens
+      // is safe. Old 1024 was truncating disaster-spawner Lua mid-function
+      // (session 385: file ended on `Debris:AddItem(fridge,` with no `)`).
+      max_tokens: 4096,
       messages: [
         { role: 'user', content: prompt },
       ],
@@ -209,7 +213,7 @@ async function runAnthropicStructured(prompt: ProviderPromptInput, model: string
     body: JSON.stringify({
       system: prompt.system,
       model,
-      max_tokens: 1400,
+      max_tokens: 4096,
       messages: [
         { role: 'user', content: prompt.user },
       ],
@@ -260,7 +264,7 @@ export async function runAnthropicVisionStructured(
     body: JSON.stringify({
       system: prompt.system,
       model,
-      max_tokens: 1400,
+      max_tokens: 4096,
       messages: [
         { role: 'user', content },
       ],
