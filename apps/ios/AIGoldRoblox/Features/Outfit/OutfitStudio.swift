@@ -93,16 +93,39 @@ final class OutfitStudio: ObservableObject {
         guard case let .result(resp) = step else { return }
         Task { @MainActor in
             if #available(iOS 16.0, *), let image = await renderOutfitPoster(response: resp) {
-                let caption = "\(resp.title) Outfit \(resp.totalCostRobux) R$ · \(resp.localizedCaption)\n#roblox #fyp"
-                presentActivitySheet(items: [image, caption])
+                presentActivitySheet(items: [image, Self.tiktokCaption(for: resp)])
             } else {
                 // Last-resort fallback only when ImageRenderer fails.
                 let caption = resp.localizedCaption
                 let body = resp.items.map { "• \($0.name) — \($0.priceRobux) R$" }.joined(separator: "\n")
-                let text = "\(resp.title) Outfit — \(resp.totalCostRobux) R$\n\(caption)\n\n\(body)\n\n✨ Made with Kami Gold AI"
+                let text = "\(resp.title) Outfit — \(resp.totalCostRobux) R$\n\(caption)\n\n\(body)\n\n\(Self.tiktokCaption(for: resp))"
                 presentActivitySheet(items: [text])
             }
         }
+    }
+
+    /// TikTok-tuned caption: short hook + savings flex + algorithm-friendly
+    /// hashtags. Aesthetic-specific tags (#sigma #y2k etc.) help the
+    /// FYP algorithm cluster this to the right audience.
+    private static func tiktokCaption(for resp: OutfitGenerationResponse) -> String {
+        let savedStr = resp.savedRobux > 0 ? " · saved \(resp.savedRobux.formatted()) R$" : ""
+        let aestheticTag: String = {
+            guard let a = OutfitAesthetic(rawValue: resp.aestheticId) else { return "#roblox" }
+            switch a {
+            case .sigma:      return "#sigma #sigmaaesthetic"
+            case .baddie:     return "#baddie #robloxbaddie"
+            case .y2k:        return "#y2k #y2kaesthetic"
+            case .goth:       return "#goth #darkacademia"
+            case .richEmo:    return "#emo #richemo"
+            case .slender:    return "#slender #slendylook"
+            case .softie:     return "#softie #softgirl"
+            case .cyber:      return "#cyberpunk #cybergoth"
+            case .animeDemon: return "#anime #demoncore"
+            }
+        }()
+        // FYP-tuned base — first 3 tags are highest-discovery for Roblox content
+        // (research May 2026: #roblox / #robloxoutfit / #fyp are top clusters).
+        return "\(resp.title) outfit for \(resp.totalCostRobux) R$\(savedStr)\n\(resp.localizedCaption)\n\n#roblox #robloxoutfit #fyp \(aestheticTag) #kamigold"
     }
 
     @available(iOS 16.0, *)
