@@ -23948,12 +23948,15 @@ if AI_MESH_MODEL_ID > 0 then
 \t\tlocal axisTag
 \t\tif size.Y >= size.X and size.Y >= size.Z then
 \t\t\tif BLADE_LIKE_WEAPON then
-\t\t\t\t-- mesh +Y -> primary +Z = Handle's +Z = blade-direction
-\t\t\t\torientCF = CFrame.Angles(math.pi / 2, 0, 0)
-\t\t\t\taxisTag = "Y→Z(blade)"
+\t\t\t\t-- Session 386 round 5: flip to -π/2 (was +π/2). Maps mesh +Y to
+\t\t\t\t-- Handle's -Z so blade extends forward and handle drops INTO the
+\t\t\t\t-- hand. +π/2 put the handle pointing forward and the blade body in
+\t\t\t\t-- the grip — confirmed wrong via spongebob-spatula-katana FLIPPED.rbxm.
+\t\t\t\torientCF = CFrame.Angles(-math.pi / 2, 0, 0)
+\t\t\t\taxisTag = "Y→-Z(blade, handle-in-hand)"
 \t\t\telse
-\t\t\t\torientCF = CFrame.Angles(math.pi / 2, 0, 0)
-\t\t\t\taxisTag = "Y(+π/2 staff/ranged)"
+\t\t\t\torientCF = CFrame.Angles(-math.pi / 2, 0, 0)
+\t\t\t\taxisTag = "Y(-π/2 staff/ranged)"
 \t\t\tend
 \t\telseif size.Z >= size.X then
 \t\t\tif BLADE_LIKE_WEAPON then
