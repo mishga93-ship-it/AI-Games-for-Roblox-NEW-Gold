@@ -6776,21 +6776,22 @@ function createFurniturePipelineStages(mode: FurnitureBuildMode = 'mesh'): Gener
 }
 
 function createVehiclePipelineStages(): GenerationStageProgress[] {
+  // Session 383: removed concept_image + concept_approval — they generated a
+  // Flux concept that is NOT used for the template-embed path (Phenom 100,
+  // Sedan, Tank, …), so the user-facing stage list was misleading. Vehicle
+  // preview now comes from Roblox Thumbnail API of the picked template
+  // (set inside pick_vehicle_template stage).
+  //
+  // Stage titles are deliberately path-agnostic so the same list reads true
+  // both for the template-embed path (the vast majority) and the legacy
+  // Meshy-mesh fallback.
   return [
-    // Session 373: Phase 1 — 2D concept preview gate (same pattern as
-    // character / NPC / furniture-with-external-mesh). User approves the
-    // 2D concept before we spend $0.80 on Meshy 6 generation. Approved
-    // concept is also passed to Meshy as an image-to-3d reference for
-    // higher-quality mesh output than text-to-3d alone.
-    { id: 'concept_image', title: 'Concept image', status: 'pending' },
-    { id: 'concept_approval', title: 'Awaiting your approval', status: 'pending' },
-    // Phase 2 — runs after user approves the concept.
-    { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controller', status: 'pending' },
-    { id: 'pick_vehicle_template', title: 'Selecting Roblox vehicle template', status: 'pending' },
-    { id: 'generate_vehicle_decals', title: 'Generating vehicle livery decals (Flux)', status: 'pending' },
-    { id: 'generate_vehicle_mesh', title: 'Generating vehicle body (Meshy 6)', status: 'pending' },
-    { id: 'generate_vehicle_scene', title: 'Designing vehicle body from brief (LLM)', status: 'pending' },
-    { id: 'quality_review', title: 'AI vehicle QA before export', status: 'pending' },
+    { id: 'generate_vehicle_scripts', title: 'Configuring vehicle controls', status: 'pending' },
+    { id: 'pick_vehicle_template', title: 'Picking Roblox vehicle template', status: 'pending' },
+    { id: 'generate_vehicle_decals', title: 'Personalising livery (Flux decals, cars only)', status: 'pending' },
+    { id: 'generate_vehicle_mesh', title: 'Preparing vehicle body', status: 'pending' },
+    { id: 'generate_vehicle_scene', title: 'Vehicle body fallback (LLM, only if mesh unavailable)', status: 'pending' },
+    { id: 'quality_review', title: 'Vehicle QA before export', status: 'pending' },
     { id: 'export_rbxm', title: 'Export vehicle RBXM', status: 'pending' },
   ];
 }
@@ -25576,8 +25577,16 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
   // Session 373: vehicles NOW go through the concept gate — user previews the
   // 2D Flux render before we spend $0.80 on Meshy 6. The approved concept is
   // also fed to Meshy as an image-to-3d reference for better mesh quality.
+  // Session 383: REVERTED for vehicles. Template-embed path (Phenom 100,
+  // Sedan, …) doesn't consume the concept image at all — it picks a Roblox
+  // template and recolors. The Flux concept showed up in chat as misleading
+  // "this is what you'll get" when reality was a different mesh. Preview
+  // now comes from Roblox Thumbnail API of the picked template (set inside
+  // pick_vehicle_template stage). For the rare Meshy fallback path the
+  // mesh is generated text-to-3d directly from the prompt; no concept needed.
   const needsConceptGate = !resumePhase2
     && !isTShirt
+    && !isVehicle
     && (!isFurniture || furnitureUsesExternalMesh)
     && (!isNpc || npcNeedsConceptApproval);
   const title = typeof job.metadata?.title === 'string' && job.metadata.title.trim()
@@ -27903,6 +27912,74 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             `Accessories: ${accessoryNote}`,
             'Mesh + scene stages will be SKIPPED (template path).',
           ]);
+
+          // Session 383: Roblox Thumbnail API — once the template is picked,
+          // fetch the real Roblox-rendered preview of that template's assetId
+          // so chat shows what will actually appear in Studio. This replaces
+          // the removed Flux concept image.
+          //
+          //   GET https://thumbnails.roblox.com/v1/assets?assetIds=N&size=420x420&format=Png
+          //     → { data: [ { state: "Completed", imageUrl: "https://tr.rbxcdn.com/..." } ] }
+          //   GET imageUrl → real PNG (verified 200 + valid 420x420 RGBA).
+          //
+          // Skipped when assetId === 0 (Phenom 100 local-only — no marketplace
+          // ID to query). For that case we leave previewImageUrl unset; user
+          // still gets the .rbxm export to open in Studio.
+          if (pick.config.assetId > 0) {
+            try {
+              const thumbJson = await fetch(
+                `https://thumbnails.roblox.com/v1/assets?assetIds=${pick.config.assetId}&size=420x420&format=Png&isCircular=false`,
+              ).then((r) => r.json() as Promise<{ data: Array<{ state: string; imageUrl?: string }> }>);
+              const entry = Array.isArray(thumbJson.data) && thumbJson.data.length > 0 ? thumbJson.data[0] : undefined;
+              if (entry && entry.state === 'Completed' && typeof entry.imageUrl === 'string' && entry.imageUrl) {
+                const titleForThumb = typeof currentJob.metadata?.title === 'string'
+                  ? (currentJob.metadata.title as string) : pick.config.label;
+                const thumbArtifact = await copyExternalArtifact(
+                  currentJob,
+                  entry.imageUrl,
+                  'image/png',
+                  {
+                    name: `${titleForThumb}-template-preview.png`,
+                    previewText: `Roblox preview of ${pick.config.label} template (Thumbnail API)`,
+                    stageId: 'pick_vehicle_template',
+                    artifactRole: 'preview_texture',
+                    metadata: {
+                      isPreviewTexture: true,
+                      vehicleTemplateName: pick.templateName,
+                      vehicleTemplateAssetId: pick.config.assetId,
+                      thumbnailSource: 'roblox_thumbnails_v1',
+                    },
+                  },
+                );
+                const thumbUrl = thumbArtifact.downloadUrl ?? thumbArtifact.url;
+                currentJob = {
+                  ...currentJob,
+                  artifacts: [...currentJob.artifacts, thumbArtifact],
+                  metadata: {
+                    ...(currentJob.metadata ?? {}),
+                    previewImageUrl: thumbUrl,
+                    vehiclePreviewImageUrl: thumbUrl,
+                    vehiclePreviewMode: 'roblox_thumbnail_api',
+                  },
+                };
+                logger.info('[Vehicle thumbnail] fetched + uploaded as preview', {
+                  jobId, assetId: pick.config.assetId, thumbUrl,
+                });
+              } else {
+                logger.warn('[Vehicle thumbnail] Roblox returned no Completed thumbnail', {
+                  jobId, assetId: pick.config.assetId, state: entry?.state,
+                });
+              }
+            } catch (thumbErr) {
+              logger.warn('[Vehicle thumbnail] Thumbnail API call failed — continuing without preview', {
+                jobId, assetId: pick.config.assetId, error: errorMessage(thumbErr),
+              });
+            }
+          } else {
+            logger.info('[Vehicle thumbnail] assetId=0 (local-only template), skipping Thumbnail API', {
+              jobId, templateName: pick.templateName,
+            });
+          }
         } catch (err) {
           logger.warn('[Vehicle] template router threw, falling through to mesh pipeline', {
             jobId, error: errorMessage(err),
@@ -29507,13 +29584,16 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           // Round 20L v17 (session 382): if manifest has embedded template
           // (Phenom 100, Sedan, etc.), the unboxed parts in manifest.scene
           // are only ChassisRoot + invisible wheels — blocky render would be
-          // nearly empty and override the much-better Flux concept image.
-          // Skip blocky preview for template-embed mode, keep concept image.
+          // nearly empty and override the real preview image.
+          // Session 383: the "real preview" is now the Roblox Thumbnail API
+          // PNG fetched in pick_vehicle_template (replaces the removed Flux
+          // concept image). Skipping blocky render here preserves that
+          // thumbnail as the chat preview.
           const hasEmbeddedVehicleTemplate = (manifest.embeddedModels ?? []).some((m) => m.mode === 'vehicle_template')
             || (typeof manifest.metadata?.vehicleTemplateRbxmFilename === 'string'
                 && (manifest.metadata.vehicleTemplateRbxmFilename as string).length > 0);
           if (hasEmbeddedVehicleTemplate) {
-            logger.info('[VehiclePreview] template-embed mode: keeping concept image as preview, skipping blocky render');
+            logger.info('[VehiclePreview] template-embed mode: keeping Roblox Thumbnail API preview, skipping blocky render');
             throw new Error('skip-blocky-for-template-embed'); // jump to catch which logs and continues
           }
           const previewBuffer = createFurniturePreviewPng(vehiclePreviewScene, title);
