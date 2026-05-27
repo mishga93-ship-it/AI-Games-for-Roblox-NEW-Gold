@@ -28082,18 +28082,49 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           // Skipped when assetId === 0 (Phenom 100 local-only — no marketplace
           // ID to query). For that case we leave previewImageUrl unset; user
           // still gets the .rbxm export to open in Studio.
+          //
+          // Session 383 retry: Roblox returns state="Pending" for ~1-3s when
+          // the thumbnail cache is cold (first fetch in 24h). Retry up to 3
+          // times with 2.5s backoff. If still not Completed but imageUrl is
+          // present, use it as graceful fallback — CDN returns valid PNG
+          // even for older "Pending" entries.
           if (pick.config.assetId > 0) {
-            try {
-              const thumbJson = await fetch(
-                `https://thumbnails.roblox.com/v1/assets?assetIds=${pick.config.assetId}&size=420x420&format=Png&isCircular=false`,
-              ).then((r) => r.json() as Promise<{ data: Array<{ state: string; imageUrl?: string }> }>);
-              const entry = Array.isArray(thumbJson.data) && thumbJson.data.length > 0 ? thumbJson.data[0] : undefined;
-              if (entry && entry.state === 'Completed' && typeof entry.imageUrl === 'string' && entry.imageUrl) {
-                const titleForThumb = typeof currentJob.metadata?.title === 'string'
-                  ? (currentJob.metadata.title as string) : pick.config.label;
+            const titleForThumb = typeof currentJob.metadata?.title === 'string'
+              ? (currentJob.metadata.title as string) : pick.config.label;
+            let thumbImageUrl = '';
+            let thumbState = '';
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                const thumbJson = await fetch(
+                  `https://thumbnails.roblox.com/v1/assets?assetIds=${pick.config.assetId}&size=420x420&format=Png&isCircular=false`,
+                ).then((r) => r.json() as Promise<{ data: Array<{ state: string; imageUrl?: string }> }>);
+                const entry = Array.isArray(thumbJson.data) && thumbJson.data.length > 0 ? thumbJson.data[0] : undefined;
+                thumbState = entry?.state ?? '';
+                if (entry && typeof entry.imageUrl === 'string' && entry.imageUrl) {
+                  thumbImageUrl = entry.imageUrl;
+                  if (entry.state === 'Completed') {
+                    logger.info('[Vehicle thumbnail] Completed on attempt', {
+                      jobId, assetId: pick.config.assetId, attempt,
+                    });
+                    break;
+                  }
+                }
+                logger.info('[Vehicle thumbnail] not Completed yet, retrying', {
+                  jobId, assetId: pick.config.assetId, attempt, state: thumbState,
+                });
+                if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+              } catch (thumbErr) {
+                logger.warn('[Vehicle thumbnail] fetch threw on attempt', {
+                  jobId, assetId: pick.config.assetId, attempt, error: errorMessage(thumbErr),
+                });
+                if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+              }
+            }
+            if (thumbImageUrl) {
+              try {
                 const thumbArtifact = await copyExternalArtifact(
                   currentJob,
-                  entry.imageUrl,
+                  thumbImageUrl,
                   'image/png',
                   {
                     name: `${titleForThumb}-template-preview.png`,
@@ -28105,6 +28136,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                       vehicleTemplateName: pick.templateName,
                       vehicleTemplateAssetId: pick.config.assetId,
                       thumbnailSource: 'roblox_thumbnails_v1',
+                      thumbnailFinalState: thumbState,
                     },
                   },
                 );
@@ -28119,17 +28151,17 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                     vehiclePreviewMode: 'roblox_thumbnail_api',
                   },
                 };
-                logger.info('[Vehicle thumbnail] fetched + uploaded as preview', {
-                  jobId, assetId: pick.config.assetId, thumbUrl,
+                logger.info('[Vehicle thumbnail] uploaded as preview', {
+                  jobId, assetId: pick.config.assetId, thumbUrl, finalState: thumbState,
                 });
-              } else {
-                logger.warn('[Vehicle thumbnail] Roblox returned no Completed thumbnail', {
-                  jobId, assetId: pick.config.assetId, state: entry?.state,
+              } catch (copyErr) {
+                logger.warn('[Vehicle thumbnail] copyExternalArtifact failed — continuing without preview', {
+                  jobId, assetId: pick.config.assetId, error: errorMessage(copyErr),
                 });
               }
-            } catch (thumbErr) {
-              logger.warn('[Vehicle thumbnail] Thumbnail API call failed — continuing without preview', {
-                jobId, assetId: pick.config.assetId, error: errorMessage(thumbErr),
+            } else {
+              logger.warn('[Vehicle thumbnail] all 3 retries exhausted — no imageUrl from Roblox', {
+                jobId, assetId: pick.config.assetId, lastState: thumbState,
               });
             }
           } else {
