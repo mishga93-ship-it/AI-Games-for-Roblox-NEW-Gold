@@ -33,6 +33,11 @@ struct FittingRoomResultView: View {
     /// "applied" 3-angle preview (img2img with the outfit on). Default to
     /// 3D when we have a Roblox userId — that's the more impressive view.
     @State private var heroMode: HeroMode = .threeDee
+    /// Phase B — when true, every OutfitItem is fetched as a real 3D mesh
+    /// from Roblox's asset-3d endpoint and stacked onto the avatar in the
+    /// SceneKit scene. No AI re-render needed. Defaults to true so the
+    /// dress-up vibe kicks in as soon as the avatar finishes loading.
+    @State private var tryOnIn3D: Bool = true
     @ObservedObject private var robloxAuth = RobloxAuthService.shared
 
     enum HeroMode: Hashable { case threeDee, applied }
@@ -43,6 +48,17 @@ struct FittingRoomResultView: View {
     private var robloxUserId: String? {
         if let id = response.robloxUserId, !id.isEmpty { return id }
         return robloxAuth.robloxUserId
+    }
+
+    /// Phase B — map OutfitItems → SceneKit attachments. Hidden/no-3D
+    /// slots (e.g., aura) are filtered so we don't waste an API call.
+    private var threeDeeAttachments: [RobloxAvatar3DViewer.Attachment] {
+        response.items.compactMap { item in
+            let slot = item.slot.lowercased()
+            // Skip slots Roblox's asset-3d typically can't render.
+            if slot == "aura" || slot == "" { return nil }
+            return RobloxAvatar3DViewer.Attachment(assetId: item.assetId, slot: slot)
+        }
     }
 
     private var renders: [String?] {
@@ -190,7 +206,10 @@ struct FittingRoomResultView: View {
     private var heroThreeDee: some View {
         if let userId = robloxUserId {
             ZStack {
-                RobloxAvatar3DViewer(robloxUserId: userId)
+                RobloxAvatar3DViewer(
+                    robloxUserId: userId,
+                    attachedAssets: tryOnIn3D ? threeDeeAttachments : []
+                )
                 VStack {
                     HStack {
                         Spacer()
@@ -207,16 +226,38 @@ struct FittingRoomResultView: View {
                         .padding(12)
                     }
                     Spacer()
-                    HStack(spacing: 4) {
-                        Image(systemName: "hand.tap.fill").font(.caption2)
-                        Text(loc(en: "Drag to orbit · pinch to zoom",
-                                 ru: "Тяни — поворот · щипок — zoom"))
-                            .font(.caption2.bold())
+                    HStack(spacing: 8) {
+                        // Phase B — toggle to add/remove real 3D meshes of
+                        // the fit's items on top of the avatar.
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                tryOnIn3D.toggle()
+                            }
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: tryOnIn3D ? "xmark.circle.fill" : "sparkles")
+                                    .font(.caption2.bold())
+                                Text(tryOnIn3D
+                                     ? loc(en: "Take off", ru: "Снять")
+                                     : loc(en: "Try this fit on 3D", ru: "Примерить в 3D"))
+                                    .font(.caption.bold())
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(tryOnIn3D ? Color.orange.opacity(0.85) : accentColor.opacity(0.85))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.5))
+                        }
+                        HStack(spacing: 4) {
+                            Image(systemName: "hand.tap.fill").font(.caption2)
+                            Text(loc(en: "Drag · pinch", ru: "Тяни · щипок"))
+                                .font(.caption2.bold())
+                        }
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
                     }
-                    .foregroundColor(.white.opacity(0.85))
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
                     .padding(.bottom, 10)
                 }
             }

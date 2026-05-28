@@ -52,15 +52,23 @@ export interface RobloxAvatar3DUrls {
  * across 8 servers (t0..t7); the server is picked by XORing the first 38
  * characters of the hash, mod 8.
  *
+ * Two known hash formats:
+ *   • Legacy: 32-char hex (avatar-3d). XOR the full hash.
+ *   • New "TN3" (assets-thumbnail-3d, ~2025): `180DAY-<32-char-hex>`. The
+ *     `180DAY-` prefix is NOT part of the XOR — strip it before hashing.
+ *     Verified empirically against asset 10927612825 (bucket 0 / 2 / 7
+ *     for obj / mtl / texture respectively).
+ *
  * Reference: https://devforum.roblox.com/t/.../2432524
  */
-function hashToCdnUrl(hash: string): string {
+export function hashToCdnUrl(hash: string): string {
   if (!hash || typeof hash !== 'string' || hash.length < 32) {
     throw new Error(`invalid CDN hash: ${hash}`);
   }
+  const stripped = hash.replace(/^180DAY-/, '');
   let i = 31;
-  for (let t = 0; t < 38 && t < hash.length; t++) {
-    i ^= hash.charCodeAt(t);
+  for (let t = 0; t < 38 && t < stripped.length; t++) {
+    i ^= stripped.charCodeAt(t);
   }
   const bucket = (i % 8 + 8) % 8;  // guard against negative modulo
   return `https://t${bucket}.rbxcdn.com/${hash}`;
@@ -207,5 +215,124 @@ function parseVec3(raw: unknown, fallback: { x: number; y: number; z: number }) 
     x: typeof v?.x === 'number' ? (v.x as number) : fallback.x,
     y: typeof v?.y === 'number' ? (v.y as number) : fallback.y,
     z: typeof v?.z === 'number' ? (v.z as number) : fallback.z,
+  };
+}
+
+// ─── Phase B: per-asset 3D mesh ─────────────────────────────────
+//
+// Same JSON shape as avatar-3d, but the endpoint REQUIRES authenticated
+// session cookie (`.ROBLOSECURITY`). The cookie is set in env as
+// ROBLOX_SERVICE_COOKIE. Once we have a manifest, the hash→CDN trick is
+// the same as for avatars (after stripping the `180DAY-` prefix).
+//
+// Works for catalog items that have an Avatar Asset 3D thumbnail —
+// primarily Accessory, Hat, Hair, Face, ClassicShirt, ClassicPants.
+
+const ASSET_3D_ENDPOINT = 'https://thumbnails.roblox.com/v1/assets-thumbnail-3d';
+
+export interface RobloxAsset3DUrls extends Omit<RobloxAvatar3DUrls, 'userId'> {
+  assetId: string;
+}
+
+export async function fetchRobloxAsset3D(args: {
+  assetId: string;
+  maxAttempts?: number;
+  pollDelayMs?: number;
+}): Promise<RobloxAsset3DUrls | null> {
+  const { assetId } = args;
+  const maxAttempts = args.maxAttempts ?? 6;
+  const pollDelayMs = args.pollDelayMs ?? 1_500;
+
+  if (!/^\d{1,15}$/.test(String(assetId))) {
+    logger.warn('[robloxAsset3D] invalid assetId', { assetId });
+    return null;
+  }
+
+  const cookie = process.env.ROBLOX_SERVICE_COOKIE ?? '';
+  if (!cookie) {
+    logger.warn('[robloxAsset3D] ROBLOX_SERVICE_COOKIE not set — asset-3d requires auth');
+    return null;
+  }
+  const cookieHeader = `.ROBLOSECURITY=${cookie}`;
+
+  // Step 1: poll until state='Completed'.
+  let imageUrl: string | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const resp = await fetch(`${ASSET_3D_ENDPOINT}?assetId=${assetId}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'Cookie': cookieHeader },
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (resp.status === 401 || resp.status === 403) {
+        logger.warn('[robloxAsset3D] cookie rejected', { assetId, status: resp.status });
+        return null;
+      }
+      if (!resp.ok) {
+        logger.warn('[robloxAsset3D] non-200', { assetId, status: resp.status, attempt });
+        return null;
+      }
+      const json = await resp.json() as { targetId?: number; state?: string; imageUrl?: string };
+      if (json.state === 'Completed' && typeof json.imageUrl === 'string' && json.imageUrl.length > 0) {
+        imageUrl = json.imageUrl;
+        break;
+      }
+      if (json.state === 'Error') {
+        logger.warn('[robloxAsset3D] state=Error', { assetId, attempt });
+        return null;
+      }
+      // 'Pending' or unknown — wait and retry.
+    } catch (err) {
+      logger.warn('[robloxAsset3D] fetch failed', {
+        assetId, attempt, err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (attempt < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, pollDelayMs));
+    }
+  }
+  if (!imageUrl) return null;
+
+  // Step 2: fetch manifest.
+  let manifest: { obj: string; mtl: string; textures: string[]; camera: unknown; aabb: unknown };
+  try {
+    const resp = await fetch(imageUrl, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!resp.ok) return null;
+    manifest = await resp.json();
+  } catch (err) {
+    logger.warn('[robloxAsset3D] manifest fetch failed', {
+      assetId, err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+  if (!manifest?.obj || !manifest?.mtl || !Array.isArray(manifest?.textures)) {
+    logger.warn('[robloxAsset3D] manifest missing fields', { assetId });
+    return null;
+  }
+
+  // Step 3: resolve CDN URLs (handles 180DAY- prefix).
+  let objUrl: string, mtlUrl: string, textureUrls: string[];
+  try {
+    objUrl = hashToCdnUrl(manifest.obj);
+    mtlUrl = hashToCdnUrl(manifest.mtl);
+    textureUrls = manifest.textures.map((h) => hashToCdnUrl(h));
+  } catch (err) {
+    logger.warn('[robloxAsset3D] hash→URL conversion failed', {
+      assetId, err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+
+  return {
+    assetId: String(assetId),
+    objUrl,
+    mtlUrl,
+    textureUrls,
+    camera: parseCamera(manifest.camera),
+    aabb: parseAabb(manifest.aabb),
   };
 }

@@ -166,7 +166,7 @@ import { generateAura } from './auraGenerator.js';
 import { isAuraStyleId, parseAuraIntensity, parseAuraSize, parseAuraTone } from './data/auraStyles.js';
 // Session 386 — Zero-Robux UGC Fitting Room
 import { startFittingRoomJob, fetchFittingRoomDoc } from './fittingRoomRenderer.js';
-import { fetchRobloxAvatar3D } from './robloxAvatar3D.js';
+import { fetchRobloxAvatar3D, fetchRobloxAsset3D } from './robloxAvatar3D.js';
 // Session 387 — Voice-Controlled Survival Disaster Spawner
 import { generateDisaster } from './disasterGenerator.js';
 import {
@@ -1103,6 +1103,39 @@ app.get('/api/roblox-avatar/3d/:userId', async (req: AuthedRequest, res) => {
   } catch (err) {
     logger.error('[roblox-avatar-3d] failed', err);
     return res.status(500).json({ error: 'Failed to fetch 3D avatar' });
+  }
+});
+
+// ─── Phase B (session 389+2): Roblox asset 3D mesh proxy ────────
+// Same shape as /api/roblox-avatar/3d/:userId but for individual catalog
+// items (hats / hair / accessories / face / shirt / pants). Used by iOS
+// SceneKit viewer to attach real 3D meshes of catalog items on top of
+// the user's avatar — true per-slot try-on (no AI re-render needed).
+//
+// Server-side requires ROBLOX_SERVICE_COOKIE (the public asset-3d
+// endpoint is auth-gated even for read). iOS just hits this proxy with
+// the assetId from OutfitItem.
+app.get('/api/roblox-asset/3d/:assetId', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const assetId = req.params.assetId;
+    if (typeof assetId !== 'string' || !/^\d{1,15}$/.test(assetId)) {
+      return res.status(400).json({ error: 'Invalid assetId (must be numeric Roblox id)' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/roblox-asset/3d');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const result = await fetchRobloxAsset3D({ assetId });
+    if (!result) {
+      return res.status(502).json({ error: 'Roblox asset-3d not ready or unavailable' });
+    }
+    return res.json(result);
+  } catch (err) {
+    logger.error('[roblox-asset-3d] failed', err);
+    return res.status(500).json({ error: 'Failed to fetch 3D asset' });
   }
 });
 

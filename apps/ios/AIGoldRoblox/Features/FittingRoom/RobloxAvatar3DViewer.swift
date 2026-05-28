@@ -1,31 +1,34 @@
-// RobloxAvatar3DViewer.swift — Phase A (session 389+1).
+// RobloxAvatar3DViewer.swift — Phase A + Phase B (session 389+2).
 //
 // Interactive SceneKit viewer for a Roblox user's real 3D avatar (OBJ +
-// MTL + PNG textures from the public avatar-3d endpoint, proxied through
-// our /api/roblox-avatar/3d/:userId).
+// MTL + PNG textures from /api/roblox-avatar/3d/:userId).
 //
-// Pipeline (all on a background actor; main only renders progress):
-//   1. GET /api/roblox-avatar/3d/:userId → { objUrl, mtlUrl, textureUrls,
-//      camera, aabb }.
-//   2. Download OBJ + MTL + each texture into a fresh temp directory.
-//   3. Prepend `mtllib avatar.mtl` to the OBJ (Roblox omits this line, so
-//      SceneKit's OBJ importer wouldn't otherwise find materials).
-//   4. Load the OBJ via SCNSceneSource. SceneKit walks the mtllib +
-//      relative texture paths from the same directory.
-//   5. Frame the scene with the camera/aabb from step 1 + enable
-//      allowsCameraControl for native rotate / zoom.
-//
-// Phase B will add per-slot accessory swap on top of this scene; the
-// viewer owns the SCNScene so future swaps can manipulate child nodes
-// directly without reloading the avatar.
+// Phase A: load avatar mesh, frame camera, orbit/zoom controls.
+// Phase B: attach catalog asset meshes (hats / hair / accessories) on
+// top of the avatar via /api/roblox-asset/3d/:assetId — real 3D
+// per-slot try-on, no AI re-render. Position is best-effort per slot
+// type since Roblox's standalone asset render uses arbitrary world
+// coords (no rig attachment metadata in the OBJ).
 
 import SwiftUI
 import SceneKit
 
 struct RobloxAvatar3DViewer: View {
     let robloxUserId: String
+    /// Phase B — when non-empty, after the avatar loads we fetch each
+    /// asset's 3D mesh and attach it to the scene with slot-specific
+    /// positioning. Re-runs when the set changes (SwiftUI .id binding).
+    var attachedAssets: [Attachment] = []
+
+    struct Attachment: Hashable {
+        let assetId: String
+        /// Slot category — drives the placement offset on the avatar
+        /// (hat → head top, accessory → torso, etc).
+        let slot: String
+    }
 
     @State private var loadState: LoadState = .loading
+    @State private var attachmentTask: Task<Void, Never>? = nil
 
     enum LoadState {
         case loading
@@ -35,8 +38,6 @@ struct RobloxAvatar3DViewer: View {
 
     var body: some View {
         ZStack {
-            // Subtle backdrop so the SceneView reads as a "stage", not
-            // a transparent window.
             LinearGradient(colors: [.black, Color(red: 0.06, green: 0.04, blue: 0.18), .black],
                            startPoint: .top, endPoint: .bottom)
             switch loadState {
@@ -69,6 +70,11 @@ struct RobloxAvatar3DViewer: View {
             }
         }
         .task(id: robloxUserId) { await load() }
+        .onChange(of: attachedAssets) { _, newValue in
+            // Re-run attachment when the set changes (toggle on/off, add a
+            // new item, remove one). Cancels any in-flight attachment task.
+            applyAttachments(newValue)
+        }
         .animation(.easeInOut(duration: 0.3), value: stateKey)
     }
 
@@ -88,6 +94,8 @@ struct RobloxAvatar3DViewer: View {
             await MainActor.run {
                 withAnimation { loadState = .ready(scene, urls) }
             }
+            // Apply any initial attachments now that the scene is ready.
+            applyAttachments(attachedAssets)
         } catch {
             await MainActor.run {
                 loadState = .failed(error.localizedDescription)
@@ -103,18 +111,77 @@ struct RobloxAvatar3DViewer: View {
         )
     }
 
-    /// All download + SceneKit work happens on a background actor so we
-    /// never block the main thread (OBJ parsing for an R-15 avatar is
-    /// ~80-150 ms — small but still off the main run loop).
-    private static func loadSceneOffMain(urls: Avatar3DURLs) async throws -> SCNScene {
-        let tmpDir = try makeAvatarTempDir(userId: urls.userId)
-        defer {
-            // Best-effort cleanup AFTER scene is loaded (SceneKit slurps
-            // texture references at load time, so files are no longer
-            // needed once SCNSceneSource returns).
-        }
+    // MARK: - Phase B: attach catalog asset meshes
 
-        // Download OBJ, MTL, textures in parallel for speed.
+    private func applyAttachments(_ desired: [Attachment]) {
+        attachmentTask?.cancel()
+        guard case let .ready(scene, urls) = loadState else { return }
+
+        // Remove any previously attached accessory nodes (named with the
+        // "AccessoryAttachment-<assetId>" prefix). Then re-attach desired
+        // items. This is simple and idempotent — fine for ~10 items per
+        // outfit; if Phase C needs incremental diffing we can revisit.
+        for child in scene.rootNode.childNodes
+            where child.name?.hasPrefix("AccessoryAttachment-") == true {
+                child.removeFromParentNode()
+        }
+        guard !desired.isEmpty else { return }
+
+        attachmentTask = Task.detached(priority: .userInitiated) { [urls] in
+            await Self.attachAll(desired: desired, in: scene, avatarAabb: urls.aabb)
+        }
+    }
+
+    private static func attachAll(desired: [Attachment], in scene: SCNScene, avatarAabb: Avatar3DAABB) async {
+        // Sequential attach so the user sees items pop in one-by-one
+        // (parallel would all snap in at once and feel less alive).
+        for att in desired {
+            if Task.isCancelled { return }
+            do {
+                let urls = try await fetchAssetURLs(assetId: att.assetId)
+                let node = try await loadAssetNodeOffMain(urls: urls, slot: att.slot, avatarAabb: avatarAabb, assetId: att.assetId)
+                await MainActor.run {
+                    if !Task.isCancelled {
+                        // Fly-in animation: start scale 0.01, ease to 1.0.
+                        node.scale = SCNVector3(0.01, 0.01, 0.01)
+                        scene.rootNode.addChildNode(node)
+                        let bounce = SCNAction.sequence([
+                            SCNAction.scale(to: 1.05, duration: 0.28),
+                            SCNAction.scale(to: 1.0, duration: 0.12),
+                        ])
+                        bounce.timingMode = .easeOut
+                        node.runAction(bounce)
+                    }
+                }
+            } catch {
+                // Soft-fail per-item — Phase B just skips items that
+                // don't have a 3D mesh on the asset-3d endpoint.
+                print("[RobloxAvatar3D] attach failed for \(att.assetId): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private static func fetchAssetURLs(assetId: String) async throws -> Avatar3DURLs {
+        // Backend returns the SAME shape for assets (assetId field instead
+        // of userId — we ignore it). Decode into Avatar3DURLs by re-mapping.
+        let raw: Asset3DURLs = try await APIClient.request(
+            "api/roblox-asset/3d/\(assetId)",
+            method: "GET",
+            timeout: 25
+        )
+        return Avatar3DURLs(
+            userId: raw.assetId,
+            objUrl: raw.objUrl,
+            mtlUrl: raw.mtlUrl,
+            textureUrls: raw.textureUrls,
+            camera: raw.camera,
+            aabb: raw.aabb
+        )
+    }
+
+    private static func loadAssetNodeOffMain(urls: Avatar3DURLs, slot: String, avatarAabb: Avatar3DAABB, assetId: String) async throws -> SCNNode {
+        let tmpDir = try makeAvatarTempDir(userId: "asset-\(assetId)")
+
         async let objData    = downloadData(urls.objUrl)
         async let mtlData    = downloadData(urls.mtlUrl)
         async let textureFiles = downloadAllTextures(urls: urls.textureUrls, into: tmpDir)
@@ -123,8 +190,90 @@ struct RobloxAvatar3DViewer: View {
         let mtlBytes = try await mtlData
         _ = try await textureFiles
 
-        // Roblox OBJ doesn't reference its MTL — prepend the directive so
-        // SceneKit picks up materials automatically.
+        let mtllibLine = "mtllib avatar.mtl\n".data(using: .utf8) ?? Data()
+        if !objBytes.starts(with: mtllibLine) {
+            var fixed = Data(); fixed.append(mtllibLine); fixed.append(objBytes)
+            objBytes = fixed
+        }
+        let objURL = tmpDir.appendingPathComponent("avatar.obj")
+        let mtlURL = tmpDir.appendingPathComponent("avatar.mtl")
+        try objBytes.write(to: objURL)
+        try mtlBytes.write(to: mtlURL)
+
+        guard let source = SCNSceneSource(url: objURL, options: [
+            SCNSceneSource.LoadingOption.checkConsistency: true,
+            SCNSceneSource.LoadingOption.createNormalsIfAbsent: true,
+        ]) else {
+            throw NSError(domain: "RobloxAsset3D", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "SceneKit could not open asset OBJ",
+            ])
+        }
+        let assetScene = try source.scene(options: nil)
+
+        // Roblox asset OBJ uses arbitrary world coords (whatever the
+        // standalone preview render decided). Re-center on its OWN aabb
+        // so we can place it deliberately on the avatar afterward.
+        let aabb = urls.aabb
+        let center = SCNVector3(
+            (aabb.min.x + aabb.max.x) / 2,
+            (aabb.min.y + aabb.max.y) / 2,
+            (aabb.min.z + aabb.max.z) / 2
+        )
+        let wrapper = SCNNode()
+        wrapper.name = "AccessoryAttachment-\(assetId)"
+        for child in assetScene.rootNode.childNodes {
+            child.position = SCNVector3(
+                child.position.x - center.x,
+                child.position.y - center.y,
+                child.position.z - center.z
+            )
+            wrapper.addChildNode(child)
+        }
+
+        // Position on the avatar — hardcoded slot offsets (Y in the
+        // avatar-centered coord system). The avatar's own AABB tells us
+        // approximate head/torso heights so accessories scale roughly
+        // right across different avatars.
+        let avatarHeight = avatarAabb.max.y - avatarAabb.min.y
+        let yOffset = slotYOffset(slot: slot, avatarHeight: avatarHeight)
+        wrapper.position = SCNVector3(0, yOffset, 0)
+
+        return wrapper
+    }
+
+    /// Where on the avatar's vertical axis (in centered coords) to drop
+    /// the accessory. Empirical values tuned for R-15 proportions.
+    private static func slotYOffset(slot: String, avatarHeight: Double) -> Float {
+        let h = Float(avatarHeight)
+        switch slot.lowercased() {
+        case "hair":              return h * 0.42   // top of head
+        case "face":              return h * 0.36   // face area
+        case "hat", "head":       return h * 0.45   // hat sits ON the head
+        case "neck":              return h * 0.30
+        case "shoulder":          return h * 0.28
+        case "shirt", "jacket":   return h * 0.15   // torso center
+        case "back":              return h * 0.18
+        case "pants":             return -h * 0.10  // hip / legs
+        case "shoes":             return -h * 0.38  // feet
+        case "accessory":         return h * 0.20   // generic torso accessory
+        case "aura":              return 0          // surrounds whole avatar
+        default:                  return h * 0.20
+        }
+    }
+
+    // MARK: - Avatar load (Phase A) — extracted helpers shared with Phase B
+
+    private static func loadSceneOffMain(urls: Avatar3DURLs) async throws -> SCNScene {
+        let tmpDir = try makeAvatarTempDir(userId: urls.userId)
+
+        async let objData    = downloadData(urls.objUrl)
+        async let mtlData    = downloadData(urls.mtlUrl)
+        async let textureFiles = downloadAllTextures(urls: urls.textureUrls, into: tmpDir)
+
+        var objBytes = try await objData
+        let mtlBytes = try await mtlData
+        _ = try await textureFiles
+
         let mtllibLine = "mtllib avatar.mtl\n".data(using: .utf8) ?? Data()
         if !objBytes.starts(with: mtllibLine) {
             var fixed = Data(); fixed.append(mtllibLine); fixed.append(objBytes)
@@ -144,15 +293,9 @@ struct RobloxAvatar3DViewer: View {
                 NSLocalizedDescriptionKey: "SceneKit could not open OBJ",
             ])
         }
-        let scene: SCNScene
-        do {
-            scene = try source.scene(options: nil)
-        } catch {
-            throw error
-        }
+        let scene = try source.scene(options: nil)
 
-        // Roblox OBJ is offset in Y by a few units (avatar feet are NOT
-        // at y=0); we center via the AABB so the camera frames it nicely.
+        // Center via aabb (Roblox OBJ has feet offset from y=0).
         let aabb = urls.aabb
         let center = SCNVector3(
             (aabb.min.x + aabb.max.x) / 2,
@@ -160,6 +303,7 @@ struct RobloxAvatar3DViewer: View {
             (aabb.min.z + aabb.max.z) / 2
         )
         let rootContainer = SCNNode()
+        rootContainer.name = "AvatarRoot"
         for child in scene.rootNode.childNodes {
             child.position = SCNVector3(
                 child.position.x - center.x,
@@ -170,8 +314,7 @@ struct RobloxAvatar3DViewer: View {
         }
         scene.rootNode.addChildNode(rootContainer)
 
-        // Soft 3-point lighting for the avatar — without this the OBJ
-        // textures look flat against the dark backdrop.
+        // 3-point lighting.
         let key = SCNNode()
         key.light = SCNLight()
         key.light?.type = .directional
@@ -194,9 +337,7 @@ struct RobloxAvatar3DViewer: View {
         ambient.light?.intensity = 350
         scene.rootNode.addChildNode(ambient)
 
-        // Camera — Roblox sends a position/direction but it assumes its
-        // own world coords. After centering we just frame the avatar at a
-        // safe distance based on the AABB diagonal.
+        // Camera.
         let camera = SCNNode()
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = CGFloat(urls.camera.fov > 0 ? urls.camera.fov : 28.36)
@@ -249,10 +390,19 @@ struct RobloxAvatar3DViewer: View {
     }
 }
 
-// MARK: - Wire types (mirror backend RobloxAvatar3DUrls)
+// MARK: - Wire types (mirror backend RobloxAvatar3DUrls / RobloxAsset3DUrls)
 
 struct Avatar3DURLs: Decodable {
     let userId: String
+    let objUrl: String
+    let mtlUrl: String
+    let textureUrls: [String]
+    let camera: Avatar3DCamera
+    let aabb: Avatar3DAABB
+}
+
+struct Asset3DURLs: Decodable {
+    let assetId: String
     let objUrl: String
     let mtlUrl: String
     let textureUrls: [String]
@@ -285,8 +435,8 @@ private struct SceneKitView: UIViewRepresentable {
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
         view.scene = scene
-        view.allowsCameraControl = true   // native one-finger orbit + pinch zoom
-        view.autoenablesDefaultLighting = false  // we set our own lighting above
+        view.allowsCameraControl = true
+        view.autoenablesDefaultLighting = false
         view.backgroundColor = .clear
         view.antialiasingMode = .multisampling4X
         view.preferredFramesPerSecond = 60
