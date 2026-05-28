@@ -986,18 +986,37 @@ struct ForgeView: View {
         let mode: ChatView.EntryChatMode = session.chatMode == "voice" ? .voice : .text
         let kind = ProjectKind(rawValue: session.projectKind) ?? .game
         let notificationJobId = overrideJobId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let launchJobId = notificationJobId?.isEmpty == false ? notificationJobId : session.lastJobId
+        // Round 11 also accepts session.generationStatus.jobId as a fallback —
+        // some viral chat-flow paths (disaster_spawner / voice_aura) finish
+        // through viralChatDispatch and persist via persistLiveGenerationStatus,
+        // which writes generationStatus + lastJobId together. But if the user
+        // closed the sheet before the iOS poller saw the terminal status,
+        // lastJobId can race to nil while generationStatus retains the jobId.
+        // Trying both fields makes resume-tap robust to that race.
+        let statusJobId = session.generationStatus?.jobId
+        let launchJobId = notificationJobId?.isEmpty == false
+            ? notificationJobId
+            : (session.lastJobId ?? statusJobId)
         // Session 385 round 11 — auto-open the preview/bridge result when the
-        // tapped chat has a completed generation. Previously the user tapped
-        // a "Voice-Controlled Disaster Spawner — Meteor Storm" history row,
-        // ChatView reopened with restored messages BUT the rich result view
-        // (DisasterSpawnerChatBridge / FittingRoomChatBridge / etc.) stayed
-        // collapsed in the status-dock, requiring a second manual "Open" tap.
-        // The user perceived this as "history doesn't remember the result".
-        // Auto-open when launchJobId is non-empty — the existing explicit
-        // openGenerationOnLaunch=true callers (push-notification tap) keep
-        // working unchanged because true || x == true.
-        let shouldAutoOpenResult = openGenerationOnLaunch || (launchJobId?.isEmpty == false)
+        // tapped chat has a TERMINAL generation (completed / partial /
+        // awaiting_review / failed). Previously user tapped a "Voice-Controlled
+        // Disaster Spawner — Meteor Storm" history row, ChatView reopened with
+        // restored messages BUT the rich result view (DisasterSpawnerChatBridge
+        // / FittingRoomChatBridge / etc.) stayed collapsed in the status-dock,
+        // requiring a second manual "Open" tap. User: «по переходу не запоинает
+        // и заново начинается».
+        //
+        // Active jobs (status != terminal) deliberately DON'T auto-open — the
+        // preview isn't ready yet, opening would just flash an empty sheet.
+        // Older sessions with no generationStatus at all but a lastJobId
+        // present are assumed terminal (legacy data shape — opening is safe,
+        // makePreviewPayload handles partial fetches gracefully).
+        let hasTerminalJob: Bool = {
+            guard let id = launchJobId, !id.isEmpty else { return false }
+            if let status = session.generationStatus { return !status.isActive }
+            return true
+        }()
+        let shouldAutoOpenResult = openGenerationOnLaunch || hasTerminalJob
         launchConfig = ChatLaunchConfig(
             title: session.title,
             entryMode: mode,
