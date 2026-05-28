@@ -2171,6 +2171,29 @@ ${viralStyleInjection.promptBlock}`, 8000);
       artifacts: [],
       history: ['Queued generation job', `Selected provider: ${provider}`],
       stages: (() => {
+        // Session 385 round 7 — viral chat-flow jobs (disaster_spawner /
+        // voice_aura / fitting_room) bypass the 9-stage character pipeline.
+        // They run synchronously inside tryHandleViralChatGeneration which
+        // produces final artifacts in ~5-15s; the user sees a single
+        // "Cooking…" stage instead of a misleading "Concept image →
+        // Awaiting approval → 3D mesh → Auto-rig R15" timeline that never
+        // executes for this kind. ChatStore.makePreviewPayload routes the
+        // completed job into the per-kind ChatBridge result view.
+        const viralSubInit = typeof effectiveMetadata.contentSubcategory === 'string'
+          ? effectiveMetadata.contentSubcategory.toLowerCase() : '';
+        if (viralSubInit === 'disaster_spawner' || viralSubInit === 'voice_aura' || viralSubInit === 'fitting_room') {
+          const title = viralSubInit === 'disaster_spawner'
+            ? 'Cooking disaster (concept + safe Lua + .rbxmx)'
+            : viralSubInit === 'voice_aura'
+              ? 'Cooking aura (concept + safe particle Lua + .rbxmx)'
+              : 'Rendering fit on your avatar (3 angles)';
+          return [{
+            id: 'viral_generation' as GenerationStageId,
+            title,
+            status: 'processing' as GenerationStageStatus,
+            startedAt: new Date().toISOString(),
+          }];
+        }
         if (requestedKind === 'clothing_3d') return createLayeredClothingPipelineStages();
         if (requestedKind === 'pet_3d') {
           // Track 3 Phase 2 (Blocky Pet): user picked blocky mode in iOS chat;
