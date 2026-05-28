@@ -53,12 +53,15 @@ export interface RobloxAvatar3DUrls {
  * across 8 servers (t0..t7); the server is picked by XORing the first 38
  * characters of the hash, mod 8.
  *
- * Two known hash formats:
- *   • Legacy: 32-char hex (avatar-3d). XOR the full hash.
- *   • New "TN3" (assets-thumbnail-3d, ~2025): `180DAY-<32-char-hex>`. The
- *     `180DAY-` prefix is NOT part of the XOR — strip it before hashing.
- *     Verified empirically against asset 10927612825 (bucket 0 / 2 / 7
- *     for obj / mtl / texture respectively).
+ * Known hash formats (XOR uses the hex suffix only — strip any prefix):
+ *   • Legacy: 32-char hex (avatar-3d, pre-2026).
+ *   • TN3 asset-3d: `180DAY-<32-char-hex>` (assets-thumbnail-3d, 2025+).
+ *   • TN3 avatar-3d: `30DAY-<32-char-hex>` or
+ *     `30DAY-Avatar-<32-char-hex>-Obj` (users/avatar-3d, 2026+ — Roblox
+ *     started prefixing avatar manifests as well after they cookie-gated
+ *     the endpoint).
+ *   Verified empirically against asset 10927612825 (bucket 0 / 2 / 7
+ *   for obj / mtl / texture respectively).
  *
  * Reference: https://devforum.roblox.com/t/.../2432524
  */
@@ -66,10 +69,14 @@ export function hashToCdnUrl(hash: string): string {
   if (!hash || typeof hash !== 'string' || hash.length < 32) {
     throw new Error(`invalid CDN hash: ${hash}`);
   }
-  const stripped = hash.replace(/^180DAY-/, '');
+  // Strip any of Roblox's variable-length time-windowed prefixes
+  // (`180DAY-`, `30DAY-`, `30DAY-Avatar-…-Obj`, etc.) so the XOR sees
+  // only the actual hex hash. The bucket is determined by the hex; the
+  // download URL keeps the original prefix.
+  const hex = hash.match(/[0-9a-fA-F]{32,}/)?.[0] ?? hash;
   let i = 31;
-  for (let t = 0; t < 38 && t < stripped.length; t++) {
-    i ^= stripped.charCodeAt(t);
+  for (let t = 0; t < 38 && t < hex.length; t++) {
+    i ^= hex.charCodeAt(t);
   }
   const bucket = (i % 8 + 8) % 8;  // guard against negative modulo
   return `https://t${bucket}.rbxcdn.com/${hash}`;
@@ -116,9 +123,16 @@ export async function fetchRobloxAvatar3D(args: {
         logger.warn('[robloxAvatar3D] avatar-3d non-200', { userId, status: resp.status, attempt });
         return null;
       }
-      const json = await resp.json() as { data?: Array<{ targetId: number; state: string; imageUrl?: string }> };
-      const entry = json.data?.[0];
-      if (!entry) {
+      const raw = await resp.json() as
+        | { data?: Array<{ targetId: number; state: string; imageUrl?: string }> }
+        | { targetId?: number; state?: string; imageUrl?: string };
+      // Roblox returns BOTH shapes in the wild — wrapped {data:[entry]}
+      // for some user IDs / cookies, flat {targetId,state,imageUrl} for
+      // others (observed 2026-05 — different shape than Phase A shipped).
+      const entry = ('data' in raw && Array.isArray(raw.data))
+        ? raw.data[0]
+        : (raw as { targetId?: number; state?: string; imageUrl?: string });
+      if (!entry || typeof entry.state !== 'string') {
         logger.warn('[robloxAvatar3D] avatar-3d returned no entry', { userId, attempt });
         return null;
       }

@@ -199,10 +199,25 @@ export async function swapFittingRoomSlot(args: {
 
 // ─── img2img per angle ─────────────────────────────────────────
 
+/// Stable 32-bit seed derived from a string (FNV-1a). Same generationId
+/// always produces the same seed — so 3 angle renders within ONE
+/// generation start from the same noise pattern, which keeps the face /
+/// skin tone / body shape consistent across the angles.
+function deterministicSeed(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  // Map to unsigned 32-bit range, then to a safe positive int for fal.
+  return (h >>> 0) % 2_147_483_647;
+}
+
 async function renderAngle(args: {
   basePrompt: string;
   avatarBuffer: Buffer | null;
   angle: FittingAngle;
+  generationId: string;
 }): Promise<Buffer | undefined> {
   const finalPrompt = buildFittingPrompt({ basePrompt: args.basePrompt, angle: args.angle });
 
@@ -210,12 +225,23 @@ async function renderAngle(args: {
   if (args.avatarBuffer) {
     try {
       const dataUri = `data:image/png;base64,${args.avatarBuffer.toString('base64')}`;
+      // User reported (2026-05-28): «в фит аппилед на всех трех ракурсах
+      // разные персы и скины». Two reasons:
+      //   1. strength: 0.85 → flux is mostly INVENTING a new character
+      //      instead of dressing the input avatar. Drop to 0.55 so the
+      //      user's face / skin tone / body shape come through.
+      //   2. Each angle picked a random seed → 3 different faces. Use
+      //      a generation-stable seed (deterministicSeed of generationId)
+      //      so all 3 angles share the same starting noise pattern. With
+      //      lower strength + shared seed, the three renders read as the
+      //      SAME person in 3 poses, not 3 strangers in 3 vibes.
       const result = await runFal('flux/dev/image-to-image', {
         image_url: dataUri,
         prompt: finalPrompt,
-        strength: 0.85,
+        strength: 0.55,
         num_inference_steps: 28,
-        guidance_scale: 5.5,
+        guidance_scale: 4.5,
+        seed: deterministicSeed(args.generationId),
         num_images: 1,
         enable_safety_checker: true,
       });
@@ -332,7 +358,7 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
   const basePrompt = `A Roblox blocky avatar in the "${aesthetic.title}" aesthetic. ${aesthetic.pitchEN}`;
 
   for (const angle of FITTING_ANGLE_ORDER) {
-    const buf = await renderAngle({ basePrompt, avatarBuffer, angle });
+    const buf = await renderAngle({ basePrompt, avatarBuffer, angle, generationId });
     if (!buf) continue;
     try {
       const url = await uploadSignedPNG({
