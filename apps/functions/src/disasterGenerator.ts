@@ -16,6 +16,13 @@ import {
   bundleHasAssets,
   type DisasterAssetEntry,
 } from './data/disasterAssetCatalog.js';
+// Session 385 round 8 — on-demand 3D mesh factory. When the user asks for
+// a disaster whose keyword has no curated mesh ids yet, we run Meshy v6
+// text-to-3d, upload the .glb to Roblox under our company creator account,
+// extract the inner Mesh asset id (the one MeshPart.MeshContent can render
+// in any place without "trust check"), and cache the result by keyword in
+// Firestore (`disasterMeshes/{keyword}`).
+import { getOrCreateDisasterMesh } from './disasterMeshFactory.js';
 import {
   buildDisasterImagePrompt,
   buildDisasterLuaPrompt,
@@ -209,17 +216,50 @@ async function generateLuaScript(input: {
   frequency: DisasterFrequency;
   title?: string;
 }): Promise<{ lua: string; usedFallback: boolean }> {
-  // Session 385 round 7 — route prompt+title through the curated asset bundle.
-  // If we match a known keyword (banana / toilet / duck / fridge / meteor /
-  // shark / moai / couch / pizza / crocodile), inject either MeshPart asset
-  // ids (when whitelist has entries) or a branded-primitive recipe into the
-  // Lua prompt so the spawned entity reads as the named object instead of a
-  // generic yellow Ball. Empty whitelist + no recipe → generic multi-Part
-  // composition guidance.
+  // Session 385 round 7/8 — route prompt+title through the curated asset
+  // bundle. If we match a known keyword (banana / toilet / duck / shark /
+  // meteor / etc.), choose ONE of three paths into the Lua prompt:
+  //   A) bundle has curated mesh ids                       → use them directly
+  //   B) bundle keyword known, run on-demand mesh factory  → generate via Meshy
+  //   C) factory fails / no keyword                        → branded primitive
+  //                                                          recipe (recipes in
+  //                                                          disasterStyles.ts)
   const lookupText = `${input.title ?? ''} ${input.userPrompt}`;
   const bundle = findDisasterBundle(lookupText);
-  const assetEntries: DisasterAssetEntry[] | undefined = bundleHasAssets(bundle) ? bundle!.entries : undefined;
+  let assetEntries: DisasterAssetEntry[] | undefined = bundleHasAssets(bundle) ? bundle!.entries : undefined;
   const objectKeyword = bundle?.keyword;
+
+  // Path B — bundle keyword known but no curated mesh ids yet. Try to
+  // generate one on the fly (Meshy + upload + extract). Costs ~$0.80 the
+  // FIRST time per keyword; Firestore caches the result so subsequent users
+  // requesting the same keyword pay 0.
+  if (!assetEntries && objectKeyword) {
+    try {
+      const factory = await getOrCreateDisasterMesh({
+        keyword: objectKeyword,
+        userBrief: input.userPrompt,
+      });
+      if (factory && factory.meshAssetId > 0) {
+        assetEntries = [{
+          name: objectKeyword,
+          assetId: factory.meshAssetId,
+          preferredScale: 4,
+        }];
+        logger.info('[disasterGenerator] on-demand mesh ready', {
+          objectKeyword,
+          meshAssetId: factory.meshAssetId,
+          modelAssetId: factory.modelAssetId,
+        });
+      } else {
+        logger.warn('[disasterGenerator] mesh factory returned null → falling back to branded primitives', { objectKeyword });
+      }
+    } catch (err) {
+      logger.warn('[disasterGenerator] mesh factory threw → falling back to branded primitives', {
+        objectKeyword, err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   if (objectKeyword || assetEntries) {
     logger.info('[disasterGenerator] asset router matched', {
       objectKeyword: objectKeyword ?? null,
