@@ -28016,7 +28016,76 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // PlaneKit ships: sit-inside cockpit, first-person, HUD, sounds, flight.
       // Future iteration: add Flux livery decals for richer per-prompt variation.
       const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'plane', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
-      if (eligibleForTemplate) {
+
+      // ── Session 387: Modular Vehicle Builder branch ──
+      //
+      // When the user opted into the alternative pipeline via the iOS
+      // picker (metadata.vehiclePipeline === 'modular_builder'), run the
+      // AI Config Router first. It pre-populates the SAME metadata fields
+      // that pick_vehicle_template would set (templateAssetId, label,
+      // bodyOriginalHex, primaryHex, …), plus adds vehicleConfig and
+      // vehicleAddonsLuaBlock. The existing template-embed flow then
+      // takes over unchanged — decals, recolor, loader script, preview,
+      // export. The only behavioural delta is that robloxWorker emits an
+      // extra ModularAddonsInjector Script when vehicleAddonsLuaBlock is
+      // present.
+      //
+      // If modular prep throws, we fall through to the existing
+      // pick_vehicle_template router (it still runs and produces a sane
+      // baseline). User sees a stage-log note about the fallback.
+      const vehiclePipeline = typeof currentJob.metadata?.vehiclePipeline === 'string'
+        ? currentJob.metadata.vehiclePipeline as string : 'template_embed';
+      let modularPrepDone = false;
+      if (vehiclePipeline === 'modular_builder' && eligibleForTemplate) {
+        await beginStage('pick_vehicle_template', 'Modular pipeline: running AI config router + addon selection');
+        try {
+          const { prepareModularVehicle } = await import('./vehicleModular.builder.js');
+          const promptForModular = job.prompt ?? '';
+          const titleForModular = typeof currentJob.metadata?.title === 'string'
+            ? currentJob.metadata.title as string : '';
+          const primaryForModular = typeof currentJob.metadata?.primaryColor === 'string'
+            ? currentJob.metadata.primaryColor as string : '';
+          const accentForModular = typeof currentJob.metadata?.accentColor === 'string'
+            ? currentJob.metadata.accentColor as string : '';
+          const prep = await prepareModularVehicle({
+            prompt: promptForModular,
+            title: titleForModular,
+            primaryHexHint: primaryForModular,
+            accentHexHint: accentForModular,
+          });
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              ...prep.templateMetadata,
+              ...prep.modularMetadata,
+            },
+          };
+          await finishStage('pick_vehicle_template', 'completed', [], prep.stageNotes);
+          modularPrepDone = true;
+        } catch (modErr) {
+          logger.warn('[ModularBuilder] prep failed, falling back to template_embed router', {
+            jobId, error: errorMessage(modErr),
+          });
+          await finishStage('pick_vehicle_template', 'completed', [], [
+            `Modular router error: ${errorMessage(modErr).slice(0, 200)}`,
+            'Falling back to template_embed (deterministic keyword router).',
+          ]);
+          // Mark fallback in metadata so iOS chat can show a note.
+          currentJob = {
+            ...currentJob,
+            metadata: {
+              ...(currentJob.metadata ?? {}),
+              vehiclePipelineFallback: 'template_embed',
+              vehiclePipelineFallbackReason: errorMessage(modErr).slice(0, 200),
+            },
+          };
+          // fall through — modularPrepDone stays false, existing
+          // pick_vehicle_template router below will run.
+        }
+      }
+
+      if (eligibleForTemplate && !modularPrepDone) {
         await beginStage('pick_vehicle_template', 'Picking Roblox vehicle template');
         try {
           const { pickVehicleTemplate } = await import('./vehicleTemplateRouter.js');

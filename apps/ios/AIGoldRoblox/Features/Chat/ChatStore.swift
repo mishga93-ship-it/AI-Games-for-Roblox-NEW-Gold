@@ -1438,6 +1438,14 @@ final class ChatStore: ObservableObject {
                 draft.vehicleType = "bicycle"
             case "bus":
                 draft.vehicleType = "bus"
+            // Session 387: opt into the alternative Modular Builder pipeline.
+            // This is just a flag — user still picks a vehicle type next
+            // (the regular picker re-appears). Backend `processCharacter3DJob`
+            // sees `vehiclePipeline=modular_builder` and runs `prepareModularVehicle`
+            // (AI router + addons) instead of the static template router.
+            case "🧪 modular builder (experimental)", "modular builder (experimental)",
+                 "modular builder", "🧪 modular":
+                draft.vehiclePipeline = "modular_builder"
             default:
                 break
             }
@@ -7100,7 +7108,15 @@ final class ChatStore: ObservableObject {
         case "anime_skills":
             return ["Dash strike", "AOE burst", "Projectile", "Beam", "Buff / aura", "Domain Expansion", "Ultimate (multiphase)", "Decide for me", "Start over"]
         case "vehicles":
-            return ["Car", "Motorcycle", "Boat", "Plane", "Helicopter", "Tank", "Spaceship", "Bicycle", "Bus", "Decide for me", "Start over"]
+            // Session 387: "🧪 Modular Builder" is an alternative pipeline that
+            // runs an AI Config Router (Gemini) → picks chassis + addons +
+            // colors + drive stats from a prefab library. Pure addition —
+            // tapping it just sets a metadata flag, the regular vehicle-type
+            // pick still happens next. If user doesn't tap it, the existing
+            // template_embed flow runs unchanged.
+            return ["Car", "Motorcycle", "Boat", "Plane", "Helicopter", "Tank", "Spaceship", "Bicycle", "Bus",
+                    "🧪 Modular Builder (experimental)",
+                    "Decide for me", "Start over"]
         case "buildings":
             return ["House modular", "Tower / castle", "Shop front", "Decide for me", "Start over"]
         case "furniture":
@@ -7960,6 +7976,10 @@ private struct ProjectDraft {
     // Vehicles pipeline: user-picked chassis archetype from quick replies or
     // inferred by backend from the interview/GDD.
     var vehicleType: String?
+    // Session 387: user-picked vehicle pipeline.
+    //   nil / "template_embed" → existing 1-of-13 Roblox-template flow (default)
+    //   "modular_builder"      → new AI Config Router + addon assembly flow
+    var vehiclePipeline: String?
     // Session #095: user-picked weapon colors (hex #RRGGBB). Set by WeaponColorPickerBubble.
     var weaponPrimaryColor: String?
     var weaponAccentColor: String?
@@ -8058,6 +8078,7 @@ private struct ProjectDraft {
         ]
         if let c = weaponPrimaryColor { dict["primaryColor"] = c }
         if let vehicleType { dict["vehicleType"] = vehicleType }
+        if let vehiclePipeline { dict["vehiclePipeline"] = vehiclePipeline }
 	        if let c = weaponAccentColor  { dict["accentColor"]  = c }
 	        if let c = weaponGlowColor    { dict["glowColor"]    = c }
 	        if let t = weaponType         { dict["weaponType"]   = t }

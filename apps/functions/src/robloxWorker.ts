@@ -2771,6 +2771,24 @@ function buildVehicleModelManifest(
         }),
       });
     }
+
+    // Session 387: modular path injects extra addons (taxi sign, police bar,
+    // underglow, etc.) via a separate Script. Empty addonsLuaBlock → skipped.
+    const addonsLuaBlock = typeof metadata.vehicleAddonsLuaBlock === 'string'
+      ? metadata.vehicleAddonsLuaBlock : '';
+    const injectorSource = buildModularAddonsInjectorScript({
+      addonsLuaBlock,
+      vehicleWrapperName: tplLabel,
+    });
+    if (injectorSource.length > 0) {
+      builtScripts.push({
+        id: uuidv4(),
+        name: 'ModularAddonsInjector',
+        scriptType: 'Script',
+        container: 'WorkspaceRoot',
+        source: injectorSource,
+      });
+    }
   }
 
   return {
@@ -3946,6 +3964,74 @@ loaded:Destroy()
 wrapperModel:Destroy()
 print("[VehicleTemplateLoader] Done — wrapper destroyed, template now lives at workspace.", picked.Name)
 `;
+}
+
+/**
+ * Session 387 — Modular Addons Injector script.
+ *
+ * Independent Lua Script that runs alongside the template loader/embed.
+ * Polls workspace until the vehicle model is settled, then runs the
+ * AI-chosen addon Lua block (welds taxi sign, police bar, underglow, etc).
+ *
+ * Works for both:
+ *   - Embed path: vehicle stays in wrapper Model; injector is sibling.
+ *   - v2 loader path: loader spawns new model in workspace with old name;
+ *     injector polls workspace for it.
+ *
+ * Empty addonsLuaBlock string → returns the empty string (caller can skip
+ * emitting the script entirely).
+ */
+function buildModularAddonsInjectorScript(args: {
+  addonsLuaBlock: string;
+  vehicleWrapperName: string;
+}): string {
+  if (!args.addonsLuaBlock || args.addonsLuaBlock.trim().length === 0) return '';
+  const safeName = args.vehicleWrapperName.replace(/"/g, '\\"');
+  return `
+-- ModularAddonsInjector (auto-generated, session 387)
+-- Waits for the vehicle Model to be loaded into workspace, then attaches
+-- the AI-chosen addon Models (taxi sign, police bar, underglow, etc).
+
+local WRAPPER_NAME = "${safeName}"
+
+local function findVehicle()
+\t-- 1. start from our script's parent (we live inside the wrapper Model)
+\tlocal up = script.Parent
+\twhile up do
+\t\tif up:IsA("Model") and up.Name == WRAPPER_NAME then return up end
+\t\tup = up.Parent
+\tend
+\t-- 2. fall back to scanning workspace top-level by name
+\tfor _, child in workspace:GetChildren() do
+\t\tif child:IsA("Model") and child.Name == WRAPPER_NAME then return child end
+\tend
+\treturn nil
+end
+
+-- Let the template loader / embed extract finish + a frame of physics settle.
+task.wait(2.5)
+
+local vehicleModel = findVehicle()
+if not vehicleModel then
+\twarn("[ModularAddons] could not find vehicle model named", WRAPPER_NAME)
+\treturn
+end
+
+-- Re-resolve if loader replaced the original model with a fresh variant.
+local resolved = findVehicle()
+if resolved and resolved ~= vehicleModel then vehicleModel = resolved end
+
+print("[ModularAddons] injecting addons onto", vehicleModel:GetFullName())
+
+local ok, err = pcall(function()
+${args.addonsLuaBlock.split('\n').map((l) => '\t' + l).join('\n')}
+end)
+if not ok then
+\twarn("[ModularAddons] addon block failed:", tostring(err))
+else
+\tprint("[ModularAddons] done")
+end
+`.trim();
 }
 
 function buildVehicleControllerScript(): string {
