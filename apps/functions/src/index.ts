@@ -1319,6 +1319,46 @@ app.post('/api/disaster-spawner/generate', async (req: AuthedRequest, res) => {
 });
 
 
+// ─── Session 385 round 8 — Admin smoke endpoint for Disaster Spawner ────
+// Bypasses auth so a local curl can dump the FULL generateDisaster() output
+// (preview/lua/rbxmx/mesh-factory result) for inspection without going
+// through iOS chat flow or per-user rate limits. Gated by a fixed
+// "x-admin-token" header that matches ROBLOX_WORKER_TOKEN (same secret
+// the safe-deploy wrapper already trusts). Keep this endpoint disabled in
+// production by rotating the token if smoke-testing is over.
+app.post('/api/admin/smoke-disaster', async (req: AuthedRequest, res) => {
+  try {
+    const adminToken = req.header('x-admin-token') ?? '';
+    const expected = ROBLOX_WORKER_TOKEN.value() ?? '';
+    if (!adminToken || !expected || adminToken !== expected) {
+      return res.status(401).json({ error: 'admin token mismatch' });
+    }
+    const body = (req.body ?? {}) as {
+      prompt?: unknown; mode?: unknown; chaos?: unknown;
+      size?: unknown; frequency?: unknown; firebaseUid?: unknown;
+    };
+    const prompt = typeof body.prompt === 'string' && body.prompt.trim() ? body.prompt.trim() : 'banana rain apocalypse';
+    const mode = isDisasterMode(body.mode) ? body.mode : 'meme';
+    const chaos = parseDisasterChaos(body.chaos);
+    const size = parseDisasterSize(body.size);
+    const frequency = parseDisasterFrequency(body.frequency);
+    const firebaseUid = typeof body.firebaseUid === 'string' && body.firebaseUid ? body.firebaseUid : 'smoke-admin';
+    const result = await generateDisaster({
+      userPrompt: prompt,
+      mode,
+      chaos,
+      size,
+      frequency,
+      inputMode: 'text',
+      firebaseUid,
+    });
+    return res.json(result);
+  } catch (err) {
+    logger.error('[admin-smoke-disaster] failed', err);
+    return res.status(500).json({ error: 'smoke failed', detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // ─── Session 385 round 7 — Unified Recents (My Creations) ────────
 // Reads from the `viralGenerations` Firestore collection that
 // recordViralGeneration() writes into. Backs the iOS ViralLibraryView
