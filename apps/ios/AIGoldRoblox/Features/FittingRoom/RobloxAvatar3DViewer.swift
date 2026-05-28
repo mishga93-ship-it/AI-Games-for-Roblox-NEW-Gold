@@ -14,11 +14,55 @@ import SwiftUI
 import SceneKit
 
 struct RobloxAvatar3DViewer: View {
-    let robloxUserId: String
+    /// Source of the base R-15 mesh. `.realUser` fetches the user's
+    /// Roblox-rendered OBJ (includes their current outfit). `.mannequin`
+    /// loads a bundled blank R-15 (Roblox's official Classic mannequin,
+    /// pre-converted to .scn at build time) so accessory try-on doesn't
+    /// double-stack with whatever the user is wearing. Phase O2-P1.
+    enum Source: Equatable {
+        case realUser(userId: String)
+        case mannequin(BodyType)
+
+        enum BodyType: Equatable {
+            case neutral, man, woman
+            var sceneName: String {
+                switch self {
+                case .neutral: return "basic"
+                case .man:     return "R15_men"
+                case .woman:   return "women"
+                }
+            }
+        }
+
+        /// Identity key used for SwiftUI .task(id:) so view re-loads on
+        /// source change but not on unrelated state changes.
+        var idKey: String {
+            switch self {
+            case .realUser(let uid):      return "user:\(uid)"
+            case .mannequin(let bt):      return "mannequin:\(bt.sceneName)"
+            }
+        }
+    }
+
+    var source: Source
     /// Phase B — when non-empty, after the avatar loads we fetch each
     /// asset's 3D mesh and attach it to the scene with slot-specific
     /// positioning. Re-runs when the set changes (SwiftUI .id binding).
     var attachedAssets: [Attachment] = []
+
+    /// Convenience initialiser that preserves the original Phase A
+    /// `RobloxAvatar3DViewer(robloxUserId:)` call shape so existing call
+    /// sites in FittingRoomResultView keep working without churn.
+    init(robloxUserId: String, attachedAssets: [Attachment] = []) {
+        self.source = .realUser(userId: robloxUserId)
+        self.attachedAssets = attachedAssets
+    }
+
+    /// Phase O2-P1 init — bundled mannequin mode (no Roblox round-trip).
+    init(mannequin body: Source.BodyType, attachedAssets: [Attachment] = []) {
+        self.source = .mannequin(body)
+        self.attachedAssets = attachedAssets
+    }
 
     struct Attachment: Hashable {
         let assetId: String
@@ -69,7 +113,7 @@ struct RobloxAvatar3DViewer: View {
                 }
             }
         }
-        .task(id: robloxUserId) { await load() }
+        .task(id: source.idKey) { await load() }
         .onChange(of: attachedAssets) { _, newValue in
             // Re-run attachment when the set changes (toggle on/off, add a
             // new item, remove one). Cancels any in-flight attachment task.
@@ -89,8 +133,20 @@ struct RobloxAvatar3DViewer: View {
     private func load() async {
         await MainActor.run { loadState = .loading }
         do {
-            let urls = try await fetchAvatarURLs(userId: robloxUserId)
-            let scene = try await Self.loadSceneOffMain(urls: urls)
+            let scene: SCNScene
+            let urls: Avatar3DURLs
+            switch source {
+            case .realUser(let userId):
+                urls = try await fetchAvatarURLs(userId: userId)
+                scene = try await Self.loadSceneOffMain(urls: urls)
+            case .mannequin(let body):
+                // Bundled R-15 SCN — instant, offline, GUARANTEED no
+                // accessories on top (clean dress-up base). The mannequin
+                // path bypasses the rbxcdn round-trip entirely.
+                let (loaded, fakeUrls) = try await Self.loadMannequinSceneOffMain(body: body)
+                scene = loaded
+                urls = fakeUrls
+            }
             await MainActor.run {
                 Self.startIdleBob(on: scene)
                 withAnimation { loadState = .ready(scene, urls) }
@@ -439,6 +495,116 @@ struct RobloxAvatar3DViewer: View {
         scene.rootNode.addChildNode(camera)
 
         return scene
+    }
+
+    // MARK: - Phase O2-P1: bundled mannequin (clean R-15 base)
+
+    /// Load a bundled R-15 mannequin scene (`Models/<name>.scn` or
+    /// `Models/<name>.obj`) and apply the same centering / lighting /
+    /// camera framing the remote-OBJ path uses. Returns a synthesized
+    /// Avatar3DURLs (computed from the loaded mesh) so the rest of the
+    /// pipeline (accessory attachment, slot offsets) keeps working
+    /// without branching on source type.
+    private static func loadMannequinSceneOffMain(body: Source.BodyType) async throws -> (SCNScene, Avatar3DURLs) {
+        let baseName = body.sceneName
+        // SCN first (faster — Xcode pre-compiled), OBJ as fallback for
+        // missing-asset safety.
+        var scene: SCNScene? = nil
+        for filename in ["Models/\(baseName).scn", "\(baseName).scn",
+                         "Models/\(baseName).obj", "\(baseName).obj"] {
+            if let s = SCNScene(named: filename) { scene = s; break }
+        }
+        if scene == nil {
+            for ext in ["scn", "obj"] {
+                if let url = Bundle.main.url(forResource: baseName, withExtension: ext, subdirectory: "Models")
+                    ?? Bundle.main.url(forResource: baseName, withExtension: ext) {
+                    if ext == "scn" {
+                        scene = try? SCNScene(url: url)
+                    } else if let source = SCNSceneSource(url: url, options: nil) {
+                        scene = try? source.scene(options: nil)
+                    }
+                    if scene != nil { break }
+                }
+            }
+        }
+        guard let scene else {
+            throw NSError(domain: "RobloxAvatar3D", code: -2, userInfo: [
+                NSLocalizedDescriptionKey: "Bundled mannequin '\(baseName)' missing from app",
+            ])
+        }
+
+        // Compute AABB from the loaded scene so framing / accessory slot
+        // offsets match the remote-OBJ pipeline. Walk geometry once.
+        var minV = SCNVector3(Float.greatestFiniteMagnitude,
+                              Float.greatestFiniteMagnitude,
+                              Float.greatestFiniteMagnitude)
+        var maxV = SCNVector3(-Float.greatestFiniteMagnitude,
+                              -Float.greatestFiniteMagnitude,
+                              -Float.greatestFiniteMagnitude)
+        let (bMin, bMax) = scene.rootNode.boundingBox
+        // SCNNode.boundingBox returns local AABB; rootNode wraps the
+        // whole hierarchy. For most bundled SCN files this is enough.
+        if bMin.x.isFinite && bMax.x.isFinite {
+            minV = bMin; maxV = bMax
+        }
+        let aabb = Avatar3DAABB(
+            min: Avatar3DVec3(x: Double(minV.x), y: Double(minV.y), z: Double(minV.z)),
+            max: Avatar3DVec3(x: Double(maxV.x), y: Double(maxV.y), z: Double(maxV.z))
+        )
+        let center = SCNVector3(
+            (minV.x + maxV.x) / 2, (minV.y + maxV.y) / 2, (minV.z + maxV.z) / 2
+        )
+
+        // Wrap the mannequin's mesh nodes in AvatarRoot so the idle-bob
+        // animation + accessory attachment can target a single node
+        // (same convention as the remote-OBJ pipeline).
+        let avatarRoot = SCNNode()
+        avatarRoot.name = "AvatarRoot"
+        let meshChildren = scene.rootNode.childNodes.filter { $0.geometry != nil || !$0.childNodes.isEmpty }
+        for child in meshChildren {
+            child.position = SCNVector3(child.position.x - center.x,
+                                        child.position.y - center.y,
+                                        child.position.z - center.z)
+            avatarRoot.addChildNode(child)
+        }
+        scene.rootNode.addChildNode(avatarRoot)
+
+        // 3-point lighting + camera (mirror of the remote-OBJ path).
+        let key = SCNNode(); key.light = SCNLight()
+        key.light?.type = .directional; key.light?.intensity = 900
+        key.eulerAngles = SCNVector3(-Float.pi / 4, Float.pi / 6, 0)
+        scene.rootNode.addChildNode(key)
+        let fill = SCNNode(); fill.light = SCNLight()
+        fill.light?.type = .directional; fill.light?.intensity = 500
+        fill.light?.color = UIColor(red: 0.7, green: 0.8, blue: 1.0, alpha: 1.0)
+        fill.eulerAngles = SCNVector3(0, -Float.pi / 4, 0)
+        scene.rootNode.addChildNode(fill)
+        let ambient = SCNNode(); ambient.light = SCNLight()
+        ambient.light?.type = .ambient; ambient.light?.intensity = 350
+        scene.rootNode.addChildNode(ambient)
+
+        let camera = SCNNode(); camera.camera = SCNCamera()
+        camera.camera?.fieldOfView = 28.36
+        let height = Float(aabb.max.y - aabb.min.y)
+        let width  = Float(aabb.max.x - aabb.min.x)
+        let depth  = Float(aabb.max.z - aabb.min.z)
+        let radius = max(height, width, depth)
+        let distance = max(radius * 2.2, 6.0)
+        camera.position = SCNVector3(0, 0, distance)
+        camera.look(at: SCNVector3(0, 0, 0))
+        scene.rootNode.addChildNode(camera)
+
+        let urls = Avatar3DURLs(
+            userId: "mannequin-\(baseName)",
+            objUrl: "", mtlUrl: "", textureUrls: [],
+            camera: Avatar3DCamera(
+                position: Avatar3DVec3(x: 0, y: 0, z: Double(distance)),
+                direction: Avatar3DVec3(x: 0, y: 0, z: -1),
+                fov: 28.36
+            ),
+            aabb: aabb
+        )
+        return (scene, urls)
     }
 
     private static func downloadData(_ urlString: String) async throws -> Data {

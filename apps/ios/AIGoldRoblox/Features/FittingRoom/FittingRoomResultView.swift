@@ -42,6 +42,14 @@ struct FittingRoomResultView: View {
     /// SceneKit scene. No AI re-render needed. Defaults to true so the
     /// dress-up vibe kicks in as soon as the avatar finishes loading.
     @State private var tryOnIn3D: Bool = true
+    /// Phase O2-P1 — toggle the 3D BASE between (a) the user's real
+    /// Roblox avatar (includes their CURRENT outfit baked in, causes
+    /// double-stack when we attach fit items on top) and (b) a bundled
+    /// Roblox-official R-15 Classic mannequin (clean — no clothes, no
+    /// accessories — so the fit's items show without overlap). Default
+    /// to mannequin since that's the cleaner dress-up experience the
+    /// user explicitly asked for.
+    @State private var useMannequin: Bool = true
     @ObservedObject private var robloxAuth = RobloxAuthService.shared
 
     enum HeroMode: Hashable { case threeDee, applied }
@@ -54,36 +62,40 @@ struct FittingRoomResultView: View {
         return robloxAuth.robloxUserId
     }
 
+    /// Pick the right bundled mannequin model based on the generation's
+    /// gender. Boys → R15_men, Girls → women, anything else → basic.
+    private var mannequinBodyType: RobloxAvatar3DViewer.Source.BodyType {
+        switch response.gender.lowercased() {
+        case "boys", "boy", "male", "m":   return .man
+        case "girls", "girl", "female", "f": return .woman
+        default: return .neutral
+        }
+    }
+
     /// Phase B / C3-fix — map OutfitItems → SceneKit attachments.
     ///
-    /// Roblox's avatar-3d render BAKES the user's current outfit (skin
-    /// + hair + shirt + pants + shoes + sometimes hat) into the
-    /// monolithic OBJ. We can't selectively remove parts of the OBJ
-    /// (no rig/bone metadata), so attaching items from the new fit on
-    /// top of slots the user already wears creates visible double-
-    /// stacks (two hairs, overlapping shirts, etc — user feedback
-    /// 2026-05-28 «нет разделения по моделям, все накладывается»).
-    ///
-    /// Workaround (until C3-bare ships a true bare-avatar render): only
-    /// attach items whose slot is ADDITIVE — items the user is unlikely
-    /// to already have, OR items that visually sit ON TOP without
-    /// fighting baked geometry. Hard-skip the baked clothing slots and
-    /// hair to avoid the worst overlaps.
-    ///   • Attach: hat / face / back / neck / shoulder / accessory
-    ///   • Skip:   shirt / pants / jacket / shoes / hair / aura
-    /// The full items list still shows under "All items" — only the 3D
-    /// scene is filtered.
+    /// Filter set depends on the BASE mesh:
+    ///   • Real Roblox avatar: avatar OBJ has the user's current outfit
+    ///     baked in (hair / shirt / pants / shoes). Stack a new hair on
+    ///     top → double-hair. Skip baked-in slots to avoid the mess.
+    ///   • Mannequin (Phase O2-P1): bundled R-15 has NO hair, NO
+    ///     accessories, just the bare body. We can safely attach hair
+    ///     and the items that have real 3D meshes. Clothing (shirt /
+    ///     pants / jacket) is still skipped because Roblox represents
+    ///     those as 2D textures on the body, not separate meshes —
+    ///     no usable asset-3d output. Adding texture-overlay support
+    ///     for ClassicShirt / ClassicPants is a future polish step.
     private var threeDeeAttachments: [RobloxAvatar3DViewer.Attachment] {
-        let bakedOrDoubled: Set<String> = [
-            "shirt", "pants", "jacket",   // baked as texture on torso/legs
-            "shoes",                       // usually baked
-            "hair",                        // user almost always has one already → double-hair
+        let alwaysSkipped: Set<String> = [
+            "shirt", "pants", "jacket",   // 2D texture overlays, no 3D mesh
             "aura",                        // not a 3D mesh on Roblox
             "",
         ]
+        let avatarBakedAlso: Set<String> = ["shoes", "hair"]
+        let skipSet = useMannequin ? alwaysSkipped : alwaysSkipped.union(avatarBakedAlso)
         return response.items.compactMap { item in
             let slot = item.slot.lowercased()
-            if bakedOrDoubled.contains(slot) { return nil }
+            if skipSet.contains(slot) { return nil }
             return RobloxAvatar3DViewer.Attachment(assetId: item.assetId, slot: slot)
         }
     }
@@ -245,14 +257,58 @@ struct FittingRoomResultView: View {
 
     @ViewBuilder
     private var heroThreeDee: some View {
-        if let userId = robloxUserId {
+        // Mannequin mode works without a Roblox userId (bundled SCN);
+        // real-avatar mode needs the userId. Show the viewer whenever
+        // either path is available.
+        if useMannequin || robloxUserId != nil {
             ZStack {
-                RobloxAvatar3DViewer(
-                    robloxUserId: userId,
-                    attachedAssets: tryOnIn3D ? threeDeeAttachments : []
-                )
+                // Phase O2-P1 — toggle the base mesh between bundled
+                // mannequin (clean dress-up base) and the user's real
+                // Roblox avatar (familiar but double-stacks with their
+                // current outfit). Items attach to whichever base is
+                // active — accessories aren't re-fetched on toggle.
+                Group {
+                    if useMannequin {
+                        RobloxAvatar3DViewer(
+                            mannequin: mannequinBodyType,
+                            attachedAssets: tryOnIn3D ? threeDeeAttachments : []
+                        )
+                    } else if let userId = robloxUserId {
+                        RobloxAvatar3DViewer(
+                            robloxUserId: userId,
+                            attachedAssets: tryOnIn3D ? threeDeeAttachments : []
+                        )
+                    }
+                }
                 VStack {
                     HStack {
+                        // Mannequin / Real-avatar toggle (top-left).
+                        // Only shown when both modes are actually available
+                        // (need a Roblox userId for "Your Avatar"). If user
+                        // isn't connected, mannequin is the only option and
+                        // we silently stay there.
+                        if robloxUserId != nil {
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                    useMannequin.toggle()
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: useMannequin ? "figure.stand" : "person.crop.circle.fill")
+                                        .font(.caption2.bold())
+                                    Text(useMannequin
+                                         ? loc(en: "Mannequin", ru: "Манекен")
+                                         : loc(en: "Your Avatar", ru: "Твой аватар"))
+                                        .font(.caption.bold())
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.5))
+                                .padding(.leading, 12).padding(.top, 12)
+                            }
+                        }
                         Spacer()
                         HStack(spacing: 4) {
                             Image(systemName: "cube.transparent.fill").font(.caption2.bold())
