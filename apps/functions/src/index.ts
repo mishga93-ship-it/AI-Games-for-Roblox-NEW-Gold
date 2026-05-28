@@ -2231,7 +2231,21 @@ ${viralStyleInjection.promptBlock}`, 8000);
     await db.collection('generationJobs').doc(jobId).set(job);
 
     const asyncKinds: GenerationJob['kind'][] = ['character_3d', 'clothing_3d', 'pet_3d', 'vehicle_3d', 'animation', 'game_package', 'rbxl_build', 'rbxm_build', 'code'];
-    if (asyncKinds.includes(requestedKind)) {
+    // Session 389 — viral chat-flow generations (fitting_room / voice_aura /
+    // disaster_spawner) must NOT take the async-3D pipeline dispatch path even
+    // when the chat assigned kind=character_3d. viralChatDispatch produces
+    // 2D renders (Fitting Room) or Lua artifacts (Disaster Spawner / Voice
+    // Aura), not a Meshy/Tripo 3D mesh. The async-3D dispatcher bypasses
+    // processGenerationJob entirely, so tryHandleViralChatGeneration would
+    // never run — character_3d pipeline would run instead. Falling through
+    // to runGenerationJobLifecycle below routes the job through
+    // processGenerationJob → tryHandleViralChatGeneration as intended.
+    const viralSubcategoryRaw = typeof effectiveMetadata.contentSubcategory === 'string'
+      ? effectiveMetadata.contentSubcategory.toLowerCase() : '';
+    const isViralChatJob = viralSubcategoryRaw === 'fitting_room'
+      || viralSubcategoryRaw === 'voice_aura'
+      || viralSubcategoryRaw === 'disaster_spawner';
+    if (asyncKinds.includes(requestedKind) && !isViralChatJob) {
       const selfHost = req.header('host') ?? 'api-z4yzt6dhjq-uc.a.run.app';
       const selfUrl = `https://${selfHost}/api/internal/run-3d-pipeline`;
       const internalToken = ROBLOX_WORKER_TOKEN.value();
