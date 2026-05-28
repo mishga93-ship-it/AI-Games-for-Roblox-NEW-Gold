@@ -162,13 +162,57 @@ export async function getOrCreateDisasterMesh(args: {
     contentType: 'model/gltf-binary',
     assetPrivacy: 'openUse',
   });
-  if (!upload?.assetId) {
-    logger.warn('[disasterMeshFactory] Open Cloud upload failed', {
-      keyword, operationId: upload?.operationId,
+  if (!upload) {
+    logger.warn('[disasterMeshFactory] Open Cloud upload returned null', { keyword });
+    return null;
+  }
+
+  let modelAssetId = upload.assetId;
+  // Open Cloud upload is asynchronous — assetId=0 with operationId means
+  // Roblox is still processing the glb. Poll the operation until done.
+  if (!modelAssetId && upload.operationId) {
+    logger.info('[disasterMeshFactory] polling Open Cloud operation', {
+      keyword, operationId: upload.operationId,
+    });
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const opResp = await fetch(
+          `https://apis.roblox.com/assets/v1/operations/${upload.operationId}`,
+          { headers: { 'x-api-key': apiKey } },
+        );
+        if (!opResp.ok) {
+          logger.warn('[disasterMeshFactory] operation poll non-OK', {
+            keyword, attempt, status: opResp.status,
+          });
+          continue;
+        }
+        const op = await opResp.json() as { done?: boolean; response?: { assetId?: number | string } };
+        if (op.done) {
+          const raw = op.response?.assetId;
+          if (typeof raw === 'number') {
+            modelAssetId = raw;
+          } else if (typeof raw === 'string' && /^\d+$/.test(raw)) {
+            modelAssetId = parseInt(raw, 10);
+          }
+          logger.info('[disasterMeshFactory] operation done', {
+            keyword, attempt, modelAssetId,
+          });
+          break;
+        }
+      } catch (err) {
+        logger.warn('[disasterMeshFactory] operation poll threw', {
+          keyword, attempt, err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+  if (!modelAssetId) {
+    logger.warn('[disasterMeshFactory] could not resolve modelAssetId after polling', {
+      keyword, operationId: upload.operationId,
     });
     return null;
   }
-  const modelAssetId = upload.assetId;
   logger.info('[disasterMeshFactory] uploaded as Model', { keyword, modelAssetId });
 
   // Step 4 — Extract inner Mesh asset id via Engine API.
