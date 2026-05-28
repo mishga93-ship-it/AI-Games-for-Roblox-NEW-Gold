@@ -28,6 +28,10 @@ struct FittingRoomResultView: View {
     @State private var currentAngle: Int = 0
     @GestureState private var dragX: CGFloat = 0
     @State private var swappingSlot: String? = nil
+    /// Phase C2 — bottom sheet for picking alternative items for a slot.
+    /// Setting this presents `FittingRoomSlotAlternativesSheet`; the
+    /// sheet's onSwap callback writes the updated doc back into studio.
+    @State private var slotPickerTile: FittingSlotTile? = nil
     /// Phase A — hero preview can show either the user's REAL 3D R-15
     /// avatar (interactive SceneKit, no fit applied yet) or the AI-rendered
     /// "applied" 3-angle preview (img2img with the outfit on). Default to
@@ -101,6 +105,20 @@ struct FittingRoomResultView: View {
                 footer
             }
             .padding(.horizontal, 16).padding(.top, 60).padding(.bottom, 30)
+        }
+        .sheet(item: $slotPickerTile) { tile in
+            FittingRoomSlotAlternativesSheet(
+                generationId: response.generationId,
+                slot: tile.slotKey,
+                slotDisplayLabel: tile.slotLabel
+            ) { updatedDoc in
+                // Phase C2: propagate the new doc through the studio so
+                // every dependent view (slot grid, stats, items list,
+                // 3D viewer attachments) reflects the swap. No img2img
+                // re-render — Applied 2D mode stays "frozen" until the
+                // user hits a remix button.
+                studio.step = .result(updatedDoc)
+            }
         }
     }
 
@@ -460,11 +478,11 @@ struct FittingRoomResultView: View {
 
     private func slotTile(_ tile: FittingSlotTile) -> some View {
         Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { swappingSlot = tile.id }
-            Task {
-                await studio.start(remix: .remix)
-                await MainActor.run { swappingSlot = nil }
-            }
+            // Phase C2: tap opens the alternatives sheet for THIS slot
+            // (not a full remix). User picks one → backend swaps slot →
+            // 3D viewer re-attaches mesh live. Use the studio remix
+            // buttons below the grid for a full outfit reshuffle.
+            slotPickerTile = tile
         }) {
             HStack(alignment: .top, spacing: 10) {
                 slotThumbnail(tile)
@@ -667,6 +685,7 @@ struct FittingRoomResultView: View {
 /// currently occupying that slot).
 struct FittingSlotTile: Identifiable {
     let id: String              // unique per tile (assetId)
+    let slotKey: String         // raw slot key (e.g., "hair") for API calls
     let slotLabel: String       // "Hair", "Top", "Shoes" — human-readable, localized
     let itemName: String
     let priceLabel: String
@@ -698,6 +717,7 @@ struct FittingSlotTile: Identifiable {
                 let isFree = item.priceRobux == 0
                 return FittingSlotTile(
                     id: item.assetId,
+                    slotKey: key,
                     slotLabel: label,
                     itemName: item.name,
                     priceLabel: isFree ? "FREE" : "\(item.priceRobux) R$",

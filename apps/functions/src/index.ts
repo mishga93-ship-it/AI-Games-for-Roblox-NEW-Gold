@@ -165,7 +165,9 @@ import { isCursedUGCCategoryId, isCursedUGCStyleId, parseCursedUGCIntensity } fr
 import { generateAura } from './auraGenerator.js';
 import { isAuraStyleId, parseAuraIntensity, parseAuraSize, parseAuraTone } from './data/auraStyles.js';
 // Session 386 — Zero-Robux UGC Fitting Room
-import { startFittingRoomJob, fetchFittingRoomDoc } from './fittingRoomRenderer.js';
+import { startFittingRoomJob, fetchFittingRoomDoc, swapFittingRoomSlot } from './fittingRoomRenderer.js';
+import { getSlotAlternatives, type OutfitItem as AssemblerOutfitItem } from './outfitAssembler.js';
+import { type OutfitSlot as AestheticOutfitSlot } from './data/outfitAesthetics.js';
 import { fetchRobloxAvatar3D, fetchRobloxAsset3D } from './robloxAvatar3D.js';
 // Session 387 — Voice-Controlled Survival Disaster Spawner
 import { generateDisaster } from './disasterGenerator.js';
@@ -1136,6 +1138,109 @@ app.get('/api/roblox-asset/3d/:assetId', async (req: AuthedRequest, res) => {
   } catch (err) {
     logger.error('[roblox-asset-3d] failed', err);
     return res.status(500).json({ error: 'Failed to fetch 3D asset' });
+  }
+});
+
+// ─── Phase C2 (session 389+3): interactive slot try-on ──────────
+//
+// /api/fitting-room/:id/alternatives?slot=hair — returns up to 12
+// candidate items the user could swap into that slot (same aesthetic /
+// gender / style as the original generation, excluding items already in
+// the outfit). Used by the iOS SlotAlternativesSheet bottom picker.
+//
+// /api/fitting-room/:id/swap-slot — replaces the item for one slot in
+// an existing generation doc. Recomputes total cost. Does NOT trigger a
+// new img2img render — the iOS 3D viewer attaches the new asset mesh
+// live (per-slot try-on without re-generation).
+app.get('/api/fitting-room/:id/alternatives', async (req: AuthedRequest, res) => {
+  try {
+    const id = req.params.id;
+    if (typeof id !== 'string' || !id.startsWith('fit_')) {
+      return res.status(400).json({ error: 'Invalid generationId' });
+    }
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
+    const slotParam = typeof req.query.slot === 'string' ? req.query.slot.toLowerCase() : '';
+    if (!slotParam) return res.status(400).json({ error: 'Missing slot query param' });
+
+    const doc = await fetchFittingRoomDoc(id);
+    if (!doc) return res.status(404).json({ error: 'Generation not found' });
+    if (doc.firebaseUid !== req.userId) return res.status(403).json({ error: 'Forbidden' });
+    if (!isOutfitAestheticId(doc.aestheticId)) {
+      return res.status(400).json({ error: 'Unknown aestheticId on doc' });
+    }
+
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/fitting-room/alternatives');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+
+    // Exclude every item currently in the outfit so the user always sees
+    // FRESH alternatives, not the things they already have on.
+    const excludeAssetIds = (doc.items ?? []).map((it: { assetId: string }) => it.assetId);
+
+    const alternatives = await getSlotAlternatives({
+      aestheticId: doc.aestheticId,
+      slot: slotParam as AestheticOutfitSlot,
+      gender: doc.gender,
+      style: doc.style,
+      excludeAssetIds,
+      limit: 12,
+    });
+
+    return res.json({ slot: slotParam, alternatives });
+  } catch (err) {
+    logger.error('[fitting-room/alternatives] failed', err);
+    return res.status(500).json({ error: 'Failed to fetch slot alternatives' });
+  }
+});
+
+app.post('/api/fitting-room/:id/swap-slot', async (req: AuthedRequest, res) => {
+  try {
+    const id = req.params.id;
+    if (typeof id !== 'string' || !id.startsWith('fit_')) {
+      return res.status(400).json({ error: 'Invalid generationId' });
+    }
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
+
+    const body = (req.body ?? {}) as { slot?: unknown; newItem?: unknown };
+    const slot = typeof body.slot === 'string' ? body.slot.toLowerCase() : '';
+    if (!slot) return res.status(400).json({ error: 'Missing slot field' });
+
+    const item = body.newItem as Partial<AssemblerOutfitItem> | undefined;
+    if (!item || typeof item.assetId !== 'string' || typeof item.name !== 'string') {
+      return res.status(400).json({ error: 'Missing or malformed newItem' });
+    }
+    const normalized: AssemblerOutfitItem = {
+      assetId: item.assetId,
+      name: item.name,
+      slot: slot as AestheticOutfitSlot,
+      priceRobux: typeof item.priceRobux === 'number' ? item.priceRobux : 0,
+      thumbnailUrl: typeof item.thumbnailUrl === 'string' ? item.thumbnailUrl : null,
+      catalogUrl: typeof item.catalogUrl === 'string' ? item.catalogUrl
+        : `https://www.roblox.com/catalog/${item.assetId}`,
+      creatorName: typeof item.creatorName === 'string' ? item.creatorName : undefined,
+      favoriteCount: typeof item.favoriteCount === 'number' ? item.favoriteCount : undefined,
+      isCurated: typeof item.isCurated === 'boolean' ? item.isCurated : false,
+    };
+
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/fitting-room/swap-slot');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+
+    const updated = await swapFittingRoomSlot({
+      generationId: id,
+      firebaseUid: req.userId,
+      slot,
+      newItem: normalized,
+    });
+    if (!updated) {
+      return res.status(404).json({ error: 'Generation not found or denied' });
+    }
+    return res.json(updated);
+  } catch (err) {
+    logger.error('[fitting-room/swap-slot] failed', err);
+    return res.status(500).json({ error: 'Failed to swap slot' });
   }
 });
 

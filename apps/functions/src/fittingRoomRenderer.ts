@@ -138,6 +138,65 @@ export async function fetchFittingRoomDoc(generationId: string): Promise<Fitting
   }
 }
 
+// ─── Phase C2 — swap a single slot ───────────────────────────────
+//
+// Replace the item occupying `slot` with `newItem` in an existing
+// generation doc. Recomputes totalCost (sum of remaining items + new)
+// and savedRobux (assumed catalog price 8000 R$ - actual). Returns the
+// updated doc. Does NOT re-run img2img — the 3D viewer attaches the new
+// asset mesh live without a fresh render.
+
+export async function swapFittingRoomSlot(args: {
+  generationId: string;
+  firebaseUid: string;
+  slot: string;
+  newItem: OutfitItem;
+}): Promise<FittingRoomDoc | null> {
+  const { generationId, firebaseUid, slot, newItem } = args;
+
+  const doc = await fetchFittingRoomDoc(generationId);
+  if (!doc) return null;
+  if (doc.firebaseUid !== firebaseUid) {
+    logger.warn('[fittingRoom] swap denied — uid mismatch', { generationId });
+    return null;
+  }
+
+  const slotLower = slot.toLowerCase();
+  const oldItems = Array.isArray(doc.items) ? doc.items : [];
+  const updatedItems: OutfitItem[] = [];
+  let replaced = false;
+  for (const it of oldItems) {
+    if (!replaced && it.slot?.toLowerCase() === slotLower) {
+      updatedItems.push(newItem);
+      replaced = true;
+    } else {
+      updatedItems.push(it);
+    }
+  }
+  if (!replaced) {
+    // Slot wasn't in the doc previously — append.
+    updatedItems.push(newItem);
+  }
+
+  const totalCost = updatedItems.reduce((s, it) => s + (it.priceRobux ?? 0), 0);
+  // Fake "saved" baseline same as initial assembleOutfit (8000 R$).
+  const savedRobux = Math.max(0, 8000 - totalCost);
+
+  await patchDoc(generationId, {
+    items: updatedItems,
+    totalCostRobux: totalCost,
+    savedRobux,
+  });
+
+  return {
+    ...doc,
+    items: updatedItems,
+    totalCostRobux: totalCost,
+    savedRobux,
+    updatedAtMs: Date.now(),
+  };
+}
+
 // ─── img2img per angle ─────────────────────────────────────────
 
 async function renderAngle(args: {

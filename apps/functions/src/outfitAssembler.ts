@@ -138,6 +138,64 @@ async function searchSlotCandidates(args: {
   return pool;
 }
 
+// ─── Slot alternatives (Phase C2 — interactive try-on) ──────────
+//
+// For the Fitting Room dress-up grid: when a user taps "Swap" on a
+// specific slot, we need a candidate list of OTHER items they could
+// equip in that slot — same aesthetic / gender / style, but different
+// asset IDs. Returns up to `limit` items, with optional `excludeAssetIds`
+// filter so we don't show the user the item they're already wearing.
+//
+// Reuses the same static pool + live fallback as the main assembler so
+// the alternatives feel cohesive with the original outfit.
+
+export async function getSlotAlternatives(args: {
+  aestheticId: OutfitAestheticId;
+  slot: OutfitSlot;
+  gender: OutfitGender;
+  style: OutfitStyleMode;
+  excludeAssetIds?: string[];
+  limit?: number;
+}): Promise<OutfitItem[]> {
+  const aesthetic = getOutfitAesthetic(args.aestheticId);
+  const excludeSet = new Set((args.excludeAssetIds ?? []).map(String));
+  const limit = Math.max(1, Math.min(args.limit ?? 12, 24));
+
+  const pool = await searchSlotCandidates({
+    aesthetic,
+    slot: args.slot,
+    gender: args.gender,
+    style: args.style,
+  });
+  const filtered = pool.filter((it) => !excludeSet.has(String(it.id)));
+
+  // Curated items mixed in for aesthetic coherence (they take priority
+  // since they're hand-verified).
+  const curatedForSlot = aesthetic.curatedCore
+    .filter((c) => c.slot === args.slot)
+    .filter((c) => !excludeSet.has(c.assetId));
+
+  const curatedItems = curatedForSlot.map(curatedToOutfitItem);
+  const liveItems = filtered.map((it) => liveToOutfitItem(it, args.slot));
+
+  // De-dupe by assetId — curated takes precedence.
+  const byId = new Map<string, OutfitItem>();
+  for (const it of curatedItems) byId.set(it.assetId, it);
+  for (const it of liveItems) if (!byId.has(it.assetId)) byId.set(it.assetId, it);
+
+  // Sort: curated first, then by favoriteCount desc (popularity proxy),
+  // then by price asc (budget-friendly).
+  const all = Array.from(byId.values()).sort((a, b) => {
+    if (a.isCurated !== b.isCurated) return a.isCurated ? -1 : 1;
+    const favA = a.favoriteCount ?? 0;
+    const favB = b.favoriteCount ?? 0;
+    if (favA !== favB) return favB - favA;
+    return (a.priceRobux ?? 0) - (b.priceRobux ?? 0);
+  });
+
+  return all.slice(0, limit);
+}
+
 // ─── Curated-item → OutfitItem ────────────────────────────────────
 
 function curatedToOutfitItem(c: CuratedItem): OutfitItem {
