@@ -4826,6 +4826,22 @@ final class ChatStore: ObservableObject {
                 GenerationStage(id: "export_rbxm", title: "Finalizing fit", status: "pending"),
             ]
         }
+        // Session 390 round 2 — Cursed UGC chat-flow has its own short
+        // pipeline (3× flux concept art + Meshy v6 3D mesh + LLM metadata
+        // in parallel), NOT the 9-stage character_3d pipeline. User
+        // reported the misleading «Concept image / Awaiting approval /
+        // Convert to FBX / Upload to Roblox / Optimize mesh / Auto-rig
+        // R15 / Export model / Export RBXM» stages were showing for a
+        // pipeline that doesn't actually do any of those — there's no
+        // approval gate, no FBX conversion, no Roblox upload (mesh stays
+        // as GLB), no rig (it's a static cursed item, not an avatar).
+        if contentSubcategory == "cursed_ugc" {
+            return [
+                GenerationStage(id: "concept_image", title: "Cursed concept arts", status: "pending"),
+                GenerationStage(id: "mesh_3d", title: "3D mesh (Meshy v6)", status: "pending"),
+                GenerationStage(id: "export_rbxm", title: "Wrap marketplace card", status: "pending"),
+            ]
+        }
         if contentSubcategory == "audio" {
             return [
                 GenerationStage(id: "generating", title: "Generating audio", status: "pending"),
@@ -5408,6 +5424,27 @@ final class ChatStore: ObservableObject {
                     exportFileType: "viral",
                     artifactIds: [],
                     shareDescription: job.resultText ?? "AI-generated Roblox aura",
+                    downloadURL: nil,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: nil,
+                    fbxDownloadURL: nil,
+                    notes: [],
+                    viralKind: kind,
+                    viralGenerationId: genId
+                )
+            }
+            // Session 390 round 2 — cursed_ugc routes to the rich
+            // CursedUGCResultView (fake marketplace card with 3D mesh
+            // viewer + rarity badge + fake stats + share-poster) via
+            // CursedUGCChatBridge instead of the generic 9-stage Content
+            // Project Pipeline preview.
+            if kind == "cursed_ugc", !genId.isEmpty {
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Cursed UGC" : draft.title,
+                    artifactType: .unavailable("Opening cursed UGC…"),
+                    exportFileType: "viral",
+                    artifactIds: [],
+                    shareDescription: job.resultText ?? "AI-generated cursed Roblox UGC",
                     downloadURL: nil,
                     glbDownloadURL: nil,
                     rbxmDownloadURL: nil,

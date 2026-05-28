@@ -43,6 +43,11 @@ FOLDERS_TO_ADD = {
     'CursedUGCStudioView.swift',
     'CursedUGCResultView.swift',
     'CursedUGCSharePoster.swift',
+    # Session 390 round 2 — chat-flow bridge that opens the rich
+    # CursedUGCResultView from inside ChatView (instead of the
+    # generic Content Project Pipeline preview) when a cursed_ugc
+    # chat-flow generation completes.
+    'CursedUGCChatBridge.swift',
   ],
   'VoiceAura' => [
     'VoiceAuraAPIClient.swift',

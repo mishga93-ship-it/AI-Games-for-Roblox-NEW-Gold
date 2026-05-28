@@ -1207,6 +1207,16 @@ struct ChatView: View {
             NavigationStack {
                 VoiceAuraChatBridge(generationId: genId)
             }
+        } else if preview.viralKind == "cursed_ugc", let genId = preview.viralGenerationId, !genId.isEmpty {
+            // Session 390 round 2 — cursed_ugc routes to the rich
+            // CursedUGCResultView via CursedUGCChatBridge instead of the
+            // generic 9-stage Content Project Pipeline preview. Bridge
+            // fetches the persisted CursedUGCGenerationDoc via
+            // /api/viral-generations/:id, drives CursedUGCStudio into
+            // .result, renders the marketplace card with 3D mesh viewer.
+            NavigationStack {
+                CursedUGCChatBridge(generationId: genId)
+            }
         } else {
             defaultPreviewSheetContent(for: preview)
         }

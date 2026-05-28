@@ -204,4 +204,102 @@ enum CursedUGCAPIClient {
             throw CursedUGCAPIError.underlying(error)
         }
     }
+
+    /// Session 390 round 2 — fetch a previously persisted cursed-UGC
+    /// generation by id. Used by `CursedUGCChatBridge` to re-hydrate the
+    /// rich result payload from the artifact's `metadata.generationId`
+    /// after a chat-flow generation completes. Endpoint is the unified
+    /// `/api/viral-generations/:id` (same shape as Disaster / VoiceAura /
+    /// FittingRoom). Convert the doc via `.toResponse()` to feed
+    /// `CursedUGCResultView`.
+    static func fetchById(_ generationId: String) async throws -> CursedUGCGenerationDoc {
+        do {
+            return try await APIClient.request(
+                "api/viral-generations/\(generationId)",
+                method: "GET",
+                timeout: 20
+            )
+        } catch APIError.httpError(let code) where code == 401 {
+            throw CursedUGCAPIError.underlying(APIError.httpError(401))
+        } catch APIError.httpError(let code) where code == 404 {
+            throw CursedUGCAPIError.underlying(APIError.httpError(404))
+        } catch {
+            throw CursedUGCAPIError.underlying(error)
+        }
+    }
+}
+
+// MARK: - Recents detail (GET /api/viral-generations/:id, kind=cursed_ugc)
+
+/// Detail response when the doc kind is `cursed_ugc`. Mirrors the payload
+/// shape recorded by `viralChatDispatch.ts handleCursedUGC()`. Outer
+/// `generationId` is the Firestore doc id; inner `payload` holds the full
+/// CursedUGCResponse-equivalent fields so the rich result view can render
+/// the chat-flow generation identically to a fresh
+/// `POST /api/cursed-ugc/generate` response.
+struct CursedUGCGenerationDoc: Codable {
+    let generationId: String
+    let kind: String
+    let title: String
+    let subtitle: String?
+    let thumbnailUrl: String?
+    let accentHex: String?
+    let createdAtMs: Double
+    let payload: CursedUGCGenerationPayload
+
+    /// Re-hydrate the full `CursedUGCResponse` so `CursedUGCResultView` can
+    /// present this generation identically to a fresh
+    /// `POST /api/cursed-ugc/generate` response. Fields missing from older
+    /// payloads fall back to reasonable defaults so the view doesn't crash
+    /// on partial data.
+    func toResponse() -> CursedUGCResponse {
+        let fallbackStats = CursedUGCFakeStats(
+            wishlistedBy: "42K",
+            trendingRank: 3,
+            bannedInCountries: 2,
+            daysLeft: "Limited 2d"
+        )
+        return CursedUGCResponse(
+            generationId: generationId,
+            categoryId: payload.categoryId ?? "brainrot_item",
+            styleId: payload.styleId ?? "cursed",
+            intensity: payload.intensity ?? "strong",
+            titleEN: payload.titleEN ?? title,
+            titleRU: payload.titleRU ?? title,
+            descriptionEN: payload.descriptionEN ?? "",
+            descriptionRU: payload.descriptionRU ?? "",
+            tags: payload.tags ?? [],
+            shareCaption: payload.shareCaption ?? (subtitle ?? ""),
+            rarityVibeEN: payload.rarityVibeEN ?? "Legendary Meme",
+            rarityVibeRU: payload.rarityVibeRU ?? "Легендарный Мем",
+            fakePriceRobux: payload.fakePriceRobux ?? 75000,
+            fakeStats: payload.fakeStats ?? fallbackStats,
+            mainImageUrl: payload.mainImageUrl ?? thumbnailUrl,
+            meshUrl: payload.meshUrl,
+            meshThumbnailUrl: payload.meshThumbnailUrl,
+            variations: payload.variations ?? [],
+            generationStatus: payload.generationStatus ?? "ready"
+        )
+    }
+}
+
+struct CursedUGCGenerationPayload: Codable {
+    let categoryId: String?
+    let styleId: String?
+    let intensity: String?
+    let mainImageUrl: String?
+    let meshUrl: String?
+    let meshThumbnailUrl: String?
+    let variations: [CursedUGCVariation]?
+    let titleEN: String?
+    let titleRU: String?
+    let descriptionEN: String?
+    let descriptionRU: String?
+    let tags: [String]?
+    let shareCaption: String?
+    let rarityVibeEN: String?
+    let rarityVibeRU: String?
+    let fakePriceRobux: Int?
+    let fakeStats: CursedUGCFakeStats?
+    let generationStatus: String?
 }
