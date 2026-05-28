@@ -262,9 +262,14 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
       `local MESH_IDS = { ${idList} }     -- ${input.objectKeyword ?? 'curated'} 3D meshes (inner Mesh ids — public, no trust check)`,
       `local TARGET_SCALE = ${preferredScale}     -- studs (cube edge); MeshPart auto-renders at this size`,
       ``,
+      `-- NOTE: Use the LEGACY MeshId property, NOT MeshContent.`,
+      `-- MeshContent requires the "Asset Management" Capability flag and ANY`,
+      `-- regular Script in ServerScriptService runs without it, so writing`,
+      `-- MeshContent throws "lacking capability NotAccessible". MeshId accepts`,
+      `-- the same "rbxassetid://N" string and renders identically.`,
       `local function spawnEntity(pos)`,
       `\tlocal mp = Instance.new("MeshPart")`,
-      `\tmp.MeshContent = "rbxassetid://" .. MESH_IDS[math.random(1, #MESH_IDS)]`,
+      `\tmp.MeshId = "rbxassetid://" .. MESH_IDS[math.random(1, #MESH_IDS)]`,
       `\tmp.Size = Vector3.new(TARGET_SCALE, TARGET_SCALE, TARGET_SCALE)`,
       colorLine,
       `\tmp.Material = Enum.Material.Plastic`,
@@ -276,7 +281,7 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
       '```',
     ].join('\n');
     return [
-      `10) SPAWN A REAL 3D MESH — DO NOT use Instance.new("Part"). The user's "${input.objectKeyword ?? 'this disaster'}" prompt already triggered our mesh factory to upload a low-poly 3D model and we extracted the inner Mesh asset id below. Embed this helper block VERBATIM near the top of your script — MeshPart.MeshContent reads the Mesh asset directly (public, no trust-check). Then call \`spawnEntity(position)\` from your main loop and track the returned MeshPart in your \`spawned\` table for the population cap + Debris cleanup.`,
+      `10) SPAWN A REAL 3D MESH — DO NOT use Instance.new("Part"). The user's "${input.objectKeyword ?? 'this disaster'}" prompt already triggered our mesh factory to upload a low-poly 3D model and we extracted the inner Mesh asset id below. Embed this helper block VERBATIM near the top of your script — uses MeshPart.MeshId (LEGACY property; NOT MeshContent, which needs an "Asset Management" Capability that server scripts in ServerScriptService don't have — that's the "lacking capability NotAccessible" error). Then call \`spawnEntity(position)\` from your main loop and track the returned MeshPart in your \`spawned\` table for the population cap + Debris cleanup.`,
       luaTemplate,
       `11) Cosmetic flair (ParticleEmitter / PointLight / Sound) goes inside the MeshPart returned by spawnEntity — attach as a child so it follows the falling mesh. One emitter max per entity.`,
     ];
