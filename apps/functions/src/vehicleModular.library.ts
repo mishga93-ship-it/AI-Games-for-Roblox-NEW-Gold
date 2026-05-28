@@ -500,31 +500,34 @@ end`.trim(),
   rear_spoiler_low: (ctx) => `
 do
 ${PROLOGUE_LUA}
+  -- R16: use bbSize.Y/2 + small constant (roof = +Y/2). Previous bbSize.Y * 0.2
+  -- was a fraction of FULL bbox diameter (wheels to roof) = too high.
   local spoiler = Instance.new("Part")
   spoiler.Name = "RearSpoilerLow"
   spoiler.Size = Vector3.new(bbSize.X * 0.7, 0.18, 0.5)
   spoiler.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
   spoiler.Material = Enum.Material.SmoothPlastic
-  spoiler.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.2, bbSize.Z * 0.42))
+  spoiler.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y / 2 + 0.05, bbSize.Z * 0.42))
   mount(spoiler)
 end`.trim(),
 
   rear_spoiler_high: (ctx) => `
 do
 ${PROLOGUE_LUA}
+  -- R16: anchor mast bottom at roof level (bbSize.Y/2), wing on top of mast
   local mastL = Instance.new("Part"); mastL.Name = "SpoilerMastL"
   mastL.Size = Vector3.new(0.18, 0.9, 0.55)
   mastL.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
   mastL.Material = Enum.Material.SmoothPlastic
-  mastL.CFrame = seatCF * (bbLocal * CFrame.new(-bbSize.X * 0.3, bbSize.Y * 0.4, bbSize.Z * 0.42))
+  mastL.CFrame = seatCF * (bbLocal * CFrame.new(-bbSize.X * 0.3, bbSize.Y / 2 + 0.45, bbSize.Z * 0.42))
   mount(mastL)
   local mastR = mastL:Clone(); mastR.Name = "SpoilerMastR"
-  mastR.CFrame = seatCF * (bbLocal * CFrame.new(bbSize.X * 0.3, bbSize.Y * 0.4, bbSize.Z * 0.42))
+  mastR.CFrame = seatCF * (bbLocal * CFrame.new(bbSize.X * 0.3, bbSize.Y / 2 + 0.45, bbSize.Z * 0.42))
   mount(mastR)
   local wing = Instance.new("Part"); wing.Name = "SpoilerWing"
   wing.Size = Vector3.new(bbSize.X * 0.75, 0.15, 0.9)
   wing.Color = mastL.Color; wing.Material = Enum.Material.SmoothPlastic
-  wing.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.85, bbSize.Z * 0.42))
+  wing.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y / 2 + 0.95, bbSize.Z * 0.42))
   mount(wing)
 end`.trim(),
 
@@ -538,7 +541,8 @@ ${PROLOGUE_LUA}
     pipe.Size = Vector3.new(0.8, 0.4, 0.4)
     pipe.Color = Color3.fromRGB(180, 180, 185)
     pipe.Material = Enum.Material.Metal
-    pipe.CFrame = seatCF * (bbLocal * CFrame.new(offX, -bbSize.Y * 0.3, bbSize.Z * 0.48)) * CFrame.Angles(0, math.pi/2, 0)
+    -- R16: -Y/2 + 0.4 = just above chassis bottom edge
+    pipe.CFrame = seatCF * (bbLocal * CFrame.new(offX, -bbSize.Y / 2 + 0.4, bbSize.Z * 0.48)) * CFrame.Angles(0, math.pi/2, 0)
     mount(pipe)
   end
 end`.trim(),
@@ -628,9 +632,9 @@ ${PROLOGUE_LUA}
   guard.Size = Vector3.new(bbSize.X * 0.85, 0.6, 0.35)
   guard.Color = Color3.fromRGB(100, 100, 105)
   guard.Material = Enum.Material.Metal
-  guard.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y * 0.15, -bbSize.Z * 0.52))
+  -- R16: -Y/2 + 0.4 = just above bumper bottom edge
+  guard.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y / 2 + 0.4, -bbSize.Z * 0.52))
   mount(guard)
-  -- Vertical guard bars across grille
   for i = -1, 1 do
     local v = Instance.new("Part")
     v.Name = "BullBarV" .. i
@@ -650,7 +654,8 @@ ${PROLOGUE_LUA}
     skirt.Size = Vector3.new(0.2, 0.35, bbSize.Z * 0.7)
     skirt.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
     skirt.Material = Enum.Material.SmoothPlastic
-    skirt.CFrame = seatCF * (bbLocal * CFrame.new(side * bbSize.X * 0.45, -bbSize.Y * 0.32, 0))
+    -- R16: -Y/2 + 0.35 = just above ground / below door
+    skirt.CFrame = seatCF * (bbLocal * CFrame.new(side * bbSize.X * 0.45, -bbSize.Y / 2 + 0.35, 0))
     mount(skirt)
   end
 end`.trim(),
@@ -663,9 +668,9 @@ ${PROLOGUE_LUA}
   scoop.Size = Vector3.new(1.4, 0.45, 1.2)
   scoop.Color = Color3.fromRGB(25, 25, 30)
   scoop.Material = Enum.Material.SmoothPlastic
-  scoop.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.35, -bbSize.Z * 0.2))
+  -- R16: +Y/2 + 0.2 = sitting on hood top
+  scoop.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y / 2 + 0.2, -bbSize.Z * 0.2))
   mount(scoop)
-  -- Hole face (black gloss insert)
   local hole = Instance.new("Part")
   hole.Name = "HoodScoopHole"
   hole.Size = Vector3.new(1.1, 0.25, 0.1)
@@ -683,9 +688,9 @@ ${PROLOGUE_LUA}
   box.Size = Vector3.new(bbSize.X * 0.55, 0.9, 1.2)
   box.Color = Color3.fromRGB(15, 15, 15)
   box.Material = Enum.Material.SmoothPlastic
-  box.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.45, bbSize.Z * 0.42))
+  -- R16: +Y/2 + 0.45 = sitting on trunk top
+  box.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y / 2 + 0.45, bbSize.Z * 0.42))
   mount(box)
-  -- 2 speaker cones
   for i, off in ipairs({-0.5, 0.5}) do
     local cone = Instance.new("Part")
     cone.Name = "Speaker" .. i
@@ -706,7 +711,8 @@ ${PROLOGUE_LUA}
   arm.Size = Vector3.new(0.4, 0.25, 0.9)
   arm.Color = Color3.fromRGB(60, 60, 65)
   arm.Material = Enum.Material.Metal
-  arm.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y * 0.3, bbSize.Z * 0.55))
+  -- R16: -Y/2 + 0.5 = at bumper height (just above ground)
+  arm.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y / 2 + 0.5, bbSize.Z * 0.55))
   mount(arm)
   local ball = Instance.new("Part")
   ball.Name = "TowHitchBall"
@@ -816,9 +822,9 @@ ${PROLOGUE_LUA}
   engine.Size = Vector3.new(1.6, 1.1, 1.1)
   engine.Color = Color3.fromRGB(80, 80, 85)
   engine.Material = Enum.Material.Metal
-  engine.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y * 0.1, bbSize.Z * 0.55)) * CFrame.Angles(0, math.pi/2, 0)
+  -- R16: bumper-height = chassis center (0), small upward bias for visual clearance
+  engine.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y / 2 + 0.7, bbSize.Z * 0.55)) * CFrame.Angles(0, math.pi/2, 0)
   mount(engine)
-  -- Glowing rear opening
   local ring = Instance.new("Part")
   ring.Name = "JetRing"
   ring.Shape = Enum.PartType.Cylinder
