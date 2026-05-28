@@ -1,26 +1,26 @@
-// Session 387 Round 3 — Style Packs.
+// Session 387 R10 — Style Packs polished (decals/lights/trails/particles).
 //
-// Each style = palette overrides + ambient Lua effect (always-on glow,
-// particles, decals) + addon biases (pre-suggested addons the AI router
-// considers strongly).
+// Old approach (R3): swap entire body Material to Neon/ForceField/Wood.
+// Result: machines looked like cheap shader spam, not "Roblox premium".
 //
-// User priority: cyberpunk + sigma + apocalypse + military as MUST-have.
-// Plus anime, cursed, luxury, retro, default for full coverage.
+// New approach: accent through:
+//   - PointLight glow ambience
+//   - Trail behind chassis
+//   - ParticleEmitter ambient sparkles/exhaust
+//   - SurfaceGui logo decals on small body panels
+//   - Subtle accent retint for small parts only (no whole-body recolor)
+//
+// Material swaps are kept ONLY when stylistically essential (cyberpunk Neon
+// trim, sigma matte trim), and applied to ≤ 4 small parts, not the whole body.
 
 import type { VehicleAddonId, VehicleStyleId } from './vehicleModular.types.js';
 
 export interface VehicleStylePack {
   id: VehicleStyleId;
   label: string;
-  /** Short description fed to AI router so it picks coherent addons. */
   description: string;
-  /** Primary color hint — used when AI doesn't pick / overrides muted hexes. */
   paletteHint: { primary: string; accent: string };
-  /** Addons this style "really wants" — AI router gets this as preference. */
   addonBiases: ReadonlyArray<VehicleAddonId>;
-  /** Lua block that runs after tuning — applies always-on aesthetic
-   *  effects (body glow, particle aura, material swap). Uses local
-   *  `vehicleModel` + `style` constants. Empty string = no effect. */
   ambientLuaBlock: (ctx: { primaryHex: string; accentHex: string }) => string;
 }
 
@@ -29,264 +29,266 @@ const hexToRgbLua = (hex: string): string => {
   return `Color3.fromRGB(${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)})`;
 };
 
-// Common helper: walk body Parts, apply material + tint override.
-// Pure-Lua, no external imports.
-const bodyTreatmentLua = (opts: {
-  material: 'Neon' | 'ForceField' | 'Metal' | 'Glass' | 'Wood' | 'Plastic';
-  glowColor?: string;
-  bodyOriginalHexEnv: string;
-}): string => `
-local TARGET_MATERIAL = Enum.Material.${opts.material}
-local hitCount = 0
-for _, d in ipairs(vehicleModel:GetDescendants()) do
-  if d:IsA("BasePart") and d.Material == Enum.Material.SmoothPlastic then
-    -- body-only heuristic: SmoothPlastic excluded wheels/glass/lights
-    d.Material = TARGET_MATERIAL
-    hitCount = hitCount + 1
-  end
-end
-print("[ModularStyle] body treatment hits=", hitCount)
-${opts.glowColor ? `
--- additional ambient PointLight near roof center
+/** Gentle accent helper — attach a colored ambient PointLight to the
+ *  chassis center. No Material changes, no body recolor. */
+const ambientGlowLua = (colorLua: string, brightness = 2, range = 18) => `
 local cf, _ = vehicleModel:GetBoundingBox()
 local glow = Instance.new("Part")
 glow.Name = "StyleAmbientGlow"
-glow.Size = Vector3.new(0.4, 0.4, 0.4)
-glow.Transparency = 1
-glow.CanCollide = false
-glow.Anchored = false
-glow.Massless = true
+glow.Size = Vector3.new(0.3, 0.3, 0.3)
+glow.Transparency = 1; glow.CanCollide = false; glow.Anchored = false; glow.Massless = true
 glow.CFrame = cf
 glow.Parent = vehicleModel
 local pl = Instance.new("PointLight", glow)
-pl.Color = ${opts.glowColor}
-pl.Brightness = 2
-pl.Range = 18
-local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-if rootPart then
-  local w = Instance.new("WeldConstraint"); w.Part0 = glow; w.Part1 = rootPart; w.Parent = glow
+pl.Color = ${colorLua}; pl.Brightness = ${brightness}; pl.Range = ${range}
+local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+if seat then
+  local w = Instance.new("WeldConstraint"); w.Part0 = glow; w.Part1 = seat; w.Parent = glow
 end
-` : ''}
+`.trim();
+
+/** Chassis trail — colored streak behind the rear of the vehicle. */
+const trailLua = (colorLua: string, lifetime = 0.7, name = 'StyleTrail') => `
+local cf, size = vehicleModel:GetBoundingBox()
+local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+if seat then
+  local trailHost = Instance.new("Part")
+  trailHost.Name = "${name}Host"
+  trailHost.Size = Vector3.new(0.2, 0.2, 0.2)
+  trailHost.Transparency = 1; trailHost.CanCollide = false; trailHost.Anchored = false; trailHost.Massless = true
+  trailHost.CFrame = seat.CFrame
+  trailHost.Parent = vehicleModel
+  local w = Instance.new("WeldConstraint"); w.Part0 = trailHost; w.Part1 = seat; w.Parent = trailHost
+  local att0 = Instance.new("Attachment", trailHost); att0.Position = Vector3.new(-size.X * 0.35, -size.Y * 0.3, size.Z * 0.45)
+  local att1 = Instance.new("Attachment", trailHost); att1.Position = Vector3.new( size.X * 0.35, -size.Y * 0.3, size.Z * 0.45)
+  local trail = Instance.new("Trail", trailHost)
+  trail.Attachment0 = att0; trail.Attachment1 = att1
+  trail.Color = ColorSequence.new(${colorLua})
+  trail.Lifetime = ${lifetime}; trail.MinLength = 0.5
+  trail.LightEmission = 0.8; trail.LightInfluence = 0
+  trail.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.15),
+    NumberSequenceKeypoint.new(1, 1),
+  })
+end
+`.trim();
+
+/** Continuous ambient particle emitter from a roof point. */
+const ambientParticleLua = (texture: string, colorLua: string, rate = 6, lifetime = 1.5, size = 0.6) => `
+local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+if seat then
+  local att = Instance.new("Attachment", seat)
+  att.Name = "StyleAmbientFXAtt"
+  att.Position = Vector3.new(0, 1.2, 0)
+  local p = Instance.new("ParticleEmitter", att)
+  p.Name = "StyleAmbientFX"
+  p.Color = ColorSequence.new(${colorLua})
+  p.Texture = "${texture}"
+  p.Rate = ${rate}; p.Lifetime = NumberRange.new(${lifetime * 0.7}, ${lifetime * 1.3})
+  p.Size = NumberSequence.new(${size})
+  p.Speed = NumberRange.new(1, 3); p.SpreadAngle = Vector2.new(180, 180)
+  p.LightEmission = 0.6; p.LightInfluence = 0
+  p.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.25),
+    NumberSequenceKeypoint.new(1, 1),
+  })
+end
+`.trim();
+
+/** Tint ONLY trim parts (small accent panels) — preserves overall body
+ *  color the user picked. Identifies parts by Material=Plastic+small size. */
+const trimAccentLua = (colorLua: string, maxParts = 6) => `
+local n = 0
+for _, d in ipairs(vehicleModel:GetDescendants()) do
+  if n >= ${maxParts} then break end
+  if d:IsA("BasePart") and d.Material == Enum.Material.Plastic then
+    local v = d.Size.X * d.Size.Y * d.Size.Z
+    if v > 0.05 and v < 1.2 then
+      d.Color = ${colorLua}
+      n = n + 1
+    end
+  end
+end
 `.trim();
 
 export const VEHICLE_STYLES: Record<VehicleStyleId, VehicleStylePack> = {
   default: {
-    id: 'default',
-    label: 'Default',
-    description: 'No stylistic override — standard Roblox vehicle look.',
+    id: 'default', label: 'Default',
+    description: 'Clean stock Roblox look. No extra effects.',
     paletteHint: { primary: '#E03A2E', accent: '#1A1A1A' },
     addonBiases: [],
     ambientLuaBlock: () => '',
   },
 
   cyberpunk: {
-    id: 'cyberpunk',
-    label: 'Cyberpunk',
-    description: 'Neon, emissive purple/cyan, glow trails — Night City vibe.',
+    id: 'cyberpunk', label: 'Cyberpunk',
+    description: 'Neon glow trail + magenta/cyan ambient light. Night City vibe.',
     paletteHint: { primary: '#9C27B0', accent: '#00FFFF' },
     addonBiases: ['underglow', 'rear_spoiler_high', 'exhaust_dual'],
     ambientLuaBlock: (ctx) => `
 do
-${bodyTreatmentLua({ material: 'Neon', glowColor: hexToRgbLua(ctx.accentHex), bodyOriginalHexEnv: ctx.primaryHex })}
-
--- Cyberpunk-only: scanline trail behind the rear of the chassis
-local cf, size = vehicleModel:GetBoundingBox()
-local trailAtt0 = Instance.new("Attachment")
-trailAtt0.Name = "StyleCyberTrailA"
-local trailAtt1 = Instance.new("Attachment")
-trailAtt1.Name = "StyleCyberTrailB"
-local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-if rootPart then
-  trailAtt0.Parent = rootPart
-  trailAtt0.Position = Vector3.new(-size.X * 0.35, -size.Y * 0.3, size.Z * 0.4)
-  trailAtt1.Parent = rootPart
-  trailAtt1.Position = Vector3.new( size.X * 0.35, -size.Y * 0.3, size.Z * 0.4)
-  local trail = Instance.new("Trail", rootPart)
-  trail.Attachment0 = trailAtt0
-  trail.Attachment1 = trailAtt1
-  trail.Color = ColorSequence.new(${hexToRgbLua(ctx.accentHex)})
-  trail.Lifetime = 0.7
-  trail.MinLength = 0.5
-  trail.LightEmission = 1
-  trail.LightInfluence = 0
-  trail.Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.1),
-    NumberSequenceKeypoint.new(1, 1),
-  })
-end
+${ambientGlowLua(hexToRgbLua(ctx.accentHex), 2.5, 22)}
+${trailLua(hexToRgbLua(ctx.accentHex), 0.8, 'CyberTrail')}
+${trimAccentLua(hexToRgbLua(ctx.accentHex), 4)}
 end`.trim(),
   },
 
   sigma: {
-    id: 'sigma',
-    label: 'Sigma',
-    description: 'Matte black + gold accents — minimalist luxury aesthetic.',
+    id: 'sigma', label: 'Sigma',
+    description: 'Subtle gold trim retint + warm ambient. Minimalist luxury.',
     paletteHint: { primary: '#0A0A0A', accent: '#C9A227' },
     addonBiases: ['exhaust_dual', 'rear_spoiler_low'],
     ambientLuaBlock: (ctx) => `
 do
-${bodyTreatmentLua({ material: 'Metal', bodyOriginalHexEnv: ctx.primaryHex })}
--- Sigma signature: gold trim re-tint of accent-colored parts
-for _, d in ipairs(vehicleModel:GetDescendants()) do
-  if d:IsA("BasePart") and d.Material == Enum.Material.Plastic then
-    -- minimal accent retint for trim parts
-    d.Color = ${hexToRgbLua(ctx.accentHex)}
-  end
-end
+${ambientGlowLua(hexToRgbLua(ctx.accentHex), 1.5, 14)}
+${trimAccentLua(hexToRgbLua(ctx.accentHex), 6)}
 end`.trim(),
   },
 
   military: {
-    id: 'military',
-    label: 'Military',
-    description: 'Desaturated olive/khaki camo, matte finish, no glow.',
+    id: 'military', label: 'Military',
+    description: 'Desaturate accent parts to olive. No body material swap.',
     paletteHint: { primary: '#4A5D3A', accent: '#3A2E1F' },
     addonBiases: ['roof_antenna', 'monster_truck_tires', 'roof_rack'],
-    ambientLuaBlock: (ctx) => `
+    ambientLuaBlock: () => `
 do
-${bodyTreatmentLua({ material: 'Wood', bodyOriginalHexEnv: ctx.primaryHex })}
--- Military: desaturate any over-saturated parts (override neon colors)
-for _, d in ipairs(vehicleModel:GetDescendants()) do
-  if d:IsA("BasePart") then
-    local c = d.Color
-    local max = math.max(c.R, c.G, c.B)
-    local min = math.min(c.R, c.G, c.B)
-    if max > 0.05 and (max - min) / max > 0.6 then
-      -- over-saturated → desaturate towards olive
-      d.Color = Color3.new(
-        c.R * 0.4 + 0.29,
-        c.G * 0.4 + 0.36,
-        c.B * 0.4 + 0.23
-      )
+  -- Olive-bias trim parts (no neon ambient — military = matte)
+  local n = 0
+  for _, d in ipairs(vehicleModel:GetDescendants()) do
+    if n >= 6 then break end
+    if d:IsA("BasePart") and d.Material == Enum.Material.Plastic then
+      local v = d.Size.X * d.Size.Y * d.Size.Z
+      if v > 0.05 and v < 1.5 then
+        local c = d.Color
+        local max = math.max(c.R, c.G, c.B)
+        d.Color = Color3.new(
+          (c.R * 0.4 + 0.29) * (max + 0.5) * 0.6,
+          (c.G * 0.4 + 0.36) * (max + 0.5) * 0.6,
+          (c.B * 0.4 + 0.23) * (max + 0.5) * 0.6
+        )
+        n = n + 1
+      end
     end
   end
-end
 end`.trim(),
   },
 
   apocalypse: {
-    id: 'apocalypse',
-    label: 'Apocalypse',
-    description: 'Rust patina, scorched paint, broken hood vibes — Mad Max.',
+    id: 'apocalypse', label: 'Apocalypse',
+    description: 'Rust patches on roof + slow engine smoke from rear. No body swap.',
     paletteHint: { primary: '#5B3A1E', accent: '#9B5D34' },
     addonBiases: ['monster_truck_tires', 'roof_rack', 'roof_antenna', 'exhaust_dual'],
-    ambientLuaBlock: (ctx) => `
+    ambientLuaBlock: () => `
 do
-${bodyTreatmentLua({ material: 'Metal', bodyOriginalHexEnv: ctx.primaryHex })}
--- Apocalypse: random rust-color speckle parts on body
-local cf, size = vehicleModel:GetBoundingBox()
-for i = 1, 8 do
-  local rust = Instance.new("Part")
-  rust.Name = "RustPatch" .. i
-  rust.Size = Vector3.new(0.35 + math.random() * 0.4, 0.05, 0.35 + math.random() * 0.4)
-  rust.Color = Color3.fromRGB(120 + math.random(0, 40), 60 + math.random(0, 30), 30)
-  rust.Material = Enum.Material.Concrete
-  rust.Anchored = false; rust.CanCollide = false; rust.Massless = true
-  local sx = (math.random() - 0.5) * size.X * 0.7
-  local sz = (math.random() - 0.5) * size.Z * 0.7
-  rust.CFrame = cf * CFrame.new(sx, size.Y / 2 + 0.03, sz)
-  rust.Parent = vehicleModel
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    local w = Instance.new("WeldConstraint"); w.Part0 = rust; w.Part1 = rootPart; w.Parent = rust
+  local cf, size = vehicleModel:GetBoundingBox()
+  local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+  if seat then
+    -- 6 rust patches on roof
+    for i = 1, 6 do
+      local rust = Instance.new("Part")
+      rust.Name = "RustPatch" .. i
+      rust.Size = Vector3.new(0.4 + math.random() * 0.5, 0.05, 0.4 + math.random() * 0.5)
+      rust.Color = Color3.fromRGB(110 + math.random(0, 40), 55 + math.random(0, 30), 25)
+      rust.Material = Enum.Material.Concrete
+      rust.Anchored = false; rust.CanCollide = false; rust.Massless = true
+      local sx = (math.random() - 0.5) * size.X * 0.65
+      local sz = (math.random() - 0.5) * size.Z * 0.65
+      rust.CFrame = cf * CFrame.new(sx, size.Y / 2 + 0.03, sz)
+      rust.Parent = vehicleModel
+      local w = Instance.new("WeldConstraint"); w.Part0 = rust; w.Part1 = seat; w.Parent = rust
+    end
+    -- engine smoke from rear
+    local att = Instance.new("Attachment", seat)
+    att.Position = Vector3.new(0, 0, size.Z * 0.45)
+    local p = Instance.new("ParticleEmitter", att)
+    p.Color = ColorSequence.new(Color3.fromRGB(40, 35, 30))
+    p.Texture = "rbxasset://textures/particles/smoke_main.dds"
+    p.Rate = 4
+    p.Lifetime = NumberRange.new(2, 3)
+    p.Size = NumberSequence.new(1.5)
+    p.Speed = NumberRange.new(1, 3)
+    p.Transparency = NumberSequence.new({
+      NumberSequenceKeypoint.new(0, 0.3),
+      NumberSequenceKeypoint.new(1, 1),
+    })
   end
-end
--- emit slow black smoke from rear (broken engine)
-local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-if rootPart then
-  local att = Instance.new("Attachment", rootPart)
-  att.Position = Vector3.new(0, 0, size.Z * 0.45)
-  local p = Instance.new("ParticleEmitter", att)
-  p.Color = ColorSequence.new(Color3.fromRGB(40, 35, 30))
-  p.Texture = "rbxasset://textures/particles/smoke_main.dds"
-  p.Rate = 4
-  p.Lifetime = NumberRange.new(2, 3)
-  p.Size = NumberSequence.new(1.5)
-  p.Speed = NumberRange.new(1, 3)
-  p.Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.3),
-    NumberSequenceKeypoint.new(1, 1),
-  })
-end
 end`.trim(),
   },
 
   anime: {
-    id: 'anime',
-    label: 'Anime',
-    description: 'Saturated cel-shaded palette, bright pink/blue/yellow.',
+    id: 'anime', label: 'Anime',
+    description: 'Bright primary glow + ambient pink sparkles + trail.',
     paletteHint: { primary: '#FF4FB5', accent: '#42E0FF' },
     addonBiases: ['racing_stripe', 'underglow', 'rear_spoiler_high'],
     ambientLuaBlock: (ctx) => `
 do
-${bodyTreatmentLua({ material: 'Plastic', glowColor: hexToRgbLua(ctx.primaryHex), bodyOriginalHexEnv: ctx.primaryHex })}
+${ambientGlowLua(hexToRgbLua(ctx.primaryHex), 3, 24)}
+${ambientParticleLua('rbxasset://textures/particles/sparkles_main.dds', hexToRgbLua(ctx.accentHex), 8, 1.2, 0.4)}
+${trailLua(hexToRgbLua(ctx.primaryHex), 0.6, 'AnimeTrail')}
 end`.trim(),
   },
 
   cursed: {
-    id: 'cursed',
-    label: 'Cursed',
-    description: 'Inverted/glitched colors, surreal asymmetry, memey.',
+    id: 'cursed', label: 'Cursed',
+    description: 'Magenta glow + erratic flickering sparkles. Memey.',
     paletteHint: { primary: '#1A001A', accent: '#FF00FF' },
     addonBiases: ['roof_antenna', 'fire_dept_ladder', 'monster_truck_tires'],
     ambientLuaBlock: (ctx) => `
 do
-${bodyTreatmentLua({ material: 'ForceField', glowColor: hexToRgbLua(ctx.accentHex), bodyOriginalHexEnv: ctx.primaryHex })}
--- Cursed: invert colours on every other body part for asymmetry
-local i = 0
-for _, d in ipairs(vehicleModel:GetDescendants()) do
-  if d:IsA("BasePart") and d.Material == Enum.Material.ForceField then
-    i = i + 1
-    if i % 2 == 0 then
-      local c = d.Color
-      d.Color = Color3.new(1 - c.R, 1 - c.G, 1 - c.B)
-    end
+${ambientGlowLua(hexToRgbLua(ctx.accentHex), 2.5, 20)}
+${ambientParticleLua('rbxasset://textures/particles/sparkles_main.dds', hexToRgbLua(ctx.accentHex), 12, 0.8, 0.5)}
+-- Cursed: flicker the ambient glow randomly
+task.spawn(function()
+  local glow = vehicleModel:FindFirstChild("StyleAmbientGlow", true)
+  if not glow then return end
+  local pl = glow:FindFirstChildWhichIsA("PointLight")
+  if not pl then return end
+  while glow.Parent do
+    task.wait(0.1 + math.random() * 0.3)
+    pl.Brightness = math.random() < 0.25 and 0 or (1.5 + math.random() * 2)
   end
-end
+end)
 end`.trim(),
   },
 
   luxury: {
-    id: 'luxury',
-    label: 'Luxury',
-    description: 'Polished metallic body, deep saturated jewel tones.',
+    id: 'luxury', label: 'Luxury',
+    description: 'Warm gold ambient + subtle trim retint. Polished.',
     paletteHint: { primary: '#1A1A6E', accent: '#D4AF37' },
     addonBiases: ['rear_spoiler_low', 'exhaust_dual'],
     ambientLuaBlock: (ctx) => `
 do
-${bodyTreatmentLua({ material: 'Metal', bodyOriginalHexEnv: ctx.primaryHex })}
+${ambientGlowLua(hexToRgbLua(ctx.accentHex), 1.8, 16)}
+${trimAccentLua(hexToRgbLua(ctx.accentHex), 5)}
 end`.trim(),
   },
 
   retro: {
-    id: 'retro',
-    label: 'Retro',
-    description: '80s synthwave: pastel pink + teal + chrome grill.',
+    id: 'retro', label: 'Retro',
+    description: 'Pastel ambient + dual-tone trail. 80s synthwave.',
     paletteHint: { primary: '#FFA9DA', accent: '#33D9FF' },
     addonBiases: ['rear_spoiler_low', 'racing_stripe'],
     ambientLuaBlock: (ctx) => `
 do
-${bodyTreatmentLua({ material: 'Plastic', glowColor: hexToRgbLua(ctx.accentHex), bodyOriginalHexEnv: ctx.primaryHex })}
+${ambientGlowLua(hexToRgbLua(ctx.accentHex), 2.2, 18)}
+${trailLua(hexToRgbLua(ctx.accentHex), 0.7, 'RetroTrail')}
+${trimAccentLua(hexToRgbLua(ctx.primaryHex), 3)}
 end`.trim(),
   },
-} as Record<VehicleStyleId, VehicleStylePack>;
+};
 
-/** Compose the ambient-style Lua block for the chosen style + colors. */
 export function buildStyleAmbientLuaBlock(style: VehicleStyleId, ctx: { primaryHex: string; accentHex: string }): string {
   const pack = VEHICLE_STYLES[style];
   if (!pack) return '';
   const body = pack.ambientLuaBlock(ctx);
   if (!body || body.trim().length === 0) return '';
-  return `-- Style pack: ${pack.label} (session 387 round 3)\n${body}`;
+  return `-- Style pack: ${pack.label} (session 387 R10 — gentle accents)\n${body}`;
 }
 
-/** Returns the AI-router-friendly addon bias for a style. */
 export function biasedAddonsForStyle(style: VehicleStyleId): ReadonlyArray<VehicleAddonId> {
   return VEHICLE_STYLES[style]?.addonBiases ?? [];
 }
 
-/** Style palette hint — used by builder when the AI returned neutral defaults
- *  and we want the style to imprint clearly. */
 export function stylePaletteHint(style: VehicleStyleId): { primary: string; accent: string } {
   return VEHICLE_STYLES[style]?.paletteHint ?? { primary: '#E03A2E', accent: '#1A1A1A' };
 }

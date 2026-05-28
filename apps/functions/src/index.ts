@@ -28287,9 +28287,33 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
                 const recoloredBuf = await sharp(rawPixels, {
                   raw: { width: info.width, height: info.height, channels: info.channels },
                 }).png().toBuffer();
+                // Session 387 R10 — composit rarity badge + caption + addon
+                // icons + accent underglow halo on top of the recolored PNG.
+                // Makes preview reflect addons/rarity/style instead of looking
+                // like a plain Roblox template thumbnail.
+                const { compositePreviewOverlay } = await import('./vehicleModular.preview.js');
+                const rarityLabelFromMeta = typeof currentJob.metadata?.vehicleRarityLabel === 'string'
+                  ? currentJob.metadata.vehicleRarityLabel as string : '';
+                const rarityColorFromMeta = typeof currentJob.metadata?.vehicleRarityColorHex === 'string'
+                  ? currentJob.metadata.vehicleRarityColorHex as string : '#888888';
+                const captionFromMeta = typeof currentJob.metadata?.vehiclePersonalityCaption === 'string'
+                  ? currentJob.metadata.vehiclePersonalityCaption as string : '';
+                const addonIdsFromMeta = Array.isArray(currentJob.metadata?.vehicleAddonIds)
+                  ? (currentJob.metadata.vehicleAddonIds as string[]) : [];
+                const finalPreviewBuf = await compositePreviewOverlay(recoloredBuf, {
+                  rarity: rarityLabelFromMeta ? { label: rarityLabelFromMeta, colorHex: rarityColorFromMeta } : undefined,
+                  caption: captionFromMeta,
+                  addonIds: addonIdsFromMeta,
+                  accentHex: pick.config.bodyOriginalHex !== pick.primaryHex
+                    ? (typeof currentJob.metadata?.vehicleTemplateAccentHex === 'string'
+                        ? (currentJob.metadata.vehicleTemplateAccentHex as string) : '#FFFFFF')
+                    : '#FFFFFF',
+                  // Plane/boat/tank look weird with bottom ellipse glow
+                  skipUnderglow: ['Plane', 'Boat', 'Tank'].includes(pick.templateName),
+                });
                 const thumbArtifact = await uploadBinaryArtifact(
                   currentJob,
-                  recoloredBuf,
+                  finalPreviewBuf,
                   {
                     type: 'png',
                     extension: 'png',
@@ -28485,54 +28509,68 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             trunk: briefs.trunkLogoBrief.slice(0, 80),
           });
 
-          // Upload one decal: generate via Flux → download → upload to Roblox.
+          // Upload one decal: cache-lookup → generate via Flux → upload to Roblox → cache.
+          // Session 387 R10: wrapped in withDecalCache so repeated taxi/police/
+          // cyberpunk briefs reuse the same Roblox asset (cheaper + faster +
+          // visual consistency between similar cars).
+          const { withDecalCache } = await import('./vehicleDecalCache.js');
+          const styleForCache = typeof currentJob.metadata?.vehicleConfig === 'object'
+            && currentJob.metadata?.vehicleConfig !== null
+            && typeof (currentJob.metadata.vehicleConfig as Record<string, unknown>).style === 'string'
+            ? ((currentJob.metadata.vehicleConfig as Record<string, unknown>).style as string)
+            : 'default';
           const uploadDecal = async (brief: string, label: string): Promise<number | undefined> => {
             if (!brief) return undefined;
-            const flxUrl = await generateDecalTexture({
-              imagePrompt: brief,
-              transparency: true,
-              recommendedSize: 512,
-              negativePrompt: 'background, scene, photo, realistic, 3d render, gradient, frame, border',
-            });
-            if (!flxUrl) {
-              logger.warn('[Vehicle decals] Flux returned no URL', { jobId, label, briefPreview: brief.slice(0, 80) });
-              return undefined;
-            }
-            try {
-              const apiKey = getRobloxOpenCloudApiKey();
-              const creatorId = getRobloxCreatorId();
-              if (!apiKey || !creatorId) {
-                logger.warn('[Vehicle decals] no Open Cloud creds — skipping', { jobId, label });
-                return undefined;
-              }
-              const resp = await fetch(flxUrl);
-              if (!resp.ok) {
-                logger.warn('[Vehicle decals] Flux URL fetch failed', { jobId, label, status: resp.status });
-                return undefined;
-              }
-              const buf = Buffer.from(await resp.arrayBuffer());
-              const upload = await uploadAssetToRoblox({
-                apiKey, creatorId, creatorType: 'User',
-                assetType: 'Image',
-                name: `Vehicle decal ${label} ${(currentJob.metadata?.title as string ?? '').slice(0, 24)}`.slice(0, 50),
-                description: `AI-generated vehicle livery decal (${label}) for ${tplName}`,
-                fileContent: buf,
-                contentType: 'image/png',
-              });
-              if (!upload) return undefined;
-              let assetId = upload.assetId;
-              if ((!assetId || assetId <= 0) && upload.operationId) {
-                const polled = await pollRobloxOperation(apiKey, upload.operationId, 'api-key');
-                if (polled && polled > 0) assetId = polled;
-              }
-              if (!assetId || assetId <= 0) return undefined;
-              try { await grantAssetOpenUse({ apiKey, assetId }); } catch { /* non-fatal */ }
-              logger.info('[Vehicle decals] uploaded', { jobId, label, assetId });
-              return assetId;
-            } catch (uploadErr) {
-              logger.warn('[Vehicle decals] upload threw', { jobId, label, error: errorMessage(uploadErr) });
-              return undefined;
-            }
+            return withDecalCache(
+              { templateName: tplName, style: styleForCache, brief, accentHex },
+              async () => {
+                const flxUrl = await generateDecalTexture({
+                  imagePrompt: brief,
+                  transparency: true,
+                  recommendedSize: 512,
+                  negativePrompt: 'background, scene, photo, realistic, 3d render, gradient, frame, border',
+                });
+                if (!flxUrl) {
+                  logger.warn('[Vehicle decals] Flux returned no URL', { jobId, label, briefPreview: brief.slice(0, 80) });
+                  return undefined;
+                }
+                try {
+                  const apiKey = getRobloxOpenCloudApiKey();
+                  const creatorId = getRobloxCreatorId();
+                  if (!apiKey || !creatorId) {
+                    logger.warn('[Vehicle decals] no Open Cloud creds — skipping', { jobId, label });
+                    return undefined;
+                  }
+                  const resp = await fetch(flxUrl);
+                  if (!resp.ok) {
+                    logger.warn('[Vehicle decals] Flux URL fetch failed', { jobId, label, status: resp.status });
+                    return undefined;
+                  }
+                  const buf = Buffer.from(await resp.arrayBuffer());
+                  const upload = await uploadAssetToRoblox({
+                    apiKey, creatorId, creatorType: 'User',
+                    assetType: 'Image',
+                    name: `Vehicle decal ${label} ${(currentJob.metadata?.title as string ?? '').slice(0, 24)}`.slice(0, 50),
+                    description: `AI-generated vehicle livery decal (${label}) for ${tplName}`,
+                    fileContent: buf,
+                    contentType: 'image/png',
+                  });
+                  if (!upload) return undefined;
+                  let assetId = upload.assetId;
+                  if ((!assetId || assetId <= 0) && upload.operationId) {
+                    const polled = await pollRobloxOperation(apiKey, upload.operationId, 'api-key');
+                    if (polled && polled > 0) assetId = polled;
+                  }
+                  if (!assetId || assetId <= 0) return undefined;
+                  try { await grantAssetOpenUse({ apiKey, assetId }); } catch { /* non-fatal */ }
+                  logger.info('[Vehicle decals] generated + uploaded', { jobId, label, assetId });
+                  return assetId;
+                } catch (uploadErr) {
+                  logger.warn('[Vehicle decals] upload threw', { jobId, label, error: errorMessage(uploadErr) });
+                  return undefined;
+                }
+              },
+            );
           };
 
           // Round 20F: 4 parallel decal generations now (added roof topper).

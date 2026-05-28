@@ -2772,59 +2772,37 @@ function buildVehicleModelManifest(
       });
     }
 
-    // Session 387: modular path injects extra addons (taxi sign, police bar,
-    // underglow, etc.) via a separate Script. Empty addonsLuaBlock → skipped.
+    // Session 387 R9: unified VehicleBootstrapper — one Script applies all
+    // modular blocks (addons → tuning → style) sequentially with proper
+    // wait + verification between phases. Replaces 3 separate injector
+    // scripts that had race conditions + visual popping.
     const addonsLuaBlock = typeof metadata.vehicleAddonsLuaBlock === 'string'
       ? metadata.vehicleAddonsLuaBlock : '';
-    const injectorSource = buildModularAddonsInjectorScript({
-      addonsLuaBlock,
-      vehicleWrapperName: tplLabel,
-    });
-    if (injectorSource.length > 0) {
-      builtScripts.push({
-        id: uuidv4(),
-        name: 'ModularAddonsInjector',
-        scriptType: 'Script',
-        container: 'WorkspaceRoot',
-        source: injectorSource,
-      });
-    }
-
-    // Session 387 Round 2: per-config drive-stats tuning (maxSpeed, boost,
-    // drift, suspension). Same injection pattern. Empty block when default
-    // stats / non-modular path → script not emitted.
     const tuningLuaBlock = typeof metadata.vehicleTuningLuaBlock === 'string'
       ? metadata.vehicleTuningLuaBlock : '';
-    const tuningInjectorSource = buildModularTuningInjectorScript({
-      tuningLuaBlock,
-      vehicleWrapperName: tplLabel,
-    });
-    if (tuningInjectorSource.length > 0) {
-      builtScripts.push({
-        id: uuidv4(),
-        name: 'ModularTuningInjector',
-        scriptType: 'Script',
-        container: 'WorkspaceRoot',
-        source: tuningInjectorSource,
-      });
-    }
-
-    // Session 387 Round 3: ambient style effect — cyberpunk neon trail,
-    // apocalypse rust, sigma matte metal, etc. Runs LAST (after tuning) so
-    // it can override materials after other patches. Default style emits ''.
     const styleLuaBlock = typeof metadata.vehicleStyleLuaBlock === 'string'
       ? metadata.vehicleStyleLuaBlock : '';
-    const styleInjectorSource = buildModularStyleInjectorScript({
-      styleLuaBlock,
+    const bootstrapSource = buildVehicleBootstrapperScript({
       vehicleWrapperName: tplLabel,
+      addonsLuaBlock, tuningLuaBlock, styleLuaBlock,
     });
-    if (styleInjectorSource.length > 0) {
+    if (bootstrapSource.length > 0) {
       builtScripts.push({
         id: uuidv4(),
-        name: 'ModularStyleInjector',
+        name: 'VehicleBootstrapper',
         scriptType: 'Script',
         container: 'WorkspaceRoot',
-        source: styleInjectorSource,
+        source: bootstrapSource,
+      });
+      // VehicleStateController — centralized drift/boost state machine
+      // (replaces per-tuning-block Heartbeat detectors). Bootstrapper
+      // require()s it as sibling ModuleScript after addons/tuning settle.
+      builtScripts.push({
+        id: uuidv4(),
+        name: 'VehicleStateController',
+        scriptType: 'ModuleScript',
+        container: 'WorkspaceRoot',
+        source: buildVehicleStateControllerModule(),
       });
     }
   }
@@ -4019,8 +3997,184 @@ print("[VehicleTemplateLoader] Done — wrapper destroyed, template now lives at
  * Empty addonsLuaBlock string → returns the empty string (caller can skip
  * emitting the script entirely).
  */
-/** Session 387 Round 3 — style ambient injector. Runs at t≈4.5s so it
- *  applies AFTER addons + tuning have settled. Body material swap + glow. */
+/** Session 387 R9 — Unified VehicleBootstrapper.
+ *
+ * Replaces 3 separate injector scripts (Addons + Tuning + Style) that each
+ * spawned with their own task.wait + findVehicle scan, leading to:
+ *   - race conditions (two scripts mutating same parts at the same time)
+ *   - visual popping (parts appear/disappear out of order)
+ *   - 3× the find-vehicle scan cost
+ *
+ * Strategy:
+ *   1. Single task.wait(2.5) for template loader/embed to settle.
+ *   2. Find vehicle Model once (VehicleSeat-based, robust to nesting).
+ *   3. Apply phases sequentially: addons → tuning → style → state controller.
+ *   4. Each phase logs its result; pcall isolates failures.
+ *   5. After all phases, spawn the VehicleStateController for drift/boost.
+ *
+ * Skipped entirely when all 3 blocks are empty (non-modular path).
+ */
+function buildVehicleBootstrapperScript(args: {
+  vehicleWrapperName: string;
+  addonsLuaBlock: string;
+  tuningLuaBlock: string;
+  styleLuaBlock: string;
+}): string {
+  if (!args.addonsLuaBlock && !args.tuningLuaBlock && !args.styleLuaBlock) return '';
+  const safeName = args.vehicleWrapperName.replace(/"/g, '\\"');
+  const indent = (s: string) => s.split('\n').map((l) => '\t\t' + l).join('\n');
+  const addonsBody = args.addonsLuaBlock
+    ? `print("[Bootstrap] phase 1: addons (${args.addonsLuaBlock.length} chars)")\n\tlocal ok1, err1 = pcall(function()\n${indent(args.addonsLuaBlock)}\n\tend)\n\tif not ok1 then warn("[Bootstrap] addons failed:", tostring(err1)) end`
+    : `print("[Bootstrap] phase 1: addons (none)")`;
+  const tuningBody = args.tuningLuaBlock
+    ? `task.wait(0.2)\n\tprint("[Bootstrap] phase 2: tuning (${args.tuningLuaBlock.length} chars)")\n\tlocal ok2, err2 = pcall(function()\n${indent(args.tuningLuaBlock)}\n\tend)\n\tif not ok2 then warn("[Bootstrap] tuning failed:", tostring(err2)) end`
+    : `print("[Bootstrap] phase 2: tuning (none)")`;
+  const styleBody = args.styleLuaBlock
+    ? `task.wait(0.2)\n\tprint("[Bootstrap] phase 3: style (${args.styleLuaBlock.length} chars)")\n\tlocal ok3, err3 = pcall(function()\n${indent(args.styleLuaBlock)}\n\tend)\n\tif not ok3 then warn("[Bootstrap] style failed:", tostring(err3)) end`
+    : `print("[Bootstrap] phase 3: style (none)")`;
+  // Phase 4: centralized vehicle state controller (drift + boost state
+  // machine with emitter cooldowns). Replaces the inline Heartbeat
+  // detectors from tuning block.
+  return `
+-- VehicleBootstrapper (session 387 R9 — unified injector)
+-- Single sequential script that wires up everything modular adds on top
+-- of the bare template: addons → tuning patch → style ambient → state ctrl.
+
+local WRAPPER_NAME = "${safeName}"
+
+local function hasVehicleSeat(m)
+\tif not m or not m:IsA("Model") then return false end
+\treturn m:FindFirstChildWhichIsA("VehicleSeat", true) ~= nil
+end
+
+local function findVehicle()
+\tlocal up = script.Parent
+\twhile up do
+\t\tif hasVehicleSeat(up) then return up end
+\t\tup = up.Parent
+\tend
+\tlocal byName, anySeated = nil, nil
+\tfor _, c in workspace:GetChildren() do
+\t\tif c:IsA("Model") and hasVehicleSeat(c) then
+\t\t\tif c.Name == WRAPPER_NAME then byName = c end
+\t\t\tif anySeated == nil then anySeated = c end
+\t\tend
+\tend
+\treturn byName or anySeated
+end
+
+-- Wait for template loader / embedded model to settle.
+task.wait(2.5)
+local vehicleModel = findVehicle()
+if not vehicleModel then warn("[Bootstrap] vehicle not found:", WRAPPER_NAME); return end
+print("[Bootstrap] running on", vehicleModel:GetFullName())
+
+do
+\t${addonsBody.split('\n').join('\n\t')}
+end
+
+do
+\t${tuningBody.split('\n').join('\n\t')}
+end
+
+do
+\t${styleBody.split('\n').join('\n\t')}
+end
+
+-- Phase 4: centralized state controller for drift/boost (separate Module
+-- so the script body stays readable; emits cooldown-throttled FX).
+task.wait(0.2)
+print("[Bootstrap] phase 4: state controller")
+local stateOk, stateErr = pcall(function()
+\t-- Sentinel: VehicleStateController is registered as a sibling ModuleScript
+\t-- below. Bootstrapper require()s it with the vehicleModel as init arg.
+\tlocal mod = script.Parent:FindFirstChild("VehicleStateController")
+\tif not mod or not mod:IsA("ModuleScript") then
+\t\tprint("[Bootstrap] state controller module not present, skipping")
+\t\treturn
+\tend
+\tlocal Ctrl = require(mod)
+\tCtrl.attach(vehicleModel)
+end)
+if not stateOk then warn("[Bootstrap] state controller failed:", tostring(stateErr)) end
+
+print("[Bootstrap] done")
+`.trim();
+}
+
+/** Session 387 R9 — Centralized Vehicle State Controller (ModuleScript).
+ *
+ * Replaces the per-tuning-block Heartbeat detectors that ran in parallel
+ * for drift smoke / boost particles. Single state machine reads VehicleSeat
+ * inputs each frame and dispatches to particle emitters with cooldowns.
+ *
+ * States: IDLE → ACCELERATING → BOOSTING → DRIFTING → BRAKING
+ * Cooldowns prevent emitter spam (max 1 ON/OFF transition per 0.15s per fx).
+ *
+ * The bootstrapper require()s this module after addons/tuning/style apply.
+ */
+function buildVehicleStateControllerModule(): string {
+  return `
+-- VehicleStateController (session 387 R9 — centralized state machine)
+-- Single source of truth for drift/boost FX. Replaces inline Heartbeat
+-- detectors. Smooth transitions via cooldown gates.
+
+local RunService = game:GetService("RunService")
+local M = {}
+
+local COOLDOWN_S = 0.15  -- min time between rate changes per emitter group
+
+function M.attach(vehicleModel)
+\tlocal seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+\tif not seat then warn("[StateCtrl] no VehicleSeat"); return end
+
+\t-- Gather emitter groups by name prefix (tuning block tags them).
+\tlocal boostFX, driftFX = {}, {}
+\tfor _, d in ipairs(vehicleModel:GetDescendants()) do
+\t\tif d:IsA("ParticleEmitter") then
+\t\t\tif d.Name:sub(1, 7) == "BoostFX" then table.insert(boostFX, d) end
+\t\t\tif d.Name == "DriftFX" then table.insert(driftFX, d) end
+\t\tend
+\tend
+\tprint("[StateCtrl] attached: " .. #boostFX .. " boostFX, " .. #driftFX .. " driftFX")
+
+\tlocal state = { boosting = false, drifting = false, lastBoostTx = 0, lastDriftTx = 0 }
+
+\tlocal function setRate(group, target)
+\t\tfor _, e in ipairs(group) do e.Rate = target end
+\tend
+
+\tlocal conn
+\tconn = RunService.Heartbeat:Connect(function()
+\t\tif not seat or not seat.Parent then if conn then conn:Disconnect() end; return end
+\t\tlocal now = os.clock()
+\t\tlocal throttle = seat.Throttle or 0
+\t\tlocal steer = seat.Steer or 0
+\t\tlocal shouldBoost = throttle > 0.85
+\t\tlocal shouldDrift = math.abs(steer) > 0.55 and throttle > 0.3
+
+\t\t-- Boost transitions (cooldown-gated)
+\t\tif shouldBoost ~= state.boosting and (now - state.lastBoostTx) > COOLDOWN_S then
+\t\t\tstate.boosting = shouldBoost
+\t\t\tstate.lastBoostTx = now
+\t\t\tsetRate(boostFX, shouldBoost and 60 or 0)
+\t\tend
+\t\t-- Drift transitions
+\t\tif shouldDrift ~= state.drifting and (now - state.lastDriftTx) > COOLDOWN_S then
+\t\t\tstate.drifting = shouldDrift
+\t\t\tstate.lastDriftTx = now
+\t\t\tsetRate(driftFX, shouldDrift and 24 or 0)
+\t\tend
+\tend)
+end
+
+return M
+`.trim();
+}
+
+/** DEPRECATED in R9 (kept for git history). The 3 separate injector
+ *  builders below are no longer called; buildVehicleBootstrapperScript
+ *  consolidates them. Removed in a future cleanup pass. */
 function buildModularStyleInjectorScript(args: {
   styleLuaBlock: string;
   vehicleWrapperName: string;
