@@ -1336,6 +1336,7 @@ app.post('/api/admin/smoke-disaster', async (req: AuthedRequest, res) => {
     const body = (req.body ?? {}) as {
       prompt?: unknown; mode?: unknown; chaos?: unknown;
       size?: unknown; frequency?: unknown; firebaseUid?: unknown;
+      regenerateMeshKeyword?: unknown;
     };
     const prompt = typeof body.prompt === 'string' && body.prompt.trim() ? body.prompt.trim() : 'banana rain apocalypse';
     const mode = isDisasterMode(body.mode) ? body.mode : 'meme';
@@ -1343,6 +1344,18 @@ app.post('/api/admin/smoke-disaster', async (req: AuthedRequest, res) => {
     const size = parseDisasterSize(body.size);
     const frequency = parseDisasterFrequency(body.frequency);
     const firebaseUid = typeof body.firebaseUid === 'string' && body.firebaseUid ? body.firebaseUid : 'smoke-admin';
+    // Optional cache bust: pass `regenerateMeshKeyword: "banana"` to delete
+    // the cached mesh for that keyword BEFORE running generation, so the
+    // mesh factory pulls a fresh Meshy result. Used when the previously
+    // cached mesh shape turned out wrong (round 8 banana-as-humanoid).
+    const regenKw = typeof body.regenerateMeshKeyword === 'string'
+      ? body.regenerateMeshKeyword.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32)
+      : '';
+    if (regenKw) {
+      const db = getFirestore();
+      await db.collection('disasterMeshes').doc(regenKw).delete().catch(() => {});
+      logger.info('[admin-smoke-disaster] invalidated cache', { keyword: regenKw });
+    }
     const result = await generateDisaster({
       userPrompt: prompt,
       mode,

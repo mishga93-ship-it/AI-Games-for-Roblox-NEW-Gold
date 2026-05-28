@@ -254,12 +254,14 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
     const idList = ids.join(', ');
     const preferredScale = input.assetEntries[0]?.preferredScale ?? 4;
     const color = input.assetEntries[0]?.colorRGB;
-    const colorLine = color
-      ? `\tmp.Color = Color3.fromRGB(${color.join(',')})`
-      : `\t-- mp.Color left to mesh texture (Meshy bakes one in the .glb)`;
+    // CRITICAL: do NOT set mp.Color when the mesh has a baked PBR texture.
+    // Meshy bakes one into every .glb we generate. User round 8 repro: LLM
+    // added `mp.Color = Color3.fromRGB(255,220,0)` and the textured banana
+    // mesh rendered flat yellow with all surface detail killed. Color is
+    // only emitted when bundle explicitly overrides (curated whitelist).
     const colorPostAssign = color
       ? `\tmp.Color = Color3.fromRGB(${color.join(',')})`
-      : `\t-- mp.Color left to mesh texture (Meshy bakes one in the .glb)`;
+      : `\t-- mp.Color INTENTIONALLY LEFT UNTOUCHED — mesh ships with a baked PBR\n\t-- texture (Meshy); writing mp.Color would overlay a flat tint.`;
     const luaTemplate = [
       '```lua',
       `local AssetService = game:GetService("AssetService")`,
@@ -282,7 +284,6 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
       `\tend`,
       `\tmp.Size = Vector3.new(TARGET_SCALE, TARGET_SCALE, TARGET_SCALE)`,
       colorPostAssign,
-      `\tmp.Material = Enum.Material.Plastic`,
       `\tmp.CFrame = CFrame.new(pos)`,
       `\tmp.Anchored = false`,
       `\tmp.Parent = workspace`,
@@ -291,7 +292,7 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
       '```',
     ].join('\n');
     return [
-      `10) SPAWN A REAL 3D MESH via AssetService:CreateMeshPartAsync — DO NOT use Instance.new("Part") or Instance.new("MeshPart") with MeshId/MeshContent. Modern Roblox blocks server-side writes to those properties ("lacking capability NotAccessible"). AssetService:CreateMeshPartAsync is the only server-safe path for loading a Mesh asset; it returns a fully formed MeshPart bound to the given asset id. Embed this helper block VERBATIM near the top of your script, then call \`spawnEntity(position)\` from your main loop. Track the returned MeshPart in your \`spawned\` table for the population cap + Debris cleanup.`,
+      `10) SPAWN A REAL 3D MESH via AssetService:CreateMeshPartAsync — DO NOT use Instance.new("Part") or Instance.new("MeshPart") with MeshId/MeshContent. Modern Roblox blocks server-side writes to those properties ("lacking capability NotAccessible"). AssetService:CreateMeshPartAsync is the only server-safe path for loading a Mesh asset; it returns a fully formed MeshPart bound to the given asset id. Embed this helper block VERBATIM near the top of your script, then call \`spawnEntity(position)\` from your main loop. Track the returned MeshPart in your \`spawned\` table for the population cap + Debris cleanup. **DO NOT** add \`mp.Color = ...\` or \`mp.Material = ...\` after spawning — the mesh ships with a baked PBR texture (Meshy authored it); a Color overlay would tint everything flat and destroy the surface detail. Only Anchored, CFrame, Size are safe to overwrite.`,
       luaTemplate,
       `11) Cosmetic flair (ParticleEmitter / PointLight / Sound) goes inside the MeshPart returned by spawnEntity — attach as a child so it follows the falling mesh. One emitter max per entity.`,
     ];

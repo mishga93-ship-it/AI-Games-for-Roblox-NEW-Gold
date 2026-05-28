@@ -237,6 +237,7 @@ async function generateLuaScript(input: {
     try {
       const factory = await getOrCreateDisasterMesh({
         keyword: objectKeyword,
+        category: bundle?.category,
         userBrief: input.userPrompt,
       });
       if (factory && factory.meshAssetId > 0) {

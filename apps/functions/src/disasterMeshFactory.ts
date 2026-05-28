@@ -45,29 +45,58 @@ export interface CachedDisasterMesh {
 }
 
 /** Build a Meshy text-to-3d prompt biased toward isolated game-ready props.
- * The disaster spawner expects a single graspable object — we explicitly
- * exclude "scene background", "shadow", "ground plane" which Meshy otherwise
- * happily adds and which would crash visual readability when 30 of them are
- * falling from the sky. */
-export function buildMeshyPrompt(keyword: string, userBrief?: string): string {
-  const seed = keyword.replace(/_/g, ' ');
-  const briefClause = userBrief && userBrief.trim().length > 0
-    ? ` ${userBrief.trim().slice(0, 120)}.`
+ *
+ * IMPORTANT — anti-character clauses. Meshy v6 strongly biases toward humanoid
+ * outputs when it sees "stylized" + "game asset" + viral nouns like banana /
+ * duck / shark. Round 8 user repro: prompt "stylized 3D banana" got back a
+ * banana-headed humanoid character (arms, legs, hat). For disaster spawning
+ * we want the literal OBJECT, never a person. The CATEGORY-specific override
+ * below pushes Meshy hard toward the actual prop. */
+export function buildMeshyPrompt(args: {
+  keyword: string;
+  category?: 'food' | 'household' | 'animal' | 'meme' | 'natural' | 'tech' | 'horror';
+  userBrief?: string;
+}): string {
+  const seed = args.keyword.replace(/_/g, ' ');
+  const briefClause = args.userBrief && args.userBrief.trim().length > 0
+    ? ` ${args.userBrief.trim().slice(0, 120)}.`
     : '';
+
+  // Category-specific anti-character clauses. "no character / no humanoid /
+  // no person / no body / no face / no arms / no legs" reliably steers Meshy
+  // away from the "banana-man with hat" failure mode and toward the literal
+  // prop. The keyword interpolates into a concrete description so Meshy has
+  // a clear target.
+  const categoryHints: Record<string, string> = {
+    food: `Literal photoreal ${seed} fruit/food, single isolated piece, NOT a character, NOT a person, NOT humanoid, NO arms, NO legs, NO face, NO hat, just the food item itself in its natural shape.`,
+    household: `Literal real-world ${seed} household object, isolated prop, NOT a character, NOT humanoid, NO arms, NO legs, NO face, just the object in its natural form.`,
+    animal: `Literal anatomically-correct 3D ${seed}, real animal body with appropriate four legs / fins / wings, NOT humanoid, NOT a person, NO clothing, NO hat, just the animal itself.`,
+    meme: `Literal 3D ${seed} object, isolated prop, NOT a humanoid character.`,
+    natural: `Literal 3D ${seed} natural object/element, isolated, NOT a character, NOT a person, no humanoid form.`,
+    tech: `Literal 3D ${seed} mechanical/tech object, isolated, NOT a character, NOT humanoid, NO arms, NO legs, NO face, just the device itself.`,
+    horror: `Literal 3D ${seed} creature/object as the named thing, NOT a humanoid character, NOT a person in costume.`,
+  };
+  const categoryClause = args.category ? categoryHints[args.category] : `Literal real-world ${seed}, isolated prop, NOT a character, NOT humanoid.`;
+
   return [
-    `Low-poly stylized 3D ${seed}, single isolated object, game asset,`,
-    'simple cartoon shape, bright readable colors, no background, no ground plane,',
-    'no shadow, no scene, centered, optimized for Roblox.',
+    categoryClause,
+    `Low-poly stylized 3D model, game asset, single object centered in frame,`,
+    'no background, no ground plane, no shadow, no scene, no scenery, no environment,',
+    'PBR baked texture, optimized for Roblox.',
     briefClause,
   ].join(' ');
 }
 
 /** Returns cached or freshly generated `{ modelAssetId, meshAssetId }` for a
  * keyword. Returns `null` if any step in the pipeline fails — caller should
- * fall back to branded primitive composition. */
+ * fall back to branded primitive composition. Pass `regenerate=true` to
+ * invalidate the cache for one keyword (used by admin smoke when the cached
+ * mesh shape turned out wrong — e.g. banana came back as a humanoid). */
 export async function getOrCreateDisasterMesh(args: {
   keyword: string;
+  category?: 'food' | 'household' | 'animal' | 'meme' | 'natural' | 'tech' | 'horror';
   userBrief?: string;
+  regenerate?: boolean;
 }): Promise<CachedDisasterMesh | null> {
   const keyword = args.keyword.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32);
   if (!keyword) {
@@ -77,26 +106,30 @@ export async function getOrCreateDisasterMesh(args: {
 
   const db = getFirestore();
   const docRef = db.collection(COLLECTION).doc(keyword);
-  try {
-    const snap = await docRef.get();
-    if (snap.exists) {
-      const d = snap.data();
-      if (d && typeof d.meshAssetId === 'number' && d.meshAssetId > 0) {
-        logger.info('[disasterMeshFactory] cache hit', {
-          keyword, meshAssetId: d.meshAssetId,
-        });
-        return {
-          keyword: d.keyword ?? keyword,
-          prompt: d.prompt ?? '',
-          modelAssetId: typeof d.modelAssetId === 'number' ? d.modelAssetId : 0,
-          meshAssetId: d.meshAssetId,
-          createdAtMs: typeof d.createdAtMs === 'number' ? d.createdAtMs : 0,
-        };
+  if (!args.regenerate) {
+    try {
+      const snap = await docRef.get();
+      if (snap.exists) {
+        const d = snap.data();
+        if (d && typeof d.meshAssetId === 'number' && d.meshAssetId > 0) {
+          logger.info('[disasterMeshFactory] cache hit', {
+            keyword, meshAssetId: d.meshAssetId,
+          });
+          return {
+            keyword: d.keyword ?? keyword,
+            prompt: d.prompt ?? '',
+            modelAssetId: typeof d.modelAssetId === 'number' ? d.modelAssetId : 0,
+            meshAssetId: d.meshAssetId,
+            createdAtMs: typeof d.createdAtMs === 'number' ? d.createdAtMs : 0,
+          };
+        }
       }
+    } catch (err) {
+      logger.warn('[disasterMeshFactory] cache read failed (proceeding to gen)',
+        { err: err instanceof Error ? err.message : String(err) });
     }
-  } catch (err) {
-    logger.warn('[disasterMeshFactory] cache read failed (proceeding to gen)',
-      { err: err instanceof Error ? err.message : String(err) });
+  } else {
+    logger.info('[disasterMeshFactory] regenerate flag set — bypassing cache', { keyword });
   }
 
   const apiKey = getRobloxOpenCloudApiKey();
@@ -106,7 +139,7 @@ export async function getOrCreateDisasterMesh(args: {
     return null;
   }
 
-  const prompt = buildMeshyPrompt(keyword, args.userBrief);
+  const prompt = buildMeshyPrompt({ keyword, category: args.category, userBrief: args.userBrief });
   logger.info('[disasterMeshFactory] gen start', { keyword, promptLen: prompt.length });
 
   // Step 1 — Meshy v6 text-to-3d.
