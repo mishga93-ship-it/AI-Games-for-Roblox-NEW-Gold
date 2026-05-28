@@ -92,6 +92,7 @@ struct RobloxAvatar3DViewer: View {
             let urls = try await fetchAvatarURLs(userId: robloxUserId)
             let scene = try await Self.loadSceneOffMain(urls: urls)
             await MainActor.run {
+                Self.startIdleBob(on: scene)
                 withAnimation { loadState = .ready(scene, urls) }
             }
             // Apply any initial attachments now that the scene is ready.
@@ -101,6 +102,20 @@ struct RobloxAvatar3DViewer: View {
                 loadState = .failed(error.localizedDescription)
             }
         }
+    }
+
+    /// Phase C3-anim — kick off the avatar's idle "breathing" bob. Must
+    /// run on MainActor (SCNNode.runAction is MainActor-isolated under
+    /// Swift 6 strict concurrency).
+    @MainActor
+    private static func startIdleBob(on scene: SCNScene) {
+        guard let avatarRoot = scene.rootNode.childNode(withName: "AvatarRoot", recursively: false)
+        else { return }
+        let bobUp = SCNAction.moveBy(x: 0, y: 0.1, z: 0, duration: 1.6)
+        bobUp.timingMode = .easeInEaseOut
+        let bobDown = SCNAction.moveBy(x: 0, y: -0.1, z: 0, duration: 1.6)
+        bobDown.timingMode = .easeInEaseOut
+        avatarRoot.runAction(SCNAction.repeatForever(SCNAction.sequence([bobUp, bobDown])))
     }
 
     private func fetchAvatarURLs(userId: String) async throws -> Avatar3DURLs {
@@ -376,19 +391,11 @@ struct RobloxAvatar3DViewer: View {
             )
             rootContainer.addChildNode(child)
         }
-
-        // Phase C3-anim — idle "breathing" bob so the avatar reads as
-        // alive even before the user touches it. Subtle: 0.1 stud over
-        // 1.6s sine, repeated forever. Applies to rootContainer (not the
-        // SCNScene root) so accessory wrappers attached as siblings stay
-        // grounded — they're at separate Y offsets, not riding the bob.
-        let bobUp = SCNAction.moveBy(x: 0, y: 0.1, z: 0, duration: 1.6)
-        bobUp.timingMode = .easeInEaseOut
-        let bobDown = SCNAction.moveBy(x: 0, y: -0.1, z: 0, duration: 1.6)
-        bobDown.timingMode = .easeInEaseOut
-        rootContainer.runAction(SCNAction.repeatForever(SCNAction.sequence([bobUp, bobDown])))
-
         scene.rootNode.addChildNode(rootContainer)
+        // Phase C3-anim — idle bob is attached AFTER the scene reaches the
+        // main actor (see load()). SCNNode.runAction is MainActor-isolated
+        // under Swift 6 strict concurrency, so we can't kick it off from
+        // this nonisolated off-main loader.
 
         // 3-point lighting.
         let key = SCNNode()
