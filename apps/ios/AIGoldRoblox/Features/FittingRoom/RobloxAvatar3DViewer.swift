@@ -241,16 +241,16 @@ struct RobloxAvatar3DViewer: View {
         guard case let .ready(scene, urls) = loadState else { return }
         let avatarRoot = scene.rootNode.childNode(withName: "AvatarRoot", recursively: false)
             ?? scene.rootNode
-
-        // First — restore every body-part material to the default neutral
-        // grey so removed clothing actually disappears. The bundled SCN
-        // loaded earlier; we re-walk and reset diffuse to a light grey.
-        for child in avatarRoot.childNodes where child.name?.hasPrefix("AccessoryAttachment-") != true {
-            guard let geom = child.geometry else { continue }
-            for material in geom.materials {
-                material.diffuse.contents = UIColor(white: 0.8, alpha: 1)
-            }
-        }
+        // Phase O2-P4-fix (user feedback «пропал перс после накладке
+        // элементов»): don't pre-reset body-part materials. The previous
+        // `material.diffuse.contents = UIColor(white: 0.8)` overwrote the
+        // mannequin's original skin/texture state and — combined with
+        // the transparent regions in Roblox shirt/pants PNGs — made the
+        // body invisible. Now we leave all originals untouched and ONLY
+        // modify the materials of parts that get clothing applied. "Take
+        // off" → re-toggle is the only way to clear clothing right now;
+        // restoring originals across swaps would need an original-state
+        // snapshot at scene-load time (future polish).
         guard !desired.isEmpty else { return }
 
         Task.detached(priority: .userInitiated) {
@@ -312,16 +312,45 @@ struct RobloxAvatar3DViewer: View {
             default:       shouldApply = false
             }
             if shouldApply {
-                // Clone the material to avoid sharing across body parts —
-                // otherwise setting shirt PNG would override pants too.
-                let newMaterials = geom.materials.map { source -> SCNMaterial in
-                    let clone = source.copy() as? SCNMaterial ?? SCNMaterial()
-                    clone.diffuse.contents = image
-                    clone.lightingModel = .lambert
+                // Roblox clothing PNGs are RGBA with TRANSPARENT regions
+                // (the unused parts of the 4-rectangle template layout).
+                // If we apply the raw PNG, body parts whose UVs sample
+                // transparent pixels become INVISIBLE — that's why the
+                // user reported «пропал перс после накладке элементов».
+                // Composite the PNG over an opaque skin-tone fill so
+                // alpha=0 regions render as skin instead of see-through.
+                let opaqueImage = compositeOnSkinBackground(image)
+                // Clone the material so setting diffuse on this body
+                // part doesn't propagate to others sharing the source.
+                let newMaterials = geom.materials.map { src -> SCNMaterial in
+                    let clone = src.copy() as? SCNMaterial ?? SCNMaterial()
+                    clone.diffuse.contents = opaqueImage
                     return clone
                 }
                 geom.materials = newMaterials
             }
+        }
+    }
+
+    /// Draw the clothing PNG on top of a solid skin-tone background so
+    /// alpha=0 regions (the unused parts of Roblox's 4-rect template
+    /// layout) render as opaque skin instead of transparent. Without
+    /// this, body parts whose UVs sample transparent pixels become
+    /// invisible — which is exactly what made the user's avatar
+    /// «пропал после накладке элементов».
+    @MainActor
+    private static func compositeOnSkinBackground(_ image: UIImage) -> UIImage {
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return image }
+        let skin = UIColor(red: 0.95, green: 0.85, blue: 0.70, alpha: 1)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        format.scale = image.scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { ctx in
+            skin.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+            image.draw(in: CGRect(origin: .zero, size: size))
         }
     }
 
