@@ -72,6 +72,27 @@ struct FittingRoomResultView: View {
         }
     }
 
+    /// Phase O2-P4 — map OutfitItems → clothing texture overlays for
+    /// the mannequin. Roblox classic Shirt / Pants / TShirt are 2D
+    /// textures (no 3D mesh on asset-3d). Backend resolves the wrapper
+    /// asset to its inner PNG template, iOS applies it to the
+    /// mannequin's R-15 body materials. Real-avatar mode ignores this
+    /// (the Roblox-rendered OBJ already bakes the user's clothing).
+    private var mannequinClothingTextures: [RobloxAvatar3DViewer.ClothingTexture] {
+        response.items.compactMap { item in
+            let slot = item.slot.lowercased()
+            let type: String
+            switch slot {
+            case "shirt":  type = "shirt"
+            case "pants":  type = "pants"
+            case "jacket": type = "shirt"   // jackets reuse the shirt template UV layout
+            case "tshirt": type = "tshirt"
+            default: return nil
+            }
+            return RobloxAvatar3DViewer.ClothingTexture(assetId: item.assetId, type: type)
+        }
+    }
+
     /// Phase B / C3-fix — map OutfitItems → SceneKit attachments.
     ///
     /// Filter set depends on the BASE mesh:
@@ -271,7 +292,8 @@ struct FittingRoomResultView: View {
                     if useMannequin {
                         RobloxAvatar3DViewer(
                             mannequin: mannequinBodyType,
-                            attachedAssets: tryOnIn3D ? threeDeeAttachments : []
+                            attachedAssets: tryOnIn3D ? threeDeeAttachments : [],
+                            clothingTextures: tryOnIn3D ? mannequinClothingTextures : []
                         )
                     } else if let userId = robloxUserId {
                         RobloxAvatar3DViewer(

@@ -169,6 +169,7 @@ import { startFittingRoomJob, fetchFittingRoomDoc, swapFittingRoomSlot } from '.
 import { getSlotAlternatives, type OutfitItem as AssemblerOutfitItem } from './outfitAssembler.js';
 import { type OutfitSlot as AestheticOutfitSlot } from './data/outfitAesthetics.js';
 import { fetchRobloxAvatar3D, fetchRobloxAsset3D } from './robloxAvatar3D.js';
+import { fetchClothingTexture, type ClothingTextureType } from './robloxClothingTexture.js';
 // Session 387 — Voice-Controlled Survival Disaster Spawner
 import { generateDisaster } from './disasterGenerator.js';
 import {
@@ -1138,6 +1139,41 @@ app.get('/api/roblox-asset/3d/:assetId', async (req: AuthedRequest, res) => {
   } catch (err) {
     logger.error('[roblox-asset-3d] failed', err);
     return res.status(500).json({ error: 'Failed to fetch 3D asset' });
+  }
+});
+
+// ─── Phase O2-P4 (session 389+6): classic clothing texture PNG ──
+// Resolves a Shirt / Pants / TShirt catalog item to the actual PNG
+// template Roblox stamps on the body. iOS Fitting Room mannequin uses
+// the PNG as the diffuse map on R-15 torso / arm / leg materials so
+// the user sees their fit's clothing on the bundled mannequin (which
+// would otherwise be grey because shirts aren't 3D meshes).
+app.get('/api/roblox-clothing/texture/:assetId', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
+    const assetId = req.params.assetId;
+    if (typeof assetId !== 'string' || !/^\d{1,15}$/.test(assetId)) {
+      return res.status(400).json({ error: 'Invalid assetId' });
+    }
+    const typeRaw = typeof req.query.type === 'string' ? req.query.type.toLowerCase() : 'shirt';
+    const type: ClothingTextureType =
+      typeRaw === 'pants' ? 'pants' :
+      typeRaw === 'tshirt' ? 'tshirt' :
+      'shirt';
+
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/roblox-clothing/texture');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+
+    const result = await fetchClothingTexture({ assetId, type });
+    if (!result) {
+      return res.status(502).json({ error: 'Could not resolve clothing template PNG' });
+    }
+    return res.json(result);
+  } catch (err) {
+    logger.error('[roblox-clothing-texture] failed', err);
+    return res.status(500).json({ error: 'Failed to fetch clothing texture' });
   }
 });
 

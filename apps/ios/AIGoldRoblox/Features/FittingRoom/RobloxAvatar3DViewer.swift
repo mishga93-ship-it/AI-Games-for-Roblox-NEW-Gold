@@ -49,19 +49,38 @@ struct RobloxAvatar3DViewer: View {
     /// asset's 3D mesh and attach it to the scene with slot-specific
     /// positioning. Re-runs when the set changes (SwiftUI .id binding).
     var attachedAssets: [Attachment] = []
+    /// Phase O2-P4 — classic clothing textures (shirt / pants / tshirt)
+    /// to overlay on the mannequin's R-15 body materials. Roblox shirts
+    /// don't have 3D meshes — they're 2D textures that wrap the torso /
+    /// arms / legs UV layout. iOS fetches the PNG from
+    /// /api/roblox-clothing/texture/:assetId, then patches the relevant
+    /// SCNNode materials with `.diffuse.contents = UIImage`.
+    /// Ignored in `.realUser` mode (the Roblox-rendered OBJ already has
+    /// the user's clothing baked in as textures).
+    var clothingTextures: [ClothingTexture] = []
+
+    struct ClothingTexture: Hashable {
+        let assetId: String
+        /// "shirt" / "pants" / "tshirt".
+        let type: String
+    }
 
     /// Convenience initialiser that preserves the original Phase A
     /// `RobloxAvatar3DViewer(robloxUserId:)` call shape so existing call
     /// sites in FittingRoomResultView keep working without churn.
-    init(robloxUserId: String, attachedAssets: [Attachment] = []) {
+    init(robloxUserId: String, attachedAssets: [Attachment] = [],
+         clothingTextures: [ClothingTexture] = []) {
         self.source = .realUser(userId: robloxUserId)
         self.attachedAssets = attachedAssets
+        self.clothingTextures = clothingTextures
     }
 
     /// Phase O2-P1 init — bundled mannequin mode (no Roblox round-trip).
-    init(mannequin body: Source.BodyType, attachedAssets: [Attachment] = []) {
+    init(mannequin body: Source.BodyType, attachedAssets: [Attachment] = [],
+         clothingTextures: [ClothingTexture] = []) {
         self.source = .mannequin(body)
         self.attachedAssets = attachedAssets
+        self.clothingTextures = clothingTextures
     }
 
     struct Attachment: Hashable {
@@ -119,6 +138,10 @@ struct RobloxAvatar3DViewer: View {
             // new item, remove one). Cancels any in-flight attachment task.
             applyAttachments(newValue)
         }
+        .onChange(of: clothingTextures) { _, newValue in
+            // Re-apply clothing textures on slot swap / mannequin toggle.
+            applyClothingTextures(newValue)
+        }
         .animation(.easeInOut(duration: 0.3), value: stateKey)
     }
 
@@ -153,6 +176,11 @@ struct RobloxAvatar3DViewer: View {
             }
             // Apply any initial attachments now that the scene is ready.
             applyAttachments(attachedAssets)
+            // Phase O2-P4 — apply classic clothing texture overlays (only
+            // mannequin mode; real-avatar OBJ already has clothing baked).
+            if case .mannequin = source {
+                applyClothingTextures(clothingTextures)
+            }
         } catch {
             await MainActor.run {
                 loadState = .failed(error.localizedDescription)
@@ -203,6 +231,97 @@ struct RobloxAvatar3DViewer: View {
 
         attachmentTask = Task.detached(priority: .userInitiated) { [urls] in
             await Self.attachAll(desired: desired, into: avatarRoot, avatarAabb: urls.aabb)
+        }
+    }
+
+    // MARK: - Phase O2-P4: classic clothing texture overlays
+
+    private func applyClothingTextures(_ desired: [ClothingTexture]) {
+        guard case .mannequin = source else { return }   // only mannequin
+        guard case let .ready(scene, urls) = loadState else { return }
+        let avatarRoot = scene.rootNode.childNode(withName: "AvatarRoot", recursively: false)
+            ?? scene.rootNode
+
+        // First — restore every body-part material to the default neutral
+        // grey so removed clothing actually disappears. The bundled SCN
+        // loaded earlier; we re-walk and reset diffuse to a light grey.
+        for child in avatarRoot.childNodes where child.name?.hasPrefix("AccessoryAttachment-") != true {
+            guard let geom = child.geometry else { continue }
+            for material in geom.materials {
+                material.diffuse.contents = UIColor(white: 0.8, alpha: 1)
+            }
+        }
+        guard !desired.isEmpty else { return }
+
+        Task.detached(priority: .userInitiated) {
+            await Self.fetchAndApplyAll(desired: desired, in: avatarRoot, avatarAabb: urls.aabb)
+        }
+    }
+
+    private static func fetchAndApplyAll(desired: [ClothingTexture], in avatarRoot: SCNNode, avatarAabb: Avatar3DAABB) async {
+        for piece in desired {
+            do {
+                let resp: ClothingTextureResp = try await APIClient.request(
+                    "api/roblox-clothing/texture/\(piece.assetId)?type=\(piece.type)",
+                    method: "GET",
+                    timeout: 25
+                )
+                guard let url = URL(string: resp.pngUrl) else { continue }
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let image = UIImage(data: data) else { continue }
+                await MainActor.run {
+                    applyTextureToBody(image: image, type: piece.type,
+                                       in: avatarRoot, avatarAabb: avatarAabb)
+                }
+            } catch {
+                print("[RobloxAvatar3D] clothing fetch failed for \(piece.assetId) (\(piece.type)): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Apply a Roblox classic-clothing PNG to the R-15 body parts whose
+    /// vertical position matches the garment. The bundled mannequin OBJ
+    /// puts each Rig# group as a separate child node; we identify upper
+    /// vs lower body via bbox center Y on the centered avatar axis
+    /// (positive = upper). Roblox's PNG templates are UV-aware (the
+    /// shirt wraps torso + arms via standard 4-rectangle layout, pants
+    /// covers legs), so setting the PNG as the diffuse map on the
+    /// right materials gives a visually correct wrap.
+    @MainActor
+    private static func applyTextureToBody(image: UIImage, type: String, in avatarRoot: SCNNode, avatarAabb: Avatar3DAABB) {
+        // After centering, the avatar Y axis runs -h/2 .. +h/2. Anything
+        // above 0 is upper body (head + torso + arms), below 0 is legs.
+        // Use a small margin so the waist-line band lands cleanly.
+        let avatarHeight = Float(avatarAabb.max.y - avatarAabb.min.y)
+        let upperLowerSplit: Float = 0  // centered avatar — split at hip
+        let headFloor: Float = avatarHeight * 0.38  // head bottom — shirt should NOT cover the head
+
+        for child in avatarRoot.childNodes where child.name?.hasPrefix("AccessoryAttachment-") != true {
+            guard let geom = child.geometry else { continue }
+            // Compute world-space bbox center of THIS body part.
+            let (lmin, lmax) = geom.boundingBox
+            let localCenterY = (lmin.y + lmax.y) / 2
+            let worldCenterY = localCenterY + child.position.y  // wrapper already centered the parent
+            let isUpper = worldCenterY > upperLowerSplit && worldCenterY < headFloor
+            let isLower = worldCenterY <= upperLowerSplit
+            let shouldApply: Bool
+            switch type.lowercased() {
+            case "shirt":  shouldApply = isUpper
+            case "pants":  shouldApply = isLower
+            case "tshirt": shouldApply = isUpper && worldCenterY > avatarHeight * 0.05  // chest only
+            default:       shouldApply = false
+            }
+            if shouldApply {
+                // Clone the material to avoid sharing across body parts —
+                // otherwise setting shirt PNG would override pants too.
+                let newMaterials = geom.materials.map { source -> SCNMaterial in
+                    let clone = source.copy() as? SCNMaterial ?? SCNMaterial()
+                    clone.diffuse.contents = image
+                    clone.lightingModel = .lambert
+                    return clone
+                }
+                geom.materials = newMaterials
+            }
         }
     }
 
@@ -722,6 +841,13 @@ struct Avatar3DURLs: Decodable {
     let textureUrls: [String]
     let camera: Avatar3DCamera
     let aabb: Avatar3DAABB
+}
+
+struct ClothingTextureResp: Decodable {
+    let assetId: String
+    let innerAssetId: String
+    let pngUrl: String
+    let type: String
 }
 
 struct Asset3DURLs: Decodable {
