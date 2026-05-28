@@ -1438,14 +1438,7 @@ final class ChatStore: ObservableObject {
                 draft.vehicleType = "bicycle"
             case "bus":
                 draft.vehicleType = "bus"
-            // Session 387: opt into the alternative Modular Builder pipeline.
-            // This is just a flag — user still picks a vehicle type next
-            // (the regular picker re-appears). Backend `processCharacter3DJob`
-            // sees `vehiclePipeline=modular_builder` and runs `prepareModularVehicle`
-            // (AI router + addons) instead of the static template router.
-            case "🧪 modular builder (experimental)", "modular builder (experimental)",
-                 "modular builder", "🧪 modular":
-                draft.vehiclePipeline = "modular_builder"
+            // Session 387 R8: modular builder is the default — no opt-in needed.
             default:
                 break
             }
@@ -7117,15 +7110,11 @@ final class ChatStore: ObservableObject {
         case "anime_skills":
             return ["Dash strike", "AOE burst", "Projectile", "Beam", "Buff / aura", "Domain Expansion", "Ultimate (multiphase)", "Decide for me", "Start over"]
         case "vehicles":
-            // Session 387: "🧪 Modular Builder" is an alternative pipeline that
-            // runs an AI Config Router (Gemini) → picks chassis + addons +
-            // colors + drive stats from a prefab library. Pure addition —
-            // tapping it just sets a metadata flag, the regular vehicle-type
-            // pick still happens next. If user doesn't tap it, the existing
-            // template_embed flow runs unchanged.
-            return ["Car", "Motorcycle", "Boat", "Plane", "Helicopter", "Tank", "Spaceship", "Bicycle", "Bus",
-                    "🧪 Modular Builder (experimental)",
-                    "Decide for me", "Start over"]
+            // Session 387 R8: AI Config Router runs by default for every
+            // vehicle (preset + style + addons + drive stats + rarity +
+            // viral caption). No opt-in needed — was previously
+            // "🧪 Modular Builder (experimental)" quick-reply.
+            return ["Car", "Motorcycle", "Boat", "Plane", "Helicopter", "Tank", "Spaceship", "Bicycle", "Bus", "Decide for me", "Start over"]
         case "buildings":
             return ["House modular", "Tower / castle", "Shop front", "Decide for me", "Start over"]
         case "furniture":

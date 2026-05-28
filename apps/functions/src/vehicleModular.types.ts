@@ -43,6 +43,7 @@ export type VehiclePresetId =
  *  and attaches to the preset at a known body offset. No external .rbxm
  *  files needed for the MVP — pure Lua-built parts. */
 export type VehicleAddonId =
+  // Round 1 (original 11)
   | 'taxi_sign'
   | 'police_lightbar'
   | 'roof_rack'
@@ -53,7 +54,20 @@ export type VehicleAddonId =
   | 'exhaust_dual'
   | 'roof_antenna'
   | 'fire_dept_ladder'
-  | 'monster_truck_tires';
+  | 'monster_truck_tires'
+  // Round 6 — wider addon library for AI variety
+  | 'headlight_bar'         // bright LED bar across front
+  | 'bull_bar'              // chunky front bumper guard
+  | 'side_skirts'           // low side panels for sporty look
+  | 'hood_scoop'            // air intake on hood
+  | 'subwoofer_trunk'       // big back speaker box (boombox energy)
+  | 'tow_hitch'             // rear truck hitch ball
+  | 'roof_camera_pod'       // small surveillance camera pod on roof
+  | 'disco_ball'            // mirrored disco ball on roof (party/cursed)
+  | 'flag_pole'             // tall pole with flag on roof
+  | 'smoke_stack'           // upward exhaust chimney (apocalypse)
+  | 'jet_engine_rear'       // back jet booster
+  | 'mud_flaps';            // rubber flaps behind wheels
 
 /** Drive stats the loader Lua reads to tune the chassis. All optional —
  *  preset has sensible defaults. */
@@ -128,6 +142,12 @@ export interface VehiclePreset {
   assetId: number;
   /** Body hex of the preferred variant — recolor source. */
   bodyOriginalHex: string;
+  /** Session 387 R5: exact Model name to pick from inside the .rbxm
+   *  (Roblox marketplace packs ship 1-5 colour variants per file —
+   *  we want a specific one whose bodyOriginalHex matches). */
+  preferredVariant: string;
+  /** Fallback variant names if preferred is missing. */
+  variantFallbacks: ReadonlyArray<string>;
   /** Default style ID for this preset. */
   defaultStyle: VehicleStyleId;
   /** Default drive stats baseline. */

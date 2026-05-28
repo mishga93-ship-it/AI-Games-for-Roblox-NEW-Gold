@@ -77,8 +77,8 @@ function templateMetadataFromPreset(presetId: VehiclePresetId, config: VehicleCo
     vehicleTemplateAssetId: preset.assetId,
     vehicleTemplateName: presetId,
     vehicleTemplateLabel: preset.label,
-    vehicleTemplatePreferredVariant: preset.label, // best-effort default
-    vehicleTemplateVariantFallbacks: [],
+    vehicleTemplatePreferredVariant: preset.preferredVariant,
+    vehicleTemplateVariantFallbacks: [...preset.variantFallbacks],
     vehicleTemplateBodyOriginalHex: preset.bodyOriginalHex,
     vehicleTemplatePrimaryHex: config.primaryColor,
     vehicleTemplateAccentHex: config.accentColor,
@@ -97,6 +97,61 @@ function templateMetadataFromPreset(presetId: VehiclePresetId, config: VehicleCo
  * Run the modular preparation. Pure async function with no Firestore
  * writes — caller is responsible for persisting the returned metadata.
  */
+// Round 7: deterministic overrides for ICONIC vehicle types so the AI router
+// doesn't drift away from user expectation. Examples:
+//   - "police" / "cop" / "siren" → must be police_car preset + white body
+//   - "taxi" / "cab" → must be sedan preset + yellow body
+//   - "ambulance" / "medic" → must be van preset + white body
+//   - "fire truck" → must be pickup_truck preset + red body
+// Applied AFTER routeVehicleConfig — patches preset + colors + ensures
+// signature addons are included.
+function applyIconicOverrides(config: import('./vehicleModular.types.js').VehicleConfig, prompt: string): import('./vehicleModular.types.js').VehicleConfig {
+  const lc = prompt.toLowerCase();
+  const isPolice = /\b(police|cop|cruiser|patrol|sheriff|interceptor|siren)\b/.test(lc);
+  const isTaxi = /\b(taxi|cab|такси)\b/.test(lc);
+  const isAmbulance = /\b(ambulance|medic|paramedic|emergency)\b/.test(lc);
+  const isFire = /\b(fire\s*truck|firetruck|fire\s*engine|пожар)\b/.test(lc);
+  if (isPolice) {
+    // PoliceCar template already has a baked lightbar — don't double-stack
+    // ours on top. Pick alternative cool addons instead.
+    const addons = new Set(config.addons);
+    addons.delete('police_lightbar');
+    addons.add('headlight_bar'); addons.add('bull_bar');
+    return {
+      ...config,
+      preset: 'police_car',
+      primaryColor: '#FFFFFF', accentColor: '#000000',
+      addons: [...addons].slice(0, 4) as typeof config.addons,
+      driveStats: { ...config.driveStats, maxSpeed: Math.max(config.driveStats.maxSpeed ?? 130, 140) },
+    };
+  }
+  if (isTaxi) {
+    const addons = new Set(config.addons); addons.add('taxi_sign');
+    return {
+      ...config, preset: 'sedan',
+      primaryColor: '#F2B807', accentColor: '#000000',
+      addons: [...addons].slice(0, 4) as typeof config.addons,
+      plateText: config.plateText || 'TAXI',
+    };
+  }
+  if (isAmbulance) {
+    const addons = new Set(config.addons); addons.add('police_lightbar');
+    return {
+      ...config, preset: 'van',
+      primaryColor: '#FFFFFF', accentColor: '#D40000',
+      addons: [...addons].slice(0, 4) as typeof config.addons,
+    };
+  }
+  if (isFire) {
+    return {
+      ...config, preset: 'pickup_truck',
+      primaryColor: '#CC0000', accentColor: '#FFD700',
+      addons: ['fire_dept_ladder', ...config.addons].slice(0, 4) as typeof config.addons,
+    };
+  }
+  return config;
+}
+
 export async function prepareModularVehicle(args: {
   prompt: string;
   title?: string;
@@ -104,10 +159,11 @@ export async function prepareModularVehicle(args: {
   accentHexHint?: string;
 }): Promise<ModularPrepResult> {
   const t0 = Date.now();
-  const config = await routeVehicleConfig({
+  const aiConfig = await routeVehicleConfig({
     prompt: args.prompt, title: args.title,
     primaryHexHint: args.primaryHexHint, accentHexHint: args.accentHexHint,
   });
+  const config = applyIconicOverrides(aiConfig, args.prompt);
   const dt = Date.now() - t0;
   logger.info('[ModularBuilder] router returned config', {
     preset: config.preset, style: config.style,
@@ -120,11 +176,27 @@ export async function prepareModularVehicle(args: {
     plateText: config.plateText,
   });
   const preset = VEHICLE_PRESETS[config.preset];
+
+  // Round 7 — camera-jitter fix: car-family templates ship with their own
+  // baked Driver/Vehicle/Passenger Scripts that tightly couple VehicleSeat
+  // to SpringConstraint suspension. Our tuning script overriding those
+  // SpringConstraints causes the template's controller to fight back →
+  // camera dérgaет (oscillating physics). Skip suspension tuning entirely
+  // for those presets and use 'standard' baseline. Boost particles and
+  // MaxSpeed override are safe (they don't touch joints).
+  const carFamily: ReadonlyArray<typeof config.preset> = [
+    'sedan', 'sports_car', 'supercar', 'suv', 'pickup_truck', 'van',
+    'dune_buggy', 'light_utility_vehicle', 'police_car',
+  ];
+  const suspensionForTuning = carFamily.includes(config.preset)
+    ? 'standard' as const
+    : (config.driveStats.suspension ?? preset.baselineStats.suspension);
+
   const tuningLuaBlock = buildTuningLuaBlock({
     maxSpeed: config.driveStats.maxSpeed ?? preset.baselineStats.maxSpeed,
     drift: config.driveStats.drift ?? preset.baselineStats.drift,
     boost: config.driveStats.boost ?? preset.baselineStats.boost,
-    suspension: config.driveStats.suspension ?? preset.baselineStats.suspension,
+    suspension: suspensionForTuning,
     passengerSeats: config.driveStats.passengerSeats ?? preset.baselineStats.passengerSeats,
     destruction: config.driveStats.destruction ?? preset.baselineStats.destruction,
     accentHex: config.accentColor,

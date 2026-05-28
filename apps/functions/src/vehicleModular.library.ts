@@ -17,160 +17,121 @@ import type {
 
 export const VEHICLE_PRESETS: Record<VehiclePresetId, VehiclePreset> = {
   sedan: {
-    id: 'sedan',
-    label: 'Sedan',
-    templateRbxmFilename: 'Sedan-6418239833.rbxm',
-    assetId: 6418239833,
+    id: 'sedan', label: 'Sedan',
+    templateRbxmFilename: 'Sedan-6418239833.rbxm', assetId: 6418239833,
     bodyOriginalHex: '#F3F3F3',
+    preferredVariant: 'Sedan (white)',
+    variantFallbacks: ['Sedan (aqua)', 'Sedan (orange)', 'Sedan (red)', 'Sedan (black)'],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 90, drift: false, boost: '', suspension: 'standard',
-      passengerSeats: 3, destruction: false,
-    },
+    baselineStats: { maxSpeed: 90, drift: false, boost: '', suspension: 'standard', passengerSeats: 3, destruction: false },
   },
   sports_car: {
-    id: 'sports_car',
-    label: 'Sports Car',
-    templateRbxmFilename: 'SportsCar-6433323089.rbxm',
-    assetId: 6433323089,
+    id: 'sports_car', label: 'Sports Car',
+    templateRbxmFilename: 'SportsCar-6433323089.rbxm', assetId: 6433323089,
     bodyOriginalHex: '#F8F8F8',
+    preferredVariant: 'Sports Car (white)',
+    variantFallbacks: ['Sports Car (red)', 'Sports Car (blue)'],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 140, drift: true, boost: 'flame', suspension: 'stiff',
-      passengerSeats: 1, destruction: false,
-    },
+    baselineStats: { maxSpeed: 140, drift: true, boost: 'flame', suspension: 'stiff', passengerSeats: 1, destruction: false },
   },
   supercar: {
-    id: 'supercar',
-    label: 'Supercar',
-    templateRbxmFilename: 'Supercar-6433330180.rbxm',
-    assetId: 6433330180,
+    id: 'supercar', label: 'Supercar',
+    templateRbxmFilename: 'Supercar-6433330180.rbxm', assetId: 6433330180,
     bodyOriginalHex: '#FFB000',
+    preferredVariant: 'Supercar (yellow)',
+    variantFallbacks: ['Supercar (green)', 'Supercar (blue)'],
     defaultStyle: 'luxury',
-    baselineStats: {
-      maxSpeed: 170, drift: true, boost: 'neon', suspension: 'stiff',
-      passengerSeats: 1, destruction: false,
-    },
+    baselineStats: { maxSpeed: 170, drift: true, boost: 'neon', suspension: 'stiff', passengerSeats: 1, destruction: false },
   },
   suv: {
-    id: 'suv',
-    label: 'SUV',
-    templateRbxmFilename: 'SUV-6418234850.rbxm',
-    assetId: 6418234850,
+    id: 'suv', label: 'SUV',
+    templateRbxmFilename: 'SUV-6418234850.rbxm', assetId: 6418234850,
     bodyOriginalHex: '#E7E7EC',
+    preferredVariant: 'SUV (white)',
+    variantFallbacks: ['SUV (blue)', 'SUV (black)'],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 100, drift: false, boost: '', suspension: 'soft',
-      passengerSeats: 4, destruction: false,
-    },
+    baselineStats: { maxSpeed: 100, drift: false, boost: '', suspension: 'soft', passengerSeats: 4, destruction: false },
   },
   pickup_truck: {
-    id: 'pickup_truck',
-    label: 'Pickup Truck',
-    templateRbxmFilename: 'PickupTruck-6418225759.rbxm',
-    assetId: 6418225759,
+    id: 'pickup_truck', label: 'Pickup Truck',
+    templateRbxmFilename: 'PickupTruck-6418225759.rbxm', assetId: 6418225759,
     bodyOriginalHex: '#F8F8F8',
+    preferredVariant: 'Pickup Truck (white)',
+    variantFallbacks: ['Pickup Truck (blue)', 'Pickup Truck (bronze)'],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 95, drift: false, boost: 'smoke', suspension: 'soft',
-      passengerSeats: 1, destruction: true,
-    },
+    baselineStats: { maxSpeed: 95, drift: false, boost: 'smoke', suspension: 'soft', passengerSeats: 1, destruction: true },
   },
   van: {
-    id: 'van',
-    label: 'Van',
-    templateRbxmFilename: 'Van-6433316269.rbxm',
-    assetId: 6433316269,
+    id: 'van', label: 'Van',
+    templateRbxmFilename: 'Van-6433316269.rbxm', assetId: 6433316269,
     bodyOriginalHex: '#E7E7EC',
+    preferredVariant: 'Van (white)',
+    variantFallbacks: ['Van (pro)', 'Van (1970)'],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 80, drift: false, boost: '', suspension: 'soft',
-      passengerSeats: 6, destruction: false,
-    },
+    baselineStats: { maxSpeed: 80, drift: false, boost: '', suspension: 'soft', passengerSeats: 6, destruction: false },
   },
   dune_buggy: {
-    id: 'dune_buggy',
-    label: 'Dune Buggy',
-    templateRbxmFilename: 'DuneBuggy-6433272094.rbxm',
-    assetId: 6433272094,
+    id: 'dune_buggy', label: 'Dune Buggy',
+    templateRbxmFilename: 'DuneBuggy-6433272094.rbxm', assetId: 6433272094,
     bodyOriginalHex: '#D1BEA6',
+    preferredVariant: 'Dune Buggy (beige)',
+    variantFallbacks: ['Dune Buggy (blue)', 'Dune Buggy (orange)'],
     defaultStyle: 'apocalypse',
-    baselineStats: {
-      maxSpeed: 110, drift: true, boost: 'smoke', suspension: 'soft',
-      passengerSeats: 1, destruction: true,
-    },
+    baselineStats: { maxSpeed: 110, drift: true, boost: 'smoke', suspension: 'soft', passengerSeats: 1, destruction: true },
   },
   light_utility_vehicle: {
-    id: 'light_utility_vehicle',
-    label: 'Light Utility Vehicle',
-    templateRbxmFilename: 'LightUtilityVehicle-6418221666.rbxm',
-    assetId: 6418221666,
+    id: 'light_utility_vehicle', label: 'Light Utility Vehicle',
+    templateRbxmFilename: 'LightUtilityVehicle-6418221666.rbxm', assetId: 6418221666,
     bodyOriginalHex: '#202020',
+    preferredVariant: 'Light Utility Vehicle (black)',
+    variantFallbacks: ['Light Utility Vehicle (pink)', 'Light Utility Vehicle (white camo)'],
     defaultStyle: 'military',
-    baselineStats: {
-      maxSpeed: 90, drift: false, boost: '', suspension: 'standard',
-      passengerSeats: 3, destruction: true,
-    },
+    baselineStats: { maxSpeed: 90, drift: false, boost: '', suspension: 'standard', passengerSeats: 3, destruction: true },
   },
   police_car: {
-    id: 'police_car',
-    label: 'Police Car',
-    templateRbxmFilename: 'PoliceCar-6418230807.rbxm',
-    assetId: 6418230807,
+    id: 'police_car', label: 'Police Car',
+    templateRbxmFilename: 'PoliceCar-6418230807.rbxm', assetId: 6418230807,
     bodyOriginalHex: '#FFFFFF',
+    preferredVariant: 'Police Car',
+    variantFallbacks: [],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 130, drift: false, boost: '', suspension: 'standard',
-      passengerSeats: 1, destruction: false,
-    },
+    baselineStats: { maxSpeed: 130, drift: false, boost: '', suspension: 'standard', passengerSeats: 1, destruction: false },
   },
   motorcycle: {
-    id: 'motorcycle',
-    label: 'Motorcycle',
-    templateRbxmFilename: 'Motorcycle-17388481396.rbxm',
-    assetId: 17388481396,
+    id: 'motorcycle', label: 'Motorcycle',
+    templateRbxmFilename: 'Motorcycle-17388481396.rbxm', assetId: 17388481396,
     bodyOriginalHex: '#111111',
+    preferredVariant: 'Dirt bike.',
+    variantFallbacks: [],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 130, drift: false, boost: 'flame', suspension: 'stiff',
-      passengerSeats: 0, destruction: false,
-    },
+    baselineStats: { maxSpeed: 130, drift: false, boost: 'flame', suspension: 'stiff', passengerSeats: 0, destruction: false },
   },
   boat: {
-    id: 'boat',
-    label: 'Speedboat',
-    templateRbxmFilename: 'Boat-30309891.rbxm',
-    assetId: 30309891,
+    id: 'boat', label: 'Speedboat',
+    templateRbxmFilename: 'Boat-30309891.rbxm', assetId: 30309891,
     bodyOriginalHex: '#FFCC99',
+    preferredVariant: 'Model',
+    variantFallbacks: [],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 100, drift: false, boost: '', suspension: 'standard',
-      passengerSeats: 3, destruction: false,
-    },
+    baselineStats: { maxSpeed: 100, drift: false, boost: '', suspension: 'standard', passengerSeats: 3, destruction: false },
   },
   plane: {
-    id: 'plane',
-    label: 'Embraer Phenom 100',
-    templateRbxmFilename: 'Phenom100-PlaneKit.rbxm',
-    assetId: 0,
+    id: 'plane', label: 'Embraer Phenom 100',
+    templateRbxmFilename: 'Phenom100-PlaneKit.rbxm', assetId: 0,
     bodyOriginalHex: '#F8F8F8',
+    preferredVariant: 'Embraer Phenom 100',
+    variantFallbacks: ['Plane', 'Embraer'],
     defaultStyle: 'default',
-    baselineStats: {
-      maxSpeed: 200, drift: false, boost: '', suspension: 'standard',
-      passengerSeats: 5, destruction: false,
-    },
+    baselineStats: { maxSpeed: 200, drift: false, boost: '', suspension: 'standard', passengerSeats: 5, destruction: false },
   },
   tank: {
-    id: 'tank',
-    label: 'Tank',
-    templateRbxmFilename: 'Tank-101512952.rbxm',
-    assetId: 101512952,
+    id: 'tank', label: 'Tank',
+    templateRbxmFilename: 'Tank-101512952.rbxm', assetId: 101512952,
     bodyOriginalHex: '#F2F3F3',
+    preferredVariant: 'DrivableTank',
+    variantFallbacks: [],
     defaultStyle: 'military',
-    baselineStats: {
-      maxSpeed: 50, drift: false, boost: '', suspension: 'monster',
-      passengerSeats: 1, destruction: true,
-    },
+    baselineStats: { maxSpeed: 50, drift: false, boost: '', suspension: 'monster', passengerSeats: 1, destruction: true },
   },
 };
 
@@ -261,6 +222,79 @@ export const VEHICLE_ADDONS: Record<VehicleAddonId, VehicleAddonSpec> = {
     mount: 'wheels',
     description: 'Oversized off-road tires replacing wheel meshes',
   },
+  // ─── Round 6: extra addons for more variety ────────────────────────
+  headlight_bar: {
+    id: 'headlight_bar', label: 'LED light bar',
+    fitsPresets: ALL_CARS,
+    mount: 'rear_bumper', // mounted on front, but body offset uses front face
+    description: 'Bright off-road LED light bar across the front bumper',
+  },
+  bull_bar: {
+    id: 'bull_bar', label: 'Bull bar / kangaroo guard',
+    fitsPresets: ['pickup_truck', 'suv', 'dune_buggy', 'light_utility_vehicle', 'van'],
+    mount: 'rear_bumper',
+    description: 'Chunky steel kangaroo-bar guard on the front bumper',
+  },
+  side_skirts: {
+    id: 'side_skirts', label: 'Racing side skirts',
+    fitsPresets: ['sedan', 'sports_car', 'supercar'],
+    mount: 'doors_side',
+    description: 'Low racing side skirt panels along the doors',
+  },
+  hood_scoop: {
+    id: 'hood_scoop', label: 'Hood air scoop',
+    fitsPresets: ['sedan', 'sports_car', 'supercar', 'pickup_truck'],
+    mount: 'roof', // top of hood
+    description: 'Aggressive air intake scoop on the hood',
+  },
+  subwoofer_trunk: {
+    id: 'subwoofer_trunk', label: 'Trunk subwoofer rig',
+    fitsPresets: ['sedan', 'suv', 'pickup_truck', 'van'],
+    mount: 'rear_bumper',
+    description: 'Big boombox-style subwoofer box mounted on rear deck',
+  },
+  tow_hitch: {
+    id: 'tow_hitch', label: 'Tow ball hitch',
+    fitsPresets: ['pickup_truck', 'suv', 'van', 'sedan'],
+    mount: 'rear_bumper',
+    description: 'Sturdy rear tow ball + hitch under the bumper',
+  },
+  roof_camera_pod: {
+    id: 'roof_camera_pod', label: 'Roof camera pod',
+    fitsPresets: ALL_CARS,
+    mount: 'roof',
+    description: 'Surveillance / dashcam pod on the roof',
+  },
+  disco_ball: {
+    id: 'disco_ball', label: 'Roof disco ball',
+    fitsPresets: ALL_CARS,
+    mount: 'roof',
+    description: 'Mirrored disco ball on roof — party/cursed vibes',
+  },
+  flag_pole: {
+    id: 'flag_pole', label: 'Roof flag pole',
+    fitsPresets: ['pickup_truck', 'suv', 'dune_buggy', 'light_utility_vehicle'],
+    mount: 'roof',
+    description: 'Tall pole with a colored flag waving from the roof',
+  },
+  smoke_stack: {
+    id: 'smoke_stack', label: 'Upward smoke stack',
+    fitsPresets: ['pickup_truck', 'light_utility_vehicle', 'dune_buggy'],
+    mount: 'roof',
+    description: 'Tall vertical exhaust chimney spewing black smoke',
+  },
+  jet_engine_rear: {
+    id: 'jet_engine_rear', label: 'Rear jet engine',
+    fitsPresets: ['sports_car', 'supercar', 'sedan', 'pickup_truck'],
+    mount: 'rear_bumper',
+    description: 'Cartoon jet engine mounted to the back bumper',
+  },
+  mud_flaps: {
+    id: 'mud_flaps', label: 'Rubber mud flaps',
+    fitsPresets: ['pickup_truck', 'suv', 'van', 'dune_buggy', 'light_utility_vehicle'],
+    mount: 'wheels',
+    description: 'Black rubber mud flaps behind each rear wheel',
+  },
 };
 
 /** Filter addons to those compatible with a preset (for AI router prompt). */
@@ -292,238 +326,221 @@ const hexToColor3Lua = (hex: string): string => {
   return `Color3.new(${r.toFixed(3)}, ${g.toFixed(3)}, ${b.toFixed(3)})`;
 };
 
+/** Session 387 R5: shared prologue — anchors all addons to the VehicleSeat
+ *  (always present, always at chassis center). Uses bbox offset relative to
+ *  the seat so positioning is robust to wrapper nesting. Calls `mount(part)`
+ *  to weld+parent each new Part to the seat. */
+const PROLOGUE_LUA = `
+local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+if not seat then warn("[addon] no VehicleSeat in", vehicleModel:GetFullName()); return end
+local seatCF = seat.CFrame
+local bbCF, bbSize = vehicleModel:GetBoundingBox()
+local bbLocal = seatCF:ToObjectSpace(bbCF)
+local function mount(part)
+  part.Anchored = false; part.CanCollide = false; part.Massless = true
+  part.Parent = vehicleModel
+  local w = Instance.new("WeldConstraint"); w.Part0 = part; w.Part1 = seat; w.Parent = part
+end
+`.trim();
+
 /** Each generator returns one self-contained Lua block. The builder
  *  concatenates the blocks and appends to the loader script. */
 export const ADDON_LUA_GENERATORS: Record<VehicleAddonId, (ctx: LuaAddonContext) => string> = {
   taxi_sign: () => `
 do
-  local root = vehicleModel:FindFirstChild("Body", true) or vehicleModel
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
+  -- Roof TAXI sign: bright yellow box with TAXI text on all 4 sides
+  -- so it reads from every angle. Positioned on top of the body.
   local sign = Instance.new("Part")
   sign.Name = "TaxiSign"
-  sign.Size = Vector3.new(3.5, 0.9, 1.4)
+  sign.Size = Vector3.new(2.8, 0.7, 1.1)
   sign.Color = Color3.fromRGB(242, 184, 7)
   sign.Material = Enum.Material.Neon
-  sign.Anchored = false
-  sign.CanCollide = false
-  sign.Massless = true
-  sign.CFrame = cf * CFrame.new(0, size.Y/2 + 0.45, 0)
-  sign.Parent = vehicleModel
-  local text = Instance.new("SurfaceGui")
-  text.Face = Enum.NormalId.Front
-  text.Parent = sign
-  text.CanvasSize = Vector2.new(350, 90)
-  local label = Instance.new("TextLabel")
-  label.Size = UDim2.fromScale(1, 1)
-  label.BackgroundTransparency = 1
-  label.Text = "TAXI"
-  label.Font = Enum.Font.GothamBlack
-  label.TextScaled = true
-  label.TextColor3 = Color3.fromRGB(0, 0, 0)
-  label.Parent = text
-  local weld = Instance.new("WeldConstraint")
-  weld.Part0 = sign
-  weld.Part1 = root:IsA("Model") and (root:FindFirstChildOfClass("Part") or root:FindFirstChildWhichIsA("BasePart")) or root
-  if weld.Part1 then weld.Parent = sign else sign:Destroy() end
+  sign.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 0.4, 0))
+  mount(sign)
+  for _, face in ipairs({Enum.NormalId.Front, Enum.NormalId.Back, Enum.NormalId.Left, Enum.NormalId.Right}) do
+    local gui = Instance.new("SurfaceGui", sign)
+    gui.Face = face
+    gui.CanvasSize = Vector2.new(400, 100)
+    gui.LightInfluence = 0
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.fromScale(1, 1)
+    label.BackgroundTransparency = 1
+    label.Text = "TAXI"
+    label.Font = Enum.Font.GothamBlack
+    label.TextScaled = true
+    label.TextColor3 = Color3.fromRGB(0, 0, 0)
+    label.Parent = gui
+  end
 end`.trim(),
 
   police_lightbar: () => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
+  -- Bigger, more recognizable police bar with flashing red/blue strobes.
   local bar = Instance.new("Part")
   bar.Name = "PoliceLightBar"
-  bar.Size = Vector3.new(3.2, 0.5, 1.2)
-  bar.Color = Color3.fromRGB(30, 30, 30)
-  bar.Anchored = false; bar.CanCollide = false; bar.Massless = true
-  bar.CFrame = cf * CFrame.new(0, size.Y/2 + 0.25, 0)
-  bar.Parent = vehicleModel
+  bar.Size = Vector3.new(bbSize.X * 0.55, 0.55, 1.3)
+  bar.Color = Color3.fromRGB(25, 25, 25)
+  bar.Material = Enum.Material.SmoothPlastic
+  bar.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 0.32, 0))
+  mount(bar)
+  local lights = {}
   for i, side in ipairs({-1, 1}) do
     local light = Instance.new("Part")
     light.Name = i == 1 and "LightRed" or "LightBlue"
-    light.Size = Vector3.new(1.4, 0.4, 1.1)
-    light.Color = i == 1 and Color3.fromRGB(255, 30, 30) or Color3.fromRGB(30, 80, 255)
+    light.Size = Vector3.new(bbSize.X * 0.24, 0.48, 1.18)
+    light.Color = i == 1 and Color3.fromRGB(255, 20, 20) or Color3.fromRGB(30, 80, 255)
     light.Material = Enum.Material.Neon
-    light.Anchored = false; light.CanCollide = false; light.Massless = true
-    light.CFrame = bar.CFrame * CFrame.new(side * 0.9, 0, 0)
-    light.Parent = vehicleModel
-    local w = Instance.new("WeldConstraint"); w.Part0 = bar; w.Part1 = light; w.Parent = light
+    light.CFrame = bar.CFrame * CFrame.new(side * bbSize.X * 0.16, 0, 0)
+    mount(light)
     local pl = Instance.new("PointLight", light)
-    pl.Color = light.Color; pl.Brightness = 3; pl.Range = 12
+    pl.Color = light.Color; pl.Brightness = 4; pl.Range = 20
+    table.insert(lights, { part = light, pl = pl, base = light.Color })
   end
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    local w = Instance.new("WeldConstraint"); w.Part0 = bar; w.Part1 = rootPart; w.Parent = bar
-  end
+  -- Strobe animation: alternate red/blue at 4Hz
+  task.spawn(function()
+    local t = 0
+    while bar.Parent do
+      task.wait(0.25)
+      t = t + 1
+      for i, L in ipairs(lights) do
+        local on = ((t + i) % 2) == 0
+        L.part.Material = on and Enum.Material.Neon or Enum.Material.SmoothPlastic
+        L.pl.Brightness = on and 5 or 0.3
+      end
+    end
+  end)
 end`.trim(),
 
   roof_rack: () => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
   local frame = Instance.new("Part")
   frame.Name = "RoofRack"
-  frame.Size = Vector3.new(size.X * 0.85, 0.15, size.Z * 0.55)
+  frame.Size = Vector3.new(bbSize.X * 0.7, 0.15, bbSize.Z * 0.5)
   frame.Color = Color3.fromRGB(40, 40, 40)
   frame.Material = Enum.Material.Metal
-  frame.Anchored = false; frame.CanCollide = false; frame.Massless = true
-  frame.CFrame = cf * CFrame.new(0, size.Y/2 + 0.12, 0)
-  frame.Parent = vehicleModel
+  frame.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 0.12, 0))
+  mount(frame)
   for i = -1, 1 do
     local bar = Instance.new("Part")
     bar.Name = "RoofRackBar" .. i
-    bar.Size = Vector3.new(size.X * 0.85, 0.12, 0.12)
+    bar.Size = Vector3.new(bbSize.X * 0.7, 0.12, 0.12)
     bar.Color = Color3.fromRGB(40, 40, 40)
     bar.Material = Enum.Material.Metal
-    bar.Anchored = false; bar.CanCollide = false; bar.Massless = true
-    bar.CFrame = frame.CFrame * CFrame.new(0, 0.2, i * size.Z * 0.18)
-    bar.Parent = vehicleModel
-    local w = Instance.new("WeldConstraint"); w.Part0 = frame; w.Part1 = bar; w.Parent = bar
-  end
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    local w = Instance.new("WeldConstraint"); w.Part0 = frame; w.Part1 = rootPart; w.Parent = frame
+    bar.CFrame = frame.CFrame * CFrame.new(0, 0.18, i * bbSize.Z * 0.16)
+    mount(bar)
   end
 end`.trim(),
 
   underglow: (ctx) => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
   local glow = Instance.new("Part")
   glow.Name = "Underglow"
-  glow.Size = Vector3.new(size.X * 0.9, 0.12, size.Z * 0.85)
+  glow.Size = Vector3.new(bbSize.X * 0.85, 0.1, bbSize.Z * 0.8)
   glow.Color = ${hexToColor3Lua(ctx.accentHex || ctx.primaryHex)}
   glow.Material = Enum.Material.Neon
-  glow.Transparency = 0.15
-  glow.Anchored = false; glow.CanCollide = false; glow.Massless = true
-  glow.CFrame = cf * CFrame.new(0, -size.Y/2 + 0.05, 0)
-  glow.Parent = vehicleModel
+  glow.Transparency = 0.1
+  glow.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y/2 + 0.05, 0))
+  mount(glow)
   local light = Instance.new("PointLight", glow)
-  light.Color = glow.Color; light.Brightness = 2; light.Range = 20
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    local w = Instance.new("WeldConstraint"); w.Part0 = glow; w.Part1 = rootPart; w.Parent = glow
-  end
+  light.Color = glow.Color; light.Brightness = 2.5; light.Range = 22
 end`.trim(),
 
   racing_stripe: (ctx) => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
   for i, offX in ipairs({-0.35, 0.35}) do
     local stripe = Instance.new("Part")
     stripe.Name = "RacingStripe" .. i
-    stripe.Size = Vector3.new(0.55, 0.06, size.Z * 0.95)
+    stripe.Size = Vector3.new(0.5, 0.06, bbSize.Z * 0.9)
     stripe.Color = ${hexToColor3Lua(ctx.accentHex || '#FFFFFF')}
     stripe.Material = Enum.Material.SmoothPlastic
-    stripe.Anchored = false; stripe.CanCollide = false; stripe.Massless = true
-    stripe.CFrame = cf * CFrame.new(offX, size.Y/2 + 0.03, 0)
-    stripe.Parent = vehicleModel
-    local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-    if rootPart then
-      local w = Instance.new("WeldConstraint"); w.Part0 = stripe; w.Part1 = rootPart; w.Parent = stripe
-    end
+    stripe.CFrame = seatCF * (bbLocal * CFrame.new(offX, bbSize.Y/2 + 0.03, 0))
+    mount(stripe)
   end
 end`.trim(),
 
   rear_spoiler_low: (ctx) => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
   local spoiler = Instance.new("Part")
   spoiler.Name = "RearSpoilerLow"
-  spoiler.Size = Vector3.new(size.X * 0.7, 0.18, 0.5)
+  spoiler.Size = Vector3.new(bbSize.X * 0.7, 0.18, 0.5)
   spoiler.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
   spoiler.Material = Enum.Material.SmoothPlastic
-  spoiler.Anchored = false; spoiler.CanCollide = false; spoiler.Massless = true
-  spoiler.CFrame = cf * CFrame.new(0, size.Y * 0.2, size.Z * 0.45)
-  spoiler.Parent = vehicleModel
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    local w = Instance.new("WeldConstraint"); w.Part0 = spoiler; w.Part1 = rootPart; w.Parent = spoiler
-  end
+  spoiler.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.2, bbSize.Z * 0.42))
+  mount(spoiler)
 end`.trim(),
 
   rear_spoiler_high: (ctx) => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
-  local mast = Instance.new("Part")
-  mast.Name = "SpoilerMastL"
-  mast.Size = Vector3.new(0.18, 1.0, 0.6)
-  mast.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
-  mast.Material = Enum.Material.SmoothPlastic
-  mast.Anchored = false; mast.CanCollide = false; mast.Massless = true
-  mast.CFrame = cf * CFrame.new(-size.X * 0.3, size.Y * 0.35, size.Z * 0.45)
-  mast.Parent = vehicleModel
-  local mastR = mast:Clone(); mastR.Name = "SpoilerMastR"
-  mastR.CFrame = cf * CFrame.new(size.X * 0.3, size.Y * 0.35, size.Z * 0.45)
-  mastR.Parent = vehicleModel
-  local wing = Instance.new("Part")
-  wing.Name = "SpoilerWing"
-  wing.Size = Vector3.new(size.X * 0.75, 0.15, 0.95)
-  wing.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
-  wing.Material = Enum.Material.SmoothPlastic
-  wing.Anchored = false; wing.CanCollide = false; wing.Massless = true
-  wing.CFrame = cf * CFrame.new(0, size.Y * 0.85, size.Z * 0.45)
-  wing.Parent = vehicleModel
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    for _, p in ipairs({mast, mastR, wing}) do
-      local w = Instance.new("WeldConstraint"); w.Part0 = p; w.Part1 = rootPart; w.Parent = p
-    end
-    local wW = Instance.new("WeldConstraint"); wW.Part0 = wing; wW.Part1 = mast; wW.Parent = wing
-  end
+${PROLOGUE_LUA}
+  local mastL = Instance.new("Part"); mastL.Name = "SpoilerMastL"
+  mastL.Size = Vector3.new(0.18, 0.9, 0.55)
+  mastL.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
+  mastL.Material = Enum.Material.SmoothPlastic
+  mastL.CFrame = seatCF * (bbLocal * CFrame.new(-bbSize.X * 0.3, bbSize.Y * 0.4, bbSize.Z * 0.42))
+  mount(mastL)
+  local mastR = mastL:Clone(); mastR.Name = "SpoilerMastR"
+  mastR.CFrame = seatCF * (bbLocal * CFrame.new(bbSize.X * 0.3, bbSize.Y * 0.4, bbSize.Z * 0.42))
+  mount(mastR)
+  local wing = Instance.new("Part"); wing.Name = "SpoilerWing"
+  wing.Size = Vector3.new(bbSize.X * 0.75, 0.15, 0.9)
+  wing.Color = mastL.Color; wing.Material = Enum.Material.SmoothPlastic
+  wing.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.85, bbSize.Z * 0.42))
+  mount(wing)
 end`.trim(),
 
   exhaust_dual: () => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
-  for i, offX in ipairs({-0.6, 0.6}) do
+${PROLOGUE_LUA}
+  for i, offX in ipairs({-0.55, 0.55}) do
     local pipe = Instance.new("Part")
     pipe.Name = "Exhaust" .. i
     pipe.Shape = Enum.PartType.Cylinder
-    pipe.Size = Vector3.new(0.8, 0.45, 0.45)
+    pipe.Size = Vector3.new(0.8, 0.4, 0.4)
     pipe.Color = Color3.fromRGB(180, 180, 185)
     pipe.Material = Enum.Material.Metal
-    pipe.Anchored = false; pipe.CanCollide = false; pipe.Massless = true
-    pipe.CFrame = cf * CFrame.new(offX, -size.Y * 0.3, size.Z * 0.5) * CFrame.Angles(0, math.pi/2, 0)
-    pipe.Parent = vehicleModel
-    local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-    if rootPart then
-      local w = Instance.new("WeldConstraint"); w.Part0 = pipe; w.Part1 = rootPart; w.Parent = pipe
-    end
+    pipe.CFrame = seatCF * (bbLocal * CFrame.new(offX, -bbSize.Y * 0.3, bbSize.Z * 0.48)) * CFrame.Angles(0, math.pi/2, 0)
+    mount(pipe)
   end
 end`.trim(),
 
   roof_antenna: () => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
+  -- Box (not Cylinder) avoids the Roblox X-axis orientation quirk.
+  -- Tall thin vertical part standing on the roof.
   local ant = Instance.new("Part")
   ant.Name = "RoofAntenna"
-  ant.Shape = Enum.PartType.Cylinder
-  ant.Size = Vector3.new(2.5, 0.08, 0.08)
+  ant.Size = Vector3.new(0.1, 1.6, 0.1)
   ant.Color = Color3.fromRGB(20, 20, 20)
   ant.Material = Enum.Material.Metal
-  ant.Anchored = false; ant.CanCollide = false; ant.Massless = true
-  ant.CFrame = cf * CFrame.new(-size.X * 0.35, size.Y/2 + 1.2, size.Z * 0.3) * CFrame.Angles(0, 0, math.pi/2)
-  ant.Parent = vehicleModel
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    local w = Instance.new("WeldConstraint"); w.Part0 = ant; w.Part1 = rootPart; w.Parent = ant
-  end
+  ant.CFrame = seatCF * (bbLocal * CFrame.new(-bbSize.X * 0.3, bbSize.Y/2 + 0.8, bbSize.Z * 0.25))
+  mount(ant)
+  -- Small red blinker tip at the top
+  local tip = Instance.new("Part")
+  tip.Name = "RoofAntennaTip"
+  tip.Size = Vector3.new(0.18, 0.18, 0.18)
+  tip.Color = Color3.fromRGB(255, 30, 30)
+  tip.Material = Enum.Material.Neon
+  tip.CFrame = ant.CFrame * CFrame.new(0, 0.85, 0)
+  mount(tip)
 end`.trim(),
 
   fire_dept_ladder: () => `
 do
-  local cf, size = vehicleModel:GetBoundingBox()
+${PROLOGUE_LUA}
   local ladder = Instance.new("Part")
   ladder.Name = "FireLadder"
-  ladder.Size = Vector3.new(0.4, 0.3, size.Z * 1.1)
+  ladder.Size = Vector3.new(0.4, 0.3, bbSize.Z * 1.0)
   ladder.Color = Color3.fromRGB(200, 30, 30)
   ladder.Material = Enum.Material.Metal
-  ladder.Anchored = false; ladder.CanCollide = false; ladder.Massless = true
-  ladder.CFrame = cf * CFrame.new(0, size.Y/2 + 0.2, 0)
-  ladder.Parent = vehicleModel
-  local rootPart = vehicleModel:FindFirstChildWhichIsA("BasePart", true)
-  if rootPart then
-    local w = Instance.new("WeldConstraint"); w.Part0 = ladder; w.Part1 = rootPart; w.Parent = ladder
-  end
+  ladder.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 0.2, 0))
+  mount(ladder)
 end`.trim(),
 
   monster_truck_tires: () => `
@@ -540,6 +557,259 @@ do
         d.Color = Color3.fromRGB(20, 20, 20)
       end
     end
+  end
+end`.trim(),
+
+  // ─── Round 6 generators ──────────────────────────────────────────
+  headlight_bar: () => `
+do
+${PROLOGUE_LUA}
+  local bar = Instance.new("Part")
+  bar.Name = "HeadlightBar"
+  bar.Size = Vector3.new(bbSize.X * 0.65, 0.25, 0.3)
+  bar.Color = Color3.fromRGB(240, 240, 220)
+  bar.Material = Enum.Material.Neon
+  bar.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.15, -bbSize.Z * 0.48))
+  mount(bar)
+  for i = -2, 2 do
+    local pl = Instance.new("PointLight", bar)
+    pl.Color = Color3.fromRGB(255, 255, 220)
+    pl.Brightness = 2.5
+    pl.Range = 18
+    pl.Position = bar.CFrame.Position + Vector3.new(i * 0.6, 0, 0)
+  end
+end`.trim(),
+
+  bull_bar: () => `
+do
+${PROLOGUE_LUA}
+  local guard = Instance.new("Part")
+  guard.Name = "BullBar"
+  guard.Size = Vector3.new(bbSize.X * 0.85, 0.6, 0.35)
+  guard.Color = Color3.fromRGB(100, 100, 105)
+  guard.Material = Enum.Material.Metal
+  guard.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y * 0.15, -bbSize.Z * 0.52))
+  mount(guard)
+  -- Vertical guard bars across grille
+  for i = -1, 1 do
+    local v = Instance.new("Part")
+    v.Name = "BullBarV" .. i
+    v.Size = Vector3.new(0.18, 1.0, 0.18)
+    v.Color = guard.Color; v.Material = Enum.Material.Metal
+    v.CFrame = guard.CFrame * CFrame.new(i * bbSize.X * 0.25, 0, -0.05)
+    mount(v)
+  end
+end`.trim(),
+
+  side_skirts: (ctx) => `
+do
+${PROLOGUE_LUA}
+  for i, side in ipairs({-1, 1}) do
+    local skirt = Instance.new("Part")
+    skirt.Name = "SideSkirt" .. i
+    skirt.Size = Vector3.new(0.2, 0.35, bbSize.Z * 0.7)
+    skirt.Color = ${hexToColor3Lua(ctx.accentHex || '#1A1A1A')}
+    skirt.Material = Enum.Material.SmoothPlastic
+    skirt.CFrame = seatCF * (bbLocal * CFrame.new(side * bbSize.X * 0.45, -bbSize.Y * 0.32, 0))
+    mount(skirt)
+  end
+end`.trim(),
+
+  hood_scoop: () => `
+do
+${PROLOGUE_LUA}
+  local scoop = Instance.new("Part")
+  scoop.Name = "HoodScoop"
+  scoop.Size = Vector3.new(1.4, 0.45, 1.2)
+  scoop.Color = Color3.fromRGB(25, 25, 30)
+  scoop.Material = Enum.Material.SmoothPlastic
+  scoop.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.35, -bbSize.Z * 0.2))
+  mount(scoop)
+  -- Hole face (black gloss insert)
+  local hole = Instance.new("Part")
+  hole.Name = "HoodScoopHole"
+  hole.Size = Vector3.new(1.1, 0.25, 0.1)
+  hole.Color = Color3.fromRGB(0, 0, 0)
+  hole.Material = Enum.Material.SmoothPlastic
+  hole.CFrame = scoop.CFrame * CFrame.new(0, 0.05, -0.55)
+  mount(hole)
+end`.trim(),
+
+  subwoofer_trunk: (ctx) => `
+do
+${PROLOGUE_LUA}
+  local box = Instance.new("Part")
+  box.Name = "SubwooferBox"
+  box.Size = Vector3.new(bbSize.X * 0.55, 0.9, 1.2)
+  box.Color = Color3.fromRGB(15, 15, 15)
+  box.Material = Enum.Material.SmoothPlastic
+  box.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.45, bbSize.Z * 0.42))
+  mount(box)
+  -- 2 speaker cones
+  for i, off in ipairs({-0.5, 0.5}) do
+    local cone = Instance.new("Part")
+    cone.Name = "Speaker" .. i
+    cone.Shape = Enum.PartType.Cylinder
+    cone.Size = Vector3.new(0.18, 0.7, 0.7)
+    cone.Color = ${hexToColor3Lua(ctx.accentHex || '#444444')}
+    cone.Material = Enum.Material.Metal
+    cone.CFrame = box.CFrame * CFrame.new(off, 0, -0.45) * CFrame.Angles(0, math.pi/2, 0)
+    mount(cone)
+  end
+end`.trim(),
+
+  tow_hitch: () => `
+do
+${PROLOGUE_LUA}
+  local arm = Instance.new("Part")
+  arm.Name = "TowHitchArm"
+  arm.Size = Vector3.new(0.4, 0.25, 0.9)
+  arm.Color = Color3.fromRGB(60, 60, 65)
+  arm.Material = Enum.Material.Metal
+  arm.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y * 0.3, bbSize.Z * 0.55))
+  mount(arm)
+  local ball = Instance.new("Part")
+  ball.Name = "TowHitchBall"
+  ball.Shape = Enum.PartType.Ball
+  ball.Size = Vector3.new(0.5, 0.5, 0.5)
+  ball.Color = Color3.fromRGB(120, 120, 125)
+  ball.Material = Enum.Material.Metal
+  ball.CFrame = arm.CFrame * CFrame.new(0, 0, 0.55)
+  mount(ball)
+end`.trim(),
+
+  roof_camera_pod: () => `
+do
+${PROLOGUE_LUA}
+  local pod = Instance.new("Part")
+  pod.Name = "RoofCameraPod"
+  pod.Size = Vector3.new(0.6, 0.5, 0.55)
+  pod.Color = Color3.fromRGB(30, 30, 35)
+  pod.Material = Enum.Material.SmoothPlastic
+  pod.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 0.3, -bbSize.Z * 0.15))
+  mount(pod)
+  local lens = Instance.new("Part")
+  lens.Name = "CamLens"
+  lens.Shape = Enum.PartType.Cylinder
+  lens.Size = Vector3.new(0.18, 0.35, 0.35)
+  lens.Color = Color3.fromRGB(10, 10, 15)
+  lens.Material = Enum.Material.Glass
+  lens.CFrame = pod.CFrame * CFrame.new(0, 0, -0.4) * CFrame.Angles(0, math.pi/2, 0)
+  mount(lens)
+end`.trim(),
+
+  disco_ball: () => `
+do
+${PROLOGUE_LUA}
+  local pole = Instance.new("Part")
+  pole.Name = "DiscoBallPole"
+  pole.Size = Vector3.new(0.08, 0.6, 0.08)
+  pole.Color = Color3.fromRGB(60, 60, 60)
+  pole.Material = Enum.Material.Metal
+  pole.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 0.3, 0))
+  mount(pole)
+  local ball = Instance.new("Part")
+  ball.Name = "DiscoBall"
+  ball.Shape = Enum.PartType.Ball
+  ball.Size = Vector3.new(0.95, 0.95, 0.95)
+  ball.Color = Color3.fromRGB(220, 220, 230)
+  ball.Material = Enum.Material.Foil
+  ball.Reflectance = 0.7
+  ball.CFrame = pole.CFrame * CFrame.new(0, 0.7, 0)
+  mount(ball)
+  local pl = Instance.new("PointLight", ball)
+  pl.Color = Color3.fromRGB(255, 180, 255); pl.Brightness = 2.5; pl.Range = 25
+end`.trim(),
+
+  flag_pole: (ctx) => `
+do
+${PROLOGUE_LUA}
+  local pole = Instance.new("Part")
+  pole.Name = "FlagPole"
+  pole.Size = Vector3.new(0.12, 2.0, 0.12)
+  pole.Color = Color3.fromRGB(80, 80, 80)
+  pole.Material = Enum.Material.Metal
+  pole.CFrame = seatCF * (bbLocal * CFrame.new(bbSize.X * 0.3, bbSize.Y/2 + 1.0, bbSize.Z * 0.3))
+  mount(pole)
+  local flag = Instance.new("Part")
+  flag.Name = "Flag"
+  flag.Size = Vector3.new(0.05, 0.8, 1.3)
+  flag.Color = ${hexToColor3Lua(ctx.accentHex || ctx.primaryHex || '#FF0000')}
+  flag.Material = Enum.Material.Fabric
+  flag.CFrame = pole.CFrame * CFrame.new(0, 0.55, 0.7)
+  mount(flag)
+end`.trim(),
+
+  smoke_stack: () => `
+do
+${PROLOGUE_LUA}
+  local pipe = Instance.new("Part")
+  pipe.Name = "SmokeStack"
+  pipe.Shape = Enum.PartType.Cylinder
+  pipe.Size = Vector3.new(1.8, 0.5, 0.5)
+  pipe.Color = Color3.fromRGB(50, 50, 55)
+  pipe.Material = Enum.Material.Metal
+  pipe.CFrame = seatCF * (bbLocal * CFrame.new(-bbSize.X * 0.25, bbSize.Y/2 + 0.6, bbSize.Z * 0.1)) * CFrame.Angles(0, 0, math.pi/2)
+  mount(pipe)
+  -- Black smoke emitter at top
+  local att = Instance.new("Attachment", pipe)
+  att.Position = Vector3.new(0.9, 0, 0)
+  local p = Instance.new("ParticleEmitter", att)
+  p.Color = ColorSequence.new(Color3.fromRGB(35, 32, 30))
+  p.Texture = "rbxasset://textures/particles/smoke_main.dds"
+  p.Rate = 12
+  p.Lifetime = NumberRange.new(2, 3.5)
+  p.Size = NumberSequence.new(1.4)
+  p.Speed = NumberRange.new(2, 5)
+  p.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.25),
+    NumberSequenceKeypoint.new(1, 1),
+  })
+end`.trim(),
+
+  jet_engine_rear: () => `
+do
+${PROLOGUE_LUA}
+  local engine = Instance.new("Part")
+  engine.Name = "RearJetEngine"
+  engine.Shape = Enum.PartType.Cylinder
+  engine.Size = Vector3.new(1.6, 1.1, 1.1)
+  engine.Color = Color3.fromRGB(80, 80, 85)
+  engine.Material = Enum.Material.Metal
+  engine.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y * 0.1, bbSize.Z * 0.55)) * CFrame.Angles(0, math.pi/2, 0)
+  mount(engine)
+  -- Glowing rear opening
+  local ring = Instance.new("Part")
+  ring.Name = "JetRing"
+  ring.Shape = Enum.PartType.Cylinder
+  ring.Size = Vector3.new(0.15, 1.0, 1.0)
+  ring.Color = Color3.fromRGB(255, 120, 30)
+  ring.Material = Enum.Material.Neon
+  ring.CFrame = engine.CFrame * CFrame.new(0.7, 0, 0)
+  mount(ring)
+end`.trim(),
+
+  mud_flaps: () => `
+do
+${PROLOGUE_LUA}
+  -- Find rear wheels (cylinder parts behind seat) and add flap behind each
+  local rear = {}
+  for _, d in ipairs(vehicleModel:GetDescendants()) do
+    if d:IsA("Part") and d.Shape == Enum.PartType.Cylinder then
+      local s = d.Size
+      if s.Y >= 1 and s.Y <= 4 and s.Z >= 1 and s.Z <= 4 then
+        table.insert(rear, d)
+      end
+    end
+  end
+  for _, w in ipairs(rear) do
+    local flap = Instance.new("Part")
+    flap.Name = "MudFlap"
+    flap.Size = Vector3.new(0.1, 1.0, 1.0)
+    flap.Color = Color3.fromRGB(15, 15, 15)
+    flap.Material = Enum.Material.SmoothPlastic
+    flap.CFrame = w.CFrame * CFrame.new(0, -0.3, 0)
+    mount(flap)
   end
 end`.trim(),
 };
@@ -698,15 +968,17 @@ do
 end`.trim();
 }
 
-/** Suspension — adjust SpringConstraint stiffness for the desired feel. */
+/** Suspension — adjust SpringConstraint stiffness for the desired feel.
+ *  Round 7: reduced multipliers because aggressive stiffness was causing
+ *  camera jitter from the template's baked controller fighting our tweaks. */
 export function buildSuspensionTuningLua(ctx: TuningContext): string {
   if (ctx.suspension === 'standard') return '';
-  // soft = bouncy (low stiffness), stiff = race feel (high), monster = huge wheels + super bouncy
-  const stiffness = ctx.suspension === 'soft' ? 0.4
-    : ctx.suspension === 'stiff' ? 1.8
-    : ctx.suspension === 'monster' ? 0.3
+  // Conservative range — multiply baseline 0.7×–1.25× only.
+  const stiffness = ctx.suspension === 'soft' ? 0.75
+    : ctx.suspension === 'stiff' ? 1.2
+    : ctx.suspension === 'monster' ? 0.7
     : 1.0;
-  const damping = ctx.suspension === 'monster' ? 0.6 : (ctx.suspension === 'stiff' ? 1.6 : 1.0);
+  const damping = ctx.suspension === 'monster' ? 0.85 : (ctx.suspension === 'stiff' ? 1.15 : 1.0);
   return `
 do
   local STIFFNESS_MUL = ${stiffness}

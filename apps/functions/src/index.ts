@@ -28017,27 +28017,22 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // Future iteration: add Flux livery decals for richer per-prompt variation.
       const eligibleForTemplate = ['car', 'motorcycle', 'bicycle', 'boat', 'plane', 'helicopter', 'tank', 'bus'].includes(vehicleTypeForTemplate);
 
-      // ── Session 387: Modular Vehicle Builder branch ──
+      // ── Session 387 R8: Unified vehicle pipeline ──
       //
-      // When the user opted into the alternative pipeline via the iOS
-      // picker (metadata.vehiclePipeline === 'modular_builder'), run the
-      // AI Config Router first. It pre-populates the SAME metadata fields
-      // that pick_vehicle_template would set (templateAssetId, label,
-      // bodyOriginalHex, primaryHex, …), plus adds vehicleConfig and
-      // vehicleAddonsLuaBlock. The existing template-embed flow then
-      // takes over unchanged — decals, recolor, loader script, preview,
-      // export. The only behavioural delta is that robloxWorker emits an
-      // extra ModularAddonsInjector Script when vehicleAddonsLuaBlock is
-      // present.
+      // PREVIOUSLY: feature-flagged opt-in (vehiclePipeline='modular_builder')
+      // ran the AI router; default fell back to keyword router.
       //
-      // If modular prep throws, we fall through to the existing
-      // pick_vehicle_template router (it still runs and produces a sane
-      // baseline). User sees a stage-log note about the fallback.
-      const vehiclePipeline = typeof currentJob.metadata?.vehiclePipeline === 'string'
-        ? currentJob.metadata.vehiclePipeline as string : 'template_embed';
+      // NOW (per user feedback "давай объединим два пути в один"): AI Config
+      // Router + iconic overrides + addons + tuning + style is THE pipeline
+      // for every vehicle job. Template-embed flow remains as a deterministic
+      // safety net ONLY when the modular prep throws (network/Gemini outage).
+      //
+      // Result: same recolor + decal + loader + preview path as before, PLUS
+      // AI-picked addons + drive stats + rarity badge + viral caption for
+      // every vehicle generated.
       let modularPrepDone = false;
-      if (vehiclePipeline === 'modular_builder' && eligibleForTemplate) {
-        await beginStage('pick_vehicle_template', 'Modular pipeline: running AI config router + addon selection');
+      if (eligibleForTemplate) {
+        await beginStage('pick_vehicle_template', 'AI Config Router (preset + style + addons + drive stats)');
         try {
           const { prepareModularVehicle } = await import('./vehicleModular.builder.js');
           const promptForModular = job.prompt ?? '';
@@ -28064,14 +28059,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           await finishStage('pick_vehicle_template', 'completed', [], prep.stageNotes);
           modularPrepDone = true;
         } catch (modErr) {
-          logger.warn('[ModularBuilder] prep failed, falling back to template_embed router', {
+          logger.warn('[ModularBuilder] prep failed, falling back to keyword router', {
             jobId, error: errorMessage(modErr),
           });
           await finishStage('pick_vehicle_template', 'completed', [], [
-            `Modular router error: ${errorMessage(modErr).slice(0, 200)}`,
-            'Falling back to template_embed (deterministic keyword router).',
+            `AI router error: ${errorMessage(modErr).slice(0, 200)}`,
+            'Falling back to deterministic keyword router.',
           ]);
-          // Mark fallback in metadata so iOS chat can show a note.
           currentJob = {
             ...currentJob,
             metadata: {
@@ -28080,8 +28074,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               vehiclePipelineFallbackReason: errorMessage(modErr).slice(0, 200),
             },
           };
-          // fall through — modularPrepDone stays false, existing
-          // pick_vehicle_template router below will run.
+          // modularPrepDone stays false → keyword router below runs.
         }
       }
 
