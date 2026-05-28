@@ -41,6 +41,14 @@ export interface CachedDisasterMesh {
   prompt: string;
   modelAssetId: number;
   meshAssetId: number;
+  /** Inner Texture asset id extracted from the Model wrapper (Meshy bakes a
+   * PBR ColorMap into every .glb; without this, MeshPart renders white). */
+  textureAssetId?: number;
+  /** Natural bounding-box of the inner MeshPart in studs (XYZ). Used to
+   * preserve the mesh aspect ratio at spawn time — without this we forced a
+   * cubic Size=8×8×8 and the user saw "распидарасило", a long banana
+   * crushed into a cube. */
+  naturalSize?: { x: number; y: number; z: number };
   createdAtMs: number;
 }
 
@@ -114,12 +122,22 @@ export async function getOrCreateDisasterMesh(args: {
         if (d && typeof d.meshAssetId === 'number' && d.meshAssetId > 0) {
           logger.info('[disasterMeshFactory] cache hit', {
             keyword, meshAssetId: d.meshAssetId,
+            textureAssetId: d.textureAssetId,
           });
+          const naturalSize = d.naturalSize as { x?: unknown; y?: unknown; z?: unknown } | undefined;
           return {
             keyword: d.keyword ?? keyword,
             prompt: d.prompt ?? '',
             modelAssetId: typeof d.modelAssetId === 'number' ? d.modelAssetId : 0,
             meshAssetId: d.meshAssetId,
+            textureAssetId: typeof d.textureAssetId === 'number' && d.textureAssetId > 0
+              ? d.textureAssetId : undefined,
+            naturalSize: naturalSize
+              && typeof naturalSize.x === 'number'
+              && typeof naturalSize.y === 'number'
+              && typeof naturalSize.z === 'number'
+              ? { x: naturalSize.x, y: naturalSize.y, z: naturalSize.z }
+              : undefined,
             createdAtMs: typeof d.createdAtMs === 'number' ? d.createdAtMs : 0,
           };
         }
@@ -264,13 +282,19 @@ export async function getOrCreateDisasterMesh(args: {
     return null;
   }
   const meshAssetId = extract.meshId;
+  const textureAssetId = extract.textureId && extract.textureId > 0 ? extract.textureId : undefined;
+  const naturalSize = extract.meshSize ? { x: extract.meshSize.x, y: extract.meshSize.y, z: extract.meshSize.z } : undefined;
   logger.info('[disasterMeshFactory] extracted inner Mesh id', {
-    keyword, modelAssetId, meshAssetId,
+    keyword, modelAssetId, meshAssetId, textureAssetId, naturalSize,
   });
 
-  // Step 5 — Cache.
+  // Step 5 — Cache. Texture id + natural size both feed the Lua emit:
+  // texture id → SurfaceAppearance.ColorMap so MeshPart renders coloured;
+  // naturalSize → aspect-preserving scale so long meshes don't get squashed
+  // into a cube (user repro round 8: banana mesh distorted into blob).
   const cached: CachedDisasterMesh = {
-    keyword, prompt, modelAssetId, meshAssetId, createdAtMs: Date.now(),
+    keyword, prompt, modelAssetId, meshAssetId, textureAssetId, naturalSize,
+    createdAtMs: Date.now(),
   };
   await docRef.set(cached).catch((err) => {
     logger.warn('[disasterMeshFactory] cache write failed (returning anyway)',

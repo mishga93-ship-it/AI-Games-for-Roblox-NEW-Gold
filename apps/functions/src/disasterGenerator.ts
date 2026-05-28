@@ -244,12 +244,16 @@ async function generateLuaScript(input: {
         assetEntries = [{
           name: objectKeyword,
           assetId: factory.meshAssetId,
-          preferredScale: 4,
+          preferredScale: 6,
+          textureAssetId: factory.textureAssetId,
+          naturalSize: factory.naturalSize,
         }];
         logger.info('[disasterGenerator] on-demand mesh ready', {
           objectKeyword,
           meshAssetId: factory.meshAssetId,
+          textureAssetId: factory.textureAssetId,
           modelAssetId: factory.modelAssetId,
+          naturalSize: factory.naturalSize,
         });
       } else {
         logger.warn('[disasterGenerator] mesh factory returned null → falling back to branded primitives', { objectKeyword });

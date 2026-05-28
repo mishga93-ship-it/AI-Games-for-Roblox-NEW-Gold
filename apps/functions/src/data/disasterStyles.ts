@@ -118,14 +118,24 @@ export interface DisasterPromptInput {
   title?: string;
   /** Optional curated Roblox Marketplace asset bundle resolved from the
    * title/prompt by findDisasterBundle. When non-empty, the Lua emitter
-   * uses InsertService:LoadAsset(id) for each spawn (with embedded
-   * Script-stripping), instead of branded primitive composition.
-   * Shape: { name, assetId, preferredScale, colorRGB? }. */
+   * spawns via AssetService:CreateMeshPartAsync per entry. */
   assetEntries?: Array<{
     name: string;
     assetId: number;
+    /** Longest-edge target size in studs. The Lua emit scales the mesh
+     * UNIFORMLY so the longest natural axis = preferredScale (preserves
+     * aspect ratio — banana stays banana-shaped, not crushed into a cube). */
     preferredScale: number;
+    /** Optional colour override (most callers leave undefined to keep
+     * the baked PBR texture). */
     colorRGB?: [number, number, number];
+    /** Inner Texture asset id, when the source .glb shipped a baked PBR
+     * texture. The Lua emit wires SurfaceAppearance.ColorMap to it so the
+     * MeshPart renders coloured. Without this, MeshPart shows white. */
+    textureAssetId?: number;
+    /** Natural bounding box of the mesh at upload time (studs). Lua uses
+     * this to compute uniform scale instead of forcing a cubic Size. */
+    naturalSize?: { x: number; y: number; z: number };
   }>;
   /** Lowercase object keyword extracted from title/prompt (banana, toilet,
    * duck, fridge, meteor, shark, moai, couch, pizza, crocodile, ...).
@@ -250,10 +260,14 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
   // is not trusted for this place"». MeshPart.MeshContent bypasses that
   // check entirely because Mesh AssetTypeId=4 is read-public.
   if (input.assetEntries && input.assetEntries.length > 0) {
+    const first = input.assetEntries[0]!;
     const ids = input.assetEntries.slice(0, 6).map((e) => e.assetId);
     const idList = ids.join(', ');
-    const preferredScale = input.assetEntries[0]?.preferredScale ?? 4;
-    const color = input.assetEntries[0]?.colorRGB;
+    const textureIds = input.assetEntries.slice(0, 6).map((e) => e.textureAssetId ?? 0);
+    const textureIdList = textureIds.join(', ');
+    const hasTextureLookup = textureIds.some((t) => t > 0);
+    const preferredScale = first.preferredScale ?? 6;
+    const color = first.colorRGB;
     // CRITICAL: do NOT set mp.Color when the mesh has a baked PBR texture.
     // Meshy bakes one into every .glb we generate. User round 8 repro: LLM
     // added `mp.Color = Color3.fromRGB(255,220,0)` and the textured banana
@@ -265,24 +279,47 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
     const luaTemplate = [
       '```lua',
       `local AssetService = game:GetService("AssetService")`,
-      `local MESH_IDS = { ${idList} }     -- ${input.objectKeyword ?? 'curated'} 3D meshes (inner Mesh asset ids)`,
-      `local TARGET_SCALE = ${preferredScale}     -- studs (cube edge along the longest axis)`,
+      `local MESH_IDS = { ${idList} }     -- ${input.objectKeyword ?? 'curated'} mesh asset ids (geometry)`,
+      hasTextureLookup
+        ? `local TEXTURE_IDS = { ${textureIdList} }   -- matching PBR texture ids (0 = no texture)`
+        : `-- no PBR textures shipped for this pack — relies on mesh's built-in colour`,
+      `local TARGET_LONGEST = ${preferredScale}     -- studs along the longest natural axis (preserves aspect ratio)`,
       ``,
-      `-- WHY AssetService:CreateMeshPartAsync (not Instance.new("MeshPart")+MeshId):`,
-      `-- modern Roblox security blocks Server scripts from writing MeshPart.MeshId`,
-      `-- AND MeshPart.MeshContent ("lacking capability NotAccessible"). AssetService`,
-      `-- :CreateMeshPartAsync is the sanctioned server-side API — yields ~1 frame`,
-      `-- per first call per id, then renders the loaded Mesh as a regular BasePart.`,
+      `-- IMPORTANT: AssetService:CreateMeshPartAsync is the only server-safe`,
+      `-- mesh loader on modern Roblox. Instance.new("MeshPart")+MeshId/MeshContent`,
+      `-- throws "lacking capability NotAccessible" from a plain Server script.`,
+      `-- SurfaceAppearance.ColorMap brings in the PBR colour — without it the`,
+      `-- MeshPart renders pure white (user repro round 8: bananas were ghost-`,
+      `-- white blobs because we hadn't wired the texture asset).`,
       `local function spawnEntity(pos)`,
-      `\tlocal id = MESH_IDS[math.random(1, #MESH_IDS)]`,
+      `\tlocal idx = math.random(1, #MESH_IDS)`,
+      `\tlocal meshId = MESH_IDS[idx]`,
       `\tlocal ok, mp = pcall(function()`,
-      `\t\treturn AssetService:CreateMeshPartAsync(Content.fromAssetId(id))`,
+      `\t\treturn AssetService:CreateMeshPartAsync(Content.fromAssetId(meshId))`,
       `\tend)`,
       `\tif not ok or not mp then`,
-      `\t\twarn("[DisasterSpawner] CreateMeshPartAsync failed for id " .. tostring(id) .. ": " .. tostring(mp))`,
+      `\t\twarn("[DisasterSpawner] CreateMeshPartAsync failed for mesh " .. tostring(meshId) .. ": " .. tostring(mp))`,
       `\t\treturn nil`,
       `\tend`,
-      `\tmp.Size = Vector3.new(TARGET_SCALE, TARGET_SCALE, TARGET_SCALE)`,
+      `\t-- Uniform scale by longest natural axis → preserves aspect ratio.`,
+      `\t-- Without this, mp.Size = Vector3.new(k,k,k) crushes the mesh into`,
+      `\t-- a cube (banana looks like a deflated balloon).`,
+      `\tlocal sz = mp.Size`,
+      `\tlocal longest = math.max(sz.X, sz.Y, sz.Z)`,
+      `\tif longest > 0 then`,
+      `\t\tlocal k = TARGET_LONGEST / longest`,
+      `\t\tmp.Size = Vector3.new(sz.X * k, sz.Y * k, sz.Z * k)`,
+      `\tend`,
+      hasTextureLookup
+        ? `\t-- Apply the baked PBR ColorMap so the mesh isn't white. Server can`
+          + `\n\t-- create SurfaceAppearance + set ColorMap without capability flags.`
+          + `\n\tlocal texId = TEXTURE_IDS[idx]`
+          + `\n\tif texId and texId > 0 then`
+          + `\n\t\tlocal sa = Instance.new("SurfaceAppearance")`
+          + `\n\t\tsa.ColorMap = "rbxassetid://" .. texId`
+          + `\n\t\tsa.Parent = mp`
+          + `\n\tend`
+        : `\t-- (No baked texture available for this pack — mesh shows its natural shading.)`,
       colorPostAssign,
       `\tmp.CFrame = CFrame.new(pos)`,
       `\tmp.Anchored = false`,

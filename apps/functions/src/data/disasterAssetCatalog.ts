@@ -40,16 +40,23 @@ export type DisasterAssetCategory =
 export interface DisasterAssetEntry {
   /** Display name shown in the Lua comment for debug. */
   name: string;
-  /** Numeric Roblox asset id. Use the numeric value, NOT the rbxassetid:// URI.
-   * The Lua emitter wraps it as `InsertService:LoadAsset(id)`. */
+  /** Numeric Roblox Mesh asset id (inner mesh extracted from the uploaded
+   * Model wrapper). Lua emitter passes it to
+   * `AssetService:CreateMeshPartAsync(Content.fromAssetId(id))`. */
   assetId: number;
-  /** Approximate cube edge in studs used to NORMALISE the spawned Model size
-   * — toolbox assets ship at wildly different scales. Lua emit computes the
-   * model's bounding box and uniformly scales to roughly this edge length. */
+  /** Longest-edge target size in studs. Lua emit scales the mesh uniformly
+   * so the longest natural axis = preferredScale, preserving aspect ratio. */
   preferredScale: number;
   /** Optional Color3 override (RGB 0-255). Most uses leave this undefined
-   * and trust the baked texture from the original Marketplace upload. */
+   * to keep the baked PBR texture. */
   colorRGB?: [number, number, number];
+  /** Inner Texture asset id, when the source .glb shipped a baked PBR
+   * texture. Wired into SurfaceAppearance.ColorMap at spawn time. */
+  textureAssetId?: number;
+  /** Natural bounding-box dimensions of the mesh in studs (XYZ). Used by
+   * the runtime to compute uniform scale instead of forcing a cubic Size
+   * (banana stays banana-shaped, not crushed into a cube). */
+  naturalSize?: { x: number; y: number; z: number };
   /** Optional notes (creator name, source URL, license caveat). Not shipped
    * into the prompt — for human curators reading this file. */
   notes?: string;
