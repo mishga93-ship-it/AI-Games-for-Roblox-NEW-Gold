@@ -17,6 +17,7 @@
 		3A0FB0D11CD12C9C3151336F /* DisasterSpawnerStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCEFEBD3C2196F9ABCB8A060 /* DisasterSpawnerStudioView.swift */; };
 		3C888E647FA964F3BE0A2562 /* OutfitStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACBFF49A8E26CF2719A9ADB8 /* OutfitStudio.swift */; };
 		4ED86AEF0D2E81D224BFF924 /* VoiceAuraResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC755C8DE56569944BFCEFE3 /* VoiceAuraResultView.swift */; };
+		4F6E5AB88586D8604E4A0F75 /* CursedUGCChatBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F25C7828DE33EF46CF87EC /* CursedUGCChatBridge.swift */; };
 		521B99252F712F4200A973DE /* R15_men.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B99232F712F4200A973DE /* R15_men.obj */; };
 		521B99292F712FBF00A973DE /* R15_men.scn in Resources */ = {isa = PBXBuildFile; fileRef = 521B99282F712FBF00A973DE /* R15_men.scn */; };
 		521B992F2F71317B00A973DE /* women.obj in Resources */ = {isa = PBXBuildFile; fileRef = 521B992E2F71317B00A973DE /* women.obj */; };
@@ -38,6 +39,7 @@
 		97C26B5DB939F5A66B123723 /* FittingRoomResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45354474DFD78C6A56B51118 /* FittingRoomResultView.swift */; };
 		97DB28E0992136B10E6B5069 /* DisasterSpawnerChatBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8A8F4D7D9B8748A4E6BE8D /* DisasterSpawnerChatBridge.swift */; };
 		9BC7A330021EE297E0BACB22 /* CursedUGCStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41679A209C10DF2EB04F4BBA /* CursedUGCStudio.swift */; };
+		A12B4F6E7D8A411DE389C004 /* RobloxAvatar3DViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12B4F6E7D8A511DE389D005 /* RobloxAvatar3DViewer.swift */; };
 		A4B9C3E12F5A07D3E8F1B604 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = D7E2F1A84C3B95E6F0A2D718 /* FirebaseMessaging */; };
 		A7F89BBBBC37FC75D4D9914B /* OutfitAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5AD6306DB7FFD6BEFF02E0 /* OutfitAPIClient.swift */; };
 		B0010001 /* AIGoldRobloxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010001 /* AIGoldRobloxApp.swift */; };
@@ -118,6 +120,7 @@
 		B001C5D1 /* BlockyFurniture3DSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001C5D1 /* BlockyFurniture3DSceneView.swift */; };
 		B4DAB3D069EFB868C0849B9E /* FittingRoomStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 283042B7E3E14134A9F3EB66 /* FittingRoomStudio.swift */; };
 		BF95241C2F2E64F49FBFF03C /* VoiceAuraChatBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 418CF3C5284500AF3C432534 /* VoiceAuraChatBridge.swift */; };
+		C12B4F6E7D8A411DE389E006 /* FittingRoomSlotAlternativesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12B4F6E7D8A511DE389F007 /* FittingRoomSlotAlternativesSheet.swift */; };
 		C28B612DB8768115234C5193 /* ViralLibraryAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E7061614FD3C5EFD739D4F6 /* ViralLibraryAPIClient.swift */; };
 		C5159EC0F50CD96C90195EB4 /* DisasterSpawnerResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B492635C29A79A9E7F35A327 /* DisasterSpawnerResultView.swift */; };
 		C534DCC720635EB9894F4049 /* ViralLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C07A36C72CBDB1AF1CF5A9E5 /* ViralLibraryView.swift */; };
@@ -130,8 +133,6 @@
 		E87D4EC327CB6543AEAD96B1 /* DisasterSpawnerStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DE6D3A0B3EA6507E9FCF166 /* DisasterSpawnerStudio.swift */; };
 		EAED78FB2F4108DE8F6ABA7A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 87F8C902F756A98F181E73B2 /* FirebaseCore */; };
 		F389C13B5A8B411DE389A002 /* FittingRoomChatBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D389C13B5A8B511DE389B003 /* FittingRoomChatBridge.swift */; };
-		A12B4F6E7D8A411DE389C004 /* RobloxAvatar3DViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12B4F6E7D8A511DE389D005 /* RobloxAvatar3DViewer.swift */; };
-		C12B4F6E7D8A411DE389E006 /* FittingRoomSlotAlternativesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12B4F6E7D8A511DE389F007 /* FittingRoomSlotAlternativesSheet.swift */; };
 		F71843F8C6293040F593F202 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 83543555B341FB276A0DAE54 /* FirebaseAuth */; };
 		FE926696FE2920B8C1C20637 /* VoiceAuraSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93CC9039BD389C89CD1F97C1 /* VoiceAuraSharePoster.swift */; };
 /* End PBXBuildFile section */
@@ -166,14 +167,15 @@
 		AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FakeLimitedRecipeCard.swift; sourceTree = "<group>"; };
 		AE5AD6306DB7FFD6BEFF02E0 /* OutfitAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitAPIClient.swift; sourceTree = "<group>"; };
 		AF4E508313D8D1C323688B4A /* OutfitSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitSharePoster.swift; sourceTree = "<group>"; };
+		B12B4F6E7D8A511DE389D005 /* RobloxAvatar3DViewer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RobloxAvatar3DViewer.swift; sourceTree = "<group>"; };
 		B492635C29A79A9E7F35A327 /* DisasterSpawnerResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisasterSpawnerResultView.swift; sourceTree = "<group>"; };
 		BDDDB9BCF94B86DE5B98C7DD /* GlowupStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlowupStudio.swift; sourceTree = "<group>"; };
 		C07A36C72CBDB1AF1CF5A9E5 /* ViralLibraryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ViralLibraryView.swift; sourceTree = "<group>"; };
 		C4760317000E26765FB9C912 /* VoiceAuraStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraStudio.swift; sourceTree = "<group>"; };
 		C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCStudioView.swift; sourceTree = "<group>"; };
-		D389C13B5A8B511DE389B003 /* FittingRoomChatBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomChatBridge.swift; sourceTree = "<group>"; };
-		B12B4F6E7D8A511DE389D005 /* RobloxAvatar3DViewer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RobloxAvatar3DViewer.swift; sourceTree = "<group>"; };
+		D0F25C7828DE33EF46CF87EC /* CursedUGCChatBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCChatBridge.swift; sourceTree = "<group>"; };
 		D12B4F6E7D8A511DE389F007 /* FittingRoomSlotAlternativesSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomSlotAlternativesSheet.swift; sourceTree = "<group>"; };
+		D389C13B5A8B511DE389B003 /* FittingRoomChatBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomChatBridge.swift; sourceTree = "<group>"; };
 		DC755C8DE56569944BFCEFE3 /* VoiceAuraResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceAuraResultView.swift; sourceTree = "<group>"; };
 		E0010000 /* AIGoldRoblox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIGoldRoblox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6DC05E63C99E35689732B6D /* CursedUGCResultView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CursedUGCResultView.swift; sourceTree = "<group>"; };
@@ -287,6 +289,7 @@
 				C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */,
 				E6DC05E63C99E35689732B6D /* CursedUGCResultView.swift */,
 				3F57880F376C5711A1E82062 /* CursedUGCSharePoster.swift */,
+				D0F25C7828DE33EF46CF87EC /* CursedUGCChatBridge.swift */,
 			);
 			name = CursedUGC;
 			path = CursedUGC;
@@ -948,6 +951,7 @@
 				C28B612DB8768115234C5193 /* ViralLibraryAPIClient.swift in Sources */,
 				C534DCC720635EB9894F4049 /* ViralLibraryView.swift in Sources */,
 				97DB28E0992136B10E6B5069 /* DisasterSpawnerChatBridge.swift in Sources */,
+				4F6E5AB88586D8604E4A0F75 /* CursedUGCChatBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
