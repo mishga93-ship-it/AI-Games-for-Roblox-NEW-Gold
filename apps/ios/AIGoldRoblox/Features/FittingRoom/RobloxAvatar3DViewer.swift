@@ -117,22 +117,25 @@ struct RobloxAvatar3DViewer: View {
         attachmentTask?.cancel()
         guard case let .ready(scene, urls) = loadState else { return }
 
-        // Remove any previously attached accessory nodes (named with the
-        // "AccessoryAttachment-<assetId>" prefix). Then re-attach desired
-        // items. This is simple and idempotent — fine for ~10 items per
-        // outfit; if Phase C needs incremental diffing we can revisit.
-        for child in scene.rootNode.childNodes
+        // Accessories live INSIDE the AvatarRoot node so the idle-bob
+        // animation translates them along with the avatar (otherwise
+        // hat/hair would visibly detach as the body bobs up and down).
+        let avatarRoot = scene.rootNode.childNode(withName: "AvatarRoot", recursively: false)
+            ?? scene.rootNode
+
+        // Remove previously attached accessory nodes.
+        for child in avatarRoot.childNodes
             where child.name?.hasPrefix("AccessoryAttachment-") == true {
                 child.removeFromParentNode()
         }
         guard !desired.isEmpty else { return }
 
         attachmentTask = Task.detached(priority: .userInitiated) { [urls] in
-            await Self.attachAll(desired: desired, in: scene, avatarAabb: urls.aabb)
+            await Self.attachAll(desired: desired, into: avatarRoot, avatarAabb: urls.aabb)
         }
     }
 
-    private static func attachAll(desired: [Attachment], in scene: SCNScene, avatarAabb: Avatar3DAABB) async {
+    private static func attachAll(desired: [Attachment], into avatarRoot: SCNNode, avatarAabb: Avatar3DAABB) async {
         // Sequential attach so the user sees items pop in one-by-one
         // (parallel would all snap in at once and feel less alive).
         for att in desired {
@@ -144,7 +147,7 @@ struct RobloxAvatar3DViewer: View {
                     if !Task.isCancelled {
                         // Fly-in animation: start scale 0.01, ease to 1.0.
                         node.scale = SCNVector3(0.01, 0.01, 0.01)
-                        scene.rootNode.addChildNode(node)
+                        avatarRoot.addChildNode(node)
                         let bounce = SCNAction.sequence([
                             SCNAction.scale(to: 1.05, duration: 0.28),
                             SCNAction.scale(to: 1.0, duration: 0.12),
@@ -210,54 +213,115 @@ struct RobloxAvatar3DViewer: View {
         }
         let assetScene = try source.scene(options: nil)
 
-        // Roblox asset OBJ uses arbitrary world coords (whatever the
-        // standalone preview render decided). Re-center on its OWN aabb
-        // so we can place it deliberately on the avatar afterward.
+        // Phase C3 — translate the asset so its slot-specific ANCHOR POINT
+        // (e.g., bbox bottom for hats, bbox center for shirts) aligns with
+        // the avatar's slot-specific ATTACHMENT POINT (e.g., top of head
+        // for hats). This is the closest we can get to proper positioning
+        // without parsing the asset's RBXM attachment metadata.
+        //
+        // R-15 anatomical landmarks (in the avatar's centered coord system,
+        // expressed as fractions of the avatar's total height):
+        //   • feet bottom:     Y = -h * 0.50
+        //   • lower leg:       Y = -h * 0.35
+        //   • hip:             Y = -h * 0.10
+        //   • torso center:    Y =  0
+        //   • upper chest:     Y =  h * 0.10
+        //   • shoulder line:   Y =  h * 0.20
+        //   • neck:            Y =  h * 0.28
+        //   • head center:     Y =  h * 0.36
+        //   • head top:        Y =  h * 0.45
+        //   • head front (Z):  Z =  h * 0.10  (positive = toward camera)
         let aabb = urls.aabb
-        let center = SCNVector3(
-            (aabb.min.x + aabb.max.x) / 2,
-            (aabb.min.y + aabb.max.y) / 2,
-            (aabb.min.z + aabb.max.z) / 2
-        )
+        let placement = slotPlacement(slot: slot, avatarHeight: avatarAabb.max.y - avatarAabb.min.y)
+        let anchor = anchorPointOnAsset(aabb: aabb, alignment: placement.alignment)
         let wrapper = SCNNode()
         wrapper.name = "AccessoryAttachment-\(assetId)"
         for child in assetScene.rootNode.childNodes {
+            // Move the asset so its anchor point ends up at (0,0,0); then
+            // the wrapper's own .position deposits it at the avatar's
+            // attachment point. Two-step keeps the math obvious.
             child.position = SCNVector3(
-                child.position.x - center.x,
-                child.position.y - center.y,
-                child.position.z - center.z
+                child.position.x - anchor.x,
+                child.position.y - anchor.y,
+                child.position.z - anchor.z
             )
             wrapper.addChildNode(child)
         }
-
-        // Position on the avatar — hardcoded slot offsets (Y in the
-        // avatar-centered coord system). The avatar's own AABB tells us
-        // approximate head/torso heights so accessories scale roughly
-        // right across different avatars.
-        let avatarHeight = avatarAabb.max.y - avatarAabb.min.y
-        let yOffset = slotYOffset(slot: slot, avatarHeight: avatarHeight)
-        wrapper.position = SCNVector3(0, yOffset, 0)
-
+        wrapper.position = SCNVector3(placement.x, placement.y, placement.z)
         return wrapper
     }
 
-    /// Where on the avatar's vertical axis (in centered coords) to drop
-    /// the accessory. Empirical values tuned for R-15 proportions.
-    private static func slotYOffset(slot: String, avatarHeight: Double) -> Float {
+    /// How a slot anchors its asset to the avatar — both the avatar
+    /// attachment point (where on the body the item goes) and the asset
+    /// alignment (which corner/face of the asset's bbox is the reference).
+    private struct SlotPlacement {
+        let x: Float
+        let y: Float
+        let z: Float
+        let alignment: AssetAlignment
+    }
+
+    private enum AssetAlignment {
+        case center           // bbox center → anchor (shirt, neck, generic)
+        case bottom           // bbox bottom → anchor (hat, hair, shoes — sits ON the part)
+        case top              // bbox top → anchor (rarely needed)
+        case front            // bbox front face (min Z) → anchor (face, eyewear)
+        case back             // bbox back face (max Z) → anchor (back accessory)
+    }
+
+    /// Empirical placements tuned for R-15 anatomy. Y is the dominant
+    /// axis; X/Z used for sideways/forward accessories. Bottom-alignment
+    /// for hats means "the bottom of the hat sits on the top of the head"
+    /// rather than the hat's center floating above.
+    private static func slotPlacement(slot: String, avatarHeight: Double) -> SlotPlacement {
         let h = Float(avatarHeight)
         switch slot.lowercased() {
-        case "hair":              return h * 0.42   // top of head
-        case "face":              return h * 0.36   // face area
-        case "hat", "head":       return h * 0.45   // hat sits ON the head
-        case "neck":              return h * 0.30
-        case "shoulder":          return h * 0.28
-        case "shirt", "jacket":   return h * 0.15   // torso center
-        case "back":              return h * 0.18
-        case "pants":             return -h * 0.10  // hip / legs
-        case "shoes":             return -h * 0.38  // feet
-        case "accessory":         return h * 0.20   // generic torso accessory
-        case "aura":              return 0          // surrounds whole avatar
-        default:                  return h * 0.20
+        case "hat", "head":
+            return .init(x: 0, y: h * 0.45, z: 0, alignment: .bottom)
+        case "hair":
+            // Hair sits ON the head crown — bottom-aligned slightly above
+            // the head center so the hair "cap" wraps the head top.
+            return .init(x: 0, y: h * 0.40, z: 0, alignment: .bottom)
+        case "face":
+            // Face items (glasses, masks) anchor to the front of the head.
+            return .init(x: 0, y: h * 0.34, z: h * 0.08, alignment: .front)
+        case "neck":
+            return .init(x: 0, y: h * 0.26, z: 0, alignment: .center)
+        case "shoulder":
+            return .init(x: 0, y: h * 0.22, z: 0, alignment: .center)
+        case "shirt", "jacket":
+            return .init(x: 0, y: h * 0.08, z: 0, alignment: .center)
+        case "back":
+            // Backpacks / wings anchor to the BACK face of the asset.
+            return .init(x: 0, y: h * 0.15, z: -h * 0.08, alignment: .back)
+        case "pants":
+            return .init(x: 0, y: -h * 0.15, z: 0, alignment: .center)
+        case "shoes":
+            // Shoes sit on the floor — bottom-aligned at feet.
+            return .init(x: 0, y: -h * 0.48, z: 0, alignment: .bottom)
+        case "accessory":
+            // Generic accessory — most are waist/torso pieces.
+            return .init(x: 0, y: h * 0.05, z: 0, alignment: .center)
+        case "aura":
+            return .init(x: 0, y: 0, z: 0, alignment: .center)
+        default:
+            return .init(x: 0, y: h * 0.10, z: 0, alignment: .center)
+        }
+    }
+
+    /// Returns the point on the asset's bbox that should align with the
+    /// avatar's attachment. For .center it's the bbox centroid; for
+    /// .bottom it's (centerX, minY, centerZ); etc.
+    private static func anchorPointOnAsset(aabb: Avatar3DAABB, alignment: AssetAlignment) -> SCNVector3 {
+        let cx = Float((aabb.min.x + aabb.max.x) / 2)
+        let cy = Float((aabb.min.y + aabb.max.y) / 2)
+        let cz = Float((aabb.min.z + aabb.max.z) / 2)
+        switch alignment {
+        case .center: return SCNVector3(cx, cy, cz)
+        case .bottom: return SCNVector3(cx, Float(aabb.min.y), cz)
+        case .top:    return SCNVector3(cx, Float(aabb.max.y), cz)
+        case .front:  return SCNVector3(cx, cy, Float(aabb.min.z))
+        case .back:   return SCNVector3(cx, cy, Float(aabb.max.z))
         }
     }
 
@@ -312,6 +376,18 @@ struct RobloxAvatar3DViewer: View {
             )
             rootContainer.addChildNode(child)
         }
+
+        // Phase C3-anim — idle "breathing" bob so the avatar reads as
+        // alive even before the user touches it. Subtle: 0.1 stud over
+        // 1.6s sine, repeated forever. Applies to rootContainer (not the
+        // SCNScene root) so accessory wrappers attached as siblings stay
+        // grounded — they're at separate Y offsets, not riding the bob.
+        let bobUp = SCNAction.moveBy(x: 0, y: 0.1, z: 0, duration: 1.6)
+        bobUp.timingMode = .easeInEaseOut
+        let bobDown = SCNAction.moveBy(x: 0, y: -0.1, z: 0, duration: 1.6)
+        bobDown.timingMode = .easeInEaseOut
+        rootContainer.runAction(SCNAction.repeatForever(SCNAction.sequence([bobUp, bobDown])))
+
         scene.rootNode.addChildNode(rootContainer)
 
         // 3-point lighting.
