@@ -116,6 +116,21 @@ export interface DisasterPromptInput {
    * Approved" objects (ducks/toilets/fridges) that don't match the concept
    * art or the shareable title the user sees in the UI. */
   title?: string;
+  /** Optional curated MeshPart asset bundle resolved from the title/prompt
+   * by disasterAssetRouter. When non-empty, the Lua prompt instructs the
+   * LLM to spawn MeshParts with these MeshIds instead of branded primitives.
+   * Shape: { name, meshAssetId, preferredScale, colorRGB?, material? }. */
+  assetEntries?: Array<{
+    name: string;
+    meshAssetId: number;
+    preferredScale: number;
+    colorRGB?: [number, number, number];
+    material?: string;
+  }>;
+  /** Lowercase object keyword extracted from title/prompt (banana, toilet,
+   * duck, fridge, meteor, shark, moai, couch, pizza, crocodile, ...).
+   * Drives branded-primitive composition when assetEntries is empty. */
+  objectKeyword?: string;
 }
 
 export function buildDisasterImagePrompt(input: DisasterPromptInput, variation?: 'balanced' | 'extreme' | 'cursed'): string {
@@ -165,19 +180,93 @@ export function buildDisasterLuaPrompt(input: DisasterPromptInput): string {
     '',
     'STRICT RULES (the script will be deployed by a beginner — must be safe):',
     '1) Place the Script in ServerScriptService. Single file.',
-    '2) Use ONLY: workspace, Instance.new (Part / MeshPart / Folder / PointLight / ParticleEmitter / Trail), CFrame, Vector3, Color3.fromRGB, BrickColor, BasePart.Touched, task.wait, task.spawn, table, math.random, Workspace:WaitForChild, game:GetService("Players"), Debris service for cleanup, RunService for tick.',
+    '2) Use ONLY: workspace, Instance.new (Part / MeshPart / WedgePart / CornerWedgePart / Folder / Model / Weld / WeldConstraint / PointLight / ParticleEmitter / Trail), CFrame, Vector3, Color3.fromRGB, BrickColor, BasePart.Touched, task.wait, task.spawn, table, math.random, Workspace:WaitForChild, game:GetService("Players"), Debris service for cleanup, RunService for tick.',
     '3) BANNED — never use: HttpService, MarketplaceService, MessagingService, DataStoreService, RemoteEvent, RemoteFunction, BindableEvent (for cross-script comm), loadstring, require by assetId, game:HttpGet, os.execute, exploit hooks.',
     '4) POPULATION CAP — track spawned instances in a local table. BEFORE spawning a new entity, if `#spawned >= 30`, DESTROY the oldest one. Hard cap MAX_ALIVE = 30.',
-    '5) AUTO-CLEANUP — every spawned entity must have a Debris:AddItem(entity, lifetime) call with lifetime ≤ 90 seconds.',
+    '5) AUTO-CLEANUP — every spawned entity must have a Debris:AddItem(entity, lifetime) call with lifetime ≤ 90 seconds. For multi-Part entities, wrap them in a Model and call Debris:AddItem(model, lifetime) — that destroys all child Parts too.',
     '6) BOUNDED LOOP — main loop is `while true do … task.wait(intervalSeconds) end`. intervalSeconds must be between 5 and 20 (NOT 30-60 — players quit before they see anything). No `while true do … end` without a wait. No spawning more than 10 entities per tick.',
     '7) FIRST SPAWN IS IMMEDIATE — call the spawn function(s) ONCE before the main loop starts, AND/OR put the `task.wait` at the END of the loop body so iteration 1 spawns at t≈0. Players must see something within 3 seconds of pressing Play, otherwise it feels broken.',
     '8) SPAWN NEAR PLAYERS — for the spawn anchor, iterate `game:GetService("Players"):GetPlayers()` and use a random player\'s `Character.HumanoidRootPart.Position + Vector3.new(rx, 80, rz)` (rx/rz random in [-40,40]). If no players are connected, fall back to `Vector3.new(math.random(-50,50), 80, math.random(-50,50))`. Spawning at a fixed (0,100,0) misses players standing on the far side of the map.',
     '9) DIAGNOSTIC PRINTS — print `"[DisasterSpawner] running — first event in <N>s"` at script top, and `"[DisasterSpawner] spawning <type> @ <pos>"` on each spawn. The user reads the Output panel to confirm it loaded.',
-    '10) Entities are simple Roblox Parts (Instance.new("Part")) — NO game.ServerStorage references (asset may not exist for the user). Style them via Size + Color3 + BrickColor + Material + Shape. Optionally attach a ParticleEmitter for cosmetic flair.',
-    '11) Add 3-5 inline comments in English explaining the disaster + spawn logic + cleanup (beginner-friendly).',
-    '12) Keep total script ≤ 120 lines.',
-    '13) NO outside imports.',
+    ...buildEntityShapeGuidance(input),
+    '12) Add 3-5 inline comments in English explaining the disaster + spawn logic + cleanup (beginner-friendly).',
+    '13) Keep total script ≤ 180 lines (multi-Part shapes need a bit more room).',
+    '14) NO outside imports.',
     '',
     'Output ONLY the ```lua code block. No prose.',
   ].join('\n');
+}
+
+// ─── Branded-entity shape guidance ───────────────────────────────
+//
+// Rules 10-11 of the Lua prompt — appended dynamically so the LLM gets
+// concrete, on-topic geometry recipes for the named object instead of the
+// previous "Entities are simple Roblox Parts" instruction (which produced
+// yellow Balls regardless of what the title promised).
+//
+// Decision tree:
+//   1. assetEntries non-empty  →  emit MeshPart-with-MeshId guidance
+//   2. objectKeyword known     →  emit branded multi-Part recipe for it
+//   3. otherwise              →  generic multi-Part recipe (still better
+//                                than a monolithic Ball)
+
+const BRANDED_SHAPES: Record<string, string> = {
+  banana:
+    'Banana = Model of 3 Parts welded together: (1) main body — yellow (255,224,40) Cylinder, Size (5,1.5,1.5), tilted CFrame.Angles(0, 0, math.rad(20)) so it curves; (2) tip stem — dark green (50,90,30) Block, Size (0.6,0.6,0.6), welded at one end; (3) brown spot — small (90,55,30) Block Size (0.4,0.4,0.4) randomly placed on body for texture. Material "Plastic".',
+  toilet:
+    'Toilet = Model of 4 Parts: (1) bowl — white SmoothPlastic Cylinder Size (4,2.5,4); (2) tank — white Block Size (3,3,1.5) welded behind+up; (3) seat — black SmoothPlastic Cylinder Size (4.2,0.4,4.2) welded on top of bowl; (4) flush lever — silver Metal Cylinder Size (0.4,0.4,0.4) welded to tank.',
+  duck:
+    'Duck = Model of 5 Parts: (1) body — yellow (255,220,0) Ball Size (3,2.5,4); (2) head — yellow Ball Size (1.8,1.8,1.8) welded forward+up; (3) beak — orange (255,140,0) Wedge Size (1,0.6,1.2) welded to head front; (4-5) two black (10,10,10) tiny Balls Size (0.3,0.3,0.3) welded to head as eyes. Material "Plastic".',
+  fridge:
+    'Fridge = Model of 4 Parts: (1) body — white (230,230,230) Metal Block Size (3.5,7,3); (2) door — white Block Size (3.5,4.5,0.3) welded on front; (3) handle — silver Metal Cylinder Size (0.3,0.3,1.5) welded to door; (4) bottom freezer line — grey Metal Block Size (3.5,0.15,3) welded across door at 60% height.',
+  meteor:
+    'Meteor = Model of 1 rough Ball + glow: (1) body — dark grey (60,60,60) Slate Ball Size (4,4,4) with Material "Slate" or "Rock"; (2) attached ParticleEmitter with bright orange fire colour, Rate 100, Lifetime NumberRange.new(0.4, 0.9), Speed NumberRange.new(8,15); (3) attached PointLight orange, Brightness 2, Range 12.',
+  shark:
+    'Shark = Model of 4 Parts: (1) body — grey (90,110,130) Block Size (1.8,1.6,6) (long along Z); (2) dorsal fin — same grey Wedge Size (0.4,1.5,1.2) welded on top; (3) tail fin — Wedge Size (0.5,2,1) welded at back; (4) tiny black (10,10,10) Ball Size (0.3,0.3,0.3) welded as eye on side.',
+  moai:
+    'Moai (Easter Island head) = Model of 3 Parts: (1) head — dark stone (90,90,90) Slate Block Size (3,5,2.5); (2) protruding brow ridge — same stone Block Size (3.1,0.6,2.6) welded across upper third; (3) heavy chin — same stone Block Size (3.1,1.2,2.6) welded on lower third sticking forward. Material "Slate", roughness via BrickColor.',
+  couch:
+    'Couch = Model of 5 Parts: (1) base — brown (90,55,30) SmoothPlastic Block Size (5,1.5,2.5); (2) seat cushion — beige (200,170,130) Block Size (4.8,0.6,2.4) welded on top; (3) backrest — brown Block Size (5,2.5,0.5) welded standing up at back; (4-5) two armrests — brown Block Size (0.5,1.8,2.5) welded at each side.',
+  pizza:
+    'Pizza slice = Model of 3 Parts: (1) crust — Wedge Size (0.4,4,3) tan (240,200,140) SmoothPlastic; (2) cheese top — yellow (250,210,90) Block Size (0.3,3.6,2.6) welded on top of wedge; (3-5) pepperoni spots — three small red (200,40,40) Cylinders Size (0.2,0.6,0.6) welded on cheese.',
+  crocodile:
+    'Crocodile = Model of 4 Parts: (1) body — green (60,130,60) SmoothPlastic Block Size (1.5,1.2,5); (2) head — green Block Size (1.4,1,2) welded forward; (3) tail — green Wedge Size (1.4,1,2) welded back; (4) jaw line — pink (200,80,80) thin Block Size (1.3,0.15,1.8) welded as mouth seam. Optional small white Block teeth (3-4 in a row, Size (0.15,0.3,0.15)).',
+};
+
+const GENERIC_MULTIPART = [
+  'Compose each entity from 3-5 welded Parts so it reads as a recognisable object, not a single sphere/cube. Use WedgePart for slopes, Cylinder for rounded body sections, Block for boxy sections. Wrap children in a Model.',
+  'Colour ALL Parts with the same theme palette so they read as one entity (e.g. two yellows + a black accent, NOT random rainbow Parts).',
+  'Material variety helps: combine "Plastic" body + "SmoothPlastic" highlight + "Neon" glow accent.',
+];
+
+function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
+  // Path 1 — curated asset bundle (preferred when verified meshes exist).
+  if (input.assetEntries && input.assetEntries.length > 0) {
+    const list = input.assetEntries.slice(0, 6).map((e, i) => {
+      const colour = e.colorRGB ? `, Color3.fromRGB(${e.colorRGB.join(',')})` : '';
+      const mat = e.material ? `, Material "${e.material}"` : '';
+      return `   ${i + 1}. ${e.name}: MeshPart with MeshId = "rbxassetid://${e.meshAssetId}", Size ~${e.preferredScale}${colour}${mat}`;
+    }).join('\n');
+    return [
+      `10) USE THESE CURATED ROBLOX MESHES (verified-safe assets, prefer them over hand-built primitives) — pick one at random per spawn:`,
+      list,
+      `   Spawn code: \`local mp = Instance.new("MeshPart") ; mp.MeshId = "rbxassetid://<id>" ; mp.Size = Vector3.new(s,s,s) ; mp.Anchored = false ; mp.Parent = workspace\`. Optional Color3 override only if listed above.`,
+      `11) Drop ParticleEmitter / PointLight as cosmetic flair if it fits the theme (fire trail for meteor, water mist for toilet).`,
+    ];
+  }
+  // Path 2 — branded primitive recipe for a known keyword.
+  const kw = (input.objectKeyword ?? '').toLowerCase();
+  if (kw && BRANDED_SHAPES[kw]) {
+    return [
+      `10) BUILD A RECOGNISABLE "${kw.toUpperCase()}" SHAPE (not a generic ball/cube). RECIPE:`,
+      `    ${BRANDED_SHAPES[kw]}`,
+      `    Wrap all child Parts in a `+'`Model`'+`, weld them with `+'`WeldConstraint`'+` (PartA = body, PartB = each child), set Model.PrimaryPart = body so the whole rig falls together. Spawn anchor sets body.Position, children inherit via welds.`,
+      `11) Use ParticleEmitter or PointLight as cosmetic flair if it fits (fire trail for meteor, splash for toilet). One emitter max per entity.`,
+    ];
+  }
+  // Path 3 — generic multi-Part composition (still better than a monolith).
+  return [
+    `10) ${GENERIC_MULTIPART[0]}`,
+    `11) ${GENERIC_MULTIPART[1]} ${GENERIC_MULTIPART[2]}`,
+  ];
 }

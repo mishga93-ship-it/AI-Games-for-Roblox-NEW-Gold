@@ -6,6 +6,16 @@ import { logger } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
 import { generatePreviewTexture, runChatProvider } from './providers.js';
 import { wrapGenericScriptAsRbxmx } from './uiTemplates.js';
+// Session 385 round 7 — branded entity shapes / curated mesh assets.
+// disasterAssetCatalog routes keyword (banana, toilet, duck, ...) → asset
+// bundle. When the bundle has verified mesh ids, we prefer MeshPart spawns;
+// when it doesn't, the Lua prompt falls back to a recipe-driven branded
+// primitive composition (yellow cylinder + green stem instead of yellow ball).
+import {
+  findDisasterBundle,
+  bundleHasAssets,
+  type DisasterAssetEntry,
+} from './data/disasterAssetCatalog.js';
 import {
   buildDisasterImagePrompt,
   buildDisasterLuaPrompt,
@@ -199,7 +209,24 @@ async function generateLuaScript(input: {
   frequency: DisasterFrequency;
   title?: string;
 }): Promise<{ lua: string; usedFallback: boolean }> {
-  const prompt = buildDisasterLuaPrompt(input);
+  // Session 385 round 7 — route prompt+title through the curated asset bundle.
+  // If we match a known keyword (banana / toilet / duck / fridge / meteor /
+  // shark / moai / couch / pizza / crocodile), inject either MeshPart asset
+  // ids (when whitelist has entries) or a branded-primitive recipe into the
+  // Lua prompt so the spawned entity reads as the named object instead of a
+  // generic yellow Ball. Empty whitelist + no recipe → generic multi-Part
+  // composition guidance.
+  const lookupText = `${input.title ?? ''} ${input.userPrompt}`;
+  const bundle = findDisasterBundle(lookupText);
+  const assetEntries: DisasterAssetEntry[] | undefined = bundleHasAssets(bundle) ? bundle!.entries : undefined;
+  const objectKeyword = bundle?.keyword;
+  if (objectKeyword || assetEntries) {
+    logger.info('[disasterGenerator] asset router matched', {
+      objectKeyword: objectKeyword ?? null,
+      curatedAssetCount: assetEntries?.length ?? 0,
+    });
+  }
+  const prompt = buildDisasterLuaPrompt({ ...input, assetEntries, objectKeyword });
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const r = await runChatProvider('anthropic', prompt, undefined, { timeoutMs: 30_000 });
