@@ -207,9 +207,14 @@ export interface CursedUGCResult extends CursedUGCMetadata {
 
 // Session 390 — Meshy v6 text-to-3D wrapper for cursed UGC. Returns undefined
 // on any failure / timeout so the main flow keeps going on 2D images alone.
-// Timeout is generous (75s) since Meshy v6 takes 30-60s typical; cursed UGC
-// chat flow already runs through viralChatDispatch which itself caps polling
-// at 75s, so this stays under the chat-job wall-clock budget.
+//
+// Round 3 (session 390 round 3) — bumped timeout 75s → 180s after prod logs
+// showed real Meshy completions for cursed UGC items run ~90-130s wall-clock
+// (28+ polling attempts × 5s = ~140s). At 75s the timeout fired BEFORE
+// Meshy actually finished, the generator silently fell back to 2D-only, and
+// the user saw flat flux concepts despite Meshy having succeeded ~50-60s
+// later in the background (wasted spend). 180s comfortably covers the long
+// tail without blowing through Cloud Run's 300s function timeout.
 async function meshyOnceFor(args: {
   prompt: string;
   contentSubcategory?: string;
@@ -224,11 +229,11 @@ async function meshyOnceFor(args: {
       title: 'Cursed UGC Item',
     });
     const timeoutPromise = new Promise<undefined>((resolve) =>
-      setTimeout(() => resolve(undefined), 75_000),
+      setTimeout(() => resolve(undefined), 180_000),
     );
     const winner = await Promise.race([meshyPromise, timeoutPromise]);
     if (!winner) {
-      logger.warn('[cursedUgcGenerator] Meshy timed out at 75s — falling back to 2D-only result');
+      logger.warn('[cursedUgcGenerator] Meshy timed out at 180s — falling back to 2D-only result');
       return undefined;
     }
     const raw = winner.raw as Record<string, unknown> | undefined;
