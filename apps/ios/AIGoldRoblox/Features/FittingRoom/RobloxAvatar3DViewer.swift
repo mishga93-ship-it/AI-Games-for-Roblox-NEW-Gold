@@ -347,41 +347,52 @@ struct RobloxAvatar3DViewer: View {
     private static func slotPlacement(slot: String, avatarHeight: Double) -> SlotPlacement {
         let h = Float(avatarHeight)
         switch slot.lowercased() {
+        // After the recursive-AABB fix, the avatar's centered Y axis runs
+        // from -h/2 (feet) to +h/2 (head top). Approximate R-15 anatomy:
+        //   feet bottom    = -h/2     (~-3 stud for h≈6)
+        //   knees          = -h*0.35
+        //   hip            = -h*0.17
+        //   torso center   =  0
+        //   chest          =  h*0.10
+        //   shoulders      =  h*0.30
+        //   neck           =  h*0.38
+        //   head bottom    =  h*0.42
+        //   head center    =  h*0.46
+        //   head top       =  h*0.50  (the actual AABB max)
+        //   head front (Z) =  h*0.08
+        switch slot.lowercased() {
         case "hat", "head":
-            // Hat brim sits AT head top; the avatar's centered head top is
-            // approximately Y = h*0.45 (half the avatar height). Bottom-
-            // aligned so the hat doesn't float above the head.
-            return .init(x: 0, y: h * 0.42, z: 0, alignment: .bottom)
+            // Hat brim sits AT head top, hat extends UP from there.
+            return .init(x: 0, y: h * 0.50, z: 0, alignment: .bottom)
         case "hair":
-            // Hair cap wraps the head crown — bottom slightly INSIDE the
-            // head so the hair sits naturally on the head, not floating.
-            // User reported h*0.40 was too high (gap above head); h*0.36
-            // lowers the bottom into the head/neck region.
-            return .init(x: 0, y: h * 0.36, z: 0, alignment: .bottom)
+            // Hair center aligns just below head top so the hair cap
+            // wraps the head (extends ~half its height above & below).
+            return .init(x: 0, y: h * 0.46, z: 0, alignment: .center)
         case "face":
-            // Face items (glasses, masks) anchor to the front of the head.
-            return .init(x: 0, y: h * 0.30, z: h * 0.08, alignment: .front)
+            // Face items (glasses, masks) — front face at head front.
+            return .init(x: 0, y: h * 0.45, z: h * 0.08, alignment: .front)
         case "neck":
-            return .init(x: 0, y: h * 0.26, z: 0, alignment: .center)
+            // Actual neck (between head and shoulders).
+            return .init(x: 0, y: h * 0.38, z: 0, alignment: .center)
         case "shoulder":
-            return .init(x: 0, y: h * 0.22, z: 0, alignment: .center)
+            return .init(x: 0, y: h * 0.30, z: 0, alignment: .center)
         case "shirt", "jacket":
-            return .init(x: 0, y: h * 0.08, z: 0, alignment: .center)
+            return .init(x: 0, y: h * 0.10, z: 0, alignment: .center)
         case "back":
-            // Backpacks / wings anchor to the BACK face of the asset.
-            return .init(x: 0, y: h * 0.15, z: -h * 0.08, alignment: .back)
+            // Backpacks / wings: anchor BACK face of asset to upper back.
+            return .init(x: 0, y: h * 0.18, z: -h * 0.08, alignment: .back)
         case "pants":
-            return .init(x: 0, y: -h * 0.15, z: 0, alignment: .center)
+            return .init(x: 0, y: -h * 0.18, z: 0, alignment: .center)
         case "shoes":
-            // Shoes sit on the floor — bottom-aligned at feet.
+            // Shoes sit on the floor.
             return .init(x: 0, y: -h * 0.48, z: 0, alignment: .bottom)
         case "accessory":
             // Generic accessory — most are waist/torso pieces.
-            return .init(x: 0, y: h * 0.05, z: 0, alignment: .center)
+            return .init(x: 0, y: h * 0.10, z: 0, alignment: .center)
         case "aura":
             return .init(x: 0, y: 0, z: 0, alignment: .center)
         default:
-            return .init(x: 0, y: h * 0.10, z: 0, alignment: .center)
+            return .init(x: 0, y: h * 0.15, z: 0, alignment: .center)
         }
     }
 
@@ -534,19 +545,17 @@ struct RobloxAvatar3DViewer: View {
         }
 
         // Compute AABB from the loaded scene so framing / accessory slot
-        // offsets match the remote-OBJ pipeline. Walk geometry once.
-        var minV = SCNVector3(Float.greatestFiniteMagnitude,
-                              Float.greatestFiniteMagnitude,
-                              Float.greatestFiniteMagnitude)
-        var maxV = SCNVector3(-Float.greatestFiniteMagnitude,
-                              -Float.greatestFiniteMagnitude,
-                              -Float.greatestFiniteMagnitude)
-        let (bMin, bMax) = scene.rootNode.boundingBox
-        // SCNNode.boundingBox returns local AABB; rootNode wraps the
-        // whole hierarchy. For most bundled SCN files this is enough.
-        if bMin.x.isFinite && bMax.x.isFinite {
-            minV = bMin; maxV = bMax
-        }
+        // offsets match the remote-OBJ pipeline. CRITICAL: SCNNode's own
+        // .boundingBox only covers that node's geometry — for a bundled
+        // SCN where the rootNode has NO geometry of its own and the
+        // mesh lives in child body-part nodes, the rootNode bbox is
+        // (0,0,0)–(0,0,0). That zero-bbox made all slot offsets zero too,
+        // so hair / hat / accessory all stacked at the avatar origin
+        // (hair floated near the mannequin's centroid, hat ended up on
+        // the throat). User feedback 2026-05-28 «прическа летает, шапка
+        // на горле». Fix: walk every descendant with geometry, union
+        // their world-space bboxes.
+        let (minV, maxV) = recursiveWorldBoundingBox(of: scene.rootNode)
         let aabb = Avatar3DAABB(
             min: Avatar3DVec3(x: Double(minV.x), y: Double(minV.y), z: Double(minV.z)),
             max: Avatar3DVec3(x: Double(maxV.x), y: Double(maxV.y), z: Double(maxV.z))
@@ -605,6 +614,58 @@ struct RobloxAvatar3DViewer: View {
             aabb: aabb
         )
         return (scene, urls)
+    }
+
+    /// Recursive world-space AABB. SCNNode.boundingBox only covers the
+    /// node's own geometry, not descendants — so for a bundled SCN where
+    /// each R-15 body part is a separate child node, the rootNode's own
+    /// bbox is empty. We walk every descendant with geometry, transform
+    /// the local bbox corners into world space by multiplying through
+    /// each ancestor's transform, and union the results.
+    private static func recursiveWorldBoundingBox(of root: SCNNode) -> (SCNVector3, SCNVector3) {
+        var minP = SCNVector3(Float.greatestFiniteMagnitude,
+                              Float.greatestFiniteMagnitude,
+                              Float.greatestFiniteMagnitude)
+        var maxP = SCNVector3(-Float.greatestFiniteMagnitude,
+                              -Float.greatestFiniteMagnitude,
+                              -Float.greatestFiniteMagnitude)
+
+        func walk(_ node: SCNNode, accumulatedTransform: SCNMatrix4) {
+            let nodeTransform = SCNMatrix4Mult(node.transform, accumulatedTransform)
+            if let geom = node.geometry {
+                let (lmin, lmax) = geom.boundingBox
+                // 8 corners of the local AABB → world space.
+                let corners: [SCNVector3] = [
+                    SCNVector3(lmin.x, lmin.y, lmin.z),
+                    SCNVector3(lmax.x, lmin.y, lmin.z),
+                    SCNVector3(lmin.x, lmax.y, lmin.z),
+                    SCNVector3(lmax.x, lmax.y, lmin.z),
+                    SCNVector3(lmin.x, lmin.y, lmax.z),
+                    SCNVector3(lmax.x, lmin.y, lmax.z),
+                    SCNVector3(lmin.x, lmax.y, lmax.z),
+                    SCNVector3(lmax.x, lmax.y, lmax.z),
+                ]
+                for c in corners {
+                    // 4-element transform * (cx, cy, cz, 1) → world point.
+                    let wx = nodeTransform.m11 * c.x + nodeTransform.m21 * c.y + nodeTransform.m31 * c.z + nodeTransform.m41
+                    let wy = nodeTransform.m12 * c.x + nodeTransform.m22 * c.y + nodeTransform.m32 * c.z + nodeTransform.m42
+                    let wz = nodeTransform.m13 * c.x + nodeTransform.m23 * c.y + nodeTransform.m33 * c.z + nodeTransform.m43
+                    minP.x = min(minP.x, wx); minP.y = min(minP.y, wy); minP.z = min(minP.z, wz)
+                    maxP.x = max(maxP.x, wx); maxP.y = max(maxP.y, wy); maxP.z = max(maxP.z, wz)
+                }
+            }
+            for child in node.childNodes {
+                walk(child, accumulatedTransform: nodeTransform)
+            }
+        }
+        walk(root, accumulatedTransform: SCNMatrix4Identity)
+
+        // Fallback for empty scenes — return a sane unit-cube so callers
+        // don't divide by zero downstream.
+        if !minP.x.isFinite || minP.x > maxP.x {
+            return (SCNVector3(-2.5, -2.5, -1), SCNVector3(2.5, 2.5, 1))
+        }
+        return (minP, maxP)
     }
 
     private static func downloadData(_ urlString: String) async throws -> Data {
