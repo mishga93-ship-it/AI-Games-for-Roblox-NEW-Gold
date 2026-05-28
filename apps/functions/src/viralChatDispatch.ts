@@ -397,14 +397,14 @@ async function handleFittingRoom(args: {
   const baseName = aesthetic.title.replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) || 'Fit';
   const artifacts: GenerationArtifact[] = [];
 
-  const pushRender = (url: string | undefined, suffix: string, role: string) => {
+  const pushRender = (url: string | undefined, suffix: string) => {
     if (!url) return;
     artifacts.push({
       id: uuidv4(),
       type: 'png',
       name: `${baseName}-${suffix}.png`,
       url,
-      artifactRole: role,
+      artifactRole: 'thumbnail',
       metadata: {
         generationId,
         aestheticId: params.aestheticId,
@@ -413,9 +413,9 @@ async function handleFittingRoom(args: {
       },
     });
   };
-  pushRender(finalDoc.renders.front,         'front',         'thumbnail');
-  pushRender(finalDoc.renders.three_quarter, 'three-quarter', 'preview');
-  pushRender(finalDoc.renders.back,          'back',          'preview');
+  pushRender(finalDoc.renders.front,         'front');
+  pushRender(finalDoc.renders.three_quarter, 'three-quarter');
+  pushRender(finalDoc.renders.back,          'back');
 
   // Items summary as previewText (so users see fit cost without tapping).
   if (Array.isArray(finalDoc.items) && finalDoc.items.length > 0) {
@@ -494,27 +494,41 @@ export async function tryHandleViralChatGeneration(args: {
     ? job.metadata.contentSubcategory.toLowerCase()
     : '';
 
-  if (subcategory !== 'disaster_spawner') {
-    return false;
-  }
-
   const trimmed = (prompt ?? '').trim();
-  if (!trimmed) {
-    job.status = 'failed';
-    job.errorMessage = 'Empty disaster prompt';
+
+  if (subcategory === 'disaster_spawner') {
+    if (!trimmed) {
+      job.status = 'failed';
+      job.errorMessage = 'Empty disaster prompt';
+      return true;
+    }
+    const handled = await handleDisasterSpawner({
+      firebaseUid: job.userId,
+      jobId: job.id,
+      prompt: trimmed,
+    });
+    job.artifacts = [...(job.artifacts ?? []), ...handled.artifacts];
+    job.status = handled.status;
+    if (handled.errorMessage) job.errorMessage = handled.errorMessage;
     return true;
   }
 
-  const handled = await handleDisasterSpawner({
-    firebaseUid: job.userId,
-    jobId: job.id,
-    prompt: trimmed,
-  });
-
-  job.artifacts = [...(job.artifacts ?? []), ...handled.artifacts];
-  job.status = handled.status;
-  if (handled.errorMessage) {
-    job.errorMessage = handled.errorMessage;
+  if (subcategory === 'fitting_room') {
+    if (!trimmed) {
+      job.status = 'failed';
+      job.errorMessage = 'Empty fitting-room prompt';
+      return true;
+    }
+    const handled = await handleFittingRoom({
+      firebaseUid: job.userId,
+      jobId: job.id,
+      prompt: trimmed,
+    });
+    job.artifacts = [...(job.artifacts ?? []), ...handled.artifacts];
+    job.status = handled.status;
+    if (handled.errorMessage) job.errorMessage = handled.errorMessage;
+    return true;
   }
-  return true;
+
+  return false;
 }

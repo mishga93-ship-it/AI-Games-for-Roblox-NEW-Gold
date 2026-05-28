@@ -260,6 +260,61 @@ enum ChatPresetsData {
         ChatPreset(title: "Falling Couches", subtitle: "Furniture rain — Ohio energy", emoji: "🛋️"),
     ]
 
+    // MARK: Voice-to-Aura
+    //
+    // Session 388 — Voice-to-Aura migrated off its dedicated full-screen form
+    // (VoiceAuraStudioView with mic + style picker + 3 modifier rails) onto
+    // the standard ChatView interview flow, on user request («чат войс ту
+    // аура надо сделать как все остальные чаты с интервью»). Chips below
+    // span the 8 AuraStyle cases (anime / realistic / sigma / demon / cyber /
+    // void / cosmic / meme) plus some viral character-flavored prompts so a
+    // tap-and-send produces a usable aura. The interview LLM extracts
+    // style + intensity + size + tone from the prompt; safety net is the
+    // server-side Lua sanitizer (banned identifiers stripped), not preset.
+
+    static let voiceAura: [ChatPreset] = [
+        ChatPreset(title: "Purple Lightning Anime Aura", subtitle: "Crackling violet bolts, OP feel", emoji: "⚡"),
+        ChatPreset(title: "Sukuna Crimson Demon Aura", subtitle: "Blood-red curse, smoke trails", emoji: "👹"),
+        ChatPreset(title: "Sigma Stoic Golden Aura", subtitle: "Calm gold glow, alpha vibe", emoji: "🗿"),
+        ChatPreset(title: "Void Black Hole Aura", subtitle: "Dark void rings, swallowing light", emoji: "🕳️"),
+        ChatPreset(title: "Cyber Neon Hacker Aura", subtitle: "Glitchy cyan grid, matrix-style", emoji: "💠"),
+        ChatPreset(title: "Cosmic Galaxy Aura", subtitle: "Star-dust swirl, nebula colors", emoji: "🌌"),
+        ChatPreset(title: "Skibidi Cursed Meme Aura", subtitle: "Brainrot toilet chaos, viral", emoji: "🚽"),
+        ChatPreset(title: "Realistic Fire Smoke Aura", subtitle: "Photoreal flame embers", emoji: "🔥"),
+        ChatPreset(title: "Goku Ultra Instinct Aura", subtitle: "Silver-blue shimmer, godlike", emoji: "✨"),
+        ChatPreset(title: "Itadori Black Flash Aura", subtitle: "Black sparks, knockout vibe", emoji: "💢"),
+        ChatPreset(title: "Ice Frost Mage Aura", subtitle: "Pale blue snow swirl", emoji: "❄️"),
+        ChatPreset(title: "Lightning God Storm Aura", subtitle: "White-yellow electricity halo", emoji: "🌩️"),
+    ]
+
+    // MARK: Zero-Robux Fitting Room
+    //
+    // Session 389 — Fitting Room migrated off its dedicated full-screen
+    // picker (FittingRoomStudioView with vibe grid + customize step) onto
+    // the standard ChatView interview flow, on user request («сделать чат
+    // генерации с интервью как и все чаты»). Chips below span the 9
+    // OutfitAesthetic vibes (sigma / baddie / y2k / goth / rich_emo /
+    // slender / cyber / pastel_softgirl / cottagecore — covers female AND
+    // male energies) plus a few viral combos (headless+korblox illusion,
+    // brainrot fit, drip lord). Each chip is a tap-to-prefill prompt the
+    // interview LLM converts into aestheticId + gender + style; backend
+    // ultimately reuses assembleOutfit from the Outfit Generator path.
+
+    static let fittingRoom: [ChatPreset] = [
+        ChatPreset(title: "Sigma Stoic Suit Fit", subtitle: "Cold minimalist, 1% mindset, all-black", emoji: "🗿"),
+        ChatPreset(title: "Baddie Boss Mode Fit", subtitle: "TikTok confident, bold slay energy", emoji: "💋"),
+        ChatPreset(title: "Y2K Mall Princess Core", subtitle: "Butterflies, pink, low-rise denim", emoji: "🦋"),
+        ChatPreset(title: "Goth Cathedral Drip", subtitle: "Dark dramatic, chains, lace, boots", emoji: "🖤"),
+        ChatPreset(title: "Rich Emo Designer Fit", subtitle: "Layered black, chains, intentional sadness", emoji: "⛓️"),
+        ChatPreset(title: "Slender Anime Demon", subtitle: "Tall narrow silhouette, mysterious", emoji: "👁️"),
+        ChatPreset(title: "Cyber Neon Hacker Fit", subtitle: "Glowing visor, holo jacket, rainbow accents", emoji: "💠"),
+        ChatPreset(title: "Pastel Soft Girl Aesthetic", subtitle: "Baby pink, cute plush, gentle vibe", emoji: "🩷"),
+        ChatPreset(title: "Cottagecore Forest Witch", subtitle: "Mystical nature, mushrooms, herbs", emoji: "🍄"),
+        ChatPreset(title: "Headless Korblox Illusion", subtitle: "Fake limited-look on a 0 R$ budget", emoji: "💀"),
+        ChatPreset(title: "Cursed Italian Brainrot Fit", subtitle: "Tralalero core, meme-maxed accessories", emoji: "🍕"),
+        ChatPreset(title: "Drip Lord Maxed-Out Flex", subtitle: "Every slot stacked, marketplace-flex", emoji: "🧊"),
+    ]
+
     // MARK: Smart NPC Roast & Chat
 
     static let roastNpc: [ChatPreset] = [
@@ -446,6 +501,8 @@ enum ChatPresetsData {
         case "pvp": return pvpArena
         case "brainrot_sim": return brainrotSim
         case "disaster_spawner": return disasterSpawner
+        case "voice_aura": return voiceAura
+        case "fitting_room": return fittingRoom
         case "roast_npc": return roastNpc
         case "anime_skills": return animeSkills
         case "obby_troll": return obbyTroll

@@ -1355,18 +1355,6 @@ private extension ForgeView {
             isShowingCursedUGCStudio = true
             return
         }
-        if selectedOption.id == "voice_aura" {
-            isShowingProjectPicker = false
-            isShowingChatPicker = false
-            isShowingVoiceAuraStudio = true
-            return
-        }
-        if selectedOption.id == "fitting_room" {
-            isShowingProjectPicker = false
-            isShowingChatPicker = false
-            isShowingFittingRoom = true
-            return
-        }
         // Session 385 round 7 — Disaster Spawner moved off its dedicated
         // full-screen sheet (DisasterSpawnerStudioView) onto the standard
         // ChatView interview flow, on user request («его надо по флоу
@@ -1375,6 +1363,23 @@ private extension ForgeView {
         // falls through to the launchConfig path below, which opens
         // ChatView with contentSubcategory="disaster_spawner". Presets and
         // backend dispatch are wired in ChatPresets.swift / index.ts.
+        //
+        // Session 388 — Voice-to-Aura migrated the same way. The
+        // VoiceAuraStudioView one-shot form (mic + style picker + 3
+        // modifier rails + Generate button) is replaced by the standard
+        // chat interview, on user request («чат войс ту аура надо сделать
+        // как все остальные чаты с интервью»). VoiceAuraStudio/View/
+        // ResultView files stay (referenced by ViralLibrary tile + share
+        // poster), but the fullScreenCover binding becomes unused.
+        //
+        // Session 389 — Zero-Robux Fitting Room migrated the same way, on
+        // user request («сделать чат генерации с интервью как и все чаты»).
+        // The dedicated FittingRoomStudioView picker + customize + result
+        // sheet is no longer the entry point. The redesigned dress-up
+        // FittingRoomResultView still gets opened via the share-poster /
+        // ViralLibrary deep-link path, but the Forge tile now falls
+        // through to the launchConfig path with
+        // contentSubcategory="fitting_room"; presets live in ChatPresets.
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",
