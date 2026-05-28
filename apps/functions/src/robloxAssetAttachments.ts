@@ -21,11 +21,20 @@ import { logger } from 'firebase-functions/v2';
 import { gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 
-// rbxm-parser is a flat CommonJS export; require it directly so we
-// don't get TS-side import issues when the package's generated types
-// drift behind its runtime.
-const require_ = createRequire(import.meta.url);
-const { RobloxFile } = require_('rbxm-parser') as { RobloxFile: any };
+// rbxm-parser pulls in `lz4`, which is a native node-addon. Importing
+// it at MODULE LOAD time triggers a native dlopen that breaks the
+// firebase deploy analyzer when the local Node ABI doesn't match the
+// platform the .node binary was compiled for (e.g., dev on Node 18,
+// package built for Node 22). Defer the require to first runtime call
+// so deploy-time analysis never touches lz4 — Cloud Run rebuilds the
+// binding for the target Node 22 environment during install anyway.
+let _robloxFileClass: any | null = null;
+function getRobloxFile(): any {
+  if (_robloxFileClass) return _robloxFileClass;
+  const require_ = createRequire(import.meta.url);
+  _robloxFileClass = require_('rbxm-parser').RobloxFile;
+  return _robloxFileClass;
+}
 
 const ASSET_DELIVERY = 'https://assetdelivery.roblox.com/v1/asset';
 
@@ -88,6 +97,7 @@ export async function fetchRobloxAssetAttachments(args: {
   // error and return an empty attachment list.
   let parsed: any;
   try {
+    const RobloxFile = getRobloxFile();
     parsed = RobloxFile.ReadFromBuffer(bytes);
   } catch (err) {
     logger.info('[assetAttachments] not a binary RBXM (probably XML clothing)', {
