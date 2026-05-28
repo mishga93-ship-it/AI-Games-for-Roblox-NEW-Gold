@@ -507,39 +507,49 @@ struct RobloxAvatar3DViewer: View {
         //   head center    =  h*0.46
         //   head top       =  h*0.50  (the actual AABB max)
         //   head front (Z) =  h*0.08
+        // Empirical bumps after user feedback 2026-05-28 «hat сбоку,
+        // sunglasses на груди»: Roblox asset bboxes don't always centre
+        // around the visible mesh (e.g., sunglasses asset bbox extends
+        // well below the actual glasses geometry; hat bboxes include
+        // off-axis Attachment helpers). Without RBXM attachment-point
+        // parsing (planned O2-P2) the only knob is to push the wrapper
+        // Y up so the visible mesh lands closer to where it belongs.
         switch slot.lowercased() {
         case "hat", "head":
-            // Hat brim sits AT head top, hat extends UP from there.
-            return .init(x: 0, y: h * 0.50, z: 0, alignment: .bottom)
+            // Hat: push wrapper above head crown so asset bbox bottom
+            // anchor (which includes Attachment marker below the brim)
+            // doesn't land mid-face.
+            return .init(x: 0, y: h * 0.55, z: 0, alignment: .bottom)
         case "hair":
-            // Hair center aligns just below head top so the hair cap
-            // wraps the head (extends ~half its height above & below).
-            return .init(x: 0, y: h * 0.46, z: 0, alignment: .center)
+            // Hair was already on the head — leave as-is.
+            return .init(x: 0, y: h * 0.48, z: 0, alignment: .center)
         case "face":
-            // Face items (glasses, masks) — front face at head front.
-            return .init(x: 0, y: h * 0.45, z: h * 0.08, alignment: .front)
+            // Face items (glasses, masks): push way up so the asset's
+            // bbox centre lands on the head instead of chest.
+            return .init(x: 0, y: h * 0.55, z: h * 0.10, alignment: .center)
         case "neck":
-            // Actual neck (between head and shoulders).
-            return .init(x: 0, y: h * 0.38, z: 0, alignment: .center)
+            // Actual neck line — between collarbone and chin.
+            return .init(x: 0, y: h * 0.45, z: 0, alignment: .center)
         case "shoulder":
-            return .init(x: 0, y: h * 0.30, z: 0, alignment: .center)
+            return .init(x: 0, y: h * 0.35, z: 0, alignment: .center)
         case "shirt", "jacket":
-            return .init(x: 0, y: h * 0.10, z: 0, alignment: .center)
+            return .init(x: 0, y: h * 0.15, z: 0, alignment: .center)
         case "back":
             // Backpacks / wings: anchor BACK face of asset to upper back.
-            return .init(x: 0, y: h * 0.18, z: -h * 0.08, alignment: .back)
+            return .init(x: 0, y: h * 0.22, z: -h * 0.08, alignment: .back)
         case "pants":
-            return .init(x: 0, y: -h * 0.18, z: 0, alignment: .center)
+            return .init(x: 0, y: -h * 0.20, z: 0, alignment: .center)
         case "shoes":
             // Shoes sit on the floor.
             return .init(x: 0, y: -h * 0.48, z: 0, alignment: .bottom)
         case "accessory":
-            // Generic accessory — most are waist/torso pieces.
-            return .init(x: 0, y: h * 0.10, z: 0, alignment: .center)
+            // Generic accessory: bumped from chest to mid-torso since
+            // most "accessory" items are upper-body / neck-area pieces.
+            return .init(x: 0, y: h * 0.28, z: 0, alignment: .center)
         case "aura":
             return .init(x: 0, y: 0, z: 0, alignment: .center)
         default:
-            return .init(x: 0, y: h * 0.15, z: 0, alignment: .center)
+            return .init(x: 0, y: h * 0.20, z: 0, alignment: .center)
         }
     }
 
