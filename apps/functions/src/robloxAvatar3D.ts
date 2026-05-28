@@ -23,6 +23,7 @@
 // to a temp dir, prepends mtllib, and hands the OBJ to SceneKit.
 
 import { logger } from 'firebase-functions/v2';
+import { cacheRobloxCdnFile } from './robloxCdnCache.js';
 
 const AVATAR_3D_ENDPOINT = 'https://thumbnails.roblox.com/v1/users/avatar-3d';
 
@@ -191,14 +192,13 @@ export async function fetchRobloxAvatar3D(args: {
     return null;
   }
 
-  // Step 3: resolve CDN URLs.
-  let objUrl: string;
-  let mtlUrl: string;
-  let textureUrls: string[];
+  // Step 3: resolve CDN URLs (rbxcdn) — these are FRAGILE (S3 access
+  // rotates), so step 4 mirrors each to our GCS cache.
+  let objSrc: string, mtlSrc: string, texSrcs: string[];
   try {
-    objUrl = hashToCdnUrl(manifest.obj);
-    mtlUrl = hashToCdnUrl(manifest.mtl);
-    textureUrls = manifest.textures.map((h) => hashToCdnUrl(h));
+    objSrc = hashToCdnUrl(manifest.obj);
+    mtlSrc = hashToCdnUrl(manifest.mtl);
+    texSrcs = manifest.textures.map((h) => hashToCdnUrl(h));
   } catch (err) {
     logger.warn('[robloxAvatar3D] hash→URL conversion failed', {
       userId, err: err instanceof Error ? err.message : String(err),
@@ -206,7 +206,33 @@ export async function fetchRobloxAvatar3D(args: {
     return null;
   }
 
-  // Step 4: shape camera/aabb into typed structures (best-effort — Roblox
+  // Step 4: mirror each file into our GCS bucket so iOS never touches
+  // rbxcdn directly. Object keys use the ORIGINAL Roblox hash so the
+  // signed URL's last path component matches what MTL references
+  // (`map_Kd <hash>`) — iOS extracts the path component as a filename
+  // and SceneKit's material lookup just works. Cached forever; only
+  // the signed URL has a 7-day TTL.
+  let objUrl: string, mtlUrl: string, textureUrls: string[];
+  try {
+    [objUrl, mtlUrl] = await Promise.all([
+      cacheRobloxCdnFile({ sourceUrl: objSrc, contentType: 'text/plain', objectKey: manifest.obj }),
+      cacheRobloxCdnFile({ sourceUrl: mtlSrc, contentType: 'text/plain', objectKey: manifest.mtl }),
+    ]);
+    textureUrls = await Promise.all(
+      manifest.textures.map((h, i) => cacheRobloxCdnFile({
+        sourceUrl: texSrcs[i],
+        contentType: 'image/png',
+        objectKey: h,
+      }))
+    );
+  } catch (err) {
+    logger.warn('[robloxAvatar3D] CDN cache mirror failed', {
+      userId, err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+
+  // Step 5: shape camera/aabb into typed structures (best-effort — Roblox
   // sometimes nests these inconsistently; missing fields → safe defaults).
   const camera = parseCamera(manifest.camera);
   const aabb = parseAabb(manifest.aabb);
@@ -343,14 +369,35 @@ export async function fetchRobloxAsset3D(args: {
     return null;
   }
 
-  // Step 3: resolve CDN URLs (handles 180DAY- prefix).
-  let objUrl: string, mtlUrl: string, textureUrls: string[];
+  // Step 3: resolve rbxcdn URLs, then mirror through GCS cache (same
+  // 403-flake protection as the avatar path — see fetchRobloxAvatar3D).
+  let objSrc: string, mtlSrc: string, texSrcs: string[];
   try {
-    objUrl = hashToCdnUrl(manifest.obj);
-    mtlUrl = hashToCdnUrl(manifest.mtl);
-    textureUrls = manifest.textures.map((h) => hashToCdnUrl(h));
+    objSrc = hashToCdnUrl(manifest.obj);
+    mtlSrc = hashToCdnUrl(manifest.mtl);
+    texSrcs = manifest.textures.map((h) => hashToCdnUrl(h));
   } catch (err) {
     logger.warn('[robloxAsset3D] hash→URL conversion failed', {
+      assetId, err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+
+  let objUrl: string, mtlUrl: string, textureUrls: string[];
+  try {
+    [objUrl, mtlUrl] = await Promise.all([
+      cacheRobloxCdnFile({ sourceUrl: objSrc, contentType: 'text/plain', objectKey: manifest.obj }),
+      cacheRobloxCdnFile({ sourceUrl: mtlSrc, contentType: 'text/plain', objectKey: manifest.mtl }),
+    ]);
+    textureUrls = await Promise.all(
+      manifest.textures.map((h, i) => cacheRobloxCdnFile({
+        sourceUrl: texSrcs[i],
+        contentType: 'image/png',
+        objectKey: h,
+      }))
+    );
+  } catch (err) {
+    logger.warn('[robloxAsset3D] CDN cache mirror failed', {
       assetId, err: err instanceof Error ? err.message : String(err),
     });
     return null;
