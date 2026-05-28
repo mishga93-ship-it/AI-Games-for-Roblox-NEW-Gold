@@ -4792,6 +4792,40 @@ final class ChatStore: ObservableObject {
     }
 
     private func initialGenerationStages() -> [GenerationStage] {
+        // Session 388 round 3 — viral chat-flow kinds (voice_aura /
+        // disaster_spawner / fitting_room) have their own short backend
+        // pipelines, NOT the 9-stage character_3d pipeline (concept →
+        // approval → mesh → FBX → upload → optimize → rig → export model
+        // → export RBXM). User reported the misleading «Banana Rain
+        // Apocalypse Pipeline / Auto-rig R15 / Convert to FBX» stages
+        // were showing for a Lua-only disaster spawner. Each viral kind
+        // now lists the stages that match what `viralChatDispatch.ts`
+        // actually does — and only those — so the chat progress UI
+        // matches reality and isn't padded with meaningless 3D-asset
+        // steps. After generation completes the dedicated chat-bridge
+        // (VoiceAuraChatBridge / DisasterSpawnerChatBridge /
+        // FittingRoomChatBridge) replaces the progress sheet anyway.
+        if contentSubcategory == "voice_aura" {
+            return [
+                GenerationStage(id: "generating", title: "Aura concept art", status: "pending"),
+                GenerationStage(id: "generate_keyframes", title: "Safe Lua particles", status: "pending"),
+                GenerationStage(id: "export_rbxm", title: "Wrap .rbxmx", status: "pending"),
+            ]
+        }
+        if contentSubcategory == "disaster_spawner" {
+            return [
+                GenerationStage(id: "generating", title: "Disaster poster", status: "pending"),
+                GenerationStage(id: "generate_keyframes", title: "Safe Lua spawner", status: "pending"),
+                GenerationStage(id: "export_rbxm", title: "Wrap .rbxmx", status: "pending"),
+            ]
+        }
+        if contentSubcategory == "fitting_room" {
+            return [
+                GenerationStage(id: "generating", title: "Selecting outfit items", status: "pending"),
+                GenerationStage(id: "concept_image", title: "Rendering 3 angles", status: "pending"),
+                GenerationStage(id: "export_rbxm", title: "Finalizing fit", status: "pending"),
+            ]
+        }
         if contentSubcategory == "audio" {
             return [
                 GenerationStage(id: "generating", title: "Generating audio", status: "pending"),
