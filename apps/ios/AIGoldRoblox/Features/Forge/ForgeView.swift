@@ -987,6 +987,17 @@ struct ForgeView: View {
         let kind = ProjectKind(rawValue: session.projectKind) ?? .game
         let notificationJobId = overrideJobId?.trimmingCharacters(in: .whitespacesAndNewlines)
         let launchJobId = notificationJobId?.isEmpty == false ? notificationJobId : session.lastJobId
+        // Session 385 round 11 — auto-open the preview/bridge result when the
+        // tapped chat has a completed generation. Previously the user tapped
+        // a "Voice-Controlled Disaster Spawner — Meteor Storm" history row,
+        // ChatView reopened with restored messages BUT the rich result view
+        // (DisasterSpawnerChatBridge / FittingRoomChatBridge / etc.) stayed
+        // collapsed in the status-dock, requiring a second manual "Open" tap.
+        // The user perceived this as "history doesn't remember the result".
+        // Auto-open when launchJobId is non-empty — the existing explicit
+        // openGenerationOnLaunch=true callers (push-notification tap) keep
+        // working unchanged because true || x == true.
+        let shouldAutoOpenResult = openGenerationOnLaunch || (launchJobId?.isEmpty == false)
         launchConfig = ChatLaunchConfig(
             title: session.title,
             entryMode: mode,
@@ -995,7 +1006,7 @@ struct ForgeView: View {
             resumeSessionId: session.id,
             contentSubcategory: session.contentSubcategory,
             lastJobId: launchJobId,
-            openGenerationOnLaunch: openGenerationOnLaunch
+            openGenerationOnLaunch: shouldAutoOpenResult
         )
     }
 
