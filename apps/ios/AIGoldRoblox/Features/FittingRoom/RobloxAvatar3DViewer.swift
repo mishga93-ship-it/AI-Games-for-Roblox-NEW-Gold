@@ -465,7 +465,6 @@ struct RobloxAvatar3DViewer: View {
     /// rather than the hat's center floating above.
     private static func slotPlacement(slot: String, avatarHeight: Double) -> SlotPlacement {
         let h = Float(avatarHeight)
-        switch slot.lowercased() {
         // After the recursive-AABB fix, the avatar's centered Y axis runs
         // from -h/2 (feet) to +h/2 (head top). Approximate R-15 anatomy:
         //   feet bottom    = -h/2     (~-3 stud for h≈6)
