@@ -247,6 +247,14 @@ async function generateLuaScript(input: {
           preferredScale: 6,
           textureAssetId: factory.textureAssetId,
           naturalSize: factory.naturalSize,
+          // Server scripts can't write SurfaceAppearance.ColorMap (capability
+          // Plugin) or MeshPart.TextureID (capability NotAccessible) on
+          // modern Roblox — but they CAN write MeshPart.Color. Use the
+          // bundle's fallbackColorRGB as the visual hint so the spawned
+          // mesh isn't pure-white. The texture (if it loads via pcall)
+          // overrides the tint; otherwise we get at least a coloured
+          // banana/shark/toilet silhouette.
+          colorRGB: bundle?.fallbackColorRGB,
         }];
         logger.info('[disasterGenerator] on-demand mesh ready', {
           objectKeyword,

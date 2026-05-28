@@ -268,14 +268,14 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
     const hasTextureLookup = textureIds.some((t) => t > 0);
     const preferredScale = first.preferredScale ?? 6;
     const color = first.colorRGB;
-    // CRITICAL: do NOT set mp.Color when the mesh has a baked PBR texture.
-    // Meshy bakes one into every .glb we generate. User round 8 repro: LLM
-    // added `mp.Color = Color3.fromRGB(255,220,0)` and the textured banana
-    // mesh rendered flat yellow with all surface detail killed. Color is
-    // only emitted when bundle explicitly overrides (curated whitelist).
+    // Round 8f update: ColorMap + TextureID are BOTH capability-locked on
+    // server scripts (Plugin / NotAccessible). MeshPart.Color is the only
+    // writable knob. So we ALWAYS apply a fallback Color so the mesh isn't
+    // pure-white. The PBR texture takes precedence visually IF a future
+    // Roblox security update opens up TextureID write.
     const colorPostAssign = color
       ? `\tmp.Color = Color3.fromRGB(${color.join(',')})`
-      : `\t-- mp.Color INTENTIONALLY LEFT UNTOUCHED — mesh ships with a baked PBR\n\t-- texture (Meshy); writing mp.Color would overlay a flat tint.`;
+      : `\t-- no fallback Color provided — mesh will render in its native shading`;
     const luaTemplate = [
       '```lua',
       `local AssetService = game:GetService("AssetService")`,
@@ -311,15 +311,16 @@ function buildEntityShapeGuidance(input: DisasterPromptInput): string[] {
       `\t\tmp.Size = Vector3.new(sz.X * k, sz.Y * k, sz.Z * k)`,
       `\tend`,
       hasTextureLookup
-        ? `\t-- Apply the baked PBR ColorMap so the mesh isn't white. Server can`
-          + `\n\t-- create SurfaceAppearance + set ColorMap without capability flags.`
+        ? `\t-- TRY to apply PBR texture via legacy TextureID. Both this and`
+          + `\n\t-- SurfaceAppearance.ColorMap are capability-gated on modern`
+          + `\n\t-- Roblox server scripts (NotAccessible / Plugin) — wrapping in`
+          + `\n\t-- pcall lets the script keep running when the write is blocked`
+          + `\n\t-- so we still get a coloured-Color3 banana instead of nothing.`
           + `\n\tlocal texId = TEXTURE_IDS[idx]`
           + `\n\tif texId and texId > 0 then`
-          + `\n\t\tlocal sa = Instance.new("SurfaceAppearance")`
-          + `\n\t\tsa.ColorMap = "rbxassetid://" .. texId`
-          + `\n\t\tsa.Parent = mp`
+          + `\n\t\tpcall(function() mp.TextureID = "rbxassetid://" .. texId end)`
           + `\n\tend`
-        : `\t-- (No baked texture available for this pack — mesh shows its natural shading.)`,
+        : `\t-- (No baked texture id available for this pack.)`,
       colorPostAssign,
       `\tmp.CFrame = CFrame.new(pos)`,
       `\tmp.Anchored = false`,

@@ -72,6 +72,12 @@ export interface DisasterAssetBundle {
   entries: DisasterAssetEntry[];
   /** Aliases the keyword router will also match against. */
   aliases: string[];
+  /** Best-guess Color3 (RGB 0-255) used as a fallback tint when neither
+   * SurfaceAppearance.ColorMap nor MeshPart.TextureID can be written from
+   * a server script (both are capability-gated). Without this the mesh
+   * renders pure white and the user can't tell what spawned.
+   * banana=yellow, shark=grey, toilet=white, etc. */
+  fallbackColorRGB?: [number, number, number];
 }
 
 // ─── Whitelist — user-verified asset ids from create.roblox.com/store ────
@@ -82,114 +88,133 @@ export const DISASTER_ASSET_BUNDLES: DisasterAssetBundle[] = [
     category: 'food',
     aliases: ['banana', 'bananas', 'банан', 'бананы'],
     entries: [],
+    fallbackColorRGB: [255, 220, 40],
   },
   {
     keyword: 'duck',
     category: 'animal',
     aliases: ['duck', 'ducks', 'rubber duck', 'утка', 'утки'],
     entries: [],
+    fallbackColorRGB: [255, 220, 0],
   },
   {
     keyword: 'shark',
     category: 'animal',
     aliases: ['shark', 'tralalero', 'tralalero tralala', 'акула'],
     entries: [],
+    fallbackColorRGB: [90, 110, 130],
   },
   {
     keyword: 'toilet',
     category: 'household',
     aliases: ['toilet', 'toilets', 'skibidi', 'туалет'],
     entries: [],
+    fallbackColorRGB: [240, 240, 240],
   },
   {
     keyword: 'meteor',
     category: 'natural',
     aliases: ['meteor', 'asteroid', 'meteor shower', 'метеор', 'астероид'],
     entries: [],
+    fallbackColorRGB: [70, 60, 50],
   },
   {
     keyword: 'cat',
     category: 'animal',
     aliases: ['cat', 'meme cat', 'pop cat', 'кот', 'кошка'],
     entries: [],
+    fallbackColorRGB: [180, 130, 80],
   },
   {
     keyword: 'lava',
     category: 'natural',
     aliases: ['lava', 'lava rock', 'lava boulder', 'magma', 'volcanic', 'лава', 'вулкан'],
     entries: [],
+    fallbackColorRGB: [220, 80, 30],
   },
   {
     keyword: 'zombie',
     category: 'horror',
     aliases: ['zombie', 'zombies', 'zombie rush', 'undead', 'зомби'],
     entries: [],
+    fallbackColorRGB: [80, 140, 80],
   },
   {
     keyword: 'sigma_boss',
     category: 'meme',
     aliases: ['sigma', 'sigma boss', 'gigachad', 'chad', 'sigma chad', 'sigma character'],
     entries: [],
+    fallbackColorRGB: [50, 50, 60],
   },
   {
     keyword: 'tsunami',
     category: 'natural',
     aliases: ['tsunami', 'wave', 'tidal wave', 'flood', 'цунами', 'волна'],
     entries: [],
+    fallbackColorRGB: [40, 110, 180],
   },
   {
     keyword: 'ufo',
     category: 'tech',
     aliases: ['ufo', 'alien', 'alien ship', 'alien invasion', 'нло', 'инопланетянин'],
     entries: [],
+    fallbackColorRGB: [180, 200, 220],
   },
   {
     keyword: 'brainrot_meme',
     category: 'meme',
     aliases: ['brainrot', 'among us', 'ohio', 'meme object', 'cursed meme'],
     entries: [],
+    fallbackColorRGB: [255, 80, 220],
   },
   {
     keyword: 'dog',
     category: 'animal',
     aliases: ['dog', 'shiba', 'giant dog', 'puppy', 'собака', 'пёс'],
     entries: [],
+    fallbackColorRGB: [230, 170, 90],
   },
   {
     keyword: 'car',
     category: 'tech',
     aliases: ['car', 'cars', 'flying car', 'supercar', 'sedan', 'машина', 'автомобиль'],
     entries: [],
+    fallbackColorRGB: [200, 30, 30],
   },
   {
     keyword: 'black_hole',
     category: 'horror',
     aliases: ['black hole', 'void', 'void orb', 'singularity', 'чёрная дыра'],
     entries: [],
+    fallbackColorRGB: [20, 10, 30],
   },
   {
     keyword: 'lightning',
     category: 'natural',
     aliases: ['lightning', 'thunderbolt', 'thunder', 'electric storm', 'молния'],
     entries: [],
+    fallbackColorRGB: [255, 245, 100],
   },
   {
     keyword: 'earthquake',
     category: 'natural',
     aliases: ['earthquake', 'rock', 'boulder', 'землетрясение', 'камень'],
     entries: [],
+    fallbackColorRGB: [110, 90, 70],
   },
   {
     keyword: 'npc_invasion',
     category: 'meme',
     aliases: ['npc', 'classic npc', 'blocky npc', 'noob invasion', 'нпс'],
     entries: [],
+    fallbackColorRGB: [255, 220, 50],
   },
   {
     keyword: 'fire',
     category: 'natural',
     aliases: ['fire', 'fireball', 'flames', 'flaming meteor', 'fire rain', 'огонь'],
     entries: [],
+    fallbackColorRGB: [255, 90, 20],
   },
   // Empty-bundle fallbacks: known keywords without curated ids yet → emitter
   // uses branded multi-Part recipes (see BRANDED_SHAPES in disasterStyles.ts).
