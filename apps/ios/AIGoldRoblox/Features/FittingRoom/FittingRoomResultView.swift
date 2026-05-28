@@ -28,6 +28,22 @@ struct FittingRoomResultView: View {
     @State private var currentAngle: Int = 0
     @GestureState private var dragX: CGFloat = 0
     @State private var swappingSlot: String? = nil
+    /// Phase A — hero preview can show either the user's REAL 3D R-15
+    /// avatar (interactive SceneKit, no fit applied yet) or the AI-rendered
+    /// "applied" 3-angle preview (img2img with the outfit on). Default to
+    /// 3D when we have a Roblox userId — that's the more impressive view.
+    @State private var heroMode: HeroMode = .threeDee
+    @ObservedObject private var robloxAuth = RobloxAuthService.shared
+
+    enum HeroMode: Hashable { case threeDee, applied }
+
+    /// Best-effort Roblox userId — prefer the doc (came from backend
+    /// OAuth lookup at generation time), fall back to the device's
+    /// signed-in OAuth user.
+    private var robloxUserId: String? {
+        if let id = response.robloxUserId, !id.isEmpty { return id }
+        return robloxAuth.robloxUserId
+    }
 
     private var renders: [String?] {
         [response.renders.front, response.renders.threeQuarter, response.renders.back]
@@ -54,8 +70,13 @@ struct FittingRoomResultView: View {
         ScrollView {
             VStack(spacing: 18) {
                 header
+                if robloxUserId != nil {
+                    heroModeToggle
+                }
                 heroAvatarCard
-                angleDots
+                if heroMode == .applied {
+                    angleDots
+                }
                 statsRow
                 dressUpRoom
                 shareButton
@@ -64,6 +85,41 @@ struct FittingRoomResultView: View {
                 footer
             }
             .padding(.horizontal, 16).padding(.top, 60).padding(.bottom, 30)
+        }
+    }
+
+    // MARK: - 3D / 2D mode toggle
+
+    private var heroModeToggle: some View {
+        HStack(spacing: 0) {
+            modeButton(.threeDee,
+                       icon: "cube.transparent.fill",
+                       label: loc(en: "3D Avatar", ru: "3D-аватар"))
+            modeButton(.applied,
+                       icon: "tshirt.fill",
+                       label: loc(en: "Fit Applied", ru: "С фитом"))
+        }
+        .padding(4)
+        .background(Color.cardBackground.opacity(0.6))
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(accentColor.opacity(0.3), lineWidth: 0.8))
+    }
+
+    private func modeButton(_ mode: HeroMode, icon: String, label: String) -> some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                heroMode = mode
+            }
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.caption.bold())
+                Text(label).font(.caption.bold())
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(heroMode == mode ? accentColor : Color.clear)
+            .foregroundColor(heroMode == mode ? .white : .textSecondary)
+            .clipShape(Capsule())
         }
     }
 
@@ -97,7 +153,6 @@ struct FittingRoomResultView: View {
 
     private var heroAvatarCard: some View {
         GeometryReader { geo in
-            let w = geo.size.width
             ZStack {
                 // Soft accent glow that bleeds outside the frame.
                 RoundedRectangle(cornerRadius: 24)
@@ -105,89 +160,157 @@ struct FittingRoomResultView: View {
                     .blur(radius: 36)
                     .padding(-12)
 
-                ZStack {
-                    // Inner background — deep black so renders pop.
-                    LinearGradient(colors: [.black, accentColor.opacity(0.35), .black],
-                                   startPoint: .top, endPoint: .bottom)
-
-                    // Rotatable layers (cross-fade based on drag offset).
-                    ForEach(0..<renders.count, id: \.self) { i in
-                        if let urlStr = renders[i], let url = URL(string: urlStr) {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let img): img.resizable().scaledToFit()
-                                case .failure: placeholderFor(i: i)
-                                case .empty:   ZStack { placeholderFor(i: i); ProgressView().tint(.white) }
-                                @unknown default: placeholderFor(i: i)
-                                }
-                            }
-                            .opacity(opacity(forIndex: i, w: w))
-                            .scaleEffect(scale(forIndex: i, w: w))
-                        } else {
-                            placeholderFor(i: i).opacity(opacity(forIndex: i, w: w))
-                        }
-                    }
-
-                    // Top-right angle label.
-                    VStack {
-                        HStack {
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.caption2.bold())
-                                Text(angleLabels[currentAngle])
-                                    .font(.caption.bold())
-                            }
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(.ultraThinMaterial)
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
-                            .padding(12)
-                        }
-                        Spacer()
-                        // Bottom hint: "swipe to rotate"
-                        HStack(spacing: 4) {
-                            Image(systemName: "hand.draw.fill").font(.caption2)
-                            Text(loc(en: "Swipe to rotate", ru: "Свайп — поворот"))
-                                .font(.caption2.bold())
-                        }
-                        .foregroundColor(.white.opacity(0.85))
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .padding(.bottom, 10)
-                        .opacity(currentAngle == 0 ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.4), value: currentAngle)
-                    }
-                }
-                .frame(width: geo.size.width, height: geo.size.width * 1.2)
-                .clipShape(RoundedRectangle(cornerRadius: 22))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22)
-                        .stroke(LinearGradient(colors: [accentColor.opacity(0.9), .white.opacity(0.25)],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
-                )
-                .shadow(color: accentColor.opacity(0.35), radius: 18, x: 0, y: 8)
-                .gesture(
-                    DragGesture()
-                        .updating($dragX) { value, state, _ in state = value.translation.width }
-                        .onEnded { value in
-                            let delta = value.translation.width
-                            if delta < -50 && currentAngle < renders.count - 1 {
-                                withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
-                                    currentAngle += 1
-                                }
-                            } else if delta > 50 && currentAngle > 0 {
-                                withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
-                                    currentAngle -= 1
-                                }
-                            }
-                        }
-                )
+                heroInnerStack(geo: geo)
+                    .frame(width: geo.size.width, height: geo.size.width * 1.2)
+                    .clipShape(RoundedRectangle(cornerRadius: 22))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22)
+                            .stroke(LinearGradient(colors: [accentColor.opacity(0.9), .white.opacity(0.25)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
+                    )
+                    .shadow(color: accentColor.opacity(0.35), radius: 18, x: 0, y: 8)
             }
         }
         .aspectRatio(0.83, contentMode: .fit)
+    }
+
+    @ViewBuilder
+    private func heroInnerStack(geo: GeometryProxy) -> some View {
+        switch heroMode {
+        case .threeDee:
+            heroThreeDee
+        case .applied:
+            heroApplied(geo: geo)
+        }
+    }
+
+    // MARK: 3D R-15 avatar (Phase A)
+
+    @ViewBuilder
+    private var heroThreeDee: some View {
+        if let userId = robloxUserId {
+            ZStack {
+                RobloxAvatar3DViewer(robloxUserId: userId)
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: "cube.transparent.fill").font(.caption2.bold())
+                            Text(loc(en: "Real R-15", ru: "Реальный R-15"))
+                                .font(.caption.bold())
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(.ultraThinMaterial)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
+                        .padding(12)
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "hand.tap.fill").font(.caption2)
+                        Text(loc(en: "Drag to orbit · pinch to zoom",
+                                 ru: "Тяни — поворот · щипок — zoom"))
+                            .font(.caption2.bold())
+                    }
+                    .foregroundColor(.white.opacity(0.85))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .padding(.bottom, 10)
+                }
+            }
+        } else {
+            ZStack {
+                LinearGradient(colors: [.black, accentColor.opacity(0.35), .black],
+                               startPoint: .top, endPoint: .bottom)
+                VStack(spacing: 10) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .font(.system(size: 44)).foregroundColor(.white.opacity(0.7))
+                    Text(loc(en: "Connect Roblox to see your 3D avatar",
+                             ru: "Подключи Roblox чтобы увидеть свой 3D-аватар"))
+                        .font(.appCaption).foregroundColor(.white.opacity(0.85))
+                        .multilineTextAlignment(.center).padding(.horizontal, 24)
+                }
+            }
+        }
+    }
+
+    // MARK: 2D "applied fit" (img2img preview, swipe to rotate)
+
+    private func heroApplied(geo: GeometryProxy) -> some View {
+        let w = geo.size.width
+        return ZStack {
+            // Inner background — deep black so renders pop.
+            LinearGradient(colors: [.black, accentColor.opacity(0.35), .black],
+                           startPoint: .top, endPoint: .bottom)
+
+            // Rotatable layers (cross-fade based on drag offset).
+            ForEach(0..<renders.count, id: \.self) { i in
+                if let urlStr = renders[i], let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let img): img.resizable().scaledToFit()
+                        case .failure: placeholderFor(i: i)
+                        case .empty:   ZStack { placeholderFor(i: i); ProgressView().tint(.white) }
+                        @unknown default: placeholderFor(i: i)
+                        }
+                    }
+                    .opacity(opacity(forIndex: i, w: w))
+                    .scaleEffect(scale(forIndex: i, w: w))
+                } else {
+                    placeholderFor(i: i).opacity(opacity(forIndex: i, w: w))
+                }
+            }
+
+            // Top-right angle label.
+            VStack {
+                HStack {
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.caption2.bold())
+                        Text(angleLabels[currentAngle])
+                            .font(.caption.bold())
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.ultraThinMaterial)
+                    .foregroundColor(.white)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
+                    .padding(12)
+                }
+                Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: "hand.draw.fill").font(.caption2)
+                    Text(loc(en: "Swipe to rotate", ru: "Свайп — поворот"))
+                        .font(.caption2.bold())
+                }
+                .foregroundColor(.white.opacity(0.85))
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .padding(.bottom, 10)
+                .opacity(currentAngle == 0 ? 1 : 0)
+                .animation(.easeInOut(duration: 0.4), value: currentAngle)
+            }
+        }
+        .gesture(
+            DragGesture()
+                .updating($dragX) { value, state, _ in state = value.translation.width }
+                .onEnded { value in
+                    let delta = value.translation.width
+                    if delta < -50 && currentAngle < renders.count - 1 {
+                        withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
+                            currentAngle += 1
+                        }
+                    } else if delta > 50 && currentAngle > 0 {
+                        withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
+                            currentAngle -= 1
+                        }
+                    }
+                }
+        )
     }
 
     /// Soft pseudo-3D cross-fade: the "current" angle is fully opaque, the

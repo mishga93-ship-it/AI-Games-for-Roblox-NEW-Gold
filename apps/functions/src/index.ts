@@ -166,6 +166,7 @@ import { generateAura } from './auraGenerator.js';
 import { isAuraStyleId, parseAuraIntensity, parseAuraSize, parseAuraTone } from './data/auraStyles.js';
 // Session 386 — Zero-Robux UGC Fitting Room
 import { startFittingRoomJob, fetchFittingRoomDoc } from './fittingRoomRenderer.js';
+import { fetchRobloxAvatar3D } from './robloxAvatar3D.js';
 // Session 387 — Voice-Controlled Survival Disaster Spawner
 import { generateDisaster } from './disasterGenerator.js';
 import {
@@ -1069,6 +1070,39 @@ app.get('/api/fitting-room/:id', async (req: AuthedRequest, res) => {
   } catch (err) {
     logger.error('[fitting-room] status failed', err);
     return res.status(500).json({ error: 'Failed to fetch fitting room status' });
+  }
+});
+
+// ─── Phase A (session 389+1): Roblox avatar 3D mesh proxy ───────
+// Returns stable CDN URLs for OBJ + MTL + textures of a user's rendered
+// 3D avatar. iOS downloads these into a temp dir, prepends `mtllib` to
+// the OBJ, and hands the bundle to SceneKit for interactive viewing in
+// the dress-up room. Proxy isolates iOS from Roblox's hash→CDN URL
+// trick and the avatar-3d Pending/Completed polling loop.
+//
+// Public Roblox endpoint — no Bearer token needed. We still gate this
+// behind app auth so anonymous traffic can't proxy through us.
+app.get('/api/roblox-avatar/3d/:userId', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const userId = req.params.userId;
+    if (typeof userId !== 'string' || !/^\d{1,15}$/.test(userId)) {
+      return res.status(400).json({ error: 'Invalid userId (must be numeric Roblox id)' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/roblox-avatar/3d');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const result = await fetchRobloxAvatar3D({ userId });
+    if (!result) {
+      return res.status(502).json({ error: 'Roblox avatar-3d not ready or unavailable' });
+    }
+    return res.json(result);
+  } catch (err) {
+    logger.error('[roblox-avatar-3d] failed', err);
+    return res.status(500).json({ error: 'Failed to fetch 3D avatar' });
   }
 });
 
