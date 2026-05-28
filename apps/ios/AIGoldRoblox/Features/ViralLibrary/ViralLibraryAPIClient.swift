@@ -59,6 +59,69 @@ struct ViralLibraryListResponse: Codable {
     let items: [ViralLibraryItem]
 }
 
+/// Detail response for `GET /api/viral-generations/:id` when the doc kind is
+/// `voice_aura`. Mirrors the payload shape recorded by viralChatDispatch.ts
+/// `handleVoiceAura()` exactly. Outer `generationId` is the Firestore doc id;
+/// inner `payload` holds the AuraGenerationResponse-equivalent fields.
+struct VoiceAuraGenerationDoc: Codable {
+    let generationId: String
+    let kind: String
+    let title: String
+    let subtitle: String?
+    let thumbnailUrl: String?
+    let accentHex: String?
+    let createdAtMs: Double
+    let payload: VoiceAuraGenerationPayload
+
+    /// Re-hydrate the full `AuraGenerationResponse` so `VoiceAuraResultView`
+    /// can present this generation identically to a fresh
+    /// `POST /api/voice-aura/generate` response.
+    func toAuraResponse() -> AuraGenerationResponse {
+        return AuraGenerationResponse(
+            generationId: generationId,
+            style: payload.style,
+            intensity: payload.intensity,
+            size: payload.size,
+            tone: payload.tone,
+            titleEN: payload.titleEN ?? title,
+            titleRU: payload.titleRU ?? title,
+            shareCaption: payload.shareCaption ?? (subtitle ?? ""),
+            rarityVibeEN: payload.rarityVibeEN ?? "Mythic",
+            rarityVibeRU: payload.rarityVibeRU ?? "Мифический",
+            difficulty: payload.difficulty ?? "Easy",
+            previewUrl: payload.previewUrl ?? thumbnailUrl,
+            variations: payload.variations ?? [],
+            luaScript: payload.luaScript ?? "",
+            rbxmxUrl: payload.rbxmxUrl,
+            safeUsedFallback: payload.safeUsedFallback ?? false,
+            instructionsEN: payload.instructionsEN ?? [],
+            instructionsRU: payload.instructionsRU ?? [],
+            generationStatus: payload.generationStatus ?? "ready"
+        )
+    }
+}
+
+struct VoiceAuraGenerationPayload: Codable {
+    let style: String
+    let intensity: String
+    let size: String
+    let tone: String
+    let previewUrl: String?
+    let rbxmxUrl: String?
+    let luaScript: String?
+    let titleEN: String?
+    let titleRU: String?
+    let shareCaption: String?
+    let rarityVibeEN: String?
+    let rarityVibeRU: String?
+    let difficulty: String?
+    let variations: [AuraVariation]?
+    let instructionsEN: [String]?
+    let instructionsRU: [String]?
+    let safeUsedFallback: Bool?
+    let generationStatus: String?
+}
+
 // MARK: - Errors
 
 enum ViralLibraryAPIError: LocalizedError {
@@ -87,6 +150,25 @@ enum ViralLibraryAPIClient {
                 timeout: 20
             )
             return resp.items
+        } catch APIError.httpError(let code) where code == 401 {
+            throw ViralLibraryAPIError.unauthenticated
+        } catch {
+            throw ViralLibraryAPIError.underlying(error)
+        }
+    }
+
+    /// Fetch a single voice_aura generation by id. Used by
+    /// `VoiceAuraChatBridge` to re-hydrate the rich result payload from the
+    /// artifact metadata's `generationId` after a chat-flow generation
+    /// completes. Returns the fully-decoded payload — convert via
+    /// `.toAuraResponse()` to feed `VoiceAuraResultView`.
+    static func fetchVoiceAuraById(_ generationId: String) async throws -> VoiceAuraGenerationDoc {
+        do {
+            return try await APIClient.request(
+                "api/viral-generations/\(generationId)",
+                method: "GET",
+                timeout: 20
+            )
         } catch APIError.httpError(let code) where code == 401 {
             throw ViralLibraryAPIError.unauthenticated
         } catch {
