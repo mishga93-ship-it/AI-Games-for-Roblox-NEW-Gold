@@ -28114,6 +28114,33 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               ...prep.modularMetadata,
             },
           };
+          // R12: fetch + composit preview NOW so the iOS chat card shows
+          // rarity badge + caption + addon icons + accent halo overlaid on
+          // the recolored Roblox Thumbnail PNG. Previously this only ran
+          // inside the keyword-router branch below — modular path left
+          // previewImageUrl unset → empty card.
+          try {
+            const { fetchAndCompositVehiclePreview } = await import('./vehicleThumbnailComposite.js');
+            const compositResult = await fetchAndCompositVehiclePreview({
+              jobId, currentJob,
+              uploadBinaryArtifact: (job, buf, opts) => uploadBinaryArtifact(job as GenerationJob, buf, opts as Parameters<typeof uploadBinaryArtifact>[2]),
+            });
+            if (compositResult) {
+              currentJob = {
+                ...currentJob,
+                metadata: {
+                  ...(currentJob.metadata ?? {}),
+                  previewImageUrl: compositResult.previewImageUrl,
+                  vehiclePreviewImageUrl: compositResult.previewImageUrl,
+                  vehiclePreviewMode: 'roblox_thumbnail_recolored_composit',
+                },
+              };
+            }
+          } catch (previewErr) {
+            logger.warn('[ModularBuilder] composit preview helper threw', {
+              jobId, error: errorMessage(previewErr),
+            });
+          }
           await finishStage('pick_vehicle_template', 'completed', [], prep.stageNotes);
           modularPrepDone = true;
         } catch (modErr) {
