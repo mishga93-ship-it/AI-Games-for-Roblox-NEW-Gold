@@ -1,15 +1,16 @@
 // viralChatDispatch.ts — bridge between the standard ChatView generation
 // endpoint (`POST /api/content/generate` → `processGenerationJob`) and the
-// fire-and-forget viral generators (currently Disaster Spawner; can be
-// extended to Voice Aura, Cursed UGC, etc.).
+// fire-and-forget viral generators (Disaster Spawner, Fitting Room,
+// Voice-to-Aura; extendable to Cursed UGC, Outfit, Glowup).
 //
-// User feedback (session 385 round 7):
+// User feedback (sessions 385/388/389):
 //   «его надо по флоу сделать как остальные чаты с интервью»
+//   «чат войс ту аура надо сделать как все остальные чаты с интервью»
 //
-// Before this module, Disaster Spawner had its own DisasterSpawnerStudio
-// full-screen sheet driven by `POST /api/disaster-spawner/generate`. The
-// chat flow had no entry point — opening Disaster Spawner from Forge
-// short-circuited into the dedicated sheet.
+// Before this module, each viral feature had its own dedicated full-screen
+// sheet (DisasterSpawnerStudio, FittingRoomStudio, VoiceAuraStudio) driven
+// by `POST /api/disaster-spawner/generate` etc. The chat flow had no entry
+// point — opening from Forge short-circuited into the dedicated sheet.
 //
 // This module exposes a single entry the regular game-pipeline dispatcher
 // can call BEFORE it kicks off the standard 9-14 stage pipeline:
@@ -20,10 +21,11 @@
 //
 // Currently routes:
 //   contentSubcategory === 'disaster_spawner'  →  generateDisaster()
+//   contentSubcategory === 'fitting_room'      →  startFittingRoomJob()
+//   contentSubcategory === 'voice_aura'        →  generateAura()
 //
-// Adding more (voice_aura, cursed_ugc, outfit, glowup, fitting_room) is a
-// matter of importing their generator + extracting params from the prompt
-// the same way.
+// Adding more (cursed_ugc, outfit, glowup) is a matter of importing the
+// generator + extracting params from the prompt the same way.
 
 import { logger } from 'firebase-functions/v2';
 import { v4 as uuidv4 } from 'uuid';
@@ -54,6 +56,16 @@ import {
   type OutfitGender,
   type OutfitStyleMode,
 } from './data/outfitAesthetics.js';
+
+// Session 388 — Voice-to-Aura chat dispatch (mirror Disaster Spawner pattern).
+import { generateAura } from './auraGenerator.js';
+import {
+  AURA_STYLES,
+  type AuraStyleId,
+  type AuraIntensity,
+  type AuraSize as AuraGenSize,
+  type AuraTone,
+} from './data/auraStyles.js';
 
 // ─── Param extraction ──────────────────────────────────────────
 
@@ -474,6 +486,218 @@ async function handleFittingRoom(args: {
   return { artifacts, status: 'completed' };
 }
 
+// ─── Voice-to-Aura handler ─────────────────────────────────────
+
+/**
+ * Heuristic + LLM-assisted extraction of aura parameters from a free-form
+ * chat prompt. Keyword match first (cheap, deterministic). LLM only fires
+ * when the prompt is short and didn't match any concrete style cluster.
+ */
+async function extractAuraParams(prompt: string): Promise<{
+  style: AuraStyleId;
+  intensity: AuraIntensity;
+  size: AuraGenSize;
+  tone: AuraTone;
+}> {
+  const lc = prompt.toLowerCase();
+
+  // Style detection — match keyword clusters per AuraStyleId. Default is
+  // 'anime' to mirror the iOS picker default.
+  let style: AuraStyleId = 'anime';
+  let styleMatched = false;
+  if (/\b(realistic|photoreal|real\s*fire|smoke|cinematic|physical|embers)\b/.test(lc)) {
+    style = 'realistic'; styleMatched = true;
+  } else if (/\b(sigma|chad|alpha|grindset|stoic|moai|stone|gigachad)\b/.test(lc)) {
+    style = 'sigma'; styleMatched = true;
+  } else if (/\b(demon|devil|hellfire|sukuna|crimson|blood|cursed\s*demon|jujutsu)\b/.test(lc)) {
+    style = 'demon'; styleMatched = true;
+  } else if (/\b(cyber|cyberpunk|neon|hacker|matrix|glitch|electric|lightning|tech|2077)\b/.test(lc)) {
+    style = 'cyber'; styleMatched = true;
+  } else if (/\b(void|black\s*hole|shadow|abyss|dark\s*aura|indigo\s*void)\b/.test(lc)) {
+    style = 'void'; styleMatched = true;
+  } else if (/\b(cosmic|galaxy|nebula|stardust|star\s*dust|universe|space|cosmos|ultra\s*instinct)\b/.test(lc)) {
+    style = 'cosmic'; styleMatched = true;
+  } else if (/\b(skibidi|brainrot|tralalero|bombardiro|italian\s*meme|cursed\s*meme|absurd|ohio)\b/.test(lc)) {
+    style = 'meme'; styleMatched = true;
+  } else if (/\b(anime|shounen|naruto|dragon\s*ball|goku|itadori|kakashi|manga|otaku)\b/.test(lc)) {
+    style = 'anime'; styleMatched = true;
+  }
+
+  // Intensity — aggressive is the default (matches iOS picker default).
+  let intensity: AuraIntensity = 'aggressive';
+  if (/\b(calm|gentle|soft|chill|peaceful|subtle|quiet|slow)\b/.test(lc)) {
+    intensity = 'calm';
+  } else if (/\b(extreme|overpowered|op|insane|godlike|maxxed|unhinged|ultimate|ultra|nuclear|god\s*tier)\b/.test(lc)) {
+    intensity = 'extreme';
+  }
+
+  // Size — default 'normal'.
+  let size: AuraGenSize = 'normal';
+  if (/\b(small|tiny|minimal|subtle\s*size|close)\b/.test(lc)) {
+    size = 'small';
+  } else if (/\b(massive|huge|giant|arena|screen|enormous|colossal|oversized)\b/.test(lc)) {
+    size = 'massive';
+  }
+
+  // Tone — default 'clean'.
+  let tone: AuraTone = 'clean';
+  if (/\b(cursed|brainrot|absurd|chaotic|weird|cringe|meme|broken)\b/.test(lc)) {
+    tone = 'cursed';
+  }
+
+  // If nothing matched and the prompt is short / vague, ask the LLM once.
+  if (!styleMatched && prompt.trim().split(/\s+/).length < 6) {
+    try {
+      const r = await runChatProvider('openai',
+        `Classify this Roblox aura prompt into one style: anime | realistic | sigma | demon | cyber | void | cosmic | meme.\n` +
+        `Reply with ONLY the single word. Prompt: "${prompt.trim().slice(0, 300)}"`,
+        undefined,
+        { timeoutMs: 8_000 },
+      );
+      const guess = (r.text ?? '').trim().toLowerCase();
+      if (['anime', 'realistic', 'sigma', 'demon', 'cyber', 'void', 'cosmic', 'meme'].includes(guess)) {
+        style = guess as AuraStyleId;
+      }
+    } catch (err) {
+      logger.warn('[viralChatDispatch] LLM aura style classification failed (non-fatal)',
+        { err: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return { style, intensity, size, tone };
+}
+
+async function handleVoiceAura(args: {
+  firebaseUid: string;
+  jobId: string;
+  prompt: string;
+}): Promise<{ artifacts: GenerationArtifact[]; status: 'completed' | 'failed'; errorMessage?: string }> {
+  const { firebaseUid, jobId, prompt } = args;
+
+  // 1) Decode params from the free-form chat prompt.
+  const params = await extractAuraParams(prompt);
+
+  // 2) Run the existing generator (4 parallel: main image + op + cursed +
+  //    Lua + metadata, then rbxmx upload). Same pipeline used by the
+  //    legacy /api/voice-aura/generate endpoint.
+  let result: Awaited<ReturnType<typeof generateAura>>;
+  try {
+    result = await generateAura({
+      userPrompt: prompt,
+      style: params.style,
+      intensity: params.intensity,
+      size: params.size,
+      tone: params.tone,
+      inputMode: 'text',
+      firebaseUid,
+    });
+  } catch (err) {
+    logger.error('[viralChatDispatch] generateAura failed', { jobId, err });
+    return {
+      artifacts: [],
+      status: 'failed',
+      errorMessage: err instanceof Error ? err.message : 'Aura generation failed',
+    };
+  }
+
+  // 3) Translate the bundle into standard chat artifacts (so ChatView's
+  //    existing artifact-card renderer just picks them up — no new UI).
+  const artifacts: GenerationArtifact[] = [];
+  const baseName = result.titleEN.replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) || 'Aura';
+
+  if (result.previewUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'png',
+      name: `${baseName}-poster.png`,
+      url: result.previewUrl,
+      artifactRole: 'thumbnail',
+      metadata: {
+        generationId: result.generationId,
+        style: result.style,
+        intensity: result.intensity,
+        rarityVibeEN: result.rarityVibeEN,
+        difficulty: result.difficulty,
+        kind: 'voice_aura',
+      },
+    });
+  }
+
+  if (result.rbxmxUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'rbxm',
+      extension: 'rbxmx',
+      name: `${baseName}.rbxmx`,
+      url: result.rbxmxUrl,
+      artifactRole: 'export_binary',
+      previewText: `Drop into ServerScriptService → press Play. ${result.shareCaption}`,
+      metadata: {
+        generationId: result.generationId,
+        style: result.style,
+        intensity: result.intensity,
+        size: result.size,
+        tone: result.tone,
+        difficulty: result.difficulty,
+        rarityVibeEN: result.rarityVibeEN,
+        safeUsedFallback: result.safeUsedFallback,
+        kind: 'voice_aura',
+      },
+    });
+  }
+
+  // Inline Lua so the user can see it without downloading.
+  if (result.luaScript) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'lua',
+      extension: 'lua',
+      name: `${baseName}.server.lua`,
+      code: result.luaScript,
+      previewText: result.luaScript.slice(0, 200),
+      artifactRole: 'script',
+      metadata: {
+        generationId: result.generationId,
+        kind: 'voice_aura',
+      },
+    });
+  }
+
+  // 4) Mirror into the unified Recents collection so My Creations sees it.
+  void recordViralGeneration({
+    firebaseUid,
+    kind: 'voice_aura',
+    generationId: result.generationId,
+    title: result.titleEN,
+    subtitle: result.shareCaption,
+    thumbnailUrl: result.previewUrl,
+    accentHex: AURA_STYLES[result.style]?.accentHex,
+    payload: {
+      style: result.style,
+      intensity: result.intensity,
+      size: result.size,
+      tone: result.tone,
+      previewUrl: result.previewUrl,
+      rbxmxUrl: result.rbxmxUrl,
+      luaScript: result.luaScript,
+      titleEN: result.titleEN,
+      titleRU: result.titleRU,
+      shareCaption: result.shareCaption,
+      rarityVibeEN: result.rarityVibeEN,
+      rarityVibeRU: result.rarityVibeRU,
+      difficulty: result.difficulty,
+      variations: result.variations,
+      instructionsEN: result.instructionsEN,
+      instructionsRU: result.instructionsRU,
+      safeUsedFallback: result.safeUsedFallback,
+      generationStatus: result.generationStatus,
+      jobId,
+    },
+  });
+
+  return { artifacts, status: 'completed' };
+}
+
 // ─── Public entry (called by /api/content/generate dispatcher) ─
 
 /**
@@ -520,6 +744,23 @@ export async function tryHandleViralChatGeneration(args: {
       return true;
     }
     const handled = await handleFittingRoom({
+      firebaseUid: job.userId,
+      jobId: job.id,
+      prompt: trimmed,
+    });
+    job.artifacts = [...(job.artifacts ?? []), ...handled.artifacts];
+    job.status = handled.status;
+    if (handled.errorMessage) job.errorMessage = handled.errorMessage;
+    return true;
+  }
+
+  if (subcategory === 'voice_aura') {
+    if (!trimmed) {
+      job.status = 'failed';
+      job.errorMessage = 'Empty aura prompt';
+      return true;
+    }
+    const handled = await handleVoiceAura({
       firebaseUid: job.userId,
       jobId: job.id,
       prompt: trimmed,
