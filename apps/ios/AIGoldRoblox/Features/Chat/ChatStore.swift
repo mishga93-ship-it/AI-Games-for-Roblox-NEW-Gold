@@ -5343,6 +5343,25 @@ final class ChatStore: ObservableObject {
                     viralGenerationId: genId
                 )
             }
+            // Session 385 round 7 — Disaster Spawner: route into the rich
+            // DisasterSpawnerResultView via DisasterSpawnerChatBridge instead
+            // of the generic Content Project Pipeline preview.
+            if kind == "disaster_spawner", !genId.isEmpty {
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Disaster Spawner" : draft.title,
+                    artifactType: .unavailable("Opening disaster…"),
+                    exportFileType: "viral",
+                    artifactIds: [],
+                    shareDescription: job.resultText ?? "AI-generated Roblox disaster",
+                    downloadURL: nil,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: nil,
+                    fbxDownloadURL: nil,
+                    notes: [],
+                    viralKind: kind,
+                    viralGenerationId: genId
+                )
+            }
         }
 
         // Phase F (session 219): pull live Roblox catalog showcase items from job

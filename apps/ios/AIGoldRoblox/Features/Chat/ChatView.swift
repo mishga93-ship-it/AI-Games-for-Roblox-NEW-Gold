@@ -1189,6 +1189,16 @@ struct ChatView: View {
             NavigationStack {
                 FittingRoomChatBridge(generationId: genId)
             }
+        } else if preview.viralKind == "disaster_spawner", let genId = preview.viralGenerationId, !genId.isEmpty {
+            // Session 385 round 7 — Disaster Spawner chat-flow result.
+            // Bridge fetches the persisted DisasterGenerationDoc via
+            // /api/viral-generations/:id, drives DisasterSpawnerStudio
+            // into .result, renders DisasterSpawnerResultView (poster +
+            // rarity/difficulty/players badges + Lua viewer + share-poster)
+            // instead of the generic Content Project Pipeline preview.
+            NavigationStack {
+                DisasterSpawnerChatBridge(generationId: genId)
+            }
         } else {
             defaultPreviewSheetContent(for: preview)
         }
