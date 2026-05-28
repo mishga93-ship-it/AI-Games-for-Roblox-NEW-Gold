@@ -64,6 +64,11 @@ FOLDERS_TO_ADD = {
     'DisasterSpawnerStudioView.swift',
     'DisasterSpawnerResultView.swift',
     'DisasterSpawnerSharePoster.swift',
+    # Session 385 round 7 — chat-flow bridge that opens the rich
+    # DisasterSpawnerResultView from inside ChatView (instead of the
+    # generic Content Project Pipeline preview) when a disaster_spawner
+    # chat-flow generation completes.
+    'DisasterSpawnerChatBridge.swift',
   ],
   # Session 385 round 6 — unified Recents for fire-and-forget viral
   # generations (Outfit, Glowup, CursedUGC, VoiceAura, DisasterSpawner,

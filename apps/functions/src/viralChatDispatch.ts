@@ -250,6 +250,9 @@ async function handleDisasterSpawner(args: {
     thumbnailUrl: result.previewUrl,
     accentHex: DISASTER_MODES[result.mode]?.accentHex,
     payload: {
+      // Full DisasterGenerationResponse-compatible shape so iOS can
+      // reconstruct the rich result view (DisasterSpawnerResultView) from
+      // GET /api/viral-generations/:id without re-running the pipeline.
       mode: result.mode,
       chaos: result.chaos,
       size: result.size,
@@ -262,6 +265,11 @@ async function handleDisasterSpawner(args: {
       rarityVibeEN: result.rarityVibeEN,
       rarityVibeRU: result.rarityVibeRU,
       difficulty: result.difficulty,
+      variations: result.variations,
+      instructionsEN: result.instructionsEN,
+      instructionsRU: result.instructionsRU,
+      generationStatus: result.generationStatus,
+      usedFallback: result.usedFallback,
       recommendedPlayers: result.recommendedPlayers,
       luaScript: result.luaScript,
       jobId,

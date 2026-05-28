@@ -166,4 +166,96 @@ enum DisasterSpawnerAPIClient {
             throw DisasterAPIError.underlying(error)
         }
     }
+
+    /// Fetch a previously generated disaster by id. Used by
+    /// `DisasterSpawnerChatBridge` to re-hydrate the rich result payload
+    /// from the artifact metadata's `generationId` after a chat-flow
+    /// generation completes. Returns the fully-decoded doc — convert via
+    /// `.toResponse()` to feed `DisasterSpawnerResultView`.
+    static func fetchById(_ generationId: String) async throws -> DisasterGenerationDoc {
+        do {
+            return try await APIClient.request(
+                "api/viral-generations/\(generationId)",
+                method: "GET",
+                timeout: 20
+            )
+        } catch APIError.httpError(let code) where code == 401 {
+            throw DisasterAPIError.underlying(APIError.httpError(401))
+        } catch APIError.httpError(let code) where code == 404 {
+            throw DisasterAPIError.underlying(APIError.httpError(404))
+        } catch {
+            throw DisasterAPIError.underlying(error)
+        }
+    }
+}
+
+// MARK: - Recents detail (GET /api/viral-generations/:id, kind=disaster_spawner)
+
+/// Detail response when the doc kind is `disaster_spawner`. Mirrors the
+/// payload shape recorded by `viralChatDispatch.ts` `handleDisasterSpawner()`.
+/// Outer `generationId` is the Firestore doc id; inner `payload` holds the
+/// full `DisasterGenerationResponse`-equivalent fields so the rich result
+/// view can present it identically to a fresh
+/// `POST /api/disaster-spawner/generate` response.
+struct DisasterGenerationDoc: Codable {
+    let generationId: String
+    let kind: String
+    let title: String
+    let subtitle: String?
+    let thumbnailUrl: String?
+    let accentHex: String?
+    let createdAtMs: Double
+    let payload: DisasterGenerationPayload
+
+    /// Re-hydrate the full `DisasterGenerationResponse` so
+    /// `DisasterSpawnerResultView` can present this generation identically
+    /// to a fresh `POST /api/disaster-spawner/generate` response. Fields
+    /// missing from older payloads fall back to reasonable defaults so the
+    /// view doesn't crash on partial data.
+    func toResponse() -> DisasterGenerationResponse {
+        return DisasterGenerationResponse(
+            generationId: generationId,
+            mode: payload.mode ?? "meme",
+            chaos: payload.chaos ?? "chaotic",
+            size: payload.size ?? "normal",
+            frequency: payload.frequency ?? "normal",
+            titleEN: payload.titleEN ?? title,
+            titleRU: payload.titleRU ?? title,
+            shareCaption: payload.shareCaption ?? (subtitle ?? ""),
+            rarityVibeEN: payload.rarityVibeEN ?? "Server Destroyer",
+            rarityVibeRU: payload.rarityVibeRU ?? "Уничтожитель серверов",
+            difficulty: payload.difficulty ?? "Hard",
+            recommendedPlayers: payload.recommendedPlayers ?? "10-20",
+            previewUrl: payload.previewUrl ?? thumbnailUrl,
+            variations: payload.variations ?? [],
+            luaScript: payload.luaScript ?? "",
+            rbxmxUrl: payload.rbxmxUrl,
+            usedFallback: payload.usedFallback ?? false,
+            instructionsEN: payload.instructionsEN ?? [],
+            instructionsRU: payload.instructionsRU ?? [],
+            generationStatus: payload.generationStatus ?? "ready"
+        )
+    }
+}
+
+struct DisasterGenerationPayload: Codable {
+    let mode: String?
+    let chaos: String?
+    let size: String?
+    let frequency: String?
+    let previewUrl: String?
+    let rbxmxUrl: String?
+    let luaScript: String?
+    let titleEN: String?
+    let titleRU: String?
+    let shareCaption: String?
+    let rarityVibeEN: String?
+    let rarityVibeRU: String?
+    let difficulty: String?
+    let recommendedPlayers: String?
+    let variations: [DisasterVariation]?
+    let usedFallback: Bool?
+    let instructionsEN: [String]?
+    let instructionsRU: [String]?
+    let generationStatus: String?
 }
