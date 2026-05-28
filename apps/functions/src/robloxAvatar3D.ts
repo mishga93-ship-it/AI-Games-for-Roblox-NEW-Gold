@@ -69,14 +69,21 @@ export function hashToCdnUrl(hash: string): string {
   if (!hash || typeof hash !== 'string' || hash.length < 32) {
     throw new Error(`invalid CDN hash: ${hash}`);
   }
-  // Strip any of Roblox's variable-length time-windowed prefixes
-  // (`180DAY-`, `30DAY-`, `30DAY-Avatar-…-Obj`, etc.) so the XOR sees
-  // only the actual hex hash. The bucket is determined by the hex; the
-  // download URL keeps the original prefix.
-  const hex = hash.match(/[0-9a-fA-F]{32,}/)?.[0] ?? hash;
+  // Roblox's CDN sharding (verified empirically 2026-05-28 against both
+  // 30DAY and 180DAY hashes): start i=31, XOR ALL chars of the hash
+  // INCLUDING any prefix, no 38-char cap. The legacy algorithm capped
+  // at 38 chars but only worked for 32-char hashes. For new prefixed
+  // hashes (39 chars for `180DAY-…`, 38 for `30DAY-…`) the cap dropped
+  // a trailing char and shifted the bucket — that's why earlier
+  // «HTTP 403 for t0.rbxcdn.com/30DAY-…» errors showed up.
+  // Verified buckets:
+  //   30DAY-68275d6f5bff3955d67fd7a1dc718393 → t2 ✓
+  //   180DAY-b6df2de0f63112ed8faaf7fe2086eadb → t0 ✓
+  //   180DAY-67f2e56b10e0dd94447ce6ae749cc015 → t2 ✓
+  //   180DAY-80f5427163db185b58e681441091b9a7 → t2 ✓
   let i = 31;
-  for (let t = 0; t < 38 && t < hex.length; t++) {
-    i ^= hex.charCodeAt(t);
+  for (let t = 0; t < hash.length; t++) {
+    i ^= hash.charCodeAt(t);
   }
   const bucket = (i % 8 + 8) % 8;  // guard against negative modulo
   return `https://t${bucket}.rbxcdn.com/${hash}`;

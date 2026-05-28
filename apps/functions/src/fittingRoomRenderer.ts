@@ -218,6 +218,10 @@ async function renderAngle(args: {
   avatarBuffer: Buffer | null;
   angle: FittingAngle;
   generationId: string;
+  /// Per-angle strength: front uses low (0.55) to preserve face from the
+  /// raw avatar; 3/4 and back use higher (0.78) because we propagate from
+  /// the front render and need flux to rotate the pose.
+  strength: number;
 }): Promise<Buffer | undefined> {
   const finalPrompt = buildFittingPrompt({ basePrompt: args.basePrompt, angle: args.angle });
 
@@ -225,20 +229,20 @@ async function renderAngle(args: {
   if (args.avatarBuffer) {
     try {
       const dataUri = `data:image/png;base64,${args.avatarBuffer.toString('base64')}`;
-      // User reported (2026-05-28): «в фит аппилед на всех трех ракурсах
-      // разные персы и скины». Two reasons:
-      //   1. strength: 0.85 → flux is mostly INVENTING a new character
-      //      instead of dressing the input avatar. Drop to 0.55 so the
-      //      user's face / skin tone / body shape come through.
-      //   2. Each angle picked a random seed → 3 different faces. Use
-      //      a generation-stable seed (deterministicSeed of generationId)
-      //      so all 3 angles share the same starting noise pattern. With
-      //      lower strength + shared seed, the three renders read as the
-      //      SAME person in 3 poses, not 3 strangers in 3 vibes.
+      // Two-stage rendering (user feedback 2026-05-28: «на 3 ракурсах
+      // одно и то же, просто меняется надпись на футболке»):
+      //   • FRONT: img2img from raw avatar PNG, strength=0.55 → preserves
+      //     face / skin / body shape from the user's actual avatar.
+      //   • 3/4 + BACK: img2img from the FRONT RENDER (not raw avatar),
+      //     strength=0.78 → flux starts from the already-dressed front
+      //     view; higher strength + angle prompt rotates the camera.
+      // Result: all 3 renders read as the same person in different poses.
+      // Per-generation seed (FNV-1a of generationId) anchors the noise
+      // pattern across angles for extra consistency.
       const result = await runFal('flux/dev/image-to-image', {
         image_url: dataUri,
         prompt: finalPrompt,
-        strength: 0.55,
+        strength: args.strength,
         num_inference_steps: 28,
         guidance_scale: 4.5,
         seed: deterministicSeed(args.generationId),
@@ -354,12 +358,24 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
   });
 
   // 4) For each angle, run img2img sequentially-but-progressively.
-  // Sequential lets us patch the doc after each angle (front first — best perceived speed).
+  // Two-stage: front from raw avatar (low strength = face preserved);
+  // 3/4 and back use the FRONT render as input (higher strength rotates
+  // the camera while keeping the face). See renderAngle for the why.
   const basePrompt = `A Roblox blocky avatar in the "${aesthetic.title}" aesthetic. ${aesthetic.pitchEN}`;
 
+  let frontBuffer: Buffer | null = null;
   for (const angle of FITTING_ANGLE_ORDER) {
-    const buf = await renderAngle({ basePrompt, avatarBuffer, angle, generationId });
+    const isFront = angle === 'front';
+    const inputBuf = isFront ? avatarBuffer : (frontBuffer ?? avatarBuffer);
+    const buf = await renderAngle({
+      basePrompt,
+      avatarBuffer: inputBuf,
+      angle,
+      generationId,
+      strength: isFront ? 0.55 : 0.78,
+    });
     if (!buf) continue;
+    if (isFront) frontBuffer = buf;
     try {
       const url = await uploadSignedPNG({
         firebaseUid: input.firebaseUid,
