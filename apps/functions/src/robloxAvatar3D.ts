@@ -2,11 +2,12 @@
 // rendered 3D avatar (OBJ + MTL + PNG textures) for the iOS Fitting Room
 // SceneKit viewer.
 //
-// Public Roblox web APIs — NO auth required:
+// Roblox web APIs (BOTH endpoints now require ROBLOSECURITY cookie auth
+// — Roblox tightened access on users/avatar-3d in 2026, was public before):
 //   1. POST/GET https://thumbnails.roblox.com/v1/users/avatar-3d?userId=N
 //        → { targetId, state: 'Completed'|'Pending'|'Error', imageUrl }
 //      `imageUrl` is the URL to a CDN-hosted JSON manifest (NOT a PNG).
-//   2. GET <imageUrl>
+//   2. GET <imageUrl>  (no auth needed — public CDN)
 //        → { obj: <hash>, mtl: <hash>, textures: [<hash>...], camera, aabb }
 //   3. Each hash → CDN URL via the standard t0-t7.rbxcdn.com bucket selection
 //      (Roblox shards their CDN by an XOR over the hash's first 38 chars).
@@ -95,13 +96,20 @@ export async function fetchRobloxAvatar3D(args: {
     return null;
   }
 
+  const cookie = process.env.ROBLOX_SERVICE_COOKIE ?? '';
+  if (!cookie) {
+    logger.warn('[robloxAvatar3D] ROBLOX_SERVICE_COOKIE not set — users/avatar-3d requires auth as of 2026');
+    return null;
+  }
+  const cookieHeader = `.ROBLOSECURITY=${cookie}`;
+
   // Step 1: poll the avatar-3d endpoint until state='Completed'.
   let imageUrl: string | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const resp = await fetch(`${AVATAR_3D_ENDPOINT}?userId=${userId}`, {
         method: 'GET',
-        headers: { 'Accept': 'application/json' },
+        headers: { 'Accept': 'application/json', 'Cookie': cookieHeader },
         signal: AbortSignal.timeout(8_000),
       });
       if (!resp.ok) {
