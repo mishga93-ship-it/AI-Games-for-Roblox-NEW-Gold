@@ -49,10 +49,35 @@ struct CursedUGCResultView: View {
             .padding(.horizontal, 12)
             .padding(.top, 12)
 
-            // Main image
+            // Main visual — Session 390: prefer Meshy v6 3D mesh (rotatable
+            // SCNView) over the flux 2D PNG. If meshUrl is nil (timeout /
+            // failure) fall back to the 2D image so the card never goes blank.
             ZStack {
                 Color.white
-                if let url = response.mainImageUrl.flatMap(URL.init(string:)) {
+                if let meshURL = response.meshUrl.flatMap(URL.init(string:)) {
+                    RealModel3DPreview(modelURL: meshURL)
+                        .background(Color.white)
+                    // Small "3D — drag to rotate" hint pinned bottom-left so
+                    // users discover the interactivity without instructions.
+                    VStack {
+                        Spacer()
+                        HStack {
+                            HStack(spacing: 5) {
+                                Image(systemName: "rotate.3d")
+                                    .font(.caption2.bold())
+                                Text(loc(en: "3D — drag to rotate",
+                                         ru: "3D — крути пальцем"))
+                                    .font(.caption2.bold())
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color.black.opacity(0.55))
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
+                            Spacer()
+                        }
+                        .padding(8)
+                    }
+                } else if let url = response.mainImageUrl.flatMap(URL.init(string:)) {
                     AsyncImage(url: url) { phase in
                         switch phase {
                         case .success(let img): img.resizable().scaledToFit()
@@ -65,7 +90,7 @@ struct CursedUGCResultView: View {
                     cursedPlaceholder
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 280, maxHeight: 360)
+            .frame(maxWidth: .infinity, minHeight: 320, maxHeight: 400)
             .clipped()
 
             // Name + creator + price

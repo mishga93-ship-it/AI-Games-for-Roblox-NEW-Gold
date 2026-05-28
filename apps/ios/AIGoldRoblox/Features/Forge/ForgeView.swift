@@ -1349,12 +1349,17 @@ private extension ForgeView {
             isShowingOutfitStudio = true
             return
         }
-        if selectedOption.id == "cursed_ugc" {
-            isShowingProjectPicker = false
-            isShowingChatPicker = false
-            isShowingCursedUGCStudio = true
-            return
-        }
+        // Session 390 — Cursed UGC Modeler migrated off its dedicated full-
+        // screen picker (CursedUGCStudioView with category grid → style grid →
+        // customize → loading → result) onto the standard ChatView interview
+        // flow, on user request («нужно это заменить на обычный чат с
+        // интервью как у всех»). CursedUGCStudio/View/ResultView files stay
+        // in the codebase — they're still referenced by ViralLibrary +
+        // share-poster deep-link paths — but the Forge tile falls through
+        // to the launchConfig path below with contentSubcategory="cursed_ugc".
+        // Presets live in ChatPresets.swift; backend handler lives in
+        // viralChatDispatch.ts (handleCursedUGC + extractCursedUGCParams).
+        //
         // Session 385 round 7 — Disaster Spawner moved off its dedicated
         // full-screen sheet (DisasterSpawnerStudioView) onto the standard
         // ChatView interview flow, on user request («его надо по флоу

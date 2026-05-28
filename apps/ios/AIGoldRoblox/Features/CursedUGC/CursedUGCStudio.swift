@@ -158,9 +158,14 @@ final class CursedUGCStudio: ObservableObject {
     @available(iOS 16.0, *)
     @MainActor
     private func renderPoster(resp: CursedUGCResponse) async -> UIImage? {
-        // Pre-download main image so ImageRenderer sees it synchronously.
+        // Session 390 — prefer the Meshy v6 3D-render PNG over the flux 2D
+        // concept so the TikTok-share visual matches the rotatable 3D mesh
+        // the user actually saw on the result screen. Fall back to flux
+        // mainImageUrl if meshThumbnailUrl is missing (timeout / failure).
+        // Pre-download synchronously so ImageRenderer renders in one frame.
         var mainImg: UIImage? = nil
-        if let u = resp.mainImageUrl, let url = URL(string: u),
+        let preferredUrl = resp.meshThumbnailUrl ?? resp.mainImageUrl
+        if let u = preferredUrl, let url = URL(string: u),
            let (data, _) = try? await URLSession.shared.data(from: url) {
             mainImg = UIImage(data: data)
         }

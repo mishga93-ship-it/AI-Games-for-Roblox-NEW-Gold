@@ -10,7 +10,7 @@
 
 import { logger } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
-import { generatePreviewTexture, runChatProvider } from './providers.js';
+import { generatePreviewTexture, runChatProvider, runMeshy } from './providers.js';
 import {
   buildCursedUGCPrompt,
   CURSED_UGC_CATEGORIES,
@@ -191,19 +191,73 @@ export interface CursedUGCResult extends CursedUGCMetadata {
   styleId: CursedUGCStyleId;
   intensity: CursedUGCIntensity;
   mainImageUrl?: string;
+  /**
+   * Session 390 — Meshy v6 GLB URL for the 3D mesh of the cursed item, so the
+   * iOS result screen can render a rotatable SceneKit viewer instead of the
+   * 2D flux concept. Optional: if Meshy times out or fails, the UI falls
+   * back to mainImageUrl (2D PNG).
+   */
+  meshUrl?: string;
+  /** Meshy v6 PNG thumbnail of the rendered 3D model (different from the
+   *  flux 2D concept — this one actually represents the mesh that ships). */
+  meshThumbnailUrl?: string;
   variations: Array<{ label: string; imageUrl?: string }>;
   generationStatus: 'ready' | 'partial' | 'failed';
+}
+
+// Session 390 — Meshy v6 text-to-3D wrapper for cursed UGC. Returns undefined
+// on any failure / timeout so the main flow keeps going on 2D images alone.
+// Timeout is generous (75s) since Meshy v6 takes 30-60s typical; cursed UGC
+// chat flow already runs through viralChatDispatch which itself caps polling
+// at 75s, so this stays under the chat-job wall-clock budget.
+async function meshyOnceFor(args: {
+  prompt: string;
+  contentSubcategory?: string;
+}): Promise<{ meshUrl?: string; thumbnailUrl?: string } | undefined> {
+  try {
+    const meshyPromise = runMeshy(args.prompt, {
+      // Treat cursed UGC items as 'character' content so Meshy's negative
+      // prompt strips background scene / environment / floating parts — we
+      // want a clean iso-style object on white, matching the flux output.
+      contentCategory: 'character',
+      contentSubcategory: args.contentSubcategory ?? 'cursed_ugc',
+      title: 'Cursed UGC Item',
+    });
+    const timeoutPromise = new Promise<undefined>((resolve) =>
+      setTimeout(() => resolve(undefined), 75_000),
+    );
+    const winner = await Promise.race([meshyPromise, timeoutPromise]);
+    if (!winner) {
+      logger.warn('[cursedUgcGenerator] Meshy timed out at 75s — falling back to 2D-only result');
+      return undefined;
+    }
+    const raw = winner.raw as Record<string, unknown> | undefined;
+    const meshUrl = winner.outputUrl
+      ?? (typeof raw?.modelUrl === 'string' ? (raw.modelUrl as string) : undefined);
+    const thumbnailUrl = typeof raw?.thumbnailUrl === 'string'
+      ? (raw.thumbnailUrl as string)
+      : undefined;
+    return { meshUrl, thumbnailUrl };
+  } catch (err) {
+    logger.warn('[cursedUgcGenerator] Meshy 3D step failed (non-fatal)', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
 }
 
 export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUGCResult> {
   const generationId = `cugc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-  // 3 flux calls in parallel + 1 LLM metadata call in parallel.
+  // 3 flux calls + 1 LLM metadata call + 1 Meshy 3D call — all in parallel.
+  // Meshy is the slowest (~30-60s); flux is ~6-10s; LLM is ~3-6s. With
+  // Promise.all the total wall-clock is the max of these. The Meshy call
+  // wraps a 75s soft timeout so a stuck mesh stage can't block the result.
   const mainPrompt = buildCursedUGCPrompt({ category: input.categoryId, style: input.styleId, intensity: input.intensity, userPrompt: input.userPrompt });
   const cuterPrompt = buildCursedUGCPrompt({ category: input.categoryId, style: input.styleId, intensity: input.intensity, userPrompt: input.userPrompt, variationOverride: 'cuter' });
   const cursedPrompt = buildCursedUGCPrompt({ category: input.categoryId, style: input.styleId, intensity: input.intensity, userPrompt: input.userPrompt, variationOverride: 'more_cursed' });
 
-  const [mainImageUrl, cuterUrl, cursedUrl, metadata] = await Promise.all([
+  const [mainImageUrl, cuterUrl, cursedUrl, metadata, mesh] = await Promise.all([
     fluxOnceToSignedUrl({ prompt: mainPrompt, firebaseUid: input.firebaseUid, filename: 'main.png' }),
     fluxOnceToSignedUrl({ prompt: cuterPrompt, firebaseUid: input.firebaseUid, filename: 'cuter.png' }),
     fluxOnceToSignedUrl({ prompt: cursedPrompt, firebaseUid: input.firebaseUid, filename: 'cursed.png' }),
@@ -213,6 +267,7 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
       intensity: input.intensity,
       userPrompt: input.userPrompt,
     }),
+    meshyOnceFor({ prompt: mainPrompt, contentSubcategory: 'cursed_ugc' }),
   ]);
 
   const variations: Array<{ label: string; imageUrl?: string }> = [
@@ -229,6 +284,8 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
     styleId: input.styleId,
     intensity: input.intensity,
     mainImageUrl,
+    meshUrl: mesh?.meshUrl,
+    meshThumbnailUrl: mesh?.thumbnailUrl,
     variations,
     generationStatus,
     ...metadata,

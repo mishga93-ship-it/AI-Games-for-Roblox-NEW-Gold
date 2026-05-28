@@ -140,6 +140,14 @@ struct CursedUGCResponse: Codable {
     let fakePriceRobux: Int
     let fakeStats: CursedUGCFakeStats
     let mainImageUrl: String?
+    // Session 390 — Meshy v6 GLB URL of the 3D mesh, populated when the
+    // mesh stage finishes within the 75s soft timeout. The result screen
+    // renders a rotatable SCNView with this; falls back to mainImageUrl
+    // (2D PNG) when nil.
+    let meshUrl: String?
+    /** Meshy v6 PNG thumbnail of the 3D model — more accurate than the
+     *  flux concept image and used as fallback in the share-poster + grids. */
+    let meshThumbnailUrl: String?
     let variations: [CursedUGCVariation]
     let generationStatus: String
 

@@ -67,6 +67,19 @@ import {
   type AuraTone,
 } from './data/auraStyles.js';
 
+// Session 390 — Cursed UGC Modeler chat dispatch (replaces the dedicated
+// category → style → customize picker with a free-form chat interview).
+import { generateCursedUGC } from './cursedUgcGenerator.js';
+import {
+  CURSED_UGC_CATEGORIES,
+  isCursedUGCCategoryId,
+  isCursedUGCStyleId,
+  parseCursedUGCIntensity,
+  type CursedUGCCategoryId,
+  type CursedUGCStyleId,
+  type CursedUGCIntensity,
+} from './data/cursedUgcCategories.js';
+
 // ─── Param extraction ──────────────────────────────────────────
 
 /**
@@ -706,6 +719,255 @@ async function handleVoiceAura(args: {
   return { artifacts, status: 'completed' };
 }
 
+// ─── Cursed UGC Modeler handler ────────────────────────────────
+
+/**
+ * Heuristic + LLM-assisted extraction of cursed-UGC params from a free-form
+ * chat prompt. Maps keywords → category (7 ids) + style (8 ids) + intensity
+ * (mild/strong/extreme). LLM fallback only if keyword pass landed on the
+ * default category AND the prompt is very short / vague.
+ */
+async function extractCursedUGCParams(prompt: string): Promise<{
+  categoryId: CursedUGCCategoryId;
+  styleId: CursedUGCStyleId;
+  intensity: CursedUGCIntensity;
+}> {
+  const lc = prompt.toLowerCase();
+
+  // Category detection — order matters (more specific patterns first).
+  let categoryId: CursedUGCCategoryId = 'brainrot_item';
+  let categoryMatched = false;
+  if (/\b(backpack|bag|knapsack|rucksack|book\s*bag|школьный\s*рюкзак|рюкзак|сумка)\b/.test(lc)) {
+    categoryId = 'giant_backpack'; categoryMatched = true;
+  } else if (/\b(face|cursed\s*face|smiley|emoji\s*face|deep[-\s]?fried\s*face|cursed\s*smile|лицо)\b/.test(lc)) {
+    categoryId = 'cursed_face'; categoryMatched = true;
+  } else if (/\b(plushie|plush|stuffed|toy\s*on\s*shoulder|shoulder\s*plush|плюш|игрушка)\b/.test(lc)) {
+    categoryId = 'meme_plushie'; categoryMatched = true;
+  } else if (/\b(pet|companion|follower|dragon|hamster|cat|dog|тигр|питомец|кот|собака)\b/.test(lc)
+    && /\b(giant|huge|massive|oversized|enormous|big|large|огромн|гигант)\b/.test(lc)) {
+    categoryId = 'giant_pet'; categoryMatched = true;
+  } else if (/\b(mask|masque|covering|маска)\b/.test(lc)) {
+    categoryId = 'weird_mask'; categoryMatched = true;
+  } else if (/\b(hat|cap|crown|helmet|sombrero|шляпа|шапка|кепка)\b/.test(lc)) {
+    categoryId = 'oversized_hat'; categoryMatched = true;
+  } else if (/\b(brainrot|skibidi|tralalero|bombardiro|sahur|crocodilo|italian\s*meme|меме|брейн)\b/.test(lc)) {
+    categoryId = 'brainrot_item'; categoryMatched = true;
+  }
+
+  // Style detection.
+  let styleId: CursedUGCStyleId = 'cursed';
+  if (/\b(cute|kawaii|pastel|baby|soft|adorable|милый|кьют)\b/.test(lc)) {
+    styleId = 'cute';
+  } else if (/\b(horror|scary|haunted|nightmare|зомби|страшн|жуть)\b/.test(lc)) {
+    styleId = 'horror';
+  } else if (/\b(sigma|chad|alpha|grindset|stoic|moai|сигма|альфа)\b/.test(lc)) {
+    styleId = 'sigma';
+  } else if (/\b(brainrot|skibidi|italian\s*meme|brain\s*rot|брейнрот)\b/.test(lc)) {
+    styleId = 'brainrot';
+  } else if (/\b(anime|otaku|kawaii\s*anime|manga|аниме)\b/.test(lc)) {
+    styleId = 'anime';
+  } else if (/\b(hyperreal|realistic|photoreal|uncanny|реалист)\b/.test(lc)) {
+    styleId = 'hyperreal';
+  } else if (/\b(emo|goth|myspace|chains|side\s*bangs|эмо|готик)\b/.test(lc)) {
+    styleId = 'emo';
+  } else if (/\b(cursed|deep[-\s]?fried|broken|absurd|weird|wrong|куршед|cursed)\b/.test(lc)) {
+    styleId = 'cursed';
+  }
+
+  // Intensity detection.
+  let intensity: CursedUGCIntensity = 'strong';
+  if (/\b(mild|gentle|subtle|small\s*amount|чуть|слегка|едва|едва\s*заметн)\b/.test(lc)) {
+    intensity = 'mild';
+  } else if (/\b(extreme|unhinged|insane|maxxed|overpowered|ultra|nuclear|cursed\s*max|ohio|max\s*chaos|максимальн|безумн)\b/.test(lc)) {
+    intensity = 'extreme';
+  }
+
+  // LLM fallback — only when keyword pass landed on default category
+  // AND the prompt is short/vague (less likely to have rich context).
+  if (!categoryMatched && prompt.trim().split(/\s+/).length < 8) {
+    try {
+      const r = await runChatProvider('openai',
+        `Classify this Roblox cursed-UGC prompt into ONE category id: ` +
+        `giant_backpack | cursed_face | meme_plushie | giant_pet | weird_mask | brainrot_item | oversized_hat.\n` +
+        `Reply with ONLY the single id. Prompt: "${prompt.trim().slice(0, 300)}"`,
+        undefined,
+        { timeoutMs: 8_000 },
+      );
+      const guess = (r.text ?? '').trim().toLowerCase();
+      if (isCursedUGCCategoryId(guess)) {
+        categoryId = guess;
+      }
+    } catch (err) {
+      logger.warn('[viralChatDispatch] LLM cursed-UGC category classification failed (non-fatal)',
+        { err: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  // Defensive parse (just in case the keyword block above lands on an id that
+  // somehow isn't valid — should never happen given the literal-string typing).
+  return {
+    categoryId: isCursedUGCCategoryId(categoryId) ? categoryId : 'brainrot_item',
+    styleId: isCursedUGCStyleId(styleId) ? styleId : 'cursed',
+    intensity: parseCursedUGCIntensity(intensity),
+  };
+}
+
+async function handleCursedUGC(args: {
+  firebaseUid: string;
+  jobId: string;
+  prompt: string;
+}): Promise<{ artifacts: GenerationArtifact[]; status: 'completed' | 'failed'; errorMessage?: string }> {
+  const { firebaseUid, jobId, prompt } = args;
+
+  // 1) Extract params from the free-form chat prompt.
+  const params = await extractCursedUGCParams(prompt);
+  const category = CURSED_UGC_CATEGORIES[params.categoryId];
+
+  // 2) Run the existing generator (3× flux + 1× Meshy v6 3D + LLM metadata
+  //    in parallel — Meshy adds the 3D mesh URL, capped at 75s soft timeout).
+  let result: Awaited<ReturnType<typeof generateCursedUGC>>;
+  try {
+    result = await generateCursedUGC({
+      categoryId: params.categoryId,
+      styleId: params.styleId,
+      intensity: params.intensity,
+      userPrompt: prompt,
+      firebaseUid,
+    });
+  } catch (err) {
+    logger.error('[viralChatDispatch] generateCursedUGC failed', { jobId, err });
+    return {
+      artifacts: [],
+      status: 'failed',
+      errorMessage: err instanceof Error ? err.message : 'Cursed UGC generation failed',
+    };
+  }
+
+  // 3) Translate the bundle into standard chat artifacts (PNG poster for the
+  //    chat thumbnail, optional GLB for the 3D viewer, items metadata blob).
+  const artifacts: GenerationArtifact[] = [];
+  const baseName = result.titleEN.replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) || 'CursedUGC';
+
+  if (result.mainImageUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'png',
+      name: `${baseName}-poster.png`,
+      url: result.mainImageUrl,
+      artifactRole: 'thumbnail',
+      metadata: {
+        generationId: result.generationId,
+        categoryId: result.categoryId,
+        styleId: result.styleId,
+        intensity: result.intensity,
+        rarityVibeEN: result.rarityVibeEN,
+        kind: 'cursed_ugc',
+      },
+    });
+  }
+
+  if (result.meshUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'rbxm',                       // closest existing artifact slot for binary assets
+      extension: 'glb',
+      name: `${baseName}.glb`,
+      url: result.meshUrl,
+      artifactRole: 'export_binary',
+      previewText: 'Rotatable 3D mesh of the cursed item. Open in any GLB viewer.',
+      metadata: {
+        generationId: result.generationId,
+        categoryId: result.categoryId,
+        meshThumbnailUrl: result.meshThumbnailUrl ?? null,
+        kind: 'cursed_ugc',
+      },
+    });
+  }
+
+  // Variation thumbnails (cuter / more_cursed) — still useful in chat as
+  // smaller previews next to the main 3D mesh.
+  for (const v of result.variations) {
+    if (!v.imageUrl) continue;
+    artifacts.push({
+      id: uuidv4(),
+      type: 'png',
+      name: `${baseName}-${v.label}.png`,
+      url: v.imageUrl,
+      artifactRole: 'thumbnail',
+      metadata: {
+        generationId: result.generationId,
+        categoryId: result.categoryId,
+        variationLabel: v.label,
+        kind: 'cursed_ugc',
+      },
+    });
+  }
+
+  // Summary blob — title + rarity + fake price + share caption, surfaced as
+  // a code-style preview card so users see the metadata without tapping.
+  const summary = [
+    `${result.titleEN} — ${result.fakePriceRobux.toLocaleString()} R$`,
+    `Rarity: ${result.rarityVibeEN}`,
+    `Wishlisted: ${result.fakeStats.wishlistedBy} · Trending #${result.fakeStats.trendingRank} · Banned in ${result.fakeStats.bannedInCountries}`,
+    `Available: ${result.fakeStats.daysLeft}`,
+    '',
+    result.descriptionEN,
+    '',
+    result.shareCaption,
+  ].join('\n');
+
+  artifacts.push({
+    id: uuidv4(),
+    type: 'lua',
+    extension: 'txt',
+    name: `${baseName}-card.txt`,
+    code: summary,
+    previewText: summary.slice(0, 200),
+    artifactRole: 'script',
+    metadata: {
+      generationId: result.generationId,
+      categoryId: result.categoryId,
+      styleId: result.styleId,
+      kind: 'cursed_ugc',
+      fakePriceRobux: result.fakePriceRobux,
+    },
+  });
+
+  // 4) Mirror into the unified Recents collection so My Creations sees it.
+  void recordViralGeneration({
+    firebaseUid,
+    kind: 'cursed_ugc',
+    generationId: result.generationId,
+    title: result.titleEN,
+    subtitle: result.shareCaption,
+    thumbnailUrl: result.meshThumbnailUrl ?? result.mainImageUrl,
+    accentHex: category.accentHex,
+    payload: {
+      categoryId: result.categoryId,
+      styleId: result.styleId,
+      intensity: result.intensity,
+      mainImageUrl: result.mainImageUrl,
+      meshUrl: result.meshUrl,
+      meshThumbnailUrl: result.meshThumbnailUrl,
+      variations: result.variations,
+      titleEN: result.titleEN,
+      titleRU: result.titleRU,
+      descriptionEN: result.descriptionEN,
+      descriptionRU: result.descriptionRU,
+      tags: result.tags,
+      shareCaption: result.shareCaption,
+      rarityVibeEN: result.rarityVibeEN,
+      rarityVibeRU: result.rarityVibeRU,
+      fakePriceRobux: result.fakePriceRobux,
+      fakeStats: result.fakeStats,
+      generationStatus: result.generationStatus,
+      jobId,
+    },
+  });
+
+  return { artifacts, status: 'completed' };
+}
+
 // ─── Public entry (called by /api/content/generate dispatcher) ─
 
 /**
@@ -769,6 +1031,23 @@ export async function tryHandleViralChatGeneration(args: {
       return true;
     }
     const handled = await handleVoiceAura({
+      firebaseUid: job.userId,
+      jobId: job.id,
+      prompt: trimmed,
+    });
+    job.artifacts = [...(job.artifacts ?? []), ...handled.artifacts];
+    job.status = handled.status;
+    if (handled.errorMessage) job.errorMessage = handled.errorMessage;
+    return true;
+  }
+
+  if (subcategory === 'cursed_ugc') {
+    if (!trimmed) {
+      job.status = 'failed';
+      job.errorMessage = 'Empty cursed UGC prompt';
+      return true;
+    }
+    const handled = await handleCursedUGC({
       firebaseUid: job.userId,
       jobId: job.id,
       prompt: trimmed,

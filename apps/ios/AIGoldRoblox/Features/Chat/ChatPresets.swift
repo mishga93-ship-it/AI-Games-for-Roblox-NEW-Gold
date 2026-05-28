@@ -315,6 +315,33 @@ enum ChatPresetsData {
         ChatPreset(title: "Drip Lord Maxed-Out Flex", subtitle: "Every slot stacked, marketplace-flex", emoji: "🧊"),
     ]
 
+    // MARK: Cursed UGC Modeler
+    //
+    // Session 390 — Cursed UGC Modeler migrated off its dedicated picker
+    // (CursedUGCStudioView: category grid → style grid → customize → result)
+    // onto the standard ChatView interview flow, on user request («нужно
+    // это заменить на обычный чат с интервью как у всех»). Chips below
+    // span the 7 CursedUGCCategoryId values (giant_backpack / cursed_face /
+    // meme_plushie / giant_pet / weird_mask / brainrot_item / oversized_hat)
+    // crossed with the 8 styles (cute / horror / sigma / brainrot / anime /
+    // hyperreal / cursed / emo). Each chip is a tap-to-prefill prompt the
+    // viralChatDispatch handler converts into categoryId + styleId + intensity.
+
+    static let cursedUgc: [ChatPreset] = [
+        ChatPreset(title: "Screaming Sigma Hamster Backpack", subtitle: "Mythic brainrot — backpack of doom", emoji: "🎒"),
+        ChatPreset(title: "Cursed Deep-Fried Smile Face", subtitle: "Wide unsettling meme grin", emoji: "😬"),
+        ChatPreset(title: "Giant Brainrot Italian Plushie", subtitle: "Tralalero shoulder plush, oversized", emoji: "🍕"),
+        ChatPreset(title: "Massive Sigma Moai Pet", subtitle: "Stone-face follower bigger than avatar", emoji: "🗿"),
+        ChatPreset(title: "Weird Skibidi Toilet Mask", subtitle: "Bizarre cursed-meme head covering", emoji: "🚽"),
+        ChatPreset(title: "Brainrot Banana-Shark Mythic", subtitle: "Steal-a-Brainrot maxed-out chaos", emoji: "🍌"),
+        ChatPreset(title: "Oversized Cursed Crown Hat", subtitle: "Crown 3x bigger than avatar", emoji: "👑"),
+        ChatPreset(title: "Cute Pastel Plush Cat Mask", subtitle: "Kawaii face covering, soft pink", emoji: "🐱"),
+        ChatPreset(title: "Horror Cursed Eyeball Pet", subtitle: "Floating watching companion", emoji: "👁️"),
+        ChatPreset(title: "Anime Demon Backpack of Doom", subtitle: "Sukuna-vibes shoulder horror", emoji: "👹"),
+        ChatPreset(title: "Hyperreal Brainrot Fridge Hat", subtitle: "Photoreal absurd appliance crown", emoji: "🧊"),
+        ChatPreset(title: "Emo MySpace 2007 Cursed Plush", subtitle: "Black chains, side-bangs, cursed", emoji: "🖤"),
+    ]
+
     // MARK: Smart NPC Roast & Chat
 
     static let roastNpc: [ChatPreset] = [
@@ -503,6 +530,7 @@ enum ChatPresetsData {
         case "disaster_spawner": return disasterSpawner
         case "voice_aura": return voiceAura
         case "fitting_room": return fittingRoom
+        case "cursed_ugc": return cursedUgc
         case "roast_npc": return roastNpc
         case "anime_skills": return animeSkills
         case "obby_troll": return obbyTroll
