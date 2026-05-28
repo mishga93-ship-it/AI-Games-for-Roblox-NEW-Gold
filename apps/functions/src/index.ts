@@ -174,6 +174,15 @@ import {
   parseDisasterSize,
   parseDisasterFrequency,
 } from './data/disasterStyles.js';
+// Session 385 round 7 — unified viral chat-flow dispatch + Recents API.
+// `tryHandleViralChatGeneration` is called from processGenerationJob BEFORE
+// the standard game pipeline; if metadata.contentSubcategory matches a
+// viral kind (currently disaster_spawner), it short-circuits with .rbxmx +
+// poster artifacts and skips the 9-14 stage build. listViralGenerations /
+// fetchViralGeneration back the GET /api/viral-generations endpoints used
+// by the iOS Recents (My Creations) screen.
+import { tryHandleViralChatGeneration } from './viralChatDispatch.js';
+import { listViralGenerations, fetchViralGeneration } from './viralGenerations.js';
 import { simulateDailyActivity } from './simulateDailyActivity.js';
 import { seedSocialData } from './seedSocialData.js';
 import { generateClothingPreviewImage } from './clothingCompositor.js';
@@ -1134,6 +1143,45 @@ app.post('/api/disaster-spawner/generate', async (req: AuthedRequest, res) => {
       });
     }
     return res.status(500).json({ error: 'Failed to generate disaster' });
+  }
+});
+
+
+// ─── Session 385 round 7 — Unified Recents (My Creations) ────────
+// Reads from the `viralGenerations` Firestore collection that
+// recordViralGeneration() writes into. Backs the iOS ViralLibraryView
+// (Forge → top-right sparkles toolbar button).
+
+app.get('/api/viral-generations', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/viral-generations/list');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const rawLimit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50;
+    const limit = Number.isFinite(rawLimit) ? rawLimit : 50;
+    const items = await listViralGenerations(req.userId, limit);
+    return res.json({ items });
+  } catch (err) {
+    logger.error('[viral-generations] list failed', err);
+    return res.status(500).json({ error: 'Failed to load recents' });
+  }
+});
+
+app.get('/api/viral-generations/:id', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
+    const id = req.params.id;
+    if (typeof id !== 'string' || !id.trim()) {
+      return res.status(400).json({ error: 'Invalid generationId' });
+    }
+    const doc = await fetchViralGeneration(req.userId, id);
+    if (!doc) return res.status(404).json({ error: 'not_found' });
+    return res.json(doc);
+  } catch (err) {
+    logger.error('[viral-generations] detail failed', err);
+    return res.status(500).json({ error: 'Failed to load generation' });
   }
 });
 
@@ -11941,6 +11989,16 @@ async function processMapEnvironmentJob(jobId: string, job: GenerationJob): Prom
 
 async function processGenerationJob(jobId: string, job: GenerationJob): Promise<GenerationJob> {
   try {
+    // Session 385 round 7 — short-circuit BEFORE the standard pipeline if
+    // the job is a viral chat-flow generation (currently disaster_spawner).
+    // Reuses generateDisaster() to produce .rbxmx + poster + Lua artifacts
+    // directly, skipping the 9-14 stage game build. Returns false for
+    // everything else, falling through to the usual handlers below.
+    if (await tryHandleViralChatGeneration({ job, prompt: job.prompt })) {
+      await persistJobSnapshot(jobId, job);
+      return job;
+    }
+
     if (job.metadata?.contentCategory === 'map_environment') {
       return await processMapEnvironmentJob(jobId, job);
     }
