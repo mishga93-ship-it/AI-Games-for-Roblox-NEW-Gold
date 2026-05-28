@@ -407,10 +407,17 @@ struct RobloxAvatar3DViewer: View {
         async let objData    = downloadData(urls.objUrl)
         async let mtlData    = downloadData(urls.mtlUrl)
         async let textureFiles = downloadAllTextures(urls: urls.textureUrls, into: tmpDir)
+        // Phase O2-P2 — fetch attachment metadata in parallel with the
+        // 3D mesh. Lets us anchor the asset by its REAL Attachment
+        // CFrame instead of falling back to the bbox-center empirical
+        // offset. Soft-fail (assets without attachments use the old
+        // path; binary RBXM parse error → empty list, also fallback).
+        async let attachmentsResp: AssetAttachmentsResp? = try? fetchAssetAttachments(assetId: assetId)
 
         var objBytes = try await objData
         let mtlBytes = try await mtlData
         _ = try await textureFiles
+        let attachments = await attachmentsResp
 
         let mtllibLine = "mtllib avatar.mtl\n".data(using: .utf8) ?? Data()
         if !objBytes.starts(with: mtllibLine) {
@@ -432,42 +439,127 @@ struct RobloxAvatar3DViewer: View {
         }
         let assetScene = try source.scene(options: nil)
 
-        // Phase C3 — translate the asset so its slot-specific ANCHOR POINT
-        // (e.g., bbox bottom for hats, bbox center for shirts) aligns with
-        // the avatar's slot-specific ATTACHMENT POINT (e.g., top of head
-        // for hats). This is the closest we can get to proper positioning
-        // without parsing the asset's RBXM attachment metadata.
+        // Phase O2-P2 — attachment-driven placement. For an asset that
+        // exposes an Attachment instance, we know its EXACT local
+        // position on the Handle Part and the Handle's world position
+        // in the standalone preview render. So:
+        //   anchorWorld = handleWorld + attachmentLocal       (OBJ frame)
+        //   target      = R-15 body attachment of same name   (scene frame)
+        // Shift asset vertices so anchorWorld → (0,0,0), then place
+        // wrapper at `target`. Result: the asset's attachment lines up
+        // with the avatar's attachment EXACTLY, no empirical Y guess.
         //
-        // R-15 anatomical landmarks (in the avatar's centered coord system,
-        // expressed as fractions of the avatar's total height):
-        //   • feet bottom:     Y = -h * 0.50
-        //   • lower leg:       Y = -h * 0.35
-        //   • hip:             Y = -h * 0.10
-        //   • torso center:    Y =  0
-        //   • upper chest:     Y =  h * 0.10
-        //   • shoulder line:   Y =  h * 0.20
-        //   • neck:            Y =  h * 0.28
-        //   • head center:     Y =  h * 0.36
-        //   • head top:        Y =  h * 0.45
-        //   • head front (Z):  Z =  h * 0.10  (positive = toward camera)
+        // Roblox uses Z- as forward; SceneKit uses Z+. We flip Z on
+        // both the anchor and the handle to convert into scene space.
         let aabb = urls.aabb
-        let placement = slotPlacement(slot: slot, avatarHeight: avatarAabb.max.y - avatarAabb.min.y)
-        let anchor = anchorPointOnAsset(aabb: aabb, alignment: placement.alignment)
+        let avatarHeight = Float(avatarAabb.max.y - avatarAabb.min.y)
         let wrapper = SCNNode()
         wrapper.name = "AccessoryAttachment-\(assetId)"
-        for child in assetScene.rootNode.childNodes {
-            // Move the asset so its anchor point ends up at (0,0,0); then
-            // the wrapper's own .position deposits it at the avatar's
-            // attachment point. Two-step keeps the math obvious.
-            child.position = SCNVector3(
-                child.position.x - anchor.x,
-                child.position.y - anchor.y,
-                child.position.z - anchor.z
-            )
-            wrapper.addChildNode(child)
+
+        let primary = primaryAttachment(in: attachments?.attachments ?? [], slot: slot)
+        if let primary,
+           let target = bodyAttachmentTarget(name: primary.name, avatarHeight: avatarHeight) {
+            // Attachment world position in the OBJ vertex frame
+            // (handle world + local position, with Z flipped to SCN).
+            let anchorX = Float(primary.handleWorld.x + primary.localPosition.x)
+            let anchorY = Float(primary.handleWorld.y + primary.localPosition.y)
+            let anchorZ = -Float(primary.handleWorld.z + primary.localPosition.z)
+            for child in assetScene.rootNode.childNodes {
+                child.position = SCNVector3(
+                    child.position.x - anchorX,
+                    child.position.y - anchorY,
+                    child.position.z - anchorZ
+                )
+                wrapper.addChildNode(child)
+            }
+            wrapper.position = target
+        } else {
+            // Fallback: bbox-based empirical placement (Phase C3 path).
+            let placement = slotPlacement(slot: slot, avatarHeight: Double(avatarHeight))
+            let anchor = anchorPointOnAsset(aabb: aabb, alignment: placement.alignment)
+            for child in assetScene.rootNode.childNodes {
+                child.position = SCNVector3(
+                    child.position.x - anchor.x,
+                    child.position.y - anchor.y,
+                    child.position.z - anchor.z
+                )
+                wrapper.addChildNode(child)
+            }
+            wrapper.position = SCNVector3(placement.x, placement.y, placement.z)
         }
-        wrapper.position = SCNVector3(placement.x, placement.y, placement.z)
         return wrapper
+    }
+
+    // MARK: Phase O2-P2 — attachment lookup helpers
+
+    /// Fetch the parsed attachment metadata for an asset. Returns nil
+    /// (caller treats as fallback) on any error; the backend itself
+    /// returns an empty list for assets where the parser can't extract
+    /// anything (XML shirt/pants wrappers, malformed RBXM).
+    private static func fetchAssetAttachments(assetId: String) async throws -> AssetAttachmentsResp {
+        return try await APIClient.request(
+            "api/roblox-asset/attachments/\(assetId)",
+            method: "GET",
+            timeout: 15
+        )
+    }
+
+    /// Pick the attachment to use for placement when an asset declares
+    /// multiple (rare but happens — e.g., a backpack with two strap
+    /// attachments). Prefer the one whose name matches the slot type
+    /// most closely; otherwise the first.
+    private static func primaryAttachment(in list: [AssetAttachmentEntry], slot: String) -> AssetAttachmentEntry? {
+        guard !list.isEmpty else { return nil }
+        let preferred: [String]
+        switch slot.lowercased() {
+        case "hat", "head":    preferred = ["HatAttachment", "HairAttachment"]
+        case "hair":           preferred = ["HairAttachment", "HatAttachment"]
+        case "face":           preferred = ["FaceFrontAttachment", "FaceCenterAttachment"]
+        case "neck":           preferred = ["NeckAttachment", "BodyFrontAttachment"]
+        case "shoulder":       preferred = ["LeftCollarAttachment", "RightCollarAttachment",
+                                            "LeftShoulderRigAttachment", "RightShoulderRigAttachment"]
+        case "back":           preferred = ["BodyBackAttachment", "WaistBackAttachment"]
+        case "accessory":      preferred = ["WaistCenterAttachment", "WaistFrontAttachment",
+                                            "BodyFrontAttachment"]
+        case "shoes":          preferred = ["LeftFootAttachment", "RightFootAttachment"]
+        default:               preferred = []
+        }
+        for name in preferred {
+            if let match = list.first(where: { $0.name == name }) { return match }
+        }
+        return list.first
+    }
+
+    /// Where on the centered mannequin's body the named attachment
+    /// lives. Coordinates are in scene space (SCNNode local to the
+    /// AvatarRoot). Z+ is toward the camera (SceneKit convention).
+    /// Numbers are derived from Roblox R-15 standard rig at scale=1.
+    private static func bodyAttachmentTarget(name: String, avatarHeight: Float) -> SCNVector3? {
+        let h = avatarHeight
+        // Head landmarks: head spans roughly h*0.38 .. h*0.50 (top).
+        let headCenter: Float = h * 0.43
+        let headTop:    Float = h * 0.50
+        switch name {
+        case "HatAttachment":             return SCNVector3(0,             headTop,        0)
+        case "HairAttachment":            return SCNVector3(0,             headTop - h * 0.02, 0)
+        case "FaceFrontAttachment":       return SCNVector3(0,             headCenter,     h * 0.08)
+        case "FaceCenterAttachment":      return SCNVector3(0,             headCenter,     0)
+        case "NeckAttachment":            return SCNVector3(0,             h * 0.34,       0)
+        case "LeftCollarAttachment":      return SCNVector3(-h * 0.10,     h * 0.30,       0)
+        case "RightCollarAttachment":     return SCNVector3(h * 0.10,      h * 0.30,       0)
+        case "LeftShoulderRigAttachment": return SCNVector3(-h * 0.16,     h * 0.28,       0)
+        case "RightShoulderRigAttachment":return SCNVector3(h * 0.16,      h * 0.28,       0)
+        case "BodyFrontAttachment":       return SCNVector3(0,             h * 0.12,       h * 0.08)
+        case "BodyBackAttachment":        return SCNVector3(0,             h * 0.12,      -h * 0.08)
+        case "WaistFrontAttachment":      return SCNVector3(0,            -h * 0.05,       h * 0.06)
+        case "WaistBackAttachment":       return SCNVector3(0,            -h * 0.05,      -h * 0.06)
+        case "WaistCenterAttachment":     return SCNVector3(0,            -h * 0.05,       0)
+        case "LeftGripAttachment":        return SCNVector3(-h * 0.22,     0,              0)
+        case "RightGripAttachment":       return SCNVector3(h * 0.22,      0,              0)
+        case "LeftFootAttachment":        return SCNVector3(-h * 0.07,    -h * 0.48,       0)
+        case "RightFootAttachment":       return SCNVector3(h * 0.07,     -h * 0.48,       0)
+        default: return nil   // unknown attachment → caller falls back
+        }
     }
 
     /// How a slot anchors its asset to the avatar — both the avatar
@@ -886,6 +978,30 @@ struct ClothingTextureResp: Decodable {
     let innerAssetId: String
     let pngUrl: String
     let type: String
+}
+
+/// Phase O2-P2 — attachment metadata parsed from a Roblox accessory's
+/// RBXM. Each entry names the body-part attachment point the accessory
+/// snaps to (HatAttachment / FaceFrontAttachment / ...) and gives its
+/// position in the Handle's local frame plus the Handle's world
+/// position in the standalone preview render. iOS combines these to
+/// find the attachment's world point in the OBJ vertex frame and
+/// aligns it to the matching R-15 body attachment on the mannequin.
+struct AssetAttachmentsResp: Decodable {
+    let assetId: String
+    let attachments: [AssetAttachmentEntry]
+}
+
+struct AssetAttachmentEntry: Decodable {
+    let name: String
+    let localPosition: AttachmentVec3
+    let handleWorld: AttachmentVec3
+}
+
+struct AttachmentVec3: Decodable {
+    let x: Double
+    let y: Double
+    let z: Double
 }
 
 struct Asset3DURLs: Decodable {

@@ -170,6 +170,7 @@ import { getSlotAlternatives, type OutfitItem as AssemblerOutfitItem } from './o
 import { type OutfitSlot as AestheticOutfitSlot } from './data/outfitAesthetics.js';
 import { fetchRobloxAvatar3D, fetchRobloxAsset3D } from './robloxAvatar3D.js';
 import { fetchClothingTexture, type ClothingTextureType } from './robloxClothingTexture.js';
+import { fetchRobloxAssetAttachments } from './robloxAssetAttachments.js';
 // Session 387 — Voice-Controlled Survival Disaster Spawner
 import { generateDisaster } from './disasterGenerator.js';
 import {
@@ -1174,6 +1175,35 @@ app.get('/api/roblox-clothing/texture/:assetId', async (req: AuthedRequest, res)
   } catch (err) {
     logger.error('[roblox-clothing-texture] failed', err);
     return res.status(500).json({ error: 'Failed to fetch clothing texture' });
+  }
+});
+
+// ─── Phase O2-P2 (session 389+7): accessory attachment metadata ─
+// Parses a Roblox accessory's binary RBXM to extract its Attachment
+// instance(s) — name + local CFrame position + parent Handle world
+// position. iOS uses this to position accessories on the mannequin
+// PIXEL-ACCURATELY by aligning the attachment world point to the
+// matching R-15 body attachment, replacing the empirical bbox-center
+// fallback (which was unreliable across asset types).
+app.get('/api/roblox-asset/attachments/:assetId', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
+    const assetId = req.params.assetId;
+    if (typeof assetId !== 'string' || !/^\d{1,15}$/.test(assetId)) {
+      return res.status(400).json({ error: 'Invalid assetId' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/roblox-asset/attachments');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const result = await fetchRobloxAssetAttachments({ assetId });
+    if (!result) {
+      return res.status(502).json({ error: 'Could not resolve asset attachments' });
+    }
+    return res.json(result);
+  } catch (err) {
+    logger.error('[roblox-asset-attachments] failed', err);
+    return res.status(500).json({ error: 'Failed to fetch asset attachments' });
   }
 });
 
