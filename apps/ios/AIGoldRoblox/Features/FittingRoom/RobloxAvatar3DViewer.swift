@@ -292,14 +292,19 @@ struct RobloxAvatar3DViewer: View {
         let h = Float(avatarHeight)
         switch slot.lowercased() {
         case "hat", "head":
-            return .init(x: 0, y: h * 0.45, z: 0, alignment: .bottom)
+            // Hat brim sits AT head top; the avatar's centered head top is
+            // approximately Y = h*0.45 (half the avatar height). Bottom-
+            // aligned so the hat doesn't float above the head.
+            return .init(x: 0, y: h * 0.42, z: 0, alignment: .bottom)
         case "hair":
-            // Hair sits ON the head crown — bottom-aligned slightly above
-            // the head center so the hair "cap" wraps the head top.
-            return .init(x: 0, y: h * 0.40, z: 0, alignment: .bottom)
+            // Hair cap wraps the head crown — bottom slightly INSIDE the
+            // head so the hair sits naturally on the head, not floating.
+            // User reported h*0.40 was too high (gap above head); h*0.36
+            // lowers the bottom into the head/neck region.
+            return .init(x: 0, y: h * 0.36, z: 0, alignment: .bottom)
         case "face":
             // Face items (glasses, masks) anchor to the front of the head.
-            return .init(x: 0, y: h * 0.34, z: h * 0.08, alignment: .front)
+            return .init(x: 0, y: h * 0.30, z: h * 0.08, alignment: .front)
         case "neck":
             return .init(x: 0, y: h * 0.26, z: 0, alignment: .center)
         case "shoulder":
@@ -451,7 +456,15 @@ struct RobloxAvatar3DViewer: View {
     private static func downloadAllTextures(urls: [String], into dir: URL) async throws -> [URL] {
         try await withThrowingTaskGroup(of: URL.self) { group in
             for (i, urlStr) in urls.enumerated() {
-                let dest = dir.appendingPathComponent("\(i).png")
+                // Roblox MTL references textures by their EXACT hash name
+                // (e.g., `map_Kd 30DAY-6c526de974ae2ed520943ae0000f8219` —
+                // no extension). If we save as `0.png` / `1.png` SceneKit
+                // can't bind them and the mesh renders flat white. Use the
+                // URL's last path component (the hash) as the filename so
+                // MTL → texture lookup succeeds.
+                let url = URL(string: urlStr)
+                let hashName = url?.lastPathComponent ?? "tex-\(i)"
+                let dest = dir.appendingPathComponent(hashName)
                 group.addTask {
                     let bytes = try await downloadData(urlStr)
                     try bytes.write(to: dest)
