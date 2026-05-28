@@ -117,7 +117,11 @@ export const VEHICLE_PRESETS: Record<VehiclePresetId, VehiclePreset> = {
   },
   plane: {
     id: 'plane', label: 'Embraer Phenom 100',
-    templateRbxmFilename: 'Phenom100-PlaneKit.rbxm', assetId: 0,
+    // R14: was assetId=0 (local-only), now 15683356413 (the marketplace ID for
+    // Phenom 100 PlaneKit). Local file Phenom100-PlaneKit.rbxm still bundled
+    // and takes precedence for build-time embed; the assetId now also enables
+    // Roblox Thumbnail API for chat preview (was blank for plane before).
+    templateRbxmFilename: 'Phenom100-PlaneKit.rbxm', assetId: 15683356413,
     bodyOriginalHex: '#F8F8F8',
     preferredVariant: 'Embraer Phenom 100',
     variantFallbacks: ['Plane', 'Embraer'],
@@ -132,6 +136,28 @@ export const VEHICLE_PRESETS: Record<VehiclePresetId, VehiclePreset> = {
     variantFallbacks: [],
     defaultStyle: 'military',
     baselineStats: { maxSpeed: 50, drift: false, boost: '', suspension: 'monster', passengerSeats: 1, destruction: true },
+  },
+  // R14: fills 2 empty iOS picker slots (helicopter / spaceship). No local
+  // .rbxm bundled — Studio fetches via InsertService:LoadAsset at Play time
+  // (existing runtime loader fallback in robloxWorker.ts). User-side cost:
+  // ~1-3s extra at first Play to download. After-cost: zero.
+  helicopter: {
+    id: 'helicopter', label: 'Helicopter',
+    templateRbxmFilename: '', assetId: 6719732199,
+    bodyOriginalHex: '#222222',
+    preferredVariant: 'Helicopter',
+    variantFallbacks: ['Heli', 'Model'],
+    defaultStyle: 'military',
+    baselineStats: { maxSpeed: 120, drift: false, boost: '', suspension: 'standard', passengerSeats: 2, destruction: false },
+  },
+  spaceship: {
+    id: 'spaceship', label: 'Alien Ship',
+    templateRbxmFilename: '', assetId: 6695306993,
+    bodyOriginalHex: '#888888',
+    preferredVariant: 'Alien Ship',
+    variantFallbacks: ['UFO', 'Spaceship', 'Model'],
+    defaultStyle: 'cyberpunk',
+    baselineStats: { maxSpeed: 180, drift: false, boost: 'neon', suspension: 'standard', passengerSeats: 1, destruction: false },
   },
 };
 

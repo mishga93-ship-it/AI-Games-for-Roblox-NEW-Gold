@@ -37,7 +37,9 @@ export type VehiclePresetId =
   | 'motorcycle'
   | 'boat'
   | 'plane'
-  | 'tank';
+  | 'tank'
+  | 'helicopter'
+  | 'spaceship';
 
 /** Single addon = a small Model the builder generates programmatically
  *  and attaches to the preset at a known body offset. No external .rbxm

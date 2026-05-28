@@ -114,6 +114,15 @@ function applyIconicOverrides(config: import('./vehicleModular.types.js').Vehicl
   const isTaxi = /(taxi|cab|такси)/.test(lc);
   const isAmbulance = /(ambulance|medic|paramedic|emergency|скор[аоы]\s*помощ|медик)/.test(lc);
   const isFire = /(fire\s*truck|firetruck|fire\s*engine|пожар)/.test(lc);
+  // R14: route helicopter / spaceship prompts to the new presets.
+  const isHelicopter = /(helicopter|chopper|heli|вертол[её]т|геликопт)/.test(lc);
+  const isSpaceship = /(spaceship|space\s*ship|spacecraft|ufo|alien\s*ship|космич|космолет|тарелк)/.test(lc);
+  if (isHelicopter) {
+    return { ...config, preset: 'helicopter', plateText: '' };
+  }
+  if (isSpaceship) {
+    return { ...config, preset: 'spaceship', plateText: '' };
+  }
   // R11: plateText/roofSignText (Lune-added accessories) and Flux decals
   // are both DISABLED for iconic modes — addon Lua already adds the visual
   // (taxi_sign / police_lightbar / fire_dept_ladder). Otherwise we get
