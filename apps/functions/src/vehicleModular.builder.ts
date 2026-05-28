@@ -134,11 +134,16 @@ function applyIconicOverrides(config: import('./vehicleModular.types.js').Vehicl
   if (isTaxi) {
     const addons = new Set(config.addons);
     addons.add('taxi_sign');
-    addons.delete('roof_antenna');  // R11: addon Lua antenna had ugly placement on Sedan roof
+    // R13: tighten the taxi addon set to ONLY the taxi-essential. AI router
+    // was adding random extras (roof_camera_pod, roof_antenna, jet_engine_rear)
+    // that confused the look. Taxi visual = body color + TAXI sign + door decal.
+    for (const stray of ['roof_antenna', 'roof_camera_pod', 'jet_engine_rear', 'rear_spoiler_high', 'disco_ball', 'flag_pole', 'smoke_stack', 'monster_truck_tires', 'side_skirts']) {
+      addons.delete(stray as typeof config.addons[number]);
+    }
     return {
       ...config, preset: 'sedan',
       primaryColor: '#F2B807', accentColor: '#000000',
-      addons: [...addons].slice(0, 4) as typeof config.addons,
+      addons: [...addons].slice(0, 3) as typeof config.addons,
       plateText: '',  // R11: addon Lua taxi_sign is sole TAXI signage
     };
   }

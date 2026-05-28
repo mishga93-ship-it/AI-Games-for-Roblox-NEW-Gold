@@ -264,11 +264,13 @@ export function deriveVehicleDecalBriefs(args: {
   accentHex: string;
 }): VehicleDecalBriefs {
   const txt = `${args.prompt} ${args.title}`.toLowerCase();
-  const isTaxi = /\b(taxi|cab|такси)\b/i.test(txt);
-  const isPolice = /\b(police|cop|cruiser|patrol|sheriff)\b/i.test(txt);
-  const isFire = /\b(fire\s*truck|пожар)\b/i.test(txt);
+  // R12-fix: removed \b — JS word boundaries don't cross Cyrillic. Plain
+  // substring match (case-insensitive) so "Проект такси" matches isTaxi.
+  const isTaxi = /(taxi|cab|такси)/i.test(txt);
+  const isPolice = /(police|cop|cruiser|patrol|sheriff|полиц|патруль)/i.test(txt);
+  const isFire = /(fire\s*truck|firetruck|fire\s*engine|пожар)/i.test(txt);
   const isSports = args.templateName === 'SportsCar' || args.templateName === 'Supercar'
-    || /\b(race\s*car|racing|mustang|ferrari|lambo|drift)\b/i.test(txt);
+    || /(race\s*car|racing|mustang|ferrari|lambo|drift|спорткар|гонк)/i.test(txt);
 
   if (isTaxi) {
     return {

@@ -28571,22 +28571,15 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // SKIPPED when no template was picked (motorcycle / boat / plane
       // path — decals don't generalise to non-car shapes cleanly).
       //
-      // R11: ALSO skipped when the modular pipeline added an iconic addon
-      // (taxi_sign / police_lightbar / fire_dept_ladder) — those addons
-      // already cover the visual, and adding generic Flux "COMPANY" decals
-      // creates confusing visual clutter (multiple TAXI/COMPANY tags at
-      // once). We trust the AI's addon choice for iconic vehicles.
+      // R13: ONLY skip Flux decals when the brief is the generic "COMPANY"
+      // fallback (no iconic match). For real iconic prompts (taxi/police/fire)
+      // we DO want the themed Flux decals (TAXI checkered, POLICE shield,
+      // FIRE DEPT badge) on doors/hood — user feedback "нет текстур на
+      // дверях капотах". The clutter problem in R11 was specifically the
+      // COMPANY brand decals (irrelevant), not the iconic-themed ones.
       const templatePickedForDecals = typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
         && (currentJob.metadata.vehicleTemplateAssetId as number) > 0;
-      const iconicAddons = ['taxi_sign', 'police_lightbar', 'fire_dept_ladder'];
-      const iconicAddonPresent = Array.isArray(currentJob.metadata?.vehicleAddonIds)
-        && (currentJob.metadata.vehicleAddonIds as string[]).some((id) => iconicAddons.includes(id));
-      if (iconicAddonPresent) {
-        await beginStage('generate_vehicle_decals', 'Skipping Flux decals — iconic addon already covers visuals');
-        await finishStage('generate_vehicle_decals', 'completed', [], [
-          'Modular pipeline added iconic addon (taxi/police/fire) — Flux decals skipped to avoid visual clutter.',
-        ]);
-      } else if (templatePickedForDecals) {
+      if (templatePickedForDecals) {
         await beginStage('generate_vehicle_decals', 'Flux is generating vehicle livery decals');
         try {
           const { deriveVehicleDecalBriefs } = await import('./vehicleTemplateRouter.js');
@@ -28601,6 +28594,23 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             primaryHex,
             accentHex,
           });
+          // R13: filter out generic-COMPANY fallback briefs. We only want
+          // Flux decals for iconic vehicles (taxi/police/fire/sports) where
+          // the brief is thematic (TAXI checkered, POLICE shield, RACING #).
+          // Generic "COMPANY wordmark" on doors looked off-brand on user's
+          // taxi (didn't match the AI-built vibe).
+          const isGenericBrief = briefs.doorStripeBrief.includes('COMPANY')
+            || briefs.doorStripeBrief.includes('company car');
+          if (isGenericBrief) {
+            logger.info('[Vehicle decals] generic fallback brief — skipping Flux', {
+              jobId, doorPreview: briefs.doorStripeBrief.slice(0, 60),
+            });
+            await finishStage('generate_vehicle_decals', 'completed', [], [
+              'Generic "COMPANY" fallback brief — Flux decals skipped (not on-brand).',
+            ]);
+            // throw a sentinel error to break out of the try; caught & re-handled below
+            throw new Error('__skip_generic_decals__');
+          }
           logger.info('[Vehicle decals] briefs derived', {
             jobId,
             door: briefs.doorStripeBrief.slice(0, 80),
@@ -28708,11 +28718,17 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
             briefs.roofSignDecalBrief ? `RoofSign brief: ${briefs.roofSignDecalBrief.slice(0, 80)}...` : 'No roof sign decal',
           ]);
         } catch (decalErr) {
-          logger.warn('[Vehicle decals] stage threw, continuing without decals', { jobId, error: errorMessage(decalErr) });
-          await finishStage('generate_vehicle_decals', 'completed', [], [
-            `Decal generation error: ${errorMessage(decalErr).slice(0, 200)}`,
-            'Continuing without decals.',
-          ]);
+          // R13 sentinel: generic-COMPANY skip already called finishStage,
+          // so don't double-finish here. Re-thrown to break out of decal flow.
+          if (errorMessage(decalErr).includes('__skip_generic_decals__')) {
+            // already finished — silent
+          } else {
+            logger.warn('[Vehicle decals] stage threw, continuing without decals', { jobId, error: errorMessage(decalErr) });
+            await finishStage('generate_vehicle_decals', 'completed', [], [
+              `Decal generation error: ${errorMessage(decalErr).slice(0, 200)}`,
+              'Continuing without decals.',
+            ]);
+          }
         }
       } else {
         await beginStage('generate_vehicle_decals', 'Skipping decals — no template picked');
