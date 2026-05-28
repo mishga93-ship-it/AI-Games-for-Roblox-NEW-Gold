@@ -5362,6 +5362,27 @@ final class ChatStore: ObservableObject {
                     viralGenerationId: genId
                 )
             }
+            // Session 388 round 2 — voice_aura ALSO routes to a dedicated
+            // result screen (VoiceAuraResultView via VoiceAuraChatBridge) on
+            // user request («оставь предыдущий экран где результаты были»).
+            // Same wire shape as fitting_room — only the ChatView branch
+            // differs.
+            if kind == "voice_aura", !genId.isEmpty {
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Voice-to-Aura" : draft.title,
+                    artifactType: .unavailable("Opening aura…"),
+                    exportFileType: "viral",
+                    artifactIds: [],
+                    shareDescription: job.resultText ?? "AI-generated Roblox aura",
+                    downloadURL: nil,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: nil,
+                    fbxDownloadURL: nil,
+                    notes: [],
+                    viralKind: kind,
+                    viralGenerationId: genId
+                )
+            }
         }
 
         // Phase F (session 219): pull live Roblox catalog showcase items from job

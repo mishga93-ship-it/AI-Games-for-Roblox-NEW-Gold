@@ -1199,6 +1199,14 @@ struct ChatView: View {
             NavigationStack {
                 DisasterSpawnerChatBridge(generationId: genId)
             }
+        } else if preview.viralKind == "voice_aura", let genId = preview.viralGenerationId, !genId.isEmpty {
+            // Session 388 round 2 — voice_aura routes to the polished
+            // VoiceAuraResultView via VoiceAuraChatBridge instead of the
+            // generic GenerationPreviewView (which would show 9 empty
+            // pipeline stages and no aura preview).
+            NavigationStack {
+                VoiceAuraChatBridge(generationId: genId)
+            }
         } else {
             defaultPreviewSheetContent(for: preview)
         }
