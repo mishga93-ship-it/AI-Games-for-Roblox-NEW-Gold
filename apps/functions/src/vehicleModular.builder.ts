@@ -105,17 +105,22 @@ function templateMetadataFromPreset(presetId: VehiclePresetId, config: VehicleCo
 //   - "fire truck" → must be pickup_truck preset + red body
 // Applied AFTER routeVehicleConfig — patches preset + colors + ensures
 // signature addons are included.
+// R11: regexes WITHOUT \b — JS \b doesn't work across Cyrillic boundaries.
+// Plain substring match (case-insensitive) is fine because the keywords are
+// distinctive enough that false-positives are rare.
 function applyIconicOverrides(config: import('./vehicleModular.types.js').VehicleConfig, prompt: string): import('./vehicleModular.types.js').VehicleConfig {
   const lc = prompt.toLowerCase();
-  const isPolice = /\b(police|cop|cruiser|patrol|sheriff|interceptor|siren)\b/.test(lc);
-  const isTaxi = /\b(taxi|cab|такси)\b/.test(lc);
-  const isAmbulance = /\b(ambulance|medic|paramedic|emergency)\b/.test(lc);
-  const isFire = /\b(fire\s*truck|firetruck|fire\s*engine|пожар)\b/.test(lc);
+  const isPolice = /(police|cop|cruiser|patrol|sheriff|interceptor|siren|полиц|коп|патруль)/.test(lc);
+  const isTaxi = /(taxi|cab|такси)/.test(lc);
+  const isAmbulance = /(ambulance|medic|paramedic|emergency|скор[аоы]\s*помощ|медик)/.test(lc);
+  const isFire = /(fire\s*truck|firetruck|fire\s*engine|пожар)/.test(lc);
+  // R11: plateText/roofSignText (Lune-added accessories) and Flux decals
+  // are both DISABLED for iconic modes — addon Lua already adds the visual
+  // (taxi_sign / police_lightbar / fire_dept_ladder). Otherwise we get
+  // 3-4 overlapping TAXI / COMPANY / front-rear-plate elements all at once.
   if (isPolice) {
-    // PoliceCar template already has a baked lightbar — don't double-stack
-    // ours on top. Pick alternative cool addons instead.
     const addons = new Set(config.addons);
-    addons.delete('police_lightbar');
+    addons.delete('police_lightbar');  // template already has baked lightbar
     addons.add('headlight_bar'); addons.add('bull_bar');
     return {
       ...config,
@@ -123,23 +128,29 @@ function applyIconicOverrides(config: import('./vehicleModular.types.js').Vehicl
       primaryColor: '#FFFFFF', accentColor: '#000000',
       addons: [...addons].slice(0, 4) as typeof config.addons,
       driveStats: { ...config.driveStats, maxSpeed: Math.max(config.driveStats.maxSpeed ?? 130, 140) },
+      plateText: '',  // R11: don't add Lune-built plates (duplicate of template police texture)
     };
   }
   if (isTaxi) {
-    const addons = new Set(config.addons); addons.add('taxi_sign');
+    const addons = new Set(config.addons);
+    addons.add('taxi_sign');
+    addons.delete('roof_antenna');  // R11: addon Lua antenna had ugly placement on Sedan roof
     return {
       ...config, preset: 'sedan',
       primaryColor: '#F2B807', accentColor: '#000000',
       addons: [...addons].slice(0, 4) as typeof config.addons,
-      plateText: config.plateText || 'TAXI',
+      plateText: '',  // R11: addon Lua taxi_sign is sole TAXI signage
     };
   }
   if (isAmbulance) {
-    const addons = new Set(config.addons); addons.add('police_lightbar');
+    const addons = new Set(config.addons);
+    addons.delete('police_lightbar');  // van template handles its own decor
+    addons.add('headlight_bar');
     return {
       ...config, preset: 'van',
       primaryColor: '#FFFFFF', accentColor: '#D40000',
       addons: [...addons].slice(0, 4) as typeof config.addons,
+      plateText: '',
     };
   }
   if (isFire) {
@@ -147,6 +158,7 @@ function applyIconicOverrides(config: import('./vehicleModular.types.js').Vehicl
       ...config, preset: 'pickup_truck',
       primaryColor: '#CC0000', accentColor: '#FFD700',
       addons: ['fire_dept_ladder', ...config.addons].slice(0, 4) as typeof config.addons,
+      plateText: '',
     };
   }
   return config;

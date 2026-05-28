@@ -28485,9 +28485,23 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       //
       // SKIPPED when no template was picked (motorcycle / boat / plane
       // path — decals don't generalise to non-car shapes cleanly).
+      //
+      // R11: ALSO skipped when the modular pipeline added an iconic addon
+      // (taxi_sign / police_lightbar / fire_dept_ladder) — those addons
+      // already cover the visual, and adding generic Flux "COMPANY" decals
+      // creates confusing visual clutter (multiple TAXI/COMPANY tags at
+      // once). We trust the AI's addon choice for iconic vehicles.
       const templatePickedForDecals = typeof currentJob.metadata?.vehicleTemplateAssetId === 'number'
         && (currentJob.metadata.vehicleTemplateAssetId as number) > 0;
-      if (templatePickedForDecals) {
+      const iconicAddons = ['taxi_sign', 'police_lightbar', 'fire_dept_ladder'];
+      const iconicAddonPresent = Array.isArray(currentJob.metadata?.vehicleAddonIds)
+        && (currentJob.metadata.vehicleAddonIds as string[]).some((id) => iconicAddons.includes(id));
+      if (iconicAddonPresent) {
+        await beginStage('generate_vehicle_decals', 'Skipping Flux decals — iconic addon already covers visuals');
+        await finishStage('generate_vehicle_decals', 'completed', [], [
+          'Modular pipeline added iconic addon (taxi/police/fire) — Flux decals skipped to avoid visual clutter.',
+        ]);
+      } else if (templatePickedForDecals) {
         await beginStage('generate_vehicle_decals', 'Flux is generating vehicle livery decals');
         try {
           const { deriveVehicleDecalBriefs } = await import('./vehicleTemplateRouter.js');
