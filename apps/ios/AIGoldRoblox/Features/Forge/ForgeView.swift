@@ -1367,12 +1367,14 @@ private extension ForgeView {
             isShowingFittingRoom = true
             return
         }
-        if selectedOption.id == "disaster_spawner" {
-            isShowingProjectPicker = false
-            isShowingChatPicker = false
-            isShowingDisasterSpawner = true
-            return
-        }
+        // Session 385 round 7 — Disaster Spawner moved off its dedicated
+        // full-screen sheet (DisasterSpawnerStudioView) onto the standard
+        // ChatView interview flow, on user request («его надо по флоу
+        // сделать как остальные чаты с интервью»). The studio + result
+        // views stay in the codebase for reference but the entry point now
+        // falls through to the launchConfig path below, which opens
+        // ChatView with contentSubcategory="disaster_spawner". Presets and
+        // backend dispatch are wired in ChatPresets.swift / index.ts.
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",

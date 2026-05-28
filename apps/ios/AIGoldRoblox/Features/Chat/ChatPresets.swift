@@ -236,6 +236,30 @@ enum ChatPresetsData {
         ChatPreset(title: "Collect Sigma Rizz Aura", subtitle: "Upgrade aura, flex harder", emoji: "✨"),
     ]
 
+    // MARK: Voice-Controlled Disaster Spawner
+    //
+    // Session 385 round 7 — Disaster Spawner moved off its dedicated full-screen
+    // sheet (DisasterSpawnerStudioView) onto the standard ChatView interview
+    // flow. Chips below are tap-to-prefill prompts that the user can fire
+    // verbatim, or edit before sending. Server (`generateDisaster()` already
+    // safe-sandboxes the Lua — banned services, population cap, Debris cleanup —
+    // so chips can be wild; the safety net is at generator level, not preset.
+
+    static let disasterSpawner: [ChatPreset] = [
+        ChatPreset(title: "Banana Rain Apocalypse", subtitle: "Yellow banana parts pelt the map", emoji: "🍌"),
+        ChatPreset(title: "Giant Rubber Ducks", subtitle: "Bouncy squeaky chaos every 30s", emoji: "🦆"),
+        ChatPreset(title: "Skibidi Toilet Flood", subtitle: "Toilets spawn, launch, explode", emoji: "🚽"),
+        ChatPreset(title: "Flying Refrigerators", subtitle: "Spinning fridges crash everywhere", emoji: "🧊"),
+        ChatPreset(title: "Tornado Barrage", subtitle: "Spinning vortices shred terrain", emoji: "🌪️"),
+        ChatPreset(title: "Meteor Storm", subtitle: "Falling glowing rocks every 15s", emoji: "☄️"),
+        ChatPreset(title: "Lava Volcano Burst", subtitle: "Magma fountains under players", emoji: "🌋"),
+        ChatPreset(title: "Cursed Italian Memes", subtitle: "Tralalero + bombardiro chaos", emoji: "🍕"),
+        ChatPreset(title: "Headless Horseman Raid", subtitle: "Floating pumpkins chase players", emoji: "🎃"),
+        ChatPreset(title: "Sigma Stone Statues", subtitle: "Moai heads roll across the map", emoji: "🗿"),
+        ChatPreset(title: "Brainrot Pet Stampede", subtitle: "Tiny cursed pets swarm", emoji: "🧠"),
+        ChatPreset(title: "Falling Couches", subtitle: "Furniture rain — Ohio energy", emoji: "🛋️"),
+    ]
+
     // MARK: Smart NPC Roast & Chat
 
     static let roastNpc: [ChatPreset] = [
@@ -421,6 +445,7 @@ enum ChatPresetsData {
         case "horror": return horrorGame
         case "pvp": return pvpArena
         case "brainrot_sim": return brainrotSim
+        case "disaster_spawner": return disasterSpawner
         case "roast_npc": return roastNpc
         case "anime_skills": return animeSkills
         case "obby_troll": return obbyTroll
