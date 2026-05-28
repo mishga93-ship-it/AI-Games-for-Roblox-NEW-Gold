@@ -352,16 +352,24 @@ const hexToColor3Lua = (hex: string): string => {
   return `Color3.new(${r.toFixed(3)}, ${g.toFixed(3)}, ${b.toFixed(3)})`;
 };
 
-/** Session 387 R5: shared prologue — anchors all addons to the VehicleSeat
- *  (always present, always at chassis center). Uses bbox offset relative to
- *  the seat so positioning is robust to wrapper nesting. Calls `mount(part)`
- *  to weld+parent each new Part to the seat. */
+/** Session 387 R15: shared prologue — anchors addons to VehicleSeat.
+ *  CACHES bbox via VehicleSeat attributes so subsequent addons don't see
+ *  inflated bbox after taxi_sign / roof bar pushed the bounding-box up.
+ *  Without this caching, rear_spoiler_high (bbox.Y * 0.85 offset) flew
+ *  high above the chassis on cars that already had a roof addon. */
 const PROLOGUE_LUA = `
 local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
 if not seat then warn("[addon] no VehicleSeat in", vehicleModel:GetFullName()); return end
 local seatCF = seat.CFrame
-local bbCF, bbSize = vehicleModel:GetBoundingBox()
-local bbLocal = seatCF:ToObjectSpace(bbCF)
+local bbSize = seat:GetAttribute("ModularBBSize")
+local bbLocal = seat:GetAttribute("ModularBBLocal")
+if typeof(bbSize) ~= "Vector3" or typeof(bbLocal) ~= "CFrame" then
+  local bbCF, _bbSize = vehicleModel:GetBoundingBox()
+  bbSize = _bbSize
+  bbLocal = seatCF:ToObjectSpace(bbCF)
+  seat:SetAttribute("ModularBBSize", bbSize)
+  seat:SetAttribute("ModularBBLocal", bbLocal)
+end
 local function mount(part)
   part.Anchored = false; part.CanCollide = false; part.Massless = true
   part.Parent = vehicleModel
@@ -597,13 +605,19 @@ ${PROLOGUE_LUA}
   bar.Material = Enum.Material.Neon
   bar.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y * 0.15, -bbSize.Z * 0.48))
   mount(bar)
-  for i = -2, 2 do
-    local pl = Instance.new("PointLight", bar)
-    pl.Color = Color3.fromRGB(255, 255, 220)
-    pl.Brightness = 2.5
-    pl.Range = 18
-    pl.Position = bar.CFrame.Position + Vector3.new(i * 0.6, 0, 0)
-  end
+  -- Single bright PointLight on the bar (PointLight inherits position
+  -- from parent BasePart — no .Position property exists).
+  local pl = Instance.new("PointLight", bar)
+  pl.Color = Color3.fromRGB(255, 255, 220)
+  pl.Brightness = 4
+  pl.Range = 22
+  -- SpotLight forward-facing for road illumination
+  local sl = Instance.new("SpotLight", bar)
+  sl.Color = Color3.fromRGB(255, 255, 230)
+  sl.Brightness = 3
+  sl.Range = 35
+  sl.Angle = 60
+  sl.Face = Enum.NormalId.Back
 end`.trim(),
 
   bull_bar: () => `
