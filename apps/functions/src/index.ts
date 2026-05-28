@@ -2389,12 +2389,24 @@ ${viralStyleInjection.promptBlock}`, 8000);
         // completed job into the per-kind ChatBridge result view.
         const viralSubInit = typeof effectiveMetadata.contentSubcategory === 'string'
           ? effectiveMetadata.contentSubcategory.toLowerCase() : '';
-        if (viralSubInit === 'disaster_spawner' || viralSubInit === 'voice_aura' || viralSubInit === 'fitting_room') {
+        // Session 390 round 4 — added 'cursed_ugc' to the viral fast-path
+        // gate. Without it, kind=character_3d + contentSubcategory=cursed_ugc
+        // jobs were initialized with the 9-stage character pipeline AND
+        // routed via the async-3D dispatcher (bypassing
+        // tryHandleViralChatGeneration entirely). User saw «Concept image
+        // → Awaiting approval → Convert to FBX → Upload to Roblox → ...»
+        // and a Meshy character mesh (sigma chad with the cursed backpack
+        // rendered AS PART of the character) instead of the short 3-stage
+        // cursed_ugc flow that returns just the cursed ITEM as a standalone
+        // mesh.
+        if (viralSubInit === 'disaster_spawner' || viralSubInit === 'voice_aura' || viralSubInit === 'fitting_room' || viralSubInit === 'cursed_ugc') {
           const title = viralSubInit === 'disaster_spawner'
             ? 'Cooking disaster (concept + safe Lua + .rbxmx)'
             : viralSubInit === 'voice_aura'
               ? 'Cooking aura (concept + safe particle Lua + .rbxmx)'
-              : 'Rendering fit on your avatar (3 angles)';
+              : viralSubInit === 'cursed_ugc'
+                ? 'Cooking cursed UGC (3× flux concept + Meshy 3D mesh + metadata)'
+                : 'Rendering fit on your avatar (3 angles)';
           return [{
             id: 'viral_generation' as GenerationStageId,
             title,
@@ -2473,9 +2485,16 @@ ${viralStyleInjection.promptBlock}`, 8000);
     // processGenerationJob → tryHandleViralChatGeneration as intended.
     const viralSubcategoryRaw = typeof effectiveMetadata.contentSubcategory === 'string'
       ? effectiveMetadata.contentSubcategory.toLowerCase() : '';
+    // Session 390 round 4 — cursed_ugc added to the viral fast-path bypass
+    // (same reason as line 2392 above). Without it, kind=character_3d +
+    // contentSubcategory=cursed_ugc bypassed processGenerationJob and
+    // therefore never reached tryHandleViralChatGeneration → never hit
+    // handleCursedUGC → user got a 9-stage character_3d pipeline that
+    // renders a full sigma chad with the cursed item baked onto him.
     const isViralChatJob = viralSubcategoryRaw === 'fitting_room'
       || viralSubcategoryRaw === 'voice_aura'
-      || viralSubcategoryRaw === 'disaster_spawner';
+      || viralSubcategoryRaw === 'disaster_spawner'
+      || viralSubcategoryRaw === 'cursed_ugc';
     if (asyncKinds.includes(requestedKind) && !isViralChatJob) {
       const selfHost = req.header('host') ?? 'api-z4yzt6dhjq-uc.a.run.app';
       const selfUrl = `https://${selfHost}/api/internal/run-3d-pipeline`;
