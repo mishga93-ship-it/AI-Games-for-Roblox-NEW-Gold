@@ -54,13 +54,36 @@ struct FittingRoomResultView: View {
         return robloxAuth.robloxUserId
     }
 
-    /// Phase B — map OutfitItems → SceneKit attachments. Hidden/no-3D
-    /// slots (e.g., aura) are filtered so we don't waste an API call.
+    /// Phase B / C3-fix — map OutfitItems → SceneKit attachments.
+    ///
+    /// Roblox's avatar-3d render BAKES the user's current outfit (skin
+    /// + hair + shirt + pants + shoes + sometimes hat) into the
+    /// monolithic OBJ. We can't selectively remove parts of the OBJ
+    /// (no rig/bone metadata), so attaching items from the new fit on
+    /// top of slots the user already wears creates visible double-
+    /// stacks (two hairs, overlapping shirts, etc — user feedback
+    /// 2026-05-28 «нет разделения по моделям, все накладывается»).
+    ///
+    /// Workaround (until C3-bare ships a true bare-avatar render): only
+    /// attach items whose slot is ADDITIVE — items the user is unlikely
+    /// to already have, OR items that visually sit ON TOP without
+    /// fighting baked geometry. Hard-skip the baked clothing slots and
+    /// hair to avoid the worst overlaps.
+    ///   • Attach: hat / face / back / neck / shoulder / accessory
+    ///   • Skip:   shirt / pants / jacket / shoes / hair / aura
+    /// The full items list still shows under "All items" — only the 3D
+    /// scene is filtered.
     private var threeDeeAttachments: [RobloxAvatar3DViewer.Attachment] {
-        response.items.compactMap { item in
+        let bakedOrDoubled: Set<String> = [
+            "shirt", "pants", "jacket",   // baked as texture on torso/legs
+            "shoes",                       // usually baked
+            "hair",                        // user almost always has one already → double-hair
+            "aura",                        // not a 3D mesh on Roblox
+            "",
+        ]
+        return response.items.compactMap { item in
             let slot = item.slot.lowercased()
-            // Skip slots Roblox's asset-3d typically can't render.
-            if slot == "aura" || slot == "" { return nil }
+            if bakedOrDoubled.contains(slot) { return nil }
             return RobloxAvatar3DViewer.Attachment(assetId: item.assetId, slot: slot)
         }
     }
