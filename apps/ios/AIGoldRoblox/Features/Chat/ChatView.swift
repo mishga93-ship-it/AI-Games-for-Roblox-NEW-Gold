@@ -1178,7 +1178,23 @@ struct ChatView: View {
         }
     }
 
+    @ViewBuilder
     private func previewSheetContent(for preview: ChatStore.PreviewPayload) -> some View {
+        // Session 389 — viralChatDispatch (fitting_room) emits PNG artifacts
+        // tagged with metadata.kind="fitting_room" + metadata.generationId.
+        // ChatStore.makePreviewPayload routes those into preview.viralKind /
+        // preview.viralGenerationId. Open the dress-up bridge instead of the
+        // generic pipeline preview.
+        if preview.viralKind == "fitting_room", let genId = preview.viralGenerationId, !genId.isEmpty {
+            NavigationStack {
+                FittingRoomChatBridge(generationId: genId)
+            }
+        } else {
+            defaultPreviewSheetContent(for: preview)
+        }
+    }
+
+    private func defaultPreviewSheetContent(for preview: ChatStore.PreviewPayload) -> some View {
         NavigationStack {
             GenerationPreviewView(
                 title: preview.title,

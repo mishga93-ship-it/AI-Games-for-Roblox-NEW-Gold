@@ -656,6 +656,14 @@ enum AIWorkspaceAPI {
         let isBlockyFurniture: Bool?
         let furnitureSpecJSON: String?
         let furnitureType: String?
+        /// Session 389 — viralChatDispatch handlers (fitting_room / disaster_spawner /
+        /// voice_aura) tag each artifact with `kind` so ChatView can route to a
+        /// custom result screen (dress-up room for fitting_room) instead of the
+        /// generic GenerationPreviewView. `generationId` is the doc id used to
+        /// re-fetch the rich payload (renders + items + cost) via the dedicated
+        /// /api/fitting-room/:id endpoint.
+        let kind: String?
+        let generationId: String?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -695,6 +703,8 @@ enum AIWorkspaceAPI {
             isBlockyFurniture = try? container.decode(Bool.self, forKey: .isBlockyFurniture)
             furnitureSpecJSON = try? container.decode(String.self, forKey: .furnitureSpecJSON)
             furnitureType = try? container.decode(String.self, forKey: .furnitureType)
+            kind = try? container.decode(String.self, forKey: .kind)
+            generationId = try? container.decode(String.self, forKey: .generationId)
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -707,6 +717,7 @@ enum AIWorkspaceAPI {
             case isBlockyPet, isBlockyPetSpec, isPetAnimation, isBlockyAnimation, isPetDecal, trackName
             case blockyPetSpecJSON, petRarity, petElement, petSpeciesType, petIsFlying
             case isBlockyFurniture, furnitureSpecJSON, furnitureType
+            case kind, generationId
         }
     }
 

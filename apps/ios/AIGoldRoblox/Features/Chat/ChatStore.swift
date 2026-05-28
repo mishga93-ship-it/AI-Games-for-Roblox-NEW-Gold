@@ -334,8 +334,13 @@ final class ChatStore: ObservableObject {
         // Phase F (session 219): Roblox catalog items welded into the generated map.
         let trendingShowcaseItems: [AIWorkspaceAPI.RobloxCatalogItem]
         let trendingShowcaseCategory: String?
+        // Session 389: viralChatDispatch tags artifacts with kind + generationId
+        // so ChatView can branch to a custom result screen (FittingRoomChatBridge
+        // for fitting_room) instead of the generic GenerationPreviewView.
+        let viralKind: String?
+        let viralGenerationId: String?
 
-        init(id: String = UUID().uuidString, title: String, artifactType: GenerationPreviewView.ArtifactType, exportFileType: String, artifactIds: [String], shareDescription: String, downloadURL: URL?, glbDownloadURL: URL?, rbxmDownloadURL: URL?, fbxDownloadURL: URL?, clothingTexturePngURL: URL? = nil, notes: [String], trendingShowcaseItems: [AIWorkspaceAPI.RobloxCatalogItem] = [], trendingShowcaseCategory: String? = nil) {
+        init(id: String = UUID().uuidString, title: String, artifactType: GenerationPreviewView.ArtifactType, exportFileType: String, artifactIds: [String], shareDescription: String, downloadURL: URL?, glbDownloadURL: URL?, rbxmDownloadURL: URL?, fbxDownloadURL: URL?, clothingTexturePngURL: URL? = nil, notes: [String], trendingShowcaseItems: [AIWorkspaceAPI.RobloxCatalogItem] = [], trendingShowcaseCategory: String? = nil, viralKind: String? = nil, viralGenerationId: String? = nil) {
             self.id = id
             self.title = title
             self.artifactType = artifactType
@@ -350,6 +355,8 @@ final class ChatStore: ObservableObject {
             self.notes = notes
             self.trendingShowcaseItems = trendingShowcaseItems
             self.trendingShowcaseCategory = trendingShowcaseCategory
+            self.viralKind = viralKind
+            self.viralGenerationId = viralGenerationId
         }
 
         /// Return a copy with a different id (useful for keeping SwiftUI sheet stable).
@@ -359,7 +366,8 @@ final class ChatStore: ObservableObject {
                 artifactIds: artifactIds, shareDescription: shareDescription, downloadURL: downloadURL,
                 glbDownloadURL: glbDownloadURL, rbxmDownloadURL: rbxmDownloadURL, fbxDownloadURL: fbxDownloadURL,
                 clothingTexturePngURL: clothingTexturePngURL, notes: notes,
-                trendingShowcaseItems: trendingShowcaseItems, trendingShowcaseCategory: trendingShowcaseCategory
+                trendingShowcaseItems: trendingShowcaseItems, trendingShowcaseCategory: trendingShowcaseCategory,
+                viralKind: viralKind, viralGenerationId: viralGenerationId
             )
         }
     }
@@ -5309,6 +5317,34 @@ final class ChatStore: ObservableObject {
     }
 
     private func makePreviewPayload(from job: AIWorkspaceAPI.GenerationJob) -> PreviewPayload {
+        // Session 389 — viralChatDispatch handlers tag artifacts with
+        // metadata.kind = 'fitting_room' (or 'disaster_spawner' / 'voice_aura')
+        // and metadata.generationId so iOS can route to a custom result view
+        // instead of the generic GenerationPreviewView. For fitting_room we
+        // open FittingRoomChatBridge → FittingRoomResultView (dress-up room).
+        if let viralArtifact = job.artifacts.first(where: {
+            ($0.metadata?.kind?.isEmpty == false) && ($0.metadata?.generationId?.isEmpty == false)
+        }) {
+            let kind = viralArtifact.metadata?.kind ?? ""
+            let genId = viralArtifact.metadata?.generationId ?? ""
+            if kind == "fitting_room", !genId.isEmpty {
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Fitting Room" : draft.title,
+                    artifactType: .unavailable("Opening dress-up room…"),
+                    exportFileType: "viral",
+                    artifactIds: [],
+                    shareDescription: job.resultText ?? "Zero-Robux fitting room",
+                    downloadURL: nil,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: nil,
+                    fbxDownloadURL: nil,
+                    notes: [],
+                    viralKind: kind,
+                    viralGenerationId: genId
+                )
+            }
+        }
+
         // Phase F (session 219): pull live Roblox catalog showcase items from job
         // metadata so the preview chip can advertise them. Empty array → no chip.
         let trendingShowcaseItems = job.metadata?.trendingShowcaseItems ?? []
