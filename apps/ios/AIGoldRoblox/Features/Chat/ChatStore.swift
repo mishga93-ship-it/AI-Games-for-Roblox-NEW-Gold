@@ -5674,6 +5674,15 @@ final class ChatStore: ObservableObject {
                     "Playable \(vehicleType) with DriveSeat, physics, engine sound, and VFX.",
                     "Tap Export Vehicle RBXM, drag into Workspace in Studio, press Play, and sit in DriveSeat."
                 ]
+                // Session 387 Round 4 — Modular pipeline injects a rarity badge
+                // + viral personality caption ahead of everything else for
+                // shareable feel. Only appears for vehiclePipeline=modular_builder.
+                if let caption = job.metadata?.vehiclePersonalityCaption, !caption.isEmpty {
+                    notes.insert("“\(caption)”", at: 0)
+                }
+                if let rarity = job.metadata?.vehicleRarityLabel, !rarity.isEmpty {
+                    notes.insert("🏆 \(rarity)", at: 0)
+                }
                 if let seatCount = job.metadata?.seatCount {
                     notes.insert("Seats: \(seatCount) | Mode: \(driveMode)", at: 1)
                 }

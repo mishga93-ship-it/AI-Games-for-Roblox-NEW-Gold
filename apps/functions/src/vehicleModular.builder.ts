@@ -16,7 +16,9 @@
 
 import { logger } from 'firebase-functions/v2';
 import type { VehicleConfig, VehiclePresetId } from './vehicleModular.types.js';
-import { VEHICLE_PRESETS, buildAddonsLuaBlock, resolveAddons } from './vehicleModular.library.js';
+import { VEHICLE_PRESETS, buildAddonsLuaBlock, buildTuningLuaBlock, resolveAddons } from './vehicleModular.library.js';
+import { buildStyleAmbientLuaBlock, stylePaletteHint } from './vehicleModular.styles.js';
+import { computeRarity, describeRarity, generatePersonalityCaption } from './vehicleModular.rarity.js';
 import { routeVehicleConfig } from './vehicleModular.router.js';
 
 /** Result of the prep stage. Caller stuffs these into job metadata. */
@@ -47,6 +49,18 @@ export interface ModularPrepResult {
     vehicleConfig: VehicleConfig;
     vehicleAddonsLuaBlock: string;
     vehicleAddonIds: string[];
+    /** Session 387 Round 2: per-config drive-stats Lua patches
+     *  (boost/drift/suspension/maxSpeed). Emitted as separate Script. */
+    vehicleTuningLuaBlock: string;
+    /** Session 387 Round 3: ambient style Lua (cyberpunk neon trail,
+     *  apocalypse rust, sigma matte metal, etc). Empty for style=default. */
+    vehicleStyleLuaBlock: string;
+    /** Session 387 Round 4: flattened rarity badge for fast iOS read.
+     *  Same data is also inside vehicleConfig.rarity. */
+    vehicleRarityLabel: string;
+    vehicleRarityColorHex: string;
+    /** Session 387 Round 4: viral personality caption (AI single-shot). */
+    vehiclePersonalityCaption: string;
   };
   /** Notes for the stage log (shown in iOS pipeline UI). */
   stageNotes: string[];
@@ -105,6 +119,36 @@ export async function prepareModularVehicle(args: {
     accentHex: config.accentColor, primaryHex: config.primaryColor,
     plateText: config.plateText,
   });
+  const preset = VEHICLE_PRESETS[config.preset];
+  const tuningLuaBlock = buildTuningLuaBlock({
+    maxSpeed: config.driveStats.maxSpeed ?? preset.baselineStats.maxSpeed,
+    drift: config.driveStats.drift ?? preset.baselineStats.drift,
+    boost: config.driveStats.boost ?? preset.baselineStats.boost,
+    suspension: config.driveStats.suspension ?? preset.baselineStats.suspension,
+    passengerSeats: config.driveStats.passengerSeats ?? preset.baselineStats.passengerSeats,
+    destruction: config.driveStats.destruction ?? preset.baselineStats.destruction,
+    accentHex: config.accentColor,
+    primaryHex: config.primaryColor,
+  });
+  void resolvedAddons; // present for stageNotes if needed in future
+
+  // Style ambient effect — applies cyberpunk neon trail / apocalypse rust /
+  // etc on top of the addons. If user didn't request a strong palette and
+  // the AI returned a muted default, fall back to the style's paletteHint
+  // so the style imprints clearly.
+  const paletteHint = stylePaletteHint(config.style);
+  const effectivePrimary = config.primaryColor;
+  const effectiveAccent = config.accentColor === '#1A1A1A' && config.style !== 'default'
+    ? paletteHint.accent : config.accentColor;
+  const styleLuaBlock = buildStyleAmbientLuaBlock(config.style, {
+    primaryHex: effectivePrimary, accentHex: effectiveAccent,
+  });
+
+  // Session 387 Round 4: rarity + personality caption.
+  // Both are pure metadata — iOS chat shows them in the preview card.
+  config.rarity = computeRarity(config);
+  config.personalityCaption = await generatePersonalityCaption(config);
+
   const stageNotes = [
     `Modular pipeline: preset=${config.preset} (${VEHICLE_PRESETS[config.preset].label})`,
     `Style: ${config.style}`,
@@ -112,7 +156,9 @@ export async function prepareModularVehicle(args: {
     `Addons (${config.addons.length}): ${config.addons.join(', ') || 'none'}`,
     `Drive stats: ${config.driveStats.maxSpeed} studs/s, drift=${config.driveStats.drift}, boost=${config.driveStats.boost || 'none'}, susp=${config.driveStats.suspension}, seats=${config.driveStats.passengerSeats}`,
     `Rationale: ${config.rationale}`,
-    `Lua addon block: ${addonsLuaBlock.length} chars`,
+    `Lua blocks — addons: ${addonsLuaBlock.length}ch | tuning: ${tuningLuaBlock.length}ch | style: ${styleLuaBlock.length}ch`,
+    `Rarity: ${config.rarity?.label ?? 'COMMON'} — ${describeRarity(config.rarity!)}`,
+    `Caption: ${config.personalityCaption ?? '(none)'}`,
   ];
   return {
     config,
@@ -122,6 +168,11 @@ export async function prepareModularVehicle(args: {
       vehicleConfig: config,
       vehicleAddonsLuaBlock: addonsLuaBlock,
       vehicleAddonIds: [...config.addons],
+      vehicleTuningLuaBlock: tuningLuaBlock,
+      vehicleStyleLuaBlock: styleLuaBlock,
+      vehicleRarityLabel: config.rarity?.label ?? 'COMMON',
+      vehicleRarityColorHex: config.rarity?.colorHex ?? '#9E9E9E',
+      vehiclePersonalityCaption: config.personalityCaption ?? '',
     },
     stageNotes,
   };

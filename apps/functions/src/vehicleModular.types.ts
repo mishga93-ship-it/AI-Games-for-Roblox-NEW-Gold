@@ -62,14 +62,35 @@ export interface VehicleDriveStats {
   maxSpeed?: number;
   /** Whether the loader enables the drift assist (rear-wheel power bias). */
   drift?: boolean;
-  /** Boost particle style — '' / 'flame' / 'neon' / 'smoke'. */
-  boost?: '' | 'flame' | 'neon' | 'smoke';
+  /** Boost particle style — '' / 'flame' / 'neon' / 'smoke' / 'nitro'. */
+  boost?: '' | 'flame' | 'neon' | 'smoke' | 'nitro';
   /** Suspension stiffness — softer = monster truck bounce, stiffer = race. */
   suspension?: 'soft' | 'standard' | 'stiff' | 'monster';
   /** Number of passenger seats (in addition to DriveSeat). */
   passengerSeats?: number;
   /** Whether the vehicle takes damage / has destruction VFX. */
   destruction?: boolean;
+}
+
+/** Session 387 Round 4: rarity tier derived from style + driveStats.
+ *  Shown as a badge in chat preview ("LEGENDARY DRIFT", "SIGMA SPEC", …). */
+export type VehicleRarityTier =
+  | 'common'
+  | 'rare'
+  | 'epic'
+  | 'legendary_drift'
+  | 'sigma_spec'
+  | 'military_tier'
+  | 'chaos_vehicle'
+  | 'cyber_elite'
+  | 'mythic';
+
+export interface VehicleRarity {
+  tier: VehicleRarityTier;
+  /** Display label shown in iOS preview badge. */
+  label: string;
+  /** Hex color for the badge background. */
+  colorHex: string;
 }
 
 /** Full config emitted by the AI router, consumed by the modular builder. */
@@ -90,6 +111,10 @@ export interface VehicleConfig {
   plateText?: string;
   /** Human-readable rationale from the router (for debug logs + UI hint). */
   rationale: string;
+  /** Session 387 Round 4 — derived rarity badge (computed post-router). */
+  rarity?: VehicleRarity;
+  /** Session 387 Round 4 — viral one-liner for share UX. AI-generated. */
+  personalityCaption?: string;
 }
 
 /** Preset → underlying .rbxm template mapping. Lets the modular builder

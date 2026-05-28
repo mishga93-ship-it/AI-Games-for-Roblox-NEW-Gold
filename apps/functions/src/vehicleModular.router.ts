@@ -145,8 +145,8 @@ function sanitizeConfig(raw: unknown, fallbackPreset: VehiclePresetId): VehicleC
 
   const ds = (o.driveStats ?? {}) as Record<string, unknown>;
   const boostRaw = typeof ds.boost === 'string' ? ds.boost : '';
-  const boost = (['', 'flame', 'neon', 'smoke'].includes(boostRaw) ? boostRaw : preset.baselineStats.boost) as
-    '' | 'flame' | 'neon' | 'smoke';
+  const boost = (['', 'flame', 'neon', 'smoke', 'nitro'].includes(boostRaw) ? boostRaw : preset.baselineStats.boost) as
+    '' | 'flame' | 'neon' | 'smoke' | 'nitro';
   const suspensionRaw = typeof ds.suspension === 'string' ? ds.suspension : '';
   const suspension = (['soft', 'standard', 'stiff', 'monster'].includes(suspensionRaw)
     ? suspensionRaw : preset.baselineStats.suspension) as 'soft' | 'standard' | 'stiff' | 'monster';

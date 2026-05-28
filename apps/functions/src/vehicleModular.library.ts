@@ -544,6 +544,210 @@ do
 end`.trim(),
 };
 
+// ─── DRIVE-STATS TUNING LUA ────────────────────────────────────────────
+// Session 387 Round 2: per-config gameplay wiring. Each function emits a
+// Lua block that mutates the live vehicle Model — patches VehicleSeat
+// properties, wires boost particles, drift smoke, suspension stiffness.
+// Runs from the same ModularTuningInjector Script after the vehicle is in
+// workspace. Empty block ('') when the tuning is at default values.
+
+interface TuningContext {
+  maxSpeed: number;
+  drift: boolean;
+  boost: '' | 'flame' | 'neon' | 'smoke' | 'nitro';
+  suspension: 'soft' | 'standard' | 'stiff' | 'monster';
+  passengerSeats: number;
+  destruction: boolean;
+  accentHex: string;
+  primaryHex: string;
+}
+
+const BOOST_PALETTES: Record<'flame' | 'neon' | 'smoke' | 'nitro', { r: number; g: number; b: number; material: string; sparkle: boolean }> = {
+  flame:  { r: 255, g: 100, b: 20,  material: 'Neon',         sparkle: true  },
+  neon:   { r: 200, g: 60,  b: 255, material: 'ForceField',   sparkle: true  },
+  smoke:  { r: 60,  g: 60,  b: 60,  material: 'SmoothPlastic', sparkle: false },
+  nitro:  { r: 100, g: 200, b: 255, material: 'Neon',         sparkle: true  },
+};
+
+/** maxSpeed patch — overrides VehicleSeat.MaxSpeed + Torque scale. */
+export function buildMaxSpeedTuningLua(ctx: TuningContext): string {
+  return `
+do
+  for _, d in ipairs(vehicleModel:GetDescendants()) do
+    if d:IsA("VehicleSeat") then
+      d.MaxSpeed = ${ctx.maxSpeed}
+      d.Torque = math.max(d.Torque, ${Math.round(ctx.maxSpeed * 0.35)})
+    end
+  end
+  print("[ModularTuning] MaxSpeed=${ctx.maxSpeed}")
+end`.trim();
+}
+
+/** Boost — particle trail behind each wheel that activates on full throttle. */
+export function buildBoostTuningLua(ctx: TuningContext): string {
+  if (!ctx.boost) return '';
+  const p = BOOST_PALETTES[ctx.boost];
+  return `
+do
+  local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+  if not seat then return end
+  local wheels = {}
+  for _, d in ipairs(vehicleModel:GetDescendants()) do
+    if d:IsA("BasePart") and d:IsA("Part") and d.Shape == Enum.PartType.Cylinder then
+      local s = d.Size
+      if s.Y >= 1 and s.Y <= 4 and s.Z >= 1 and s.Z <= 4 then table.insert(wheels, d) end
+    end
+  end
+  if #wheels == 0 then return end
+  local function emit()
+    for _, w in ipairs(wheels) do
+      local att = Instance.new("Attachment", w)
+      att.Name = "BoostFXAtt"
+      local p = Instance.new("ParticleEmitter", att)
+      p.Name = "BoostFX_${ctx.boost}"
+      p.Color = ColorSequence.new(Color3.fromRGB(${p.r}, ${p.g}, ${p.b}))
+      p.LightEmission = 0.9
+      p.LightInfluence = 0
+      p.Texture = "${p.material === 'SmoothPlastic' ? 'rbxasset://textures/particles/smoke_main.dds' : 'rbxasset://textures/particles/sparkles_main.dds'}"
+      p.Rate = 0
+      p.Lifetime = NumberRange.new(0.4, 0.8)
+      p.Size = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, ${ctx.boost === 'smoke' ? 1.4 : 0.7}),
+        NumberSequenceKeypoint.new(1, 0.1)
+      })
+      p.Speed = NumberRange.new(8, 14)
+      p.SpreadAngle = Vector2.new(20, 20)
+      p.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.2),
+        NumberSequenceKeypoint.new(1, 1),
+      })
+      p.Acceleration = Vector3.new(0, 5, 0)
+    end
+  end
+  emit()
+  -- Activate on full throttle, deactivate on release.
+  seat:GetPropertyChangedSignal("Throttle"):Connect(function()
+    local rate = (seat.Throttle > 0.85) and ${ctx.boost === 'smoke' ? 30 : 60} or 0
+    for _, w in ipairs(wheels) do
+      for _, ch in ipairs(w:GetChildren()) do
+        if ch:IsA("Attachment") and ch.Name == "BoostFXAtt" then
+          for _, fx in ipairs(ch:GetChildren()) do
+            if fx:IsA("ParticleEmitter") then fx.Rate = rate end
+          end
+        end
+      end
+    end
+  end)
+  print("[ModularTuning] boost wired: ${ctx.boost}")
+end`.trim();
+}
+
+/** Drift — when steering hard at speed, spawn smoke trail under wheels. */
+export function buildDriftTuningLua(ctx: TuningContext): string {
+  if (!ctx.drift) return '';
+  return `
+do
+  local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+  if not seat then return end
+  local RunService = game:GetService("RunService")
+  local rearWheels = {}
+  for _, d in ipairs(vehicleModel:GetDescendants()) do
+    if d:IsA("BasePart") and d:IsA("Part") and d.Shape == Enum.PartType.Cylinder then
+      local s = d.Size
+      if s.Y >= 1 and s.Y <= 4 and s.Z >= 1 and s.Z <= 4 then table.insert(rearWheels, d) end
+    end
+  end
+  if #rearWheels == 0 then return end
+  -- Persistent smoke emitter per wheel — toggled by drift detector.
+  for _, w in ipairs(rearWheels) do
+    local att = Instance.new("Attachment", w)
+    att.Name = "DriftFXAtt"
+    local p = Instance.new("ParticleEmitter", att)
+    p.Name = "DriftFX"
+    p.Color = ColorSequence.new(Color3.fromRGB(220, 220, 220))
+    p.Texture = "rbxasset://textures/particles/smoke_main.dds"
+    p.Rate = 0
+    p.Lifetime = NumberRange.new(0.8, 1.5)
+    p.Size = NumberSequence.new({
+      NumberSequenceKeypoint.new(0, 1.3),
+      NumberSequenceKeypoint.new(1, 2.5),
+    })
+    p.Speed = NumberRange.new(2, 4)
+    p.SpreadAngle = Vector2.new(45, 45)
+    p.Transparency = NumberSequence.new({
+      NumberSequenceKeypoint.new(0, 0.3),
+      NumberSequenceKeypoint.new(1, 1),
+    })
+  end
+  local conn
+  conn = RunService.Heartbeat:Connect(function()
+    if not seat or not seat.Parent then if conn then conn:Disconnect() end; return end
+    local isDrifting = math.abs(seat.Steer) > 0.55 and seat.Throttle > 0.3
+    local rate = isDrifting and 24 or 0
+    for _, w in ipairs(rearWheels) do
+      for _, ch in ipairs(w:GetChildren()) do
+        if ch:IsA("Attachment") and ch.Name == "DriftFXAtt" then
+          for _, fx in ipairs(ch:GetChildren()) do
+            if fx:IsA("ParticleEmitter") then fx.Rate = rate end
+          end
+        end
+      end
+    end
+  end)
+  print("[ModularTuning] drift wired")
+end`.trim();
+}
+
+/** Suspension — adjust SpringConstraint stiffness for the desired feel. */
+export function buildSuspensionTuningLua(ctx: TuningContext): string {
+  if (ctx.suspension === 'standard') return '';
+  // soft = bouncy (low stiffness), stiff = race feel (high), monster = huge wheels + super bouncy
+  const stiffness = ctx.suspension === 'soft' ? 0.4
+    : ctx.suspension === 'stiff' ? 1.8
+    : ctx.suspension === 'monster' ? 0.3
+    : 1.0;
+  const damping = ctx.suspension === 'monster' ? 0.6 : (ctx.suspension === 'stiff' ? 1.6 : 1.0);
+  return `
+do
+  local STIFFNESS_MUL = ${stiffness}
+  local DAMPING_MUL = ${damping}
+  local patched = 0
+  for _, d in ipairs(vehicleModel:GetDescendants()) do
+    if d:IsA("SpringConstraint") then
+      d.Stiffness = math.max(d.Stiffness * STIFFNESS_MUL, 100)
+      d.Damping = math.max(d.Damping * DAMPING_MUL, 50)
+      patched = patched + 1
+    end
+  end
+  ${ctx.suspension === 'monster' ? `
+  -- Monster also lifts the chassis by enlarging wheels (already done by
+  -- monster_truck_tires addon if user chose it; here we additionally adjust
+  -- the chassis Position offset so the body rides high above the new tires).
+  task.wait(0.2)
+  for _, d in ipairs(vehicleModel:GetDescendants()) do
+    if d:IsA("BasePart") and d:IsA("Part") and d.Shape == Enum.PartType.Cylinder then
+      local s = d.Size
+      if s.Y >= 1 and s.Y <= 4 and s.Z >= 1 and s.Z <= 4 then
+        d.Size = Vector3.new(s.X * 1.15, s.Y * 1.35, s.Z * 1.35)
+      end
+    end
+  end` : ''}
+  print("[ModularTuning] suspension=${ctx.suspension}, patched", patched, "springs")
+end`.trim();
+}
+
+/** Combine all tuning Lua blocks into one script body. */
+export function buildTuningLuaBlock(ctx: TuningContext): string {
+  const blocks = [
+    buildMaxSpeedTuningLua(ctx),
+    buildBoostTuningLua(ctx),
+    buildDriftTuningLua(ctx),
+    buildSuspensionTuningLua(ctx),
+  ].filter((b) => b.length > 0);
+  if (blocks.length === 0) return '';
+  return ['-- Modular drive-stats tuning (session 387 round 2)', ...blocks].join('\n\n');
+}
+
 /** Resolve a list of addon IDs into the actual specs (filters unknowns). */
 export function resolveAddons(ids: ReadonlyArray<string>): VehicleAddonSpec[] {
   const out: VehicleAddonSpec[] = [];

@@ -2789,6 +2789,44 @@ function buildVehicleModelManifest(
         source: injectorSource,
       });
     }
+
+    // Session 387 Round 2: per-config drive-stats tuning (maxSpeed, boost,
+    // drift, suspension). Same injection pattern. Empty block when default
+    // stats / non-modular path → script not emitted.
+    const tuningLuaBlock = typeof metadata.vehicleTuningLuaBlock === 'string'
+      ? metadata.vehicleTuningLuaBlock : '';
+    const tuningInjectorSource = buildModularTuningInjectorScript({
+      tuningLuaBlock,
+      vehicleWrapperName: tplLabel,
+    });
+    if (tuningInjectorSource.length > 0) {
+      builtScripts.push({
+        id: uuidv4(),
+        name: 'ModularTuningInjector',
+        scriptType: 'Script',
+        container: 'WorkspaceRoot',
+        source: tuningInjectorSource,
+      });
+    }
+
+    // Session 387 Round 3: ambient style effect — cyberpunk neon trail,
+    // apocalypse rust, sigma matte metal, etc. Runs LAST (after tuning) so
+    // it can override materials after other patches. Default style emits ''.
+    const styleLuaBlock = typeof metadata.vehicleStyleLuaBlock === 'string'
+      ? metadata.vehicleStyleLuaBlock : '';
+    const styleInjectorSource = buildModularStyleInjectorScript({
+      styleLuaBlock,
+      vehicleWrapperName: tplLabel,
+    });
+    if (styleInjectorSource.length > 0) {
+      builtScripts.push({
+        id: uuidv4(),
+        name: 'ModularStyleInjector',
+        scriptType: 'Script',
+        container: 'WorkspaceRoot',
+        source: styleInjectorSource,
+      });
+    }
   }
 
   return {
@@ -3981,6 +4019,104 @@ print("[VehicleTemplateLoader] Done — wrapper destroyed, template now lives at
  * Empty addonsLuaBlock string → returns the empty string (caller can skip
  * emitting the script entirely).
  */
+/** Session 387 Round 3 — style ambient injector. Runs at t≈4.5s so it
+ *  applies AFTER addons + tuning have settled. Body material swap + glow. */
+function buildModularStyleInjectorScript(args: {
+  styleLuaBlock: string;
+  vehicleWrapperName: string;
+}): string {
+  if (!args.styleLuaBlock || args.styleLuaBlock.trim().length === 0) return '';
+  const safeName = args.vehicleWrapperName.replace(/"/g, '\\"');
+  return `
+-- ModularStyleInjector (auto-generated, session 387 round 3)
+-- Applies the chosen style pack (cyberpunk / sigma / apocalypse / …).
+
+local WRAPPER_NAME = "${safeName}"
+
+local function findVehicle()
+\tlocal up = script.Parent
+\twhile up do
+\t\tif up:IsA("Model") and up.Name == WRAPPER_NAME then return up end
+\t\tup = up.Parent
+\tend
+\tfor _, child in workspace:GetChildren() do
+\t\tif child:IsA("Model") and child.Name == WRAPPER_NAME then return child end
+\tend
+\treturn nil
+end
+
+task.wait(4.5)
+
+local vehicleModel = findVehicle()
+if not vehicleModel then
+\twarn("[ModularStyle] vehicle not found:", WRAPPER_NAME)
+\treturn
+end
+
+print("[ModularStyle] applying to", vehicleModel:GetFullName())
+
+local ok, err = pcall(function()
+${args.styleLuaBlock.split('\n').map((l) => '\t' + l).join('\n')}
+end)
+if not ok then
+\twarn("[ModularStyle] block failed:", tostring(err))
+else
+\tprint("[ModularStyle] done")
+end
+`.trim();
+}
+
+/** Session 387 Round 2 — drive-stats tuning injector. Same shape as the
+ *  addons injector: wait 3.5s (slightly longer so addons settle first),
+ *  find vehicle Model, run tuning Lua block. */
+function buildModularTuningInjectorScript(args: {
+  tuningLuaBlock: string;
+  vehicleWrapperName: string;
+}): string {
+  if (!args.tuningLuaBlock || args.tuningLuaBlock.trim().length === 0) return '';
+  const safeName = args.vehicleWrapperName.replace(/"/g, '\\"');
+  return `
+-- ModularTuningInjector (auto-generated, session 387 round 2)
+-- Patches VehicleSeat MaxSpeed, wires boost particles, drift smoke,
+-- and tweaks SpringConstraint stiffness for the AI-chosen drive feel.
+
+local WRAPPER_NAME = "${safeName}"
+
+local function findVehicle()
+\tlocal up = script.Parent
+\twhile up do
+\t\tif up:IsA("Model") and up.Name == WRAPPER_NAME then return up end
+\t\tup = up.Parent
+\tend
+\tfor _, child in workspace:GetChildren() do
+\t\tif child:IsA("Model") and child.Name == WRAPPER_NAME then return child end
+\tend
+\treturn nil
+end
+
+-- Wait a bit longer than the addons injector so addon wheels (monster tires)
+-- finish resizing before suspension tuning measures them.
+task.wait(3.5)
+
+local vehicleModel = findVehicle()
+if not vehicleModel then
+\twarn("[ModularTuning] vehicle not found:", WRAPPER_NAME)
+\treturn
+end
+
+print("[ModularTuning] patching", vehicleModel:GetFullName())
+
+local ok, err = pcall(function()
+${args.tuningLuaBlock.split('\n').map((l) => '\t' + l).join('\n')}
+end)
+if not ok then
+\twarn("[ModularTuning] block failed:", tostring(err))
+else
+\tprint("[ModularTuning] done")
+end
+`.trim();
+}
+
 function buildModularAddonsInjectorScript(args: {
   addonsLuaBlock: string;
   vehicleWrapperName: string;

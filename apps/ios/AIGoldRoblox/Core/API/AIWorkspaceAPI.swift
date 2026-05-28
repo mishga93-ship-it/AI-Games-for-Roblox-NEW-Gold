@@ -480,6 +480,11 @@ enum AIWorkspaceAPI {
         /// SceneKit 3D preview used for furniture/props.
         let vehicleSpecJSON: String?
         let vehicleSpecPartCount: Int?
+        /// Session 387 Round 4 — flattened rarity badge & viral caption from
+        /// the Modular Vehicle Builder pipeline. nil for template_embed jobs.
+        let vehicleRarityLabel: String?
+        let vehicleRarityColorHex: String?
+        let vehiclePersonalityCaption: String?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: DynamicCodingKey.self)
@@ -553,6 +558,9 @@ enum AIWorkspaceAPI {
             }
             vehicleSpecJSON = try? container.decode(String.self, forKey: .init("vehicleSpecJSON"))
             vehicleSpecPartCount = try? container.decode(Int.self, forKey: .init("vehicleSpecPartCount"))
+            vehicleRarityLabel = try? container.decode(String.self, forKey: .init("vehicleRarityLabel"))
+            vehicleRarityColorHex = try? container.decode(String.self, forKey: .init("vehicleRarityColorHex"))
+            vehiclePersonalityCaption = try? container.decode(String.self, forKey: .init("vehiclePersonalityCaption"))
         }
 
         private struct DynamicCodingKey: CodingKey {
