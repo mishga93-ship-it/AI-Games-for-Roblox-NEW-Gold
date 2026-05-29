@@ -300,40 +300,57 @@ async function meshyOnceFor(args: {
       return undefined;
     }
     const raw = winner.raw as Record<string, unknown> | undefined;
-    const meshUrlRaw = winner.outputUrl
+    // Session 390 round 9 — switched primary mesh format GLB → USDZ.
+    // Meshy v6 returns BOTH glbUrl and usdzUrl. Apple's native ModelIO
+    // has rock-solid USDZ support (it's the format AR Quick Look uses);
+    // GLB is technically supported via MDLAsset but real-world Meshy v6
+    // GLBs hit edge cases where MDLAsset returns asset.count=0 and the
+    // SCN viewer renders blank (NPC pipeline avoids this because it goes
+    // through copyExternalArtifact, which produces a different binary
+    // structure than Meshy's pygltflib generator). Round 8 logging
+    // confirmed every Meshy v6 cursed-UGC response includes usdzUrl, so
+    // we can switch the iOS mesh viewer to USDZ and skip the GLB-on-SCN
+    // compatibility roulette entirely.
+    const usdzUrlRaw = typeof raw?.usdzUrl === 'string'
+      ? (raw.usdzUrl as string)
+      : undefined;
+    const glbUrlRaw = winner.outputUrl
       ?? (typeof raw?.modelUrl === 'string' ? (raw.modelUrl as string) : undefined);
+    const meshUrlRaw = usdzUrlRaw ?? glbUrlRaw;  // prefer USDZ for iOS
     const thumbnailUrlRaw = typeof raw?.thumbnailUrl === 'string'
       ? (raw.thumbnailUrl as string)
       : undefined;
 
-    // Session 390 round 8 — log Meshy v6 model URL availability so we can
-    // diagnose iOS rendering. Native iOS SceneKit + ModelIO has reliable
-    // USDZ support; GLB support is documented as iOS 12+ but in practice
-    // sometimes fails on specific GLB variants (different generators
-    // produce different binary layouts). Log usdzUrl/objUrl presence so we
-    // can decide whether to switch to those formats on the iOS side.
     logger.info('[cursedUgcGenerator] Meshy v6 URLs available', {
-      hasGlb: !!meshUrlRaw,
+      hasGlb: !!glbUrlRaw,
+      hasUsdz: !!usdzUrlRaw,
+      meshFormatChosen: usdzUrlRaw ? 'usdz' : 'glb',
       hasThumbnail: !!thumbnailUrlRaw,
-      hasUsdz: !!(raw?.usdzUrl),
       hasFbx: !!(raw?.fbxUrl),
       hasObj: !!(raw?.objUrl),
-      glbSizeKb: meshUrlRaw ? 'pending' : 'none',
     });
 
-    // Session 390 round 6 — re-host the Meshy GLB + thumbnail through our
+    // Session 390 round 6 — re-host the Meshy mesh + thumbnail through our
     // Firebase Storage bucket so iOS can download them cleanly. iOS direct
     // downloads from fal.media silently fail (CORS / content-disposition
     // quirks) — NPC pipeline already does the same re-host via
     // copyExternalArtifact, which is why NPC chats show 3D fine. Both
     // re-hosts run in parallel and tolerate individual failures.
+    //
+    // Round 9 — extension/content-type now follows whichever format we
+    // picked above (USDZ if present, else GLB). `.usdz` + `model/vnd.usdz+zip`
+    // for the iOS-native path; `.glb` + `model/gltf-binary` as fallback.
+    const meshIsUsdz = !!usdzUrlRaw;
+    const meshFilename = meshIsUsdz ? 'mesh.usdz' : 'mesh.glb';
+    const meshContentType = meshIsUsdz ? 'model/vnd.usdz+zip' : 'model/gltf-binary';
+
     const [meshUrl, thumbnailUrl] = await Promise.all([
       meshUrlRaw
         ? rehostMeshBinary({
             firebaseUid: args.firebaseUid,
             url: meshUrlRaw,
-            filename: 'mesh.glb',
-            contentType: 'model/gltf-binary',
+            filename: meshFilename,
+            contentType: meshContentType,
           }).then((rehosted) => rehosted ?? meshUrlRaw)
         : Promise.resolve(undefined),
       thumbnailUrlRaw
@@ -387,24 +404,17 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
   const generationStatus: 'ready' | 'partial' | 'failed' =
     (mainImageUrl || mesh?.thumbnailUrl) ? (cuterUrl && cursedUrl ? 'ready' : 'partial') : 'failed';
 
-  // Session 390 round 8 — surface the Meshy v6 mesh PNG render as the
-  // primary visual (mainImageUrl) when available. Previously this was
-  // always the flux 2D concept (which shows the cursed item attached to
-  // a sigma chad in the background, since flux is a scene generator,
-  // not an item generator). Switching to the Meshy thumbnail means iOS
-  // shows a render of the ACTUAL 3D mesh that ships — which both better
-  // matches the user expectation («3д меш») and works around the empty
-  // RealModel3DPreview SCN viewer issue we've been chasing across
-  // rounds 4-7. The flux concept is preserved as a fallback in case
-  // Meshy timed out, plus it's still used inside variations[].
-  const primaryImageUrl = mesh?.thumbnailUrl ?? mainImageUrl;
-
+  // Session 390 round 9 — keep mainImageUrl as the flux concept again.
+  // With USDZ working in RealModel3DPreview, iOS shows the rotatable
+  // 3D mesh as the hero (mesh.meshUrl set). mainImageUrl + meshThumbnail
+  // remain available as fallbacks (when Meshy times out, when iOS opts
+  // out of 3D, when the share-poster needs a static visual).
   return {
     generationId,
     categoryId: input.categoryId,
     styleId: input.styleId,
     intensity: input.intensity,
-    mainImageUrl: primaryImageUrl,
+    mainImageUrl,
     meshUrl: mesh?.meshUrl,
     meshThumbnailUrl: mesh?.thumbnailUrl,
     variations,
