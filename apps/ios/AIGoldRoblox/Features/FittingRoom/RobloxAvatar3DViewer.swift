@@ -22,6 +22,13 @@ struct RobloxAvatar3DViewer: View {
     enum Source: Equatable {
         case realUser(userId: String)
         case mannequin(BodyType)
+        /// Phase O2-P (session 394) — a Roblox server-composited outfit
+        /// (shirt + pants + hats + hair + accessories ALL baked in by
+        /// POST /v1/avatar/render). URLs are pre-resolved and passed in
+        /// directly (no userId fetch); `key` is a stable identity (the
+        /// fitting-room generationId) for SwiftUI .task(id:). Reuses the
+        /// exact .realUser OBJ loader — the model already has real clothing.
+        case compositedOutfit(key: String)
 
         enum BodyType: Equatable {
             case neutral, man, woman
@@ -38,13 +45,19 @@ struct RobloxAvatar3DViewer: View {
         /// source change but not on unrelated state changes.
         var idKey: String {
             switch self {
-            case .realUser(let uid):      return "user:\(uid)"
-            case .mannequin(let bt):      return "mannequin:\(bt.sceneName)"
+            case .realUser(let uid):       return "user:\(uid)"
+            case .mannequin(let bt):       return "mannequin:\(bt.sceneName)"
+            case .compositedOutfit(let k): return "outfit:\(k)"
             }
         }
     }
 
     var source: Source
+    /// Phase O2-P (session 394) — pre-resolved OBJ/MTL/texture URLs for
+    /// `.compositedOutfit` mode. Already fetched server-side (the Roblox
+    /// /v1/avatar/render manifest), so `load()` skips the user fetch and
+    /// hands these straight to `loadSceneOffMain`. Nil for other sources.
+    var preloadedURLs: Avatar3DURLs? = nil
     /// Phase B — when non-empty, after the avatar loads we fetch each
     /// asset's 3D mesh and attach it to the scene with slot-specific
     /// positioning. Re-runs when the set changes (SwiftUI .id binding).
@@ -81,6 +94,16 @@ struct RobloxAvatar3DViewer: View {
         self.source = .mannequin(body)
         self.attachedAssets = attachedAssets
         self.clothingTextures = clothingTextures
+    }
+
+    /// Phase O2-P init — server-composited outfit. `urls` are the already
+    /// resolved render manifest URLs (from POST /v1/avatar/render via the
+    /// fitting-room backend). The model has the FULL look baked in — real
+    /// shirt + pants + hats + hair — so no attachments and no clothing
+    /// texture overlays are needed (and would double-stack if added).
+    init(compositedOutfit urls: Avatar3DURLs, key: String) {
+        self.source = .compositedOutfit(key: key)
+        self.preloadedURLs = urls
     }
 
     struct Attachment: Hashable {
@@ -169,6 +192,17 @@ struct RobloxAvatar3DViewer: View {
                 let (loaded, fakeUrls) = try await Self.loadMannequinSceneOffMain(body: body)
                 scene = loaded
                 urls = fakeUrls
+            case .compositedOutfit:
+                // URLs were resolved server-side (render manifest) and
+                // passed via `preloadedURLs` — reuse the exact .realUser
+                // OBJ loader. The mesh already wears the full outfit.
+                guard let preloaded = preloadedURLs else {
+                    throw NSError(domain: "RobloxAvatar3DViewer", code: -1,
+                                  userInfo: [NSLocalizedDescriptionKey:
+                                    "compositedOutfit missing preloaded URLs"])
+                }
+                urls = preloaded
+                scene = try await Self.loadSceneOffMain(urls: urls)
             }
             await MainActor.run {
                 Self.startIdleBob(on: scene)
@@ -1177,18 +1211,20 @@ struct Asset3DURLs: Decodable {
     let aabb: Avatar3DAABB
 }
 
-struct Avatar3DCamera: Decodable {
+// Codable (not just Decodable) so these can nest inside the Codable
+// FittingRoomDocResponse via FittingRoomRender3D (Phase O2-P, session 394).
+struct Avatar3DCamera: Codable {
     let position: Avatar3DVec3
     let direction: Avatar3DVec3
     let fov: Double
 }
 
-struct Avatar3DAABB: Decodable {
+struct Avatar3DAABB: Codable {
     let min: Avatar3DVec3
     let max: Avatar3DVec3
 }
 
-struct Avatar3DVec3: Decodable {
+struct Avatar3DVec3: Codable {
     let x: Double
     let y: Double
     let z: Double

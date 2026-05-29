@@ -72,6 +72,30 @@ struct FittingRoomResultView: View {
         }
     }
 
+    /// Phase O2-P (session 394) — convert the backend's server-composited
+    /// render manifest into the viewer's `Avatar3DURLs`. This model has the
+    /// FULL look baked in by Roblox (real shirt + pants + hats + hair), so
+    /// it's the definitive dress-up view — no attachments / texture hacks.
+    /// `userId` here is a synthetic key (only used for the temp-dir name).
+    private var composited3DURLs: Avatar3DURLs? {
+        guard let r = response.render3d else { return nil }
+        return Avatar3DURLs(
+            userId: "outfit-\(response.generationId)",
+            objUrl: r.objUrl,
+            mtlUrl: r.mtlUrl,
+            textureUrls: r.textureUrls,
+            camera: r.camera,
+            aabb: r.aabb
+        )
+    }
+
+    /// True when we should show the server-composited outfit as the hero:
+    /// the user is in "dress-up" (non-avatar) mode AND the render exists.
+    /// Toggling to "Your Avatar" still shows their real Roblox avatar.
+    private var showComposited: Bool {
+        useMannequin && composited3DURLs != nil
+    }
+
     /// Phase O2-P4 — map OutfitItems → clothing texture overlays for
     /// the mannequin. Roblox classic Shirt / Pants / TShirt are 2D
     /// textures (no 3D mesh on asset-3d). Backend resolves the wrapper
@@ -289,7 +313,16 @@ struct FittingRoomResultView: View {
                 // current outfit). Items attach to whichever base is
                 // active — accessories aren't re-fetched on toggle.
                 Group {
-                    if useMannequin {
+                    if showComposited, let composited = composited3DURLs {
+                        // Phase O2-P — server-composited full outfit: real
+                        // shirt + pants + hats + hair, all baked in by
+                        // Roblox /v1/avatar/render. No attachments / texture
+                        // overlays needed (would double-stack the look).
+                        RobloxAvatar3DViewer(
+                            compositedOutfit: composited,
+                            key: response.generationId
+                        )
+                    } else if useMannequin {
                         RobloxAvatar3DViewer(
                             mannequin: mannequinBodyType,
                             attachedAssets: tryOnIn3D ? threeDeeAttachments : [],
@@ -347,25 +380,29 @@ struct FittingRoomResultView: View {
                     Spacer()
                     HStack(spacing: 8) {
                         // Phase B — toggle to add/remove real 3D meshes of
-                        // the fit's items on top of the avatar.
-                        Button(action: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                                tryOnIn3D.toggle()
+                        // the fit's items on top of the avatar. Hidden in
+                        // composited mode: the fit is already baked into the
+                        // render, so a "take off" toggle would be a no-op.
+                        if !showComposited {
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                    tryOnIn3D.toggle()
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: tryOnIn3D ? "xmark.circle.fill" : "sparkles")
+                                        .font(.caption2.bold())
+                                    Text(tryOnIn3D
+                                         ? loc(en: "Take off", ru: "Снять")
+                                         : loc(en: "Try this fit on 3D", ru: "Примерить в 3D"))
+                                        .font(.caption.bold())
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(tryOnIn3D ? Color.orange.opacity(0.85) : accentColor.opacity(0.85))
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.5))
                             }
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: tryOnIn3D ? "xmark.circle.fill" : "sparkles")
-                                    .font(.caption2.bold())
-                                Text(tryOnIn3D
-                                     ? loc(en: "Take off", ru: "Снять")
-                                     : loc(en: "Try this fit on 3D", ru: "Примерить в 3D"))
-                                    .font(.caption.bold())
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(tryOnIn3D ? Color.orange.opacity(0.85) : accentColor.opacity(0.85))
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.5))
                         }
                         HStack(spacing: 4) {
                             Image(systemName: "hand.tap.fill").font(.caption2)

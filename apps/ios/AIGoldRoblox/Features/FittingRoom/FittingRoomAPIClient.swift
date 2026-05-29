@@ -25,6 +25,19 @@ struct FittingRoomRenders: Codable {
     }
 }
 
+/// Phase O2-P (session 394) — server-composited 3D outfit render. The
+/// backend POSTs the assembled asset list to Roblox's /v1/avatar/render
+/// and resolves the resulting OBJ/MTL/texture manifest. Mirrors the
+/// backend `RobloxOutfit3DUrls` shape (camera/aabb reuse the viewer's
+/// wire types). Optional — absent when the render couldn't be produced.
+struct FittingRoomRender3D: Codable {
+    let objUrl: String
+    let mtlUrl: String
+    let textureUrls: [String]
+    let camera: Avatar3DCamera
+    let aabb: Avatar3DAABB
+}
+
 struct FittingRoomDocResponse: Codable {
     let generationId: String
     let firebaseUid: String?
@@ -35,6 +48,7 @@ struct FittingRoomDocResponse: Codable {
     let robloxUserId: String?
     let fitOnUser: Bool
     let renders: FittingRoomRenders
+    let render3d: FittingRoomRender3D?
     let items: [OutfitItem]
     let totalCostRobux: Int
     let savedRobux: Int
