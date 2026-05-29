@@ -11,6 +11,13 @@
 import { logger } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
 import { generatePreviewTexture, runChatProvider, runMeshy } from './providers.js';
+// Session 390 round 11 — Blender mesh re-export. Raw Meshy v6 GLBs don't
+// load in iOS MDLAsset (asset.count=0 → empty SCN viewer). NPC chats render
+// fine because character_3d pipeline runs the mesh through the Cloud Run
+// worker's /optimize-mesh endpoint, which re-exports via Blender's glTF
+// exporter (export_materials='EXPORT') into a clean MDLAsset-compatible GLB
+// with textures embedded. We reuse that exact step for cursed UGC.
+import { optimizeMeshAsset } from './robloxWorker.js';
 import {
   buildCursedUGCPrompt,
   CURSED_UGC_CATEGORIES,
@@ -340,38 +347,75 @@ async function meshyOnceFor(args: {
       hasObj: !!(raw?.objUrl),
     });
 
-    // Session 390 round 6 — re-host the Meshy mesh + thumbnail through our
-    // Firebase Storage bucket so iOS can download them cleanly. iOS direct
-    // downloads from fal.media silently fail (CORS / content-disposition
-    // quirks) — NPC pipeline already does the same re-host via
-    // copyExternalArtifact, which is why NPC chats show 3D fine. Both
-    // re-hosts run in parallel and tolerate individual failures.
+    // Session 390 round 11 — run the GLB through the Cloud Run worker's
+    // Blender /optimize-mesh re-export (export_materials='EXPORT'), the
+    // SAME step the character_3d pipeline applies — which is the only
+    // reason NPC GLBs load in iOS MDLAsset. Raw Meshy GLBs fail MDLAsset
+    // (asset.count=0 → blank viewer); Blender re-export rewrites them into
+    // a clean, MDLAsset-compatible binary with textures embedded.
     //
-    // Round 10 — extension/content-type follows the chosen format. We now
-    // prefer GLB (embedded JPEG base-color texture + iOS loadTextures()
-    // path), falling back to USDZ only if GLB is somehow absent.
-    const meshIsUsdz = !glbUrlRaw && !!usdzUrlRaw;
-    const meshFilename = meshIsUsdz ? 'mesh.usdz' : 'mesh.glb';
-    const meshContentType = meshIsUsdz ? 'model/vnd.usdz+zip' : 'model/gltf-binary';
+    // optimizeMeshAsset returns base64 of the re-exported GLB; we decode +
+    // upload to Firebase Storage. On ANY failure (worker down, Blender
+    // passthrough, non-200) we fall back to re-hosting the raw GLB — same
+    // behavior as before, so we never regress to "no mesh at all".
+    const meshUrl = await (async (): Promise<string | undefined> => {
+      if (!glbUrlRaw) {
+        // No GLB at all — re-host whatever mesh URL we have (likely USDZ).
+        return meshUrlRaw
+          ? (await rehostMeshBinary({
+              firebaseUid: args.firebaseUid,
+              url: meshUrlRaw,
+              filename: usdzUrlRaw ? 'mesh.usdz' : 'mesh.glb',
+              contentType: usdzUrlRaw ? 'model/vnd.usdz+zip' : 'model/gltf-binary',
+            })) ?? meshUrlRaw
+          : undefined;
+      }
+      try {
+        const optimized = await optimizeMeshAsset({
+          sourceUrl: glbUrlRaw,
+          title: 'Cursed UGC Item',
+          metadata: { contentCategory: 'item_tool', source: 'cursed_ugc' },
+        });
+        if (optimized?.outputBase64) {
+          const buf = Buffer.from(optimized.outputBase64, 'base64');
+          const ext = (optimized.outputExtension || 'glb').replace(/^\./, '');
+          const url = await uploadSigned({
+            firebaseUid: args.firebaseUid,
+            filename: `mesh-optimized.${ext}`,
+            buf,
+            contentType: optimized.outputMimeType || 'model/gltf-binary',
+          });
+          logger.info('[cursedUgcGenerator] Blender-optimized GLB hosted', {
+            method: typeof optimized.metadata?.method === 'string' ? optimized.metadata.method : 'unknown',
+            bytes: buf.length,
+            ext,
+          });
+          return url;
+        }
+        logger.warn('[cursedUgcGenerator] optimizeMeshAsset returned no base64 — re-hosting raw GLB');
+      } catch (optErr) {
+        logger.warn('[cursedUgcGenerator] Blender optimize failed — re-hosting raw GLB', {
+          err: optErr instanceof Error ? optErr.message : String(optErr),
+        });
+      }
+      // Fallback — re-host the raw Meshy GLB (may still fail MDLAsset, but
+      // better than dropping the mesh entirely).
+      return (await rehostMeshBinary({
+        firebaseUid: args.firebaseUid,
+        url: glbUrlRaw,
+        filename: 'mesh.glb',
+        contentType: 'model/gltf-binary',
+      })) ?? glbUrlRaw;
+    })();
 
-    const [meshUrl, thumbnailUrl] = await Promise.all([
-      meshUrlRaw
-        ? rehostMeshBinary({
-            firebaseUid: args.firebaseUid,
-            url: meshUrlRaw,
-            filename: meshFilename,
-            contentType: meshContentType,
-          }).then((rehosted) => rehosted ?? meshUrlRaw)
-        : Promise.resolve(undefined),
-      thumbnailUrlRaw
-        ? rehostMeshBinary({
-            firebaseUid: args.firebaseUid,
-            url: thumbnailUrlRaw,
-            filename: 'mesh-thumb.png',
-            contentType: 'image/png',
-          }).then((rehosted) => rehosted ?? thumbnailUrlRaw)
-        : Promise.resolve(undefined),
-    ]);
+    const thumbnailUrl = thumbnailUrlRaw
+      ? (await rehostMeshBinary({
+          firebaseUid: args.firebaseUid,
+          url: thumbnailUrlRaw,
+          filename: 'mesh-thumb.png',
+          contentType: 'image/png',
+        })) ?? thumbnailUrlRaw
+      : undefined;
 
     return { meshUrl, thumbnailUrl };
   } catch (err) {
