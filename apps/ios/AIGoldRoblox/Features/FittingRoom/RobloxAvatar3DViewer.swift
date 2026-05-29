@@ -290,39 +290,44 @@ struct RobloxAvatar3DViewer: View {
     @MainActor
     private static func applyTextureToBody(image: UIImage, type: String, in avatarRoot: SCNNode, avatarAabb: Avatar3DAABB) {
         // After centering, the avatar Y axis runs -h/2 .. +h/2. Anything
-        // above 0 is upper body (torso + arms), below 0 is legs. The
-        // head sits above `headFloor` and must NOT receive the shirt
-        // texture (otherwise its UVs sample the shirt watermark/empty
-        // regions — user feedback 2026-05-28 «одежда покрыла с головы
-        // до пят», visible "RIGHT* permission" text on the head was
-        // the Roblox shirt-template watermark area).
+        // above 0 is upper body (torso + arms); below 0 is legs.
         //
-        // headFloor was originally h*0.38 (head bottom anatomically),
-        // but the bundled R-15 mannequin's head bbox CENTRE lands at
-        // roughly h*0.35 (the head is short relative to the whole
-        // avatar). Lowering the threshold to h*0.30 catches the head
-        // reliably while still keeping the full upper torso + arms
-        // (centres around h*0.10–0.20) within the shirt region.
-        let avatarHeight = Float(avatarAabb.max.y - avatarAabb.min.y)
-        let upperLowerSplit: Float = 0  // centered avatar — split at hip
-        let headFloor: Float = avatarHeight * 0.30
+        // Robust head detection (user feedback 2026-05-28 «футболка на
+        // голове» — shirt template watermark visible on head): instead
+        // of a hard Y threshold (h*0.30 was sometimes too high,
+        // sometimes too low across asset variants), we DYNAMICALLY pick
+        // the body part with the highest Y centre — by definition the
+        // head — and exclude it from all clothing. Same dynamic
+        // approach for feet (lowest Y) so shoes don't get pants
+        // textures.
+        let _ = avatarAabb // (unused here now; kept for signature compat)
+        let upperLowerSplit: Float = 0
+        let bodyParts = avatarRoot.childNodes.filter {
+            $0.geometry != nil && $0.name?.hasPrefix("AccessoryAttachment-") != true
+        }
+        // Y centre for each body part (geometry local centre + node offset).
+        let partYs: [(node: SCNNode, y: Float)] = bodyParts.map { node in
+            let (lmin, lmax) = node.geometry!.boundingBox
+            return (node, (lmin.y + lmax.y) / 2 + node.position.y)
+        }
+        let headNode  = partYs.max(by: { $0.y < $1.y })?.node
+        let chestY    = partYs.filter { $0.node !== headNode && $0.y > 0 }
+            .map { $0.y }.min() ?? 0
 
-        for child in avatarRoot.childNodes where child.name?.hasPrefix("AccessoryAttachment-") != true {
-            guard let geom = child.geometry else { continue }
-            // Compute world-space bbox center of THIS body part.
-            let (lmin, lmax) = geom.boundingBox
-            let localCenterY = (lmin.y + lmax.y) / 2
-            let worldCenterY = localCenterY + child.position.y  // wrapper already centered the parent
-            let isUpper = worldCenterY > upperLowerSplit && worldCenterY < headFloor
+        for (child, worldCenterY) in partYs {
+            // Never put clothing on the head.
+            if child === headNode { continue }
+            let isUpper = worldCenterY > upperLowerSplit
             let isLower = worldCenterY <= upperLowerSplit
             let shouldApply: Bool
             switch type.lowercased() {
             case "shirt":  shouldApply = isUpper
             case "pants":  shouldApply = isLower
-            case "tshirt": shouldApply = isUpper && worldCenterY > avatarHeight * 0.05  // chest only
+            case "tshirt": shouldApply = isUpper && worldCenterY > chestY * 0.5
             default:       shouldApply = false
             }
             if shouldApply {
+                let geom = child.geometry!
                 // Roblox clothing PNGs are RGBA with TRANSPARENT regions
                 // (the unused parts of the 4-rectangle template layout).
                 // If we apply the raw PNG, body parts whose UVs sample
