@@ -501,9 +501,9 @@ export async function renderOutfit3D(args: {
   maxAttempts?: number;
   pollDelayMs?: number;
 }): Promise<RobloxOutfit3DUrls | null> {
-  const ids = sanitizeAssetIds(args.assetIds);
+  const ids = await filterRenderableAssetIds(sanitizeAssetIds(args.assetIds));
   if (ids.length === 0) {
-    logger.warn('[renderOutfit3D] no valid asset ids', { raw: args.assetIds });
+    logger.warn('[renderOutfit3D] no renderable asset ids', { raw: args.assetIds });
     return null;
   }
   return renderAvatarDefinition3D({
@@ -531,9 +531,9 @@ export async function renderOutfitOnUser3D(args: {
   maxAttempts?: number;
   pollDelayMs?: number;
 }): Promise<RobloxOutfit3DUrls | null> {
-  const ids = sanitizeAssetIds(args.assetIds);
+  const ids = await filterRenderableAssetIds(sanitizeAssetIds(args.assetIds));
   if (ids.length === 0) {
-    logger.warn('[renderOutfitOnUser3D] no valid asset ids', { raw: args.assetIds });
+    logger.warn('[renderOutfitOnUser3D] no renderable asset ids', { raw: args.assetIds });
     return null;
   }
   const userDef = await fetchUserAvatarDefinition(args.userId);
@@ -555,6 +555,76 @@ function sanitizeAssetIds(raw: Array<string | number> | undefined): number[] {
       .map((x) => Number(x))
       .filter((n) => Number.isInteger(n) && n > 0)
   ));
+}
+
+/**
+ * Wearable Roblox AssetTypeIds that /v1/avatar/render accepts. Everything
+ * else (Place 9, Lua 5, Model 10, Audio 3, Decal 13, …) makes the render
+ * endpoint 403 on its per-asset GetModerationStatus pass — and ONE bad asset
+ * poisons the WHOLE render (both renderOutfit3D and renderOutfitOnUser3D).
+ * Includes classic body parts (17/18/27-31/79) so the personalized render's
+ * own body assets survive the filter.
+ */
+const RENDERABLE_ASSET_TYPE_IDS = new Set<number>([
+  2,                              // T-Shirt
+  8,                              // Hat
+  11, 12,                         // Shirt, Pants
+  17, 18,                         // Head, Face
+  27, 28, 29, 30, 31,             // Torso, R/L Arm, L/R Leg
+  41, 42, 43, 44, 45, 46, 47,     // Hair / Face / Neck / Shoulder / Front / Back / Waist accessory
+  64, 65, 66, 67, 68, 69, 70, 71, 72, // Layered clothing
+  76, 77,                         // Eyebrow / Eyelash accessory
+  79,                             // DynamicHead
+]);
+
+/**
+ * Defensive pre-render filter. Batch-resolves asset types via
+ * GET develop.roblox.com/v1/assets?assetIds=… and drops any non-wearable
+ * type before we POST to /v1/avatar/render, so a single mis-catalogued
+ * curated item (e.g. a Place asset labelled "Butterfly Hair Clip") can no
+ * longer 403 the entire fit render.
+ *
+ * FAILS OPEN: missing cookie, a non-200 lookup, a network error, or an id
+ * absent from the response all return the id unchanged — this is
+ * defense-in-depth, never a hard gate that could silently empty a good fit.
+ */
+async function filterRenderableAssetIds(ids: number[]): Promise<number[]> {
+  if (ids.length === 0) return ids;
+  const cookie = process.env.ROBLOX_SERVICE_COOKIE ?? '';
+  if (!cookie) return ids;   // fail open — renderAvatarDefinition3D surfaces the auth error
+  try {
+    const resp = await fetch(
+      `https://develop.roblox.com/v1/assets?assetIds=${ids.join(',')}`,
+      {
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}`, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8_000),
+      },
+    );
+    if (!resp.ok) {
+      logger.warn('[filterRenderableAssetIds] type lookup non-200 — failing open', { status: resp.status });
+      return ids;
+    }
+    const json = await resp.json() as { data?: Array<{ id: number; typeId: number }> };
+    const typeById = new Map<number, number>();
+    for (const d of (json.data ?? [])) typeById.set(Number(d.id), Number(d.typeId));
+    const kept: number[] = [];
+    const dropped: Array<{ id: number; typeId: number }> = [];
+    for (const id of ids) {
+      const typeId = typeById.get(id);
+      // Unknown id (not returned) → keep (fail open per-id); known bad type → drop.
+      if (typeId === undefined || RENDERABLE_ASSET_TYPE_IDS.has(typeId)) kept.push(id);
+      else dropped.push({ id, typeId });
+    }
+    if (dropped.length > 0) {
+      logger.warn('[filterRenderableAssetIds] dropped non-wearable assets before render', { dropped });
+    }
+    return kept;
+  } catch (err) {
+    logger.warn('[filterRenderableAssetIds] lookup error — failing open', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return ids;
+  }
 }
 
 /**

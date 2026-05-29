@@ -77,26 +77,22 @@ export interface OutfitAesthetic {
   imitatedRetailRobux: number;
 }
 
-// ─── Curated items (verified May 2026 — popular free/cheap UGC) ─────
-// Note: assetIds are stable Roblox catalog IDs. If any goes 404, the
-// blacklist in outfitAssembler.ts filters it out silently.
-
-const SIGMA_CORE: CuratedItem[] = [
-  { assetId: '102611803', name: 'Black Sunglasses', slot: 'face', approxRobux: 25, notes: 'Sigma staple — cold eyes hidden.' },
-  { assetId: '20577850', name: 'Black Turtleneck', slot: 'shirt', approxRobux: 15, notes: 'Minimalist dark base.' },
-];
-const BADDIE_CORE: CuratedItem[] = [
-  { assetId: '13104039237', name: 'Hoop Earrings (Gold)', slot: 'accessory', approxRobux: 50, notes: 'Baddie energy.' },
-];
-const Y2K_CORE: CuratedItem[] = [
-  { assetId: '14288933213', name: 'Butterfly Hair Clip', slot: 'accessory', approxRobux: 35, notes: 'Y2K must-have.' },
-];
-const GOTH_CORE: CuratedItem[] = [
-  { assetId: '20577850', name: 'Black Turtleneck', slot: 'shirt', approxRobux: 15, notes: 'Goth uniform.' },
-];
-const CYBER_CORE: CuratedItem[] = [
-  { assetId: '6803796100', name: 'Cyberpunk Visor', slot: 'face', approxRobux: 50, notes: 'Cyber vibe.' },
-];
+// ─── Curated items ────────────────────────────────────────────────
+// Cores emptied (session 394): every previously-"curated" id was corrupt —
+// 3 were non-wearable types (Lua 5 / Place 9 / Model 10) and 2 were
+// mislabeled junk (a random Hat posing as sunglasses, a TShirt literally
+// named "hmm"). A single non-wearable id 403s the /v1/avatar/render fit
+// composite and poisons the WHOLE render — that 403 is why the Fitting Room
+// showed a clothing-less body + "Your Avatar" 502. Until hand-verified
+// replacements land, all aesthetics lean on live catalog search
+// (liveKeywords) like rich_emo / slender / softie / anime_demon already do.
+// The render layer also enforces wearable types defensively
+// (filterRenderableAssetIds in robloxAvatar3D.ts).
+const SIGMA_CORE: CuratedItem[] = [];
+const BADDIE_CORE: CuratedItem[] = [];
+const Y2K_CORE: CuratedItem[] = [];
+const GOTH_CORE: CuratedItem[] = [];
+const CYBER_CORE: CuratedItem[] = [];
 // rich_emo / slender / softie / anime_demon — start with empty curated, lean on live.
 const EMPTY_CORE: CuratedItem[] = [];
 
