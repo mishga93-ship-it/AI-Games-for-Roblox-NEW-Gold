@@ -52,16 +52,23 @@ async function uploadSigned(args: {
   filename: string;
   buf: Buffer;
   contentType?: string;
+  /** Session 390 round 13 — mesh re-host passes false to MATCH the NPC
+   * pipeline's copyExternalArtifact signing (which omits `version` →
+   * library default, NOT v4). NPC GLBs render in iOS SceneKit; cursed
+   * ones (structurally identical Blender GLBs) didn't — the only
+   * remaining backend difference was this v4 vs default signed-URL form.
+   * PNG callers keep v4 (default true) — they already work via AsyncImage. */
+  useV4?: boolean;
 }): Promise<string> {
   const b = await bucket();
   const path = `cursed-ugc/${args.firebaseUid}/${Date.now()}-${args.filename}`;
   const file = b.file(path);
   await file.save(args.buf, { contentType: args.contentType ?? 'image/png', resumable: false });
-  const [url] = await file.getSignedUrl({
-    version: 'v4',
-    action: 'read',
-    expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
-  });
+  const [url] = await file.getSignedUrl(
+    (args.useV4 ?? true)
+      ? { version: 'v4', action: 'read', expires: Date.now() + 7 * 24 * 60 * 60 * 1000 }
+      : { action: 'read', expires: Date.now() + 7 * 24 * 60 * 60 * 1000 },
+  );
   return url;
 }
 
@@ -88,11 +95,15 @@ async function rehostMeshBinary(args: {
       return undefined;
     }
     const buf = Buffer.from(await resp.arrayBuffer());
+    // Round 13 — mesh binaries use default (non-v4) signing to match the
+    // NPC copyExternalArtifact path that renders fine in iOS SceneKit.
+    const isMesh = /\.(glb|usdz|gltf|fbx|obj)$/i.test(args.filename);
     return await uploadSigned({
       firebaseUid: args.firebaseUid,
       filename: args.filename,
       buf,
       contentType: args.contentType,
+      useV4: !isMesh,
     });
   } catch (err) {
     logger.warn('[cursedUgcGenerator] mesh re-host failed (non-fatal)', {
@@ -384,6 +395,7 @@ async function meshyOnceFor(args: {
             filename: `mesh-optimized.${ext}`,
             buf,
             contentType: optimized.outputMimeType || 'model/gltf-binary',
+            useV4: false,  // match NPC copyExternalArtifact signing (round 13)
           });
           logger.info('[cursedUgcGenerator] Blender-optimized GLB hosted', {
             method: typeof optimized.metadata?.method === 'string' ? optimized.metadata.method : 'unknown',
