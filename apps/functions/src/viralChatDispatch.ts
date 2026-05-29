@@ -897,6 +897,28 @@ async function handleCursedUGC(args: {
     });
   }
 
+  // Session 396 — real .rbxm of the finished item (single static MeshPart
+  // referencing the Open-Cloud-uploaded mesh). Drop straight into Roblox
+  // Studio; renders without running the game. Only present when Open Cloud +
+  // Engine API are configured and the worker serialized the binary.
+  if (result.rbxmUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'rbxm',
+      extension: 'rbxm',
+      name: `${baseName}.rbxm`,
+      url: result.rbxmUrl,
+      artifactRole: 'export_binary',
+      previewText: 'Finished Roblox item (.rbxm). Drag into Studio — opens as a ready MeshPart.',
+      metadata: {
+        generationId: result.generationId,
+        categoryId: result.categoryId,
+        kind: 'cursed_ugc',
+        isRobloxBinary: true,
+      },
+    });
+  }
+
   // Variation thumbnails (cuter / more_cursed) — still useful in chat as
   // smaller previews next to the main 3D mesh.
   for (const v of result.variations) {

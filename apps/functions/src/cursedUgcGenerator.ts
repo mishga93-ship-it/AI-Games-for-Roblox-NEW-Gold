@@ -10,14 +10,23 @@
 
 import { logger } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
+import { v4 as uuidv4 } from 'uuid';
 import { generatePreviewTexture, runChatProvider, runMeshy } from './providers.js';
+import { getRobloxOpenCloudApiKey, getRobloxCreatorId } from './config.js';
+import { extractMeshIdFromModel } from './extractMeshIdFromModel.js';
+import type { RobloxBuildManifest } from './types.js';
 // Session 390 round 11 — Blender mesh re-export. Raw Meshy v6 GLBs don't
 // load in iOS MDLAsset (asset.count=0 → empty SCN viewer). NPC chats render
 // fine because character_3d pipeline runs the mesh through the Cloud Run
 // worker's /optimize-mesh endpoint, which re-exports via Blender's glTF
 // exporter (export_materials='EXPORT') into a clean MDLAsset-compatible GLB
 // with textures embedded. We reuse that exact step for cursed UGC.
-import { optimizeMeshAsset } from './robloxWorker.js';
+import {
+  optimizeMeshAsset,
+  uploadAssetToRoblox,
+  pollRobloxOperation,
+  maybeBuildRobloxBinary,
+} from './robloxWorker.js';
 import {
   buildCursedUGCPrompt,
   CURSED_UGC_CATEGORIES,
@@ -120,7 +129,13 @@ async function fluxOnceToSignedUrl(args: {
   filename: string;
 }): Promise<string | undefined> {
   try {
-    const fluxUrl = await generatePreviewTexture(args.prompt, 'roblox', 'character');
+    // 'prop' (not 'character') — these 2D concepts are the cursed ITEM
+    // (backpack / plushie / cursed face), shown alongside the item_tool
+    // Meshy hero. 'character' wraps the prompt in a full-body A-pose avatar
+    // template, which is why the chat was rendering people instead of items.
+    // 'prop' renders "Single 3D object centered on white background ... Do
+    // NOT include ... people, or characters." — matching meshyOnceFor.
+    const fluxUrl = await generatePreviewTexture(args.prompt, 'roblox', 'prop');
     if (!fluxUrl) return undefined;
     const resp = await fetch(fluxUrl, { signal: AbortSignal.timeout(20_000) });
     if (!resp.ok) return undefined;
@@ -129,6 +144,149 @@ async function fluxOnceToSignedUrl(args: {
   } catch (err) {
     logger.warn('[cursedUgcGenerator] flux step failed', {
       filename: args.filename,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
+}
+
+// ─── Real .rbxm assembly (session 396) ──────────────────────────
+//
+// The chat already returns the optimized GLB (great for the iOS rotatable
+// viewer), but the user asked for a real .rbxm of the FINISHED item that
+// opens in Roblox Studio. A renderable Roblox item = a Model with a single
+// static MeshPart whose MeshContent is an `rbxassetid://` — raw https GLB
+// URLs do NOT render in the Roblox runtime. So we mirror the proven
+// disaster/vehicle Open-Cloud path:
+//   1. upload the optimized GLB to Open Cloud as a Model asset (openUse),
+//   2. poll the async operation for the Model assetId,
+//   3. extract the INNER mesh + texture asset ids via the Engine API,
+//   4. hand-build a one-MeshPart Model manifest and let the Lune worker
+//      serialize it to .rbxm bytes,
+//   5. re-host the .rbxm in Firebase Storage and return its signed URL.
+// Any missing credential or failed step returns undefined → the chat ships
+// the GLB alone, exactly as before (no regression).
+async function buildCursedItemRbxmUrl(args: {
+  glbUrl: string;
+  title: string;
+  firebaseUid: string;
+}): Promise<string | undefined> {
+  const apiKey = getRobloxOpenCloudApiKey();
+  const creatorId = getRobloxCreatorId();
+  if (!apiKey || !creatorId) {
+    logger.info('[cursedUgcGenerator] .rbxm skipped — Open Cloud not configured');
+    return undefined;
+  }
+  try {
+    // 1. Download the optimized GLB.
+    const resp = await fetch(args.glbUrl, { signal: AbortSignal.timeout(45_000) });
+    if (!resp.ok) {
+      logger.warn('[cursedUgcGenerator] .rbxm: GLB download failed', { status: resp.status });
+      return undefined;
+    }
+    const glbBuf = Buffer.from(await resp.arrayBuffer());
+
+    // 2. Upload to Open Cloud as a Model (openUse so non-owner Studios load it).
+    const upload = await uploadAssetToRoblox({
+      apiKey,
+      creatorId,
+      creatorType: 'User',
+      assetType: 'Model',
+      name: `Cursed ${args.title}`.slice(0, 50),
+      description: `AI-generated cursed UGC item — ${args.title}`.slice(0, 1000),
+      fileContent: glbBuf,
+      contentType: 'model/gltf-binary',
+      assetPrivacy: 'openUse',
+    });
+    if (!upload) {
+      logger.warn('[cursedUgcGenerator] .rbxm: Open Cloud upload returned null');
+      return undefined;
+    }
+    let modelAssetId = upload.assetId;
+    if ((!modelAssetId || modelAssetId <= 0) && upload.operationId) {
+      const polled = await pollRobloxOperation(apiKey, upload.operationId, 'api-key', 30, 2000);
+      if (polled && polled > 0) modelAssetId = polled;
+    }
+    if (!modelAssetId || modelAssetId <= 0) {
+      logger.warn('[cursedUgcGenerator] .rbxm: no modelAssetId after poll', { operationId: upload.operationId });
+      return undefined;
+    }
+
+    // 3. Extract the inner Mesh + Texture asset ids via the Engine API.
+    const extract = await extractMeshIdFromModel(modelAssetId);
+    if (!extract || !extract.meshId || extract.meshId <= 0) {
+      logger.warn('[cursedUgcGenerator] .rbxm: inner mesh extraction failed', {
+        modelAssetId, state: extract?.state, error: extract?.error,
+      });
+      return undefined;
+    }
+    const meshAssetId = extract.meshId;
+    const textureAssetId = extract.textureId && extract.textureId > 0 ? extract.textureId : undefined;
+    const size = extract.meshSize && extract.meshSize.x > 0 && extract.meshSize.y > 0 && extract.meshSize.z > 0
+      ? extract.meshSize
+      : { x: 4, y: 4, z: 4 };
+
+    // 4. Hand-build a minimal one-MeshPart Model manifest. Static MeshContent
+    //    (string rbxassetid://) renders in Studio + runtime; white Color3 is an
+    //    identity tint so the baked Meshy texture shows through (mirrors the
+    //    vehicle mesh-body path). The ModuleScript satisfies the manifest
+    //    validator's "≥1 script" requirement and lives inside the item.
+    const meshPartId = uuidv4();
+    const partName = args.title.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40) || 'CursedItem';
+    const meshProps: Record<string, unknown> = {
+      Size: { __type: 'Vector3', x: size.x, y: size.y, z: size.z },
+      Anchored: true,
+      CanCollide: true,
+      Color: { __type: 'Color3', r: 1, g: 1, b: 1 },
+      Material: { __type: 'Enum', enumType: 'Material', enumName: 'SmoothPlastic' },
+      MeshContent: `rbxassetid://${meshAssetId}`,
+      MeshId: `rbxassetid://${meshAssetId}`,
+    };
+    if (textureAssetId) {
+      meshProps.TextureID = `rbxassetid://${textureAssetId}`;
+      meshProps.TextureContent = `rbxassetid://${textureAssetId}`;
+    }
+    const manifest: RobloxBuildManifest = {
+      id: uuidv4(),
+      title: partName,
+      summary: `Cursed UGC item — ${args.title}`,
+      target: 'model',
+      rootClassName: 'Model',
+      formatPreference: 'binary',
+      scene: [
+        { id: meshPartId, className: 'MeshPart', name: partName, properties: meshProps },
+      ],
+      scripts: [
+        {
+          id: uuidv4(),
+          name: 'ItemInfo',
+          scriptType: 'ModuleScript',
+          container: meshPartId,
+          source: `-- ${args.title}\n-- AI-generated cursed UGC item.\nreturn { meshAssetId = ${meshAssetId}${textureAssetId ? `, textureAssetId = ${textureAssetId}` : ''} }\n`,
+        },
+      ],
+      assets: [],
+    };
+
+    const built = await maybeBuildRobloxBinary(manifest);
+    if (built?.format === 'binary' && built.bufferBase64) {
+      const buf = Buffer.from(built.bufferBase64, 'base64');
+      const url = await uploadSigned({
+        firebaseUid: args.firebaseUid,
+        filename: 'cursed-item.rbxm',
+        buf,
+        contentType: 'application/octet-stream',
+        useV4: false,
+      });
+      logger.info('[cursedUgcGenerator] .rbxm built', { bytes: buf.length, meshAssetId, textureAssetId });
+      return url;
+    }
+    logger.warn('[cursedUgcGenerator] .rbxm: worker did not return binary', {
+      format: built?.format, notes: built?.notes,
+    });
+    return undefined;
+  } catch (err) {
+    logger.warn('[cursedUgcGenerator] .rbxm build failed (non-fatal)', {
       err: err instanceof Error ? err.message : String(err),
     });
     return undefined;
@@ -258,6 +416,14 @@ export interface CursedUGCResult extends CursedUGCMetadata {
   /** Meshy v6 PNG thumbnail of the rendered 3D model (different from the
    *  flux 2D concept — this one actually represents the mesh that ships). */
   meshThumbnailUrl?: string;
+  /**
+   * Session 396 — real Roblox .rbxm of the finished item: a single static
+   * MeshPart whose MeshContent points at an rbxassetid:// (the optimized GLB
+   * uploaded to Open Cloud). Opens directly in Studio and renders in-game.
+   * Undefined when Open Cloud / Engine API isn't configured or any build step
+   * fails — the chat then ships the GLB alone (no regression).
+   */
+  rbxmUrl?: string;
   variations: Array<{ label: string; imageUrl?: string }>;
   generationStatus: 'ready' | 'partial' | 'failed';
 }
@@ -470,6 +636,13 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
   const generationStatus: 'ready' | 'partial' | 'failed' =
     (mainImageUrl || mesh?.thumbnailUrl) ? (cuterUrl && cursedUrl ? 'ready' : 'partial') : 'failed';
 
+  // Session 396 — assemble a real .rbxm of the finished item from the
+  // optimized GLB (serial, since it needs the hosted mesh URL). Bounded +
+  // non-fatal: returns undefined on any failure so the GLB still ships.
+  const rbxmUrl = mesh?.meshUrl
+    ? await buildCursedItemRbxmUrl({ glbUrl: mesh.meshUrl, title: metadata.titleEN, firebaseUid: input.firebaseUid })
+    : undefined;
+
   // Session 390 round 9 — keep mainImageUrl as the flux concept again.
   // With USDZ working in RealModel3DPreview, iOS shows the rotatable
   // 3D mesh as the hero (mesh.meshUrl set). mainImageUrl + meshThumbnail
@@ -483,6 +656,7 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
     mainImageUrl,
     meshUrl: mesh?.meshUrl,
     meshThumbnailUrl: mesh?.thumbnailUrl,
+    rbxmUrl,
     variations,
     generationStatus,
     ...metadata,
