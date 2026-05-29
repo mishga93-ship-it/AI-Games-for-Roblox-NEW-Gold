@@ -2,10 +2,10 @@
 // (session 382 Phase 2 Session B).
 //
 // Owns the full UX flow:
-//   step .vibePicker → tap card →
-//   step .customize  → gender + intensity + (optional) username + Generate →
-//   step .loading    → API call (5-15 s) →
-//   step .result     → preview, asset pack, share, decal upload
+//   step .interview → guided chat: vibe → gender → intensity →
+//                     (optional) username → auto-generate →
+//   step .loading   → API call (5-15 s) →
+//   step .result    → preview, asset pack, share, decal upload
 //
 // All Roblox / Photos / Share-Sheet side effects live here so the SwiftUI
 // view layer stays declarative.
@@ -41,17 +41,15 @@ func loc(en: String, ru: String) -> String {
 @MainActor
 final class GlowupStudio: ObservableObject {
     enum Step: Equatable {
-        case vibePicker
-        case customize(GlowupVibe)
+        case interview
         case loading
         case result(GlowupGenerationResponse)
         case error(String)
 
         static func == (lhs: Step, rhs: Step) -> Bool {
             switch (lhs, rhs) {
-            case (.vibePicker, .vibePicker): return true
+            case (.interview, .interview): return true
             case (.loading, .loading): return true
-            case let (.customize(a), .customize(b)): return a == b
             case let (.result(a), .result(b)): return a.generationId == b.generationId
             case let (.error(a), .error(b)): return a == b
             default: return false
@@ -59,39 +57,144 @@ final class GlowupStudio: ObservableObject {
         }
     }
 
-    @Published var step: Step = .vibePicker
+    /// Which answer the guided interview is currently waiting on.
+    enum InterviewSlot: Equatable { case vibe, gender, intensity, username }
+
+    /// One rendered line in the interview transcript.
+    struct GlowupChatLine: Identifiable, Equatable {
+        enum Role { case assistant, user }
+        let id = UUID()
+        let role: Role
+        let text: String
+    }
+
+    @Published var step: Step = .interview
     @Published var gender: GlowupGender = .neutral
     @Published var intensity: GlowupIntensity = .clean
     @Published var robloxUsername: String = ""
     @Published var transientToast: String? = nil
+
+    // Interview state
+    @Published var chatLines: [GlowupChatLine] = []
+    @Published var awaiting: InterviewSlot? = nil
+    @Published var selectedVibe: GlowupVibe? = nil
 
     @ObservedObject private var robloxAuth = RobloxAuthService.shared
 
     var oauthConnected: Bool { robloxAuth.isConnected }
     var allVibes: [GlowupVibe] { GlowupVibe.allCases }
 
-    // MARK: - Flow
-
-    func selectVibe(_ vibe: GlowupVibe) {
-        GlowupAPIClient.recordEvent("vibe_selected", vibe: vibe)
-        step = .customize(vibe)
+    init() {
+        startInterview()
     }
 
-    func backToPicker() {
-        step = .vibePicker
+    // MARK: - Interview flow
+
+    /// Reset everything and start the guided chat interview from the top.
+    func startInterview() {
+        selectedVibe = nil
+        gender = .neutral
+        intensity = .clean
+        robloxUsername = ""
+        chatLines = []
+        step = .interview
+        askVibe()
     }
 
+    /// Result-screen "Another vibe" — full restart of the interview.
+    func backToPicker() { startInterview() }
+
+    /// Result-screen "Change parameters" — keep the vibe, re-ask from gender.
     func backToCustomize() {
-        if case let .result(resp) = step,
-           let vibe = GlowupVibe(rawValue: resp.vibeId) {
-            step = .customize(vibe)
+        let keep: GlowupVibe?
+        if let v = selectedVibe {
+            keep = v
+        } else if case let .result(resp) = step {
+            keep = GlowupVibe(rawValue: resp.vibeId)
         } else {
-            step = .vibePicker
+            keep = nil
+        }
+        guard let vibe = keep else { startInterview(); return }
+        selectedVibe = vibe
+        chatLines = []
+        step = .interview
+        appendAssistant(loc(en: "Keeping \(vibe.displayTitle). Who's this for?",
+                            ru: "Оставляю \(vibe.displayTitle). Под кого собираем?"))
+        awaiting = .gender
+    }
+
+    func retryAfterError() { startInterview() }
+
+    private func askVibe() {
+        appendAssistant(loc(
+            en: "Let's make you look like you dropped tens of thousands of R$ — for 0. What are we faking? 😎",
+            ru: "Сделаем лук, будто ты слил десятки тысяч R$ — за 0. Что фейкаем? 😎"))
+        awaiting = .vibe
+    }
+
+    func answerVibe(_ vibe: GlowupVibe) {
+        selectedVibe = vibe
+        appendUser(vibe.displayTitle)
+        GlowupAPIClient.recordEvent("vibe_selected", vibe: vibe)
+        askGender()
+    }
+
+    private func askGender() {
+        appendAssistant(loc(en: "Nice pick. Who's this for?", ru: "Топ. Под кого собираем?"))
+        awaiting = .gender
+    }
+
+    func answerGender(_ g: GlowupGender) {
+        gender = g
+        appendUser(genderLabel(g))
+        askIntensity()
+    }
+
+    private func askIntensity() {
+        appendAssistant(loc(en: "How hard do we go?", ru: "Насколько жёстко делаем?"))
+        awaiting = .intensity
+    }
+
+    func answerIntensity(_ i: GlowupIntensity) {
+        intensity = i
+        appendUser(intensityLabel(i))
+        if oauthConnected {
+            appendAssistant(loc(
+                en: "Roblox connected — I'll put YOU in this look. Building it now…",
+                ru: "Roblox подключён — поставлю ТЕБЯ в этот лук. Собираю…"))
+            awaiting = nil
+            Task { await generate() }
+        } else {
+            askUsername()
         }
     }
 
+    private func askUsername() {
+        appendAssistant(loc(
+            en: "Last thing — your Roblox username? You'll see YOURSELF in the look. Or skip for a generic preview.",
+            ru: "Последнее — твой Roblox-ник? Увидишь СЕБЯ в этом луке. Или пропусти — будет generic preview."))
+        awaiting = .username
+    }
+
+    /// Username text field's send button.
+    func submitUsername() {
+        let name = robloxUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        appendUser(name.isEmpty ? loc(en: "Skip", ru: "Пропустить") : name)
+        awaiting = nil
+        Task { await generate() }
+    }
+
+    func skipUsername() {
+        robloxUsername = ""
+        appendUser(loc(en: "Skip", ru: "Пропустить"))
+        awaiting = nil
+        Task { await generate() }
+    }
+
+    // MARK: - Generation
+
     func generate() async {
-        guard case let .customize(vibe) = step else { return }
+        guard let vibe = selectedVibe else { return }
         step = .loading
         let trimmedUsername = robloxUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
@@ -105,15 +208,37 @@ final class GlowupStudio: ObservableObject {
             step = .result(resp)
         } catch let GlowupAPIError.rateLimited(_, reason) {
             step = .error(reason == "daily"
-                ? "Лимит на сегодня закончился. Попробуй завтра."
-                : "Слишком быстро. Подожди минутку и попробуй снова.")
+                ? loc(en: "Daily limit reached. Try again tomorrow.",
+                      ru: "Лимит на сегодня закончился. Попробуй завтра.")
+                : loc(en: "Too fast. Wait a minute and try again.",
+                      ru: "Слишком быстро. Подожди минутку и попробуй снова."))
         } catch {
             step = .error(error.localizedDescription)
         }
     }
 
-    func retryAfterError() {
-        step = .vibePicker
+    // MARK: - Interview labels & helpers
+
+    func genderLabel(_ g: GlowupGender) -> String {
+        switch g {
+        case .boys:    return loc(en: "Guys",    ru: "Парень")
+        case .girls:   return loc(en: "Girls",   ru: "Девушка")
+        case .neutral: return loc(en: "Neutral", ru: "Neutral")
+        }
+    }
+
+    func intensityLabel(_ i: GlowupIntensity) -> String {
+        switch i {
+        case .clean: return loc(en: "Clean",  ru: "Чисто")
+        case .scary: return loc(en: "Spooky", ru: "Страшнее")
+        }
+    }
+
+    private func appendAssistant(_ text: String) {
+        chatLines.append(GlowupChatLine(role: .assistant, text: text))
+    }
+    private func appendUser(_ text: String) {
+        chatLines.append(GlowupChatLine(role: .user, text: text))
     }
 
     // MARK: - Result-screen actions

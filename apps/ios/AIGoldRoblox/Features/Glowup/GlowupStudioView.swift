@@ -1,7 +1,9 @@
-// GlowupStudioView.swift — full-screen Avatar Glow-Up Studio (session 382
-// Phase 2 Session B). Replaces the chat-based "Fake Headless & Korblox"
-// flow with a dedicated SwiftUI pipeline: vibe picker → customize →
-// loading → result.
+// GlowupStudioView.swift — full-screen Avatar Glow-Up Studio.
+// The "Fake Headless & Korblox" crafter: a guided chat interview
+// (vibe → gender → intensity → username) that feeds the existing
+// asset-assembly pipeline (GlowupAPIClient.generate) and shows the
+// result screen. Mirrors the app's conversational interview style;
+// the LLM-free scripted flow keeps inputs mapped to backend enums.
 
 import SwiftUI
 
@@ -34,16 +36,23 @@ struct GlowupStudioView: View {
                     .font(.appHeadline)
                     .foregroundColor(.textPrimary)
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if case .interview = studio.step {
+                    Button(action: { studio.startInterview() }) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.body)
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+            }
         }
     }
 
     @ViewBuilder
     private var content: some View {
         switch studio.step {
-        case .vibePicker:
-            VibePickerSection(studio: studio)
-        case .customize(let vibe):
-            CustomizeSection(studio: studio, vibe: vibe)
+        case .interview:
+            GlowupInterviewSection(studio: studio)
         case .loading:
             LoadingSection()
         case .result(let resp):
@@ -54,242 +63,203 @@ struct GlowupStudioView: View {
     }
 }
 
-// MARK: - Vibe Picker
+// MARK: - Chat Interview
 
-private struct VibePickerSection: View {
+private struct GlowupInterviewSection: View {
     @ObservedObject var studio: GlowupStudio
-    private let columns: [GridItem] = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+    @FocusState private var usernameFocused: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(loc(en: "Look expensive for 0 Robux",
-                             ru: "Выглядим дорого за 0 Robux"))
-                        .font(.appTitle2.bold())
-                        .foregroundColor(.textPrimary)
-                    Text(loc(en: "Pick a vibe — AI builds the shirt, pants, decal and step-by-step.",
-                             ru: "Выбери vibe — AI соберёт shirt, pants, decal и инструкцию."))
-                        .font(.appBody)
-                        .foregroundColor(.textSecondary)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
-
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(studio.allVibes) { vibe in
-                        VibeCard(vibe: vibe) {
-                            studio.selectVibe(vibe)
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(studio.chatLines) { line in
+                            GlowupChatBubble(line: line).id(line.id)
                         }
+                        Color.clear.frame(height: 1).id("glowup_bottom")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 70)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onChange(of: studio.chatLines.count) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo("glowup_bottom", anchor: .bottom)
                     }
                 }
-                .padding(.horizontal, 12)
+            }
+            inputBar
+        }
+    }
 
-                Text(loc(
-                    en: "Each vibe = real shirt PNG + pants PNG + AI decal + step-by-step. Decal uploads to Roblox in one tap (with OAuth).",
-                    ru: "Каждый vibe = реальный shirt PNG + pants PNG + AI-decal + step-by-step. Decal можно загрузить в Roblox в один тап (если подключён OAuth)."
-                ))
-                    .font(.appCaption)
+    @ViewBuilder
+    private var inputBar: some View {
+        Group {
+            switch studio.awaiting {
+            case .vibe:
+                VStack(spacing: 8) {
+                    ForEach(GlowupVibe.allCases) { vibe in
+                        GlowupVibeOptionRow(vibe: vibe) { studio.answerVibe(vibe) }
+                    }
+                }
+            case .gender:
+                GlowupChipScroll(
+                    items: GlowupGender.allCases,
+                    label: { studio.genderLabel($0) },
+                    onTap: { studio.answerGender($0) }
+                )
+            case .intensity:
+                GlowupChipScroll(
+                    items: GlowupIntensity.allCases,
+                    label: { studio.intensityLabel($0) },
+                    onTap: { studio.answerIntensity($0) }
+                )
+            case .username:
+                usernameComposer
+            case .none:
+                EmptyView()
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
+    }
+
+    private var usernameComposer: some View {
+        HStack(spacing: 8) {
+            TextField(loc(en: "e.g. builderman", ru: "Напр.: builderman"), text: $studio.robloxUsername)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .focused($usernameFocused)
+                .submitLabel(.go)
+                .onSubmit { studio.submitUsername() }
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                .background(Color.cardBackground)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.bubbleBorder.opacity(0.3), lineWidth: 1))
+
+            Button(action: { studio.submitUsername() }) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.accentPrimary)
+            }
+            Button(action: { studio.skipUsername() }) {
+                Text(loc(en: "Skip", ru: "Пропуск"))
+                    .font(.appCaption.bold())
                     .foregroundColor(.textSecondary)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 30)
+                    .padding(.horizontal, 8).padding(.vertical, 8)
             }
         }
     }
 }
 
-private struct VibeCard: View {
+private struct GlowupChatBubble: View {
+    let line: GlowupStudio.GlowupChatLine
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            if line.role == .user {
+                Spacer(minLength: 40)
+            } else {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.accentPrimary)
+                    .padding(.bottom, 6)
+            }
+            Text(line.text)
+                .font(.appBody)
+                .foregroundColor(line.role == .user ? .white : .textPrimary)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(line.role == .user ? Color.accentPrimary : Color.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.bubbleBorder.opacity(line.role == .user ? 0 : 0.2), lineWidth: 1)
+                )
+            if line.role == .assistant { Spacer(minLength: 40) }
+        }
+    }
+}
+
+// MARK: - Interview input components
+
+/// Rich, tappable answer for the main vibe question — shows the savings flex.
+private struct GlowupVibeOptionRow: View {
     let vibe: GlowupVibe
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
                 ZStack {
-                    LinearGradient(
-                        colors: [hex(vibe.accentHex), .black.opacity(0.6)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    LinearGradient(colors: [hex(vibe.accentHex), .black.opacity(0.6)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
                     Image(systemName: vibe.iconSymbol)
-                        .font(.system(size: 56))
-                        .foregroundColor(.white.opacity(0.95))
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
                 }
-                .frame(height: 140)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .frame(width: 46, height: 46)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(vibe.displayTitle)
-                        .font(.appHeadline)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.textPrimary)
                     Text(vibe.shortPitch)
                         .font(.appCaption)
                         .foregroundColor(.textSecondary)
                         .lineLimit(2)
-                    HStack(spacing: 4) {
-                        Image(systemName: "tag.fill")
-                            .font(.caption2)
-                        Text(loc(en: "save ~\(vibe.imitatedRetailRobux.formatted()) R$",
-                                 ru: "save ~\(vibe.imitatedRetailRobux.formatted()) R$"))
-                            .font(.caption.bold())
-                    }
-                    .foregroundColor(.orange)
-                    .padding(.top, 2)
+                        .multilineTextAlignment(.leading)
                 }
-                .padding(.horizontal, 4)
+                Spacer(minLength: 6)
+                Text("−\(shortRobux(vibe.imitatedRetailRobux)) R$")
+                    .font(.caption.bold())
+                    .foregroundColor(.orange)
             }
-            .padding(8)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.bubbleBorder.opacity(0.25), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.bubbleBorder.opacity(0.25), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
-}
 
-// MARK: - Customize
-
-private struct CustomizeSection: View {
-    @ObservedObject var studio: GlowupStudio
-    let vibe: GlowupVibe
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                headerCard
-                genderPicker
-                intensityPicker
-                usernameField
-                generateButton
-                Button(action: studio.backToPicker) {
-                    Label("Назад к vibes", systemImage: "chevron.left")
-                        .font(.appBody)
-                        .foregroundColor(.textSecondary)
-                }
-                .padding(.top, 8)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 60)
-            .padding(.bottom, 30)
-        }
-    }
-
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(loc(en: "Vibe", ru: "Vibe"))
-                .font(.caption.bold())
-                .foregroundColor(.textSecondary)
-            Text(vibe.displayTitle)
-                .font(.appTitle2.bold())
-                .foregroundColor(.textPrimary)
-            Text(vibe.shortPitch)
-                .font(.appBody)
-                .foregroundColor(.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(LinearGradient(colors: [hex(vibe.accentHex), .black.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-
-    private var genderPicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(loc(en: "Who's this for?", ru: "Под кого собираем?")).font(.appHeadline).foregroundColor(.textPrimary)
-            HStack(spacing: 8) {
-                ForEach(GlowupGender.allCases, id: \.self) { g in
-                    ChipButton(
-                        title: localizedGender(g),
-                        isSelected: studio.gender == g
-                    ) { studio.gender = g }
-                }
-            }
-        }
-    }
-
-    private var intensityPicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(loc(en: "Mood", ru: "Настроение")).font(.appHeadline).foregroundColor(.textPrimary)
-            HStack(spacing: 8) {
-                ForEach(GlowupIntensity.allCases, id: \.self) { i in
-                    ChipButton(
-                        title: localizedIntensity(i),
-                        isSelected: studio.intensity == i
-                    ) { studio.intensity = i }
-                }
-            }
-        }
-    }
-
-    private var usernameField: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                Text(loc(en: "Your Roblox username", ru: "Twой Roblox-ник")).font(.appHeadline).foregroundColor(.textPrimary)
-                Text(loc(en: "(optional)", ru: "(опционально)")).font(.appCaption).foregroundColor(.textSecondary)
-            }
-            if studio.oauthConnected {
-                Text(loc(en: "✅ Roblox connected — using your avatar automatically.",
-                         ru: "✅ Roblox подключён — берём твоего аватара автоматически."))
-                    .font(.appCaption).foregroundColor(.green)
-            } else {
-                TextField(loc(en: "e.g. builderman", ru: "Напр.: builderman"), text: $studio.robloxUsername)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled(true)
-                    .padding(12)
-                    .background(Color.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                Text(loc(
-                    en: "Enter your username — you'll see YOURSELF in this look. Skip — get a generic preview.",
-                    ru: "Введём твой ник — увидишь СЕБЯ в этом луке. Пропусти — будет generic preview."
-                ))
-                    .font(.appCaption).foregroundColor(.textSecondary)
-            }
-        }
-    }
-
-    private var generateButton: some View {
-        Button(action: { Task { await studio.generate() } }) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                Text(loc(en: "Generate look", ru: "Собрать лук"))
-                    .font(.appHeadline.bold())
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(LinearGradient(colors: [.green, .green.opacity(0.7)], startPoint: .leading, endPoint: .trailing))
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-    }
-
-    private func localizedGender(_ g: GlowupGender) -> String {
-        switch g {
-        case .boys:    return loc(en: "Guys",    ru: "Парень")
-        case .girls:   return loc(en: "Girls",   ru: "Девушка")
-        case .neutral: return loc(en: "Neutral", ru: "Neutral")
-        }
-    }
-    private func localizedIntensity(_ i: GlowupIntensity) -> String {
-        switch i {
-        case .clean: return loc(en: "Clean",  ru: "Чисто")
-        case .scary: return loc(en: "Spooky", ru: "Страшнее")
-        }
+    private func shortRobux(_ n: Int) -> String {
+        n >= 1000 ? "\(n / 1000)k" : "\(n)"
     }
 }
 
-private struct ChipButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
+/// Horizontal scroll of accent pills — mirrors the app's QuickReplyChips style
+/// for short answers (gender, intensity).
+private struct GlowupChipScroll<T: Hashable>: View {
+    let items: [T]
+    let label: (T) -> String
+    let onTap: (T) -> Void
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.appBody.bold())
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(isSelected ? Color.accentPrimary : Color.cardBackground)
-                .foregroundColor(isSelected ? .white : .textPrimary)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.bubbleBorder.opacity(0.3), lineWidth: 1))
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(items, id: \.self) { item in
+                    Button(action: { onTap(item) }) {
+                        Text(label(item))
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(.accentPrimary)
+                            .padding(.horizontal, 16).padding(.vertical, 11)
+                            .background(Color.accentPrimary.opacity(0.1))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.accentPrimary.opacity(0.5), lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                }
+            }
+            .padding(.horizontal, 2)
         }
     }
 }
@@ -375,4 +345,166 @@ fileprivate func hex(_ rgb: String) -> Color {
         green: Double((n >> 8) & 0xff) / 255.0,
         blue: Double(n & 0xff) / 255.0
     )
+}
+
+// MARK: - GlowupChatBridge (session 395)
+//
+// Opens the rich GlowupResultView from inside the standard ChatView when a
+// glowup (fake Headless / Korblox / Void / Sigma glow-up) chat-flow generation
+// completes. ChatView's default completion handler shows the generic Content
+// Project Pipeline preview (numbered stages + Export RBXM); for glowup we want
+// the user to land in the asset-pack result screen — preview render +
+// shirt/pants/decal asset pack + catalog items + upload steps + share.
+//
+// Flow (mirror of CursedUGC / FittingRoom / VoiceAura bridges):
+//   1. viralChatDispatch.handleGlowup records the full GlowupGenerationResponse
+//      under /api/viral-generations/:id and tags the chat PNG artifact with
+//      metadata.kind="glowup" + metadata.generationId.
+//   2. ChatStore.makePreviewPayload → preview.viralKind / viralGenerationId.
+//   3. ChatView.previewSheetContent routes that into this bridge.
+//   4. Bridge fetches GlowupGenerationDoc (GET /api/viral-generations/:id);
+//      its `payload` IS the GlowupGenerationResponse, so it drives
+//      GlowupStudio into .result(payload) directly — no field remap.
+//
+// Inlined into GlowupStudioView.swift (already compiled) instead of a separate
+// file: this Xcode project has no file-system-synchronized groups, so a new
+// .swift file would need a fragile pbxproj edit while the user's Xcode is open.
+
+struct GlowupChatBridge: View {
+    let generationId: String
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var studio = GlowupStudio()
+    @State private var didStartLoad = false
+    @State private var initialErrorMessage: String?
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            LinearGradient(colors: [.gradientTop, .gradientBottom],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+            content
+            if let toast = studio.transientToast {
+                Text(toast)
+                    .font(.appCaption.bold()).foregroundColor(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Color.black.opacity(0.85))
+                    .clipShape(Capsule()).shadow(radius: 4)
+                    .padding(.top, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: studio.transientToast)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2).foregroundColor(.textSecondary)
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                Text(loc(en: "Avatar Glow-Up", ru: "Avatar Glow-Up"))
+                    .font(.appHeadline).foregroundColor(.textPrimary)
+            }
+        }
+        .task {
+            guard !didStartLoad else { return }
+            didStartLoad = true
+            await loadInitial()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch studio.step {
+        case .result(let resp):
+            GlowupResultView(studio: studio, response: resp)
+        case .loading:
+            chatLoadingView
+        case .error(let m):
+            errorView(message: m)
+        case .interview:
+            // The bridge isn't a full studio — `.interview` only appears
+            // before the doc loads, or if a GlowupResultView footer action
+            // resets state ("Another vibe" / "Change parameters"). Show the
+            // loader/error rather than the scripted interview; the user
+            // returns to the chat via the X button to start a new glow-up.
+            if let err = initialErrorMessage {
+                errorView(message: err)
+            } else {
+                chatLoadingView
+            }
+        }
+    }
+
+    private var chatLoadingView: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            ProgressView().scaleEffect(1.4).tint(.accentPrimary)
+            Text(loc(en: "Loading your glow-up…", ru: "Загружаю glow-up…"))
+                .font(.appHeadline).foregroundColor(.textPrimary)
+            Text(loc(en: "Pulling preview + asset pack + catalog items. Usually instant.",
+                     ru: "Достаю превью + asset pack + айтемы каталога. Обычно мгновенно."))
+                .font(.appCaption).foregroundColor(.textSecondary)
+                .multilineTextAlignment(.center).padding(.horizontal, 40)
+            Spacer()
+        }
+    }
+
+    private func errorView(message: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 48)).foregroundColor(.orange)
+            Text(loc(en: "Couldn't open the glow-up", ru: "Не удалось открыть glow-up"))
+                .font(.appHeadline).foregroundColor(.textPrimary)
+            Text(message).font(.appBody).foregroundColor(.textSecondary)
+                .multilineTextAlignment(.center).padding(.horizontal, 40)
+            Button(action: {
+                initialErrorMessage = nil
+                Task { await loadInitial() }
+            }) {
+                Label(loc(en: "Retry", ru: "Повторить"), systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+            Spacer()
+        }
+    }
+
+    /// The handler records the doc inline (fire-and-forget Firestore write), so
+    /// it's normally ready the instant the chat job completes. Retry briefly to
+    /// cover Firestore write-propagation lag, then surface a retryable error.
+    private func loadInitial() async {
+        let deadline = Date().addingTimeInterval(20)
+        var lastError: String?
+        while Date() < deadline {
+            do {
+                let doc = try await ViralLibraryAPIClient.fetchGlowupById(generationId)
+                guard doc.kind == "glowup" else {
+                    await MainActor.run {
+                        initialErrorMessage = loc(
+                            en: "This isn't a glow-up — kind mismatch.",
+                            ru: "Это не glow-up — kind mismatch."
+                        )
+                    }
+                    return
+                }
+                await MainActor.run {
+                    studio.step = .result(doc.payload)
+                    initialErrorMessage = nil
+                }
+                return
+            } catch {
+                lastError = error.localizedDescription
+            }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+        }
+        await MainActor.run {
+            initialErrorMessage = lastError ?? loc(
+                en: "Took too long. Open it from Recents in a minute.",
+                ru: "Слишком долго. Открой из Recents через минуту."
+            )
+        }
+    }
 }

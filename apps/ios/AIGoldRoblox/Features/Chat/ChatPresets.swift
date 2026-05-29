@@ -342,6 +342,57 @@ enum ChatPresetsData {
         ChatPreset(title: "Emo MySpace 2007 Cursed Plush", subtitle: "Black chains, side-bangs, cursed", emoji: "🖤"),
     ]
 
+    // MARK: Avatar Glow-Up
+    //
+    // Session 395 — Avatar Glow-Up (Fake Headless & Korblox tile) migrated off
+    // its dedicated GlowupStudioView picker onto the standard ChatView
+    // interview flow, like the other viral kinds. Chips below span the 4
+    // GlowupVibe ids (headless_shadow / korblox_style / void / sigma) plus a
+    // couple of gender/intensity-flavored combos. Each chip carries the
+    // keywords `extractGlowupParams()` (viralChatDispatch.ts) maps into
+    // vibeId + gender + intensity — so a tap-and-send produces a usable
+    // glow-up. Backend assembles a free/cheap catalog recipe + preview.
+
+    static let glowup: [ChatPreset] = [
+        ChatPreset(title: "Fake Headless Horseman Look", subtitle: "Mimic the 31,000 R$ no-head illusion for free", emoji: "🎃"),
+        ChatPreset(title: "Korblox Skeleton Leg Glow", subtitle: "Fake the 17,000 R$ frozen undead leg", emoji: "🦴"),
+        ChatPreset(title: "Void Faceless All-Black", subtitle: "Pitch-black abyss avatar, cursed aura", emoji: "🕳️"),
+        ChatPreset(title: "Sigma Grindset Minimal", subtitle: "Cold stoic alpha, 1% mindset drip", emoji: "🗿"),
+        ChatPreset(title: "Scary Headless Demon Girl", subtitle: "Creepy no-head horror, dark female energy", emoji: "💀"),
+        ChatPreset(title: "Korblox + Headless Combo", subtitle: "Stack both fake limiteds in one fit", emoji: "🔥"),
+        ChatPreset(title: "Void Abyss Boy Glow", subtitle: "Faceless black-hole male avatar", emoji: "🌑"),
+        ChatPreset(title: "Sigma Alpha Chad Glow", subtitle: "Grindset moai energy, boys edition", emoji: "😎"),
+        ChatPreset(title: "Spooky Void Cursed Vibe", subtitle: "Scary faceless nightmare aesthetic", emoji: "👻"),
+        ChatPreset(title: "Clean Korblox Frozen Leg", subtitle: "Undead skeleton leg, polished look", emoji: "❄️"),
+        ChatPreset(title: "Headless Horseman Girls", subtitle: "No-head illusion with feminine drip", emoji: "🖤"),
+        ChatPreset(title: "Sigma Stoic Void Mix", subtitle: "All-black alpha minimalist combo", emoji: "⚫"),
+    ]
+
+    // MARK: 1-Click Outfit Generator
+    //
+    // Session 395 — 1-Click Outfit Generator migrated off its dedicated
+    // OutfitStudioView picker onto the standard ChatView interview flow.
+    // Chips below span the 9 OutfitAesthetic ids (sigma / baddie / y2k / goth
+    // / rich_emo / slender / softie / cyber / anime_demon). Each chip carries
+    // the keywords `extractFittingRoomParams()` maps into aestheticId + gender
+    // + style; backend `assembleOutfit()` searches the live catalog for the
+    // cheapest matching items + AI style ranking + a hero flux render.
+
+    static let outfit: [ChatPreset] = [
+        ChatPreset(title: "Sigma Stoic All-Black Fit", subtitle: "Cold minimalist 1% mindset, full flex", emoji: "🗿"),
+        ChatPreset(title: "Baddie Boss Mode Slay Fit", subtitle: "TikTok confident girl, bold colorful", emoji: "💋"),
+        ChatPreset(title: "Y2K Mall Princess Outfit", subtitle: "Butterflies, pink, low-rise early 2000s", emoji: "🦋"),
+        ChatPreset(title: "Goth Cathedral Dark Drip", subtitle: "Gothic black lace, dramatic vampire", emoji: "🖤"),
+        ChatPreset(title: "Rich Emo Designer Layers", subtitle: "Luxury emo, chains layered, dark", emoji: "⛓️"),
+        ChatPreset(title: "Slender Mysterious Silhouette", subtitle: "Tall narrow liminal, dark monochrome", emoji: "👁️"),
+        ChatPreset(title: "Softie Pastel Coquette Fit", subtitle: "Baby pink kawaii, soft girl colorful", emoji: "🩷"),
+        ChatPreset(title: "Cyber Neon Hacker Drip", subtitle: "Cyberpunk holo glitch, rainbow neon", emoji: "💠"),
+        ChatPreset(title: "Anime Demon Sukuna Fit", subtitle: "JJK black hair red eyes, dark", emoji: "👹"),
+        ChatPreset(title: "Baddie Y2K Crossover", subtitle: "Bold girl meets butterfly nostalgia", emoji: "✨"),
+        ChatPreset(title: "Cyber Sigma Tron Flex", subtitle: "Neon alpha grindset, matrix style", emoji: "🤖"),
+        ChatPreset(title: "Goth Rich Emo Maxed", subtitle: "Cathedral chains, intentional sadness", emoji: "🥀"),
+    ]
+
     // MARK: Smart NPC Roast & Chat
 
     static let roastNpc: [ChatPreset] = [
@@ -531,6 +582,8 @@ enum ChatPresetsData {
         case "voice_aura": return voiceAura
         case "fitting_room": return fittingRoom
         case "cursed_ugc": return cursedUgc
+        case "glowup": return glowup
+        case "outfit": return outfit
         case "roast_npc": return roastNpc
         case "anime_skills": return animeSkills
         case "obby_troll": return obbyTroll

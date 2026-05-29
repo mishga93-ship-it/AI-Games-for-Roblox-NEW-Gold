@@ -2429,14 +2429,18 @@ ${viralStyleInjection.promptBlock}`, 8000);
         // rendered AS PART of the character) instead of the short 3-stage
         // cursed_ugc flow that returns just the cursed ITEM as a standalone
         // mesh.
-        if (viralSubInit === 'disaster_spawner' || viralSubInit === 'voice_aura' || viralSubInit === 'fitting_room' || viralSubInit === 'cursed_ugc') {
+        if (viralSubInit === 'disaster_spawner' || viralSubInit === 'voice_aura' || viralSubInit === 'fitting_room' || viralSubInit === 'cursed_ugc' || viralSubInit === 'outfit' || viralSubInit === 'glowup') {
           const title = viralSubInit === 'disaster_spawner'
             ? 'Cooking disaster (concept + safe Lua + .rbxmx)'
             : viralSubInit === 'voice_aura'
               ? 'Cooking aura (concept + safe particle Lua + .rbxmx)'
               : viralSubInit === 'cursed_ugc'
                 ? 'Cooking cursed UGC (3× flux concept + Meshy 3D mesh + metadata)'
-                : 'Rendering fit on your avatar (3 angles)';
+                : viralSubInit === 'outfit'
+                  ? 'Assembling your fit from real Roblox catalog items'
+                  : viralSubInit === 'glowup'
+                    ? 'Building your glow-up look (decal + templates + preview)'
+                    : 'Rendering fit on your avatar (3 angles)';
           return [{
             id: 'viral_generation' as GenerationStageId,
             title,
@@ -2554,7 +2558,9 @@ ${viralStyleInjection.promptBlock}`, 8000);
     const isViralChatJob = viralSubcategoryRaw === 'fitting_room'
       || viralSubcategoryRaw === 'voice_aura'
       || viralSubcategoryRaw === 'disaster_spawner'
-      || viralSubcategoryRaw === 'cursed_ugc';
+      || viralSubcategoryRaw === 'cursed_ugc'
+      || viralSubcategoryRaw === 'outfit'
+      || viralSubcategoryRaw === 'glowup';
     if (asyncKinds.includes(requestedKind) && !isViralChatJob) {
       const selfHost = req.header('host') ?? 'api-z4yzt6dhjq-uc.a.run.app';
       const selfUrl = `https://${selfHost}/api/internal/run-3d-pipeline`;

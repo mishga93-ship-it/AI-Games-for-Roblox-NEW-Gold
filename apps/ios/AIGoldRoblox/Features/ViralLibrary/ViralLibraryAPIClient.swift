@@ -122,6 +122,38 @@ struct VoiceAuraGenerationPayload: Codable {
     let generationStatus: String?
 }
 
+/// Detail response for `GET /api/viral-generations/:id` when the doc kind is
+/// `outfit` (session 395). The inner `payload` is the FULL
+/// `OutfitGenerationResponse` recorded by viralChatDispatch.ts `handleOutfit()`
+/// — same object `/api/outfit/generate` returns — so it decodes directly with
+/// no manual field remap. `OutfitChatBridge` drives it into OutfitStudio.
+struct OutfitGenerationDoc: Codable {
+    let generationId: String
+    let kind: String
+    let title: String
+    let subtitle: String?
+    let thumbnailUrl: String?
+    let accentHex: String?
+    let createdAtMs: Double
+    let payload: OutfitGenerationResponse
+}
+
+/// Detail response for `GET /api/viral-generations/:id` when the doc kind is
+/// `glowup` (session 395). The inner `payload` is the FULL
+/// `GlowupGenerationResponse` recorded by viralChatDispatch.ts `handleGlowup()`
+/// — same object `/api/glowup/generate` returns — so it decodes directly.
+/// `GlowupChatBridge` drives it into GlowupStudio.
+struct GlowupGenerationDoc: Codable {
+    let generationId: String
+    let kind: String
+    let title: String
+    let subtitle: String?
+    let thumbnailUrl: String?
+    let accentHex: String?
+    let createdAtMs: Double
+    let payload: GlowupGenerationResponse
+}
+
 // MARK: - Errors
 
 enum ViralLibraryAPIError: LocalizedError {
@@ -163,6 +195,42 @@ enum ViralLibraryAPIClient {
     /// completes. Returns the fully-decoded payload — convert via
     /// `.toAuraResponse()` to feed `VoiceAuraResultView`.
     static func fetchVoiceAuraById(_ generationId: String) async throws -> VoiceAuraGenerationDoc {
+        do {
+            return try await APIClient.request(
+                "api/viral-generations/\(generationId)",
+                method: "GET",
+                timeout: 20
+            )
+        } catch APIError.httpError(let code) where code == 401 {
+            throw ViralLibraryAPIError.unauthenticated
+        } catch {
+            throw ViralLibraryAPIError.underlying(error)
+        }
+    }
+
+    /// Fetch a single `outfit` generation by id (session 395). Used by
+    /// `OutfitChatBridge` to re-hydrate the full result after a chat-flow
+    /// generation completes. The stored `payload` is the SAME object
+    /// `/api/outfit/generate` returns, so it decodes straight into
+    /// `OutfitGenerationResponse` — feed `doc.payload` to `OutfitResultView`.
+    static func fetchOutfitById(_ generationId: String) async throws -> OutfitGenerationDoc {
+        do {
+            return try await APIClient.request(
+                "api/viral-generations/\(generationId)",
+                method: "GET",
+                timeout: 20
+            )
+        } catch APIError.httpError(let code) where code == 401 {
+            throw ViralLibraryAPIError.unauthenticated
+        } catch {
+            throw ViralLibraryAPIError.underlying(error)
+        }
+    }
+
+    /// Fetch a single `glowup` generation by id (session 395). Used by
+    /// `GlowupChatBridge`. The stored `payload` mirrors `/api/glowup/generate`
+    /// so it decodes straight into `GlowupGenerationResponse`.
+    static func fetchGlowupById(_ generationId: String) async throws -> GlowupGenerationDoc {
         do {
             return try await APIClient.request(
                 "api/viral-generations/\(generationId)",

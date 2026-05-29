@@ -1362,20 +1362,20 @@ private extension ForgeView {
             isShowingTikTokStudio = true
             return
         }
-        // Session 382 Phase 2 — fakeLimited tile pivots to GlowupStudioView
-        // (vibe picker → asset pack) instead of the legacy chat flow.
-        if selectedOption.id == "fake_limited" {
-            isShowingProjectPicker = false
-            isShowingChatPicker = false
-            isShowingGlowupStudio = true
-            return
-        }
-        if selectedOption.id == "outfit_generator" {
-            isShowingProjectPicker = false
-            isShowingChatPicker = false
-            isShowingOutfitStudio = true
-            return
-        }
+        // Session 395 — Avatar Glow-Up (fake_limited) + 1-Click Outfit Generator
+        // (outfit_generator) migrated off their dedicated full-screen pickers
+        // (GlowupStudioView / OutfitStudioView) onto the standard ChatView
+        // interview flow, like the other viral kinds (disaster_spawner /
+        // voice_aura / fitting_room / cursed_ugc), on user request («такой чат
+        // как во всех чатах»). The Studio + result views stay in the codebase
+        // — GlowupResultView / OutfitResultView are reused by the chat-bridges
+        // (GlowupChatBridge / OutfitChatBridge) — but the Forge tiles now fall
+        // through to the launchConfig path below, which opens ChatView with
+        // contentSubcategory "glowup"/"outfit" (mapped just below; the tile ids
+        // stay "fake_limited"/"outfit_generator"). The isShowingGlowupStudio /
+        // isShowingOutfitStudio sheet bindings become unused. Presets live in
+        // ChatPresets.swift; backend handlers in viralChatDispatch.ts
+        // (handleGlowup / handleOutfit).
         // Session 390 — Cursed UGC Modeler migrated off its dedicated full-
         // screen picker (CursedUGCStudioView with category grid → style grid →
         // customize → loading → result) onto the standard ChatView interview
@@ -1413,13 +1413,32 @@ private extension ForgeView {
         // through to the launchConfig path with
         // contentSubcategory="fitting_room"; presets live in ChatPresets.
         let context = "\(selectedGroup.rawValue) > \(selectedOption.title)"
+        // Session 395 — map the two migrated viral tiles to their canonical
+        // backend subcategory + force .content kind (matches the other viral
+        // chat kinds). fake_limited's ProjectOption is .fakeLimited otherwise,
+        // which would route the welcome/interview down the legacy fake-limited
+        // path instead of the new "glowup" chat. All other tiles pass through
+        // unchanged (id == subcategory, native kind).
+        let mappedSubcategory: String
+        let mappedKind: ProjectKind
+        switch selectedOption.id {
+        case "fake_limited":
+            mappedSubcategory = "glowup"
+            mappedKind = .content
+        case "outfit_generator":
+            mappedSubcategory = "outfit"
+            mappedKind = .content
+        default:
+            mappedSubcategory = selectedOption.id
+            mappedKind = selectedOption.kind
+        }
         launchConfig = ChatLaunchConfig(
             title: "\(selectedOption.title) — \(mode == .voice ? "Voice" : "Text")",
             entryMode: mode,
-            projectKind: selectedOption.kind,
+            projectKind: mappedKind,
             welcomeContext: context,
             resumeSessionId: nil,
-            contentSubcategory: selectedOption.id
+            contentSubcategory: mappedSubcategory
         )
     }
 

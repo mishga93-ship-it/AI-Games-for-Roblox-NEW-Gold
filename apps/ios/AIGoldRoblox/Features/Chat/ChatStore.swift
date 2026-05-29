@@ -5042,6 +5042,27 @@ final class ChatStore: ObservableObject {
                 GenerationStage(id: "export_rbxm", title: "Wrap marketplace card", status: "pending"),
             ]
         }
+        // Session 395 — Avatar Glow-Up: synchronous assemble (free/cheap catalog
+        // recipe + shirt/pants/decal asset pack + composited preview), NOT the
+        // 9-stage character_3d pipeline. After it completes GlowupChatBridge
+        // replaces the progress sheet with the rich result anyway.
+        if contentSubcategory == "glowup" {
+            return [
+                GenerationStage(id: "generating", title: "Glow-up preview render", status: "pending"),
+                GenerationStage(id: "concept_image", title: "Asset pack + catalog items", status: "pending"),
+                GenerationStage(id: "export_rbxm", title: "Wrap glow-up", status: "pending"),
+            ]
+        }
+        // Session 395 — 1-Click Outfit Generator: synchronous catalog search +
+        // AI style ranking + optional hero flux render. OutfitChatBridge takes
+        // over on completion.
+        if contentSubcategory == "outfit" {
+            return [
+                GenerationStage(id: "generating", title: "Searching catalog items", status: "pending"),
+                GenerationStage(id: "concept_image", title: "AI style ranking + render", status: "pending"),
+                GenerationStage(id: "export_rbxm", title: "Wrap outfit", status: "pending"),
+            ]
+        }
         if contentSubcategory == "audio" {
             return [
                 GenerationStage(id: "generating", title: "Generating audio", status: "pending"),
@@ -5652,6 +5673,44 @@ final class ChatStore: ObservableObject {
                     exportFileType: "viral",
                     artifactIds: [],
                     shareDescription: job.resultText ?? "AI-generated cursed Roblox UGC",
+                    downloadURL: nil,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: nil,
+                    fbxDownloadURL: nil,
+                    notes: [],
+                    viralKind: kind,
+                    viralGenerationId: genId
+                )
+            }
+            // Session 395 — glowup routes to the rich GlowupResultView (preview
+            // render + shirt/pants/decal asset pack + catalog items + share)
+            // via GlowupChatBridge instead of the generic pipeline preview.
+            if kind == "glowup", !genId.isEmpty {
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Avatar Glow-Up" : draft.title,
+                    artifactType: .unavailable("Opening glow-up…"),
+                    exportFileType: "viral",
+                    artifactIds: [],
+                    shareDescription: job.resultText ?? "AI-generated Roblox glow-up",
+                    downloadURL: nil,
+                    glbDownloadURL: nil,
+                    rbxmDownloadURL: nil,
+                    fbxDownloadURL: nil,
+                    notes: [],
+                    viralKind: kind,
+                    viralGenerationId: genId
+                )
+            }
+            // Session 395 — outfit routes to the rich OutfitResultView (hero
+            // render + slot cards + total cost/savings + catalog deep-links +
+            // share) via OutfitChatBridge instead of the generic preview.
+            if kind == "outfit", !genId.isEmpty {
+                return PreviewPayload(
+                    title: draft.title.isEmpty ? "Outfit" : draft.title,
+                    artifactType: .unavailable("Opening outfit…"),
+                    exportFileType: "viral",
+                    artifactIds: [],
+                    shareDescription: job.resultText ?? "AI-generated Roblox outfit",
                     downloadURL: nil,
                     glbDownloadURL: nil,
                     rbxmDownloadURL: nil,
@@ -7214,6 +7273,26 @@ final class ChatStore: ObservableObject {
             replies = alreadyDismissed
                 ? itemReplies
                 : itemReplies + ["Got it"]
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+
+        // Session 395 — Avatar Glow-Up chat-interview welcome. Quick-replies
+        // carry the keywords `extractGlowupParams()` (viralChatDispatch.ts)
+        // maps into vibeId (headless_shadow / korblox_style / void / sigma) +
+        // gender + intensity, so a tap-through produces a usable glow-up.
+        if contentSubcategory == "glowup" {
+            content = "Avatar Glow-Up — I'll fake an expensive look (Headless ~31k R$, Korblox ~17k R$, Void, Sigma) out of free + cheap Catalog items, with a custom avatar preview. Which vibe are we faking?"
+            replies = ["Fake Headless Horseman", "Korblox skeleton leg", "Void faceless black", "Sigma grindset", "Scary version", "Decide for me"]
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+
+        // Session 395 — 1-Click Outfit Generator chat-interview welcome.
+        // Quick-replies carry the keywords `extractFittingRoomParams()` maps
+        // into aestheticId (9 vibes) + gender + style; backend assembleOutfit
+        // searches the live catalog for the cheapest matching items.
+        if contentSubcategory == "outfit" {
+            content = "1-Click Outfit Generator — pick an aesthetic and I'll assemble a full fit from live Roblox catalog items (cheapest matches + AI style ranking) with a hero render. Which aesthetic?"
+            replies = ["Sigma", "Baddie", "Y2K", "Goth", "Cyber", "Anime demon", "Decide for me"]
             return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
         }
 

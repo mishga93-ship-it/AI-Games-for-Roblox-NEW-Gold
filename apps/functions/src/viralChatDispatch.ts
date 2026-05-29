@@ -23,9 +23,9 @@
 //   contentSubcategory === 'disaster_spawner'  →  generateDisaster()
 //   contentSubcategory === 'fitting_room'      →  startFittingRoomJob()
 //   contentSubcategory === 'voice_aura'        →  generateAura()
-//
-// Adding more (cursed_ugc, outfit, glowup) is a matter of importing the
-// generator + extracting params from the prompt the same way.
+//   contentSubcategory === 'cursed_ugc'        →  generateCursedUGC()
+//   contentSubcategory === 'outfit'            →  assembleOutfit()   (session 395)
+//   contentSubcategory === 'glowup'            →  generateGlowup()   (session 395)
 
 import { logger } from 'firebase-functions/v2';
 import { v4 as uuidv4 } from 'uuid';
@@ -56,6 +56,19 @@ import {
   type OutfitGender,
   type OutfitStyleMode,
 } from './data/outfitAesthetics.js';
+
+// Session 395 — Outfit Generator + Avatar Glow-Up chat dispatch. Both
+// generators are synchronous (no background render / polling like Fitting
+// Room) so the handlers just call → translate → record inline.
+import { assembleOutfit } from './outfitAssembler.js';
+import { generateGlowup } from './glowupCompositor.js';
+import {
+  isGlowupVibeId,
+  getGlowupVibe,
+  type GlowupVibeId,
+  type GlowupGender as GlowupGenderId,
+  type GlowupIntensity as GlowupIntensityId,
+} from './data/glowupVibes.js';
 
 // Session 388 — Voice-to-Aura chat dispatch (mirror Disaster Spawner pattern).
 import { generateAura } from './auraGenerator.js';
@@ -975,6 +988,306 @@ async function handleCursedUGC(args: {
   return { artifacts, status: 'completed' };
 }
 
+// ─── Outfit Generator handler ──────────────────────────────────
+
+/**
+ * 1-Click Outfit Generator. Shares the exact aesthetic taxonomy as Fitting
+ * Room (both keyed by OUTFIT_AESTHETICS), so we reuse extractFittingRoomParams
+ * for aesthetic/gender/style detection. Unlike Fitting Room (async img2img
+ * render + Firestore polling), assembleOutfit is synchronous — it returns the
+ * full curated item list + an optional hero preview inline.
+ */
+async function handleOutfit(args: {
+  firebaseUid: string;
+  jobId: string;
+  prompt: string;
+}): Promise<{ artifacts: GenerationArtifact[]; status: 'completed' | 'failed'; errorMessage?: string }> {
+  const { firebaseUid, jobId, prompt } = args;
+
+  // 1) Reuse the fitting-room extractor — identical aesthetic/gender/style set.
+  const params = await extractFittingRoomParams(prompt);
+  const aesthetic = OUTFIT_AESTHETICS[params.aestheticId];
+
+  // 2) Assemble the outfit (curated core + live catalog search + AI ranking
+  //    + optional hero flux render). Synchronous — full result inline.
+  let result: Awaited<ReturnType<typeof assembleOutfit>>;
+  try {
+    result = await assembleOutfit({
+      aestheticId: params.aestheticId,
+      gender: params.gender,
+      style: params.style,
+    });
+  } catch (err) {
+    logger.error('[viralChatDispatch] assembleOutfit failed', { jobId, err });
+    return {
+      artifacts: [],
+      status: 'failed',
+      errorMessage: err instanceof Error ? err.message : 'Outfit assembly failed',
+    };
+  }
+
+  // 3) Mint a generationId (assembleOutfit has no id of its own) so the chat
+  //    artifact, Recents doc, and iOS OutfitChatBridge all reference one record.
+  const generationId = uuidv4();
+  const baseName = result.title.replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) || 'Outfit';
+  const artifacts: GenerationArtifact[] = [];
+
+  if (result.heroPreviewUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'png',
+      name: `${baseName}-fit.png`,
+      url: result.heroPreviewUrl,
+      artifactRole: 'thumbnail',
+      metadata: {
+        generationId,
+        aestheticId: result.aestheticId,
+        kind: 'outfit',
+      },
+    });
+  }
+
+  // Items summary blob so the chat shows cost + names without tapping through.
+  if (result.items.length > 0) {
+    const lines = result.items.slice(0, 14).map((it) => {
+      const price = it.priceRobux === 0 ? 'FREE' : `${it.priceRobux} R$`;
+      return `• [${it.slot}] ${it.name} — ${price}`;
+    });
+    const summary = [
+      `${result.title} — ${result.totalCostRobux} R$ total` +
+        (result.savedRobux > 0 ? ` (saved ${result.savedRobux.toLocaleString()} R$)` : ''),
+      '',
+      ...lines,
+      '',
+      result.captionEN,
+    ].join('\n');
+    artifacts.push({
+      id: uuidv4(),
+      type: 'lua',                  // chat already renders code-block previews
+      extension: 'txt',
+      name: `${baseName}-items.txt`,
+      code: summary,
+      previewText: summary.slice(0, 200),
+      artifactRole: 'script',
+      metadata: {
+        generationId,
+        aestheticId: result.aestheticId,
+        kind: 'outfit',
+        totalCostRobux: result.totalCostRobux,
+        savedRobux: result.savedRobux,
+      },
+    });
+  }
+
+  // 4) Mirror into Recents. Store the FULL assemble result + generationId +
+  //    generationStatus so the iOS OutfitChatBridge decodes the payload
+  //    straight into OutfitGenerationResponse (identical field names — this is
+  //    the same object /api/outfit/generate already returns to the client).
+  const fallbackThumb = result.items.find((it) => it.thumbnailUrl)?.thumbnailUrl ?? undefined;
+  void recordViralGeneration({
+    firebaseUid,
+    kind: 'outfit',
+    generationId,
+    title: result.title,
+    subtitle: result.captionEN,
+    thumbnailUrl: result.heroPreviewUrl ?? fallbackThumb ?? undefined,
+    accentHex: aesthetic.accentHex,
+    payload: {
+      ...result,
+      generationId,
+      generationStatus: 'ready',
+      jobId,
+    },
+  });
+
+  return { artifacts, status: 'completed' };
+}
+
+// ─── Avatar Glow-Up handler ────────────────────────────────────
+
+/**
+ * Heuristic + LLM-assisted extraction of glow-up params from a free-form chat
+ * prompt. Maps keywords → vibe (headless_shadow / korblox_style / void /
+ * sigma) + gender + intensity. LLM fallback only when no keyword matched AND
+ * the prompt is short / vague.
+ */
+async function extractGlowupParams(prompt: string): Promise<{
+  vibeId: GlowupVibeId;
+  gender: GlowupGenderId;
+  intensity: GlowupIntensityId;
+}> {
+  const lc = prompt.toLowerCase();
+
+  let vibeId: GlowupVibeId = 'headless_shadow';
+  let matched = false;
+  if (/\b(korblox|skeleton\s*leg|frozen\s*leg|undead\s*leg|deathspeaker|17\s*0?00|17k)\b/.test(lc)) {
+    vibeId = 'korblox_style'; matched = true;
+  } else if (/\b(void|pitch\s*black|faceless|all\s*black|abyss|cursed\s*black|black\s*hole)\b/.test(lc)) {
+    vibeId = 'void'; matched = true;
+  } else if (/\b(sigma|chad|alpha|grindset|stoic|minimalist|cold|1%\s*mindset|moai)\b/.test(lc)) {
+    vibeId = 'sigma'; matched = true;
+  } else if (/\b(headless|no\s*head|missing\s*head|dark\s*void\s*head|horseman|31\s*0?00|31k)\b/.test(lc)) {
+    vibeId = 'headless_shadow'; matched = true;
+  }
+
+  let gender: GlowupGenderId = 'neutral';
+  if (/\b(girl|girls|female|she|her)\b/.test(lc)) {
+    gender = 'girls';
+  } else if (/\b(guy|guys|boy|boys|male|he|him)\b/.test(lc)) {
+    gender = 'boys';
+  }
+
+  let intensity: GlowupIntensityId = 'clean';
+  if (/\b(scary|spooky|creepy|cursed|horror|nightmare|sinister|evil|dark)\b/.test(lc)) {
+    intensity = 'scary';
+  }
+
+  if (!matched && prompt.trim().split(/\s+/).length < 6) {
+    try {
+      const r = await runChatProvider('openai',
+        `Classify this Roblox avatar glow-up prompt into ONE id: ` +
+        `headless_shadow | korblox_style | void | sigma.\n` +
+        `Reply with ONLY the single id. Prompt: "${prompt.trim().slice(0, 300)}"`,
+        undefined,
+        { timeoutMs: 8_000 },
+      );
+      const guess = (r.text ?? '').trim().toLowerCase();
+      if (isGlowupVibeId(guess)) {
+        vibeId = guess;
+      }
+    } catch (err) {
+      logger.warn('[viralChatDispatch] LLM glowup vibe classification failed (non-fatal)',
+        { err: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return { vibeId, gender, intensity };
+}
+
+/** Recents-cell accent per vibe (mirrors iOS GlowupVibe.accentHex). */
+const GLOWUP_ACCENT_HEX: Record<GlowupVibeId, string> = {
+  headless_shadow: '1B2A33',
+  korblox_style: '2D3540',
+  void: '2A1A3A',
+  sigma: '1F2530',
+};
+
+/**
+ * Avatar Glow-Up Studio. Builds shirt/pants templates + a face/aura decal +
+ * a composited preview for the chosen "fake-expensive" vibe. Synchronous like
+ * assembleOutfit — no background render. robloxUserId is omitted in the chat
+ * flow (no resolved Roblox user), so the preview is generic (fitOnUser=false).
+ */
+async function handleGlowup(args: {
+  firebaseUid: string;
+  jobId: string;
+  prompt: string;
+}): Promise<{ artifacts: GenerationArtifact[]; status: 'completed' | 'failed'; errorMessage?: string }> {
+  const { firebaseUid, jobId, prompt } = args;
+
+  const params = await extractGlowupParams(prompt);
+  const vibe = getGlowupVibe(params.vibeId);
+
+  let result: Awaited<ReturnType<typeof generateGlowup>>;
+  try {
+    result = await generateGlowup({
+      vibeId: params.vibeId,
+      gender: params.gender,
+      intensity: params.intensity,
+      firebaseUid,
+    });
+  } catch (err) {
+    logger.error('[viralChatDispatch] generateGlowup failed', { jobId, err });
+    return {
+      artifacts: [],
+      status: 'failed',
+      errorMessage: err instanceof Error ? err.message : 'Glow-Up generation failed',
+    };
+  }
+
+  const generationId = uuidv4();
+  const baseName = (result.title || vibe.title).replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) || 'Glowup';
+  const artifacts: GenerationArtifact[] = [];
+
+  if (result.previewUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'png',
+      name: `${baseName}-look.png`,
+      url: result.previewUrl,
+      artifactRole: 'thumbnail',
+      metadata: {
+        generationId,
+        vibeId: result.vibeId,
+        kind: 'glowup',
+      },
+    });
+  }
+
+  // The decal PNG is the key deliverable (upload to Roblox as a face/aura
+  // decal) — surface it as a second inline preview.
+  if (result.assetPack?.decalUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'png',
+      name: `${baseName}-decal.png`,
+      url: result.assetPack.decalUrl,
+      artifactRole: 'thumbnail',
+      metadata: {
+        generationId,
+        vibeId: result.vibeId,
+        kind: 'glowup',
+        asset: 'decal',
+      },
+    });
+  }
+
+  const instructions = result.instructionsEN ?? [];
+  const summary = [
+    result.title,
+    result.pitchEN,
+    '',
+    ...instructions.map((s, i) => `${i + 1}. ${s}`),
+    '',
+    result.shareCaptionEN,
+  ].join('\n');
+  artifacts.push({
+    id: uuidv4(),
+    type: 'lua',
+    extension: 'txt',
+    name: `${baseName}-guide.txt`,
+    code: summary,
+    previewText: summary.slice(0, 200),
+    artifactRole: 'script',
+    metadata: {
+      generationId,
+      vibeId: result.vibeId,
+      kind: 'glowup',
+    },
+  });
+
+  // Mirror into Recents. Store the FULL result + generationId +
+  // generationStatus so the iOS GlowupChatBridge decodes the payload straight
+  // into GlowupGenerationResponse (same object /api/glowup/generate returns).
+  void recordViralGeneration({
+    firebaseUid,
+    kind: 'glowup',
+    generationId,
+    title: result.title,
+    subtitle: result.shareCaptionEN,
+    thumbnailUrl: result.previewUrl,
+    accentHex: GLOWUP_ACCENT_HEX[result.vibeId],
+    payload: {
+      ...result,
+      generationId,
+      generationStatus: 'ready',
+      jobId,
+    },
+  });
+
+  return { artifacts, status: 'completed' };
+}
+
 // ─── Public entry (called by /api/content/generate dispatcher) ─
 
 /**
@@ -1055,6 +1368,40 @@ export async function tryHandleViralChatGeneration(args: {
       return true;
     }
     const handled = await handleCursedUGC({
+      firebaseUid: job.userId,
+      jobId: job.id,
+      prompt: trimmed,
+    });
+    job.artifacts = [...(job.artifacts ?? []), ...handled.artifacts];
+    job.status = handled.status;
+    if (handled.errorMessage) job.errorMessage = handled.errorMessage;
+    return true;
+  }
+
+  if (subcategory === 'outfit') {
+    if (!trimmed) {
+      job.status = 'failed';
+      job.errorMessage = 'Empty outfit prompt';
+      return true;
+    }
+    const handled = await handleOutfit({
+      firebaseUid: job.userId,
+      jobId: job.id,
+      prompt: trimmed,
+    });
+    job.artifacts = [...(job.artifacts ?? []), ...handled.artifacts];
+    job.status = handled.status;
+    if (handled.errorMessage) job.errorMessage = handled.errorMessage;
+    return true;
+  }
+
+  if (subcategory === 'glowup') {
+    if (!trimmed) {
+      job.status = 'failed';
+      job.errorMessage = 'Empty glow-up prompt';
+      return true;
+    }
+    const handled = await handleGlowup({
       firebaseUid: job.userId,
       jobId: job.id,
       prompt: trimmed,

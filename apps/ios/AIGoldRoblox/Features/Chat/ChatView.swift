@@ -1285,6 +1285,27 @@ struct ChatView: View {
             NavigationStack {
                 CursedUGCChatBridge(generationId: genId)
             }
+        } else if preview.viralKind == "glowup", let genId = preview.viralGenerationId, !genId.isEmpty {
+            // Session 395 — Avatar Glow-Up routes to the rich GlowupResultView
+            // (preview render + shirt/pants/decal asset pack + catalog items +
+            // upload steps + share) via GlowupChatBridge instead of the generic
+            // 9-stage Content Project Pipeline preview. Bridge fetches the
+            // persisted GlowupGenerationDoc via /api/viral-generations/:id and
+            // drives GlowupStudio into .result. (Bridge inlined in
+            // GlowupStudioView.swift.)
+            NavigationStack {
+                GlowupChatBridge(generationId: genId)
+            }
+        } else if preview.viralKind == "outfit", let genId = preview.viralGenerationId, !genId.isEmpty {
+            // Session 395 — 1-Click Outfit Generator routes to the rich
+            // OutfitResultView (hero render + slot cards + total cost + savings
+            // + catalog deep-links + share) via OutfitChatBridge instead of the
+            // generic pipeline preview. Bridge fetches the persisted
+            // OutfitGenerationDoc via /api/viral-generations/:id and drives
+            // OutfitStudio into .result. (Bridge inlined in OutfitStudioView.swift.)
+            NavigationStack {
+                OutfitChatBridge(generationId: genId)
+            }
         } else {
             defaultPreviewSheetContent(for: preview)
         }
