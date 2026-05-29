@@ -876,6 +876,11 @@ interface TuningContext {
   destruction: boolean;
   accentHex: string;
   primaryHex: string;
+  // True for car-family templates that ship their own drive script + constraint
+  // chassis. Setting VehicleSeat.Torque/MaxSpeed on those re-enables Roblox's
+  // built-in seat motor, which fights the template controller → physics
+  // oscillation (shaking) and ejection through the floor. Skip the override.
+  skipSeatMotorOverride?: boolean;
 }
 
 const BOOST_PALETTES: Record<'flame' | 'neon' | 'smoke' | 'nitro', { r: number; g: number; b: number; material: string; sparkle: boolean }> = {
@@ -1057,7 +1062,11 @@ end`.trim();
 /** Combine all tuning Lua blocks into one script body. */
 export function buildTuningLuaBlock(ctx: TuningContext): string {
   const blocks = [
-    buildMaxSpeedTuningLua(ctx),
+    // Own-drive templates (car family) manage the VehicleSeat themselves;
+    // overriding MaxSpeed/Torque re-enables the built-in seat motor and breaks
+    // their physics. Boost/drift/suspension blocks below only add FX or scale
+    // existing springs, so they stay.
+    ctx.skipSeatMotorOverride ? '' : buildMaxSpeedTuningLua(ctx),
     buildBoostTuningLua(ctx),
     buildDriftTuningLua(ctx),
     buildSuspensionTuningLua(ctx),

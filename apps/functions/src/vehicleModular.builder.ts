@@ -208,8 +208,15 @@ export async function prepareModularVehicle(args: {
   // to SpringConstraint suspension. Our tuning script overriding those
   // SpringConstraints causes the template's controller to fight back →
   // camera dérgaет (oscillating physics). Skip suspension tuning entirely
-  // for those presets and use 'standard' baseline. Boost particles and
-  // MaxSpeed override are safe (they don't touch joints).
+  // for those presets and use 'standard' baseline.
+  //
+  // Session 397 — same class of bug via VehicleSeat.MaxSpeed/Torque: setting
+  // Torque>0 re-enables Roblox's BUILT-IN seat motor, which fights the
+  // template's own constraint drive → car shakes when you sit at the wheel
+  // and gets flung under the map (worse at MaxSpeed=170). The earlier "MaxSpeed
+  // override is safe (doesn't touch joints)" note was WRONG. For car-family we
+  // now skip the seat-motor override too (skipSeatMotorOverride). Boost/drift
+  // particle FX stay (they don't touch the drivetrain).
   const carFamily: ReadonlyArray<typeof config.preset> = [
     'sedan', 'sports_car', 'supercar', 'suv', 'pickup_truck', 'van',
     'dune_buggy', 'light_utility_vehicle', 'police_car',
@@ -227,6 +234,7 @@ export async function prepareModularVehicle(args: {
     destruction: config.driveStats.destruction ?? preset.baselineStats.destruction,
     accentHex: config.accentColor,
     primaryHex: config.primaryColor,
+    skipSeatMotorOverride: carFamily.includes(config.preset),
   });
   void resolvedAddons; // present for stageNotes if needed in future
 
