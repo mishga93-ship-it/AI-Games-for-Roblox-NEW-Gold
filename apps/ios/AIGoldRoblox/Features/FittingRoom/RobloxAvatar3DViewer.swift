@@ -459,11 +459,16 @@ struct RobloxAvatar3DViewer: View {
         let primary = primaryAttachment(in: attachments?.attachments ?? [], slot: slot)
         if let primary,
            let target = bodyAttachmentTarget(name: primary.name, avatarHeight: avatarHeight) {
-            // Attachment world position in the OBJ vertex frame
-            // (handle world + local position, with Z flipped to SCN).
+            // Attachment world position in the OBJ vertex frame.
+            // Both the OBJ vertices AND the handleWorld/localPosition
+            // backend gives us are in the SAME Roblox-render world
+            // coordinates — no axis flip needed. (Earlier attempt to
+            // flip Z to "convert to SceneKit" put assets at Z=-22 stud
+            // away from the avatar; verified by user screenshot 2026-05-
+            // 28 «три разлетелись».)
             let anchorX = Float(primary.handleWorld.x + primary.localPosition.x)
             let anchorY = Float(primary.handleWorld.y + primary.localPosition.y)
-            let anchorZ = -Float(primary.handleWorld.z + primary.localPosition.z)
+            let anchorZ = Float(primary.handleWorld.z + primary.localPosition.z)
             for child in assetScene.rootNode.childNodes {
                 child.position = SCNVector3(
                     child.position.x - anchorX,
@@ -532,27 +537,28 @@ struct RobloxAvatar3DViewer: View {
 
     /// Where on the centered mannequin's body the named attachment
     /// lives. Coordinates are in scene space (SCNNode local to the
-    /// AvatarRoot). Z+ is toward the camera (SceneKit convention).
-    /// Numbers are derived from Roblox R-15 standard rig at scale=1.
+    /// AvatarRoot). Roblox uses -Z forward, so attachments named
+    /// "*Front*" land at NEGATIVE Z (in front of the avatar in the
+    /// Roblox-convention OBJ frame). Numbers derived from Roblox R-15
+    /// standard rig at scale=1.
     private static func bodyAttachmentTarget(name: String, avatarHeight: Float) -> SCNVector3? {
         let h = avatarHeight
-        // Head landmarks: head spans roughly h*0.38 .. h*0.50 (top).
         let headCenter: Float = h * 0.43
         let headTop:    Float = h * 0.50
         switch name {
         case "HatAttachment":             return SCNVector3(0,             headTop,        0)
         case "HairAttachment":            return SCNVector3(0,             headTop - h * 0.02, 0)
-        case "FaceFrontAttachment":       return SCNVector3(0,             headCenter,     h * 0.08)
+        case "FaceFrontAttachment":       return SCNVector3(0,             headCenter,    -h * 0.08)
         case "FaceCenterAttachment":      return SCNVector3(0,             headCenter,     0)
         case "NeckAttachment":            return SCNVector3(0,             h * 0.34,       0)
         case "LeftCollarAttachment":      return SCNVector3(-h * 0.10,     h * 0.30,       0)
         case "RightCollarAttachment":     return SCNVector3(h * 0.10,      h * 0.30,       0)
         case "LeftShoulderRigAttachment": return SCNVector3(-h * 0.16,     h * 0.28,       0)
         case "RightShoulderRigAttachment":return SCNVector3(h * 0.16,      h * 0.28,       0)
-        case "BodyFrontAttachment":       return SCNVector3(0,             h * 0.12,       h * 0.08)
-        case "BodyBackAttachment":        return SCNVector3(0,             h * 0.12,      -h * 0.08)
-        case "WaistFrontAttachment":      return SCNVector3(0,            -h * 0.05,       h * 0.06)
-        case "WaistBackAttachment":       return SCNVector3(0,            -h * 0.05,      -h * 0.06)
+        case "BodyFrontAttachment":       return SCNVector3(0,             h * 0.12,      -h * 0.08)
+        case "BodyBackAttachment":        return SCNVector3(0,             h * 0.12,       h * 0.08)
+        case "WaistFrontAttachment":      return SCNVector3(0,            -h * 0.05,      -h * 0.06)
+        case "WaistBackAttachment":       return SCNVector3(0,            -h * 0.05,       h * 0.06)
         case "WaistCenterAttachment":     return SCNVector3(0,            -h * 0.05,       0)
         case "LeftGripAttachment":        return SCNVector3(-h * 0.22,     0,              0)
         case "RightGripAttachment":       return SCNVector3(h * 0.22,      0,              0)
