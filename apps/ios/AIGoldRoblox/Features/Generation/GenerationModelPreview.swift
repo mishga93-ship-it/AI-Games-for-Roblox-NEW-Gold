@@ -7,6 +7,13 @@ import SceneKit.ModelIO
 
 struct RealModel3DPreview: UIViewRepresentable {
     let modelURL: URL
+    /// Session 390 round 12 — optional callback fired after a load attempt.
+    /// `true` = a visible mesh was placed in the scene; `false` = download
+    /// failed, MDLAsset produced no geometry (asset.count==0), or the scene
+    /// had no renderable nodes. Callers (e.g. CursedUGCResultView) use this
+    /// to fall back to a 2D image instead of showing a blank canvas. NPC /
+    /// other callers omit it → no behavior change.
+    var onLoadResult: ((Bool) -> Void)? = nil
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -15,11 +22,13 @@ struct RealModel3DPreview: UIViewRepresentable {
         scnView.backgroundColor = .clear
         scnView.autoenablesDefaultLighting = true
         scnView.antialiasingMode = .multisampling4X
+        context.coordinator.onLoadResult = onLoadResult
         context.coordinator.downloadAndDisplay(url: modelURL, in: scnView)
         return scnView
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
+        context.coordinator.onLoadResult = onLoadResult
         if context.coordinator.currentURL != modelURL {
             context.coordinator.downloadAndDisplay(url: modelURL, in: uiView)
         }
@@ -29,12 +38,26 @@ struct RealModel3DPreview: UIViewRepresentable {
 
     class Coordinator {
         var currentURL: URL?
+        var onLoadResult: ((Bool) -> Void)?
         private var downloadTask: Task<Void, Never>?
         private var modelNode: SCNNode?
 
+        private func reportResult(_ success: Bool) {
+            guard let cb = onLoadResult else { return }
+            DispatchQueue.main.async { cb(success) }
+        }
+
         private func debugLog(_ location: String, _ message: String, _ data: [String: Any] = [:]) {
             #if DEBUG
-            print("[GenerationModelPreview] \(location) | \(message)")
+            // Round 12 — print the data dict too (assetCount / childCount /
+            // sceneIsNil / statusCode / fileSize) so blank-viewer issues are
+            // diagnosable from device console without another rebuild.
+            if data.isEmpty {
+                print("[GenerationModelPreview] \(location) | \(message)")
+            } else {
+                let kv = data.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
+                print("[GenerationModelPreview] \(location) | \(message) | \(kv)")
+            }
             #endif
         }
 
@@ -79,6 +102,7 @@ struct RealModel3DPreview: UIViewRepresentable {
                     ])
 
                     print("[RealModel3DPreview] Download failed: \(error.localizedDescription)")
+                    self?.reportResult(false)
                     await MainActor.run { self?.showFallback(in: scnView) }
                 }
             }
@@ -135,11 +159,33 @@ struct RealModel3DPreview: UIViewRepresentable {
             ])
 
 
-            guard let loadedScene = scene else { showFallback(in: scnView); return }
+            guard let loadedScene = scene else {
+                reportResult(false)
+                showFallback(in: scnView)
+                return
+            }
 
             let root = SCNNode()
             root.name = "real_model_root"
             for child in loadedScene.rootNode.childNodes { root.addChildNode(child.clone()) }
+
+            // Round 12 — count nodes that actually carry renderable geometry
+            // (a scene can have non-nil rootNode with only camera/light/empty
+            // nodes → renders blank). If there's no geometry, treat as a
+            // failure so the caller can fall back to a 2D image.
+            var geometryNodeCount = 0
+            root.enumerateHierarchy { node, _ in
+                if node.geometry != nil { geometryNodeCount += 1 }
+            }
+            debugLog("GenerationModelPreview.swift:loadModel:geometry", "Geometry node scan", [
+                "geometryNodeCount": geometryNodeCount,
+                "topChildCount": root.childNodes.count,
+            ])
+            if geometryNodeCount == 0 {
+                reportResult(false)
+                showFallback(in: scnView)
+                return
+            }
 
             let (minV, maxV) = root.boundingBox
             let maxDim = max(maxV.x - minV.x, max(maxV.y - minV.y, maxV.z - minV.z))
@@ -192,6 +238,7 @@ struct RealModel3DPreview: UIViewRepresentable {
 
             scnView.scene = newScene
             modelNode = root
+            reportResult(true)
         }
 
         private func showFallback(in scnView: SCNView) {

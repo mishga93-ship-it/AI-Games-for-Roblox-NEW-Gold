@@ -12,6 +12,11 @@ import SwiftUI
 struct CursedUGCResultView: View {
     @ObservedObject var studio: CursedUGCStudio
     let response: CursedUGCResponse
+    // Session 390 round 12 — when the 3D viewer can't place a visible mesh
+    // (download/parse fail or empty geometry), RealModel3DPreview reports
+    // failure and we swap to the Meshy thumbnail PNG (a textured render of
+    // the actual mesh) instead of a blank canvas.
+    @State private var mesh3DFailed = false
 
     var body: some View {
         ScrollView {
@@ -54,8 +59,10 @@ struct CursedUGCResultView: View {
             // failure) fall back to the 2D image so the card never goes blank.
             ZStack {
                 Color.white
-                if let meshURL = response.meshUrl.flatMap(URL.init(string:)) {
-                    RealModel3DPreview(modelURL: meshURL)
+                if let meshURL = response.meshUrl.flatMap(URL.init(string:)), !mesh3DFailed {
+                    RealModel3DPreview(modelURL: meshURL, onLoadResult: { ok in
+                        if !ok { mesh3DFailed = true }
+                    })
                         .background(Color.white)
                     // Small "3D — drag to rotate" hint pinned bottom-left so
                     // users discover the interactivity without instructions.
@@ -77,7 +84,9 @@ struct CursedUGCResultView: View {
                         }
                         .padding(8)
                     }
-                } else if let url = response.mainImageUrl.flatMap(URL.init(string:)) {
+                } else if let url = (response.meshThumbnailUrl ?? response.mainImageUrl).flatMap(URL.init(string:)) {
+                    // 3D failed (or no mesh) → show the Meshy thumbnail render
+                    // (textured, correct colors) when available, else flux 2D.
                     AsyncImage(url: url) { phase in
                         switch phase {
                         case .success(let img): img.resizable().scaledToFit()
