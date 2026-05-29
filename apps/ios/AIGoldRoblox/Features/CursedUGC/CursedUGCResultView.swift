@@ -12,11 +12,6 @@ import SwiftUI
 struct CursedUGCResultView: View {
     @ObservedObject var studio: CursedUGCStudio
     let response: CursedUGCResponse
-    // Session 390 round 12 — when the 3D viewer can't place a visible mesh
-    // (download/parse fail or empty geometry), RealModel3DPreview reports
-    // failure and we swap to the Meshy thumbnail PNG (a textured render of
-    // the actual mesh) instead of a blank canvas.
-    @State private var mesh3DFailed = false
 
     var body: some View {
         ScrollView {
@@ -54,15 +49,19 @@ struct CursedUGCResultView: View {
             .padding(.horizontal, 12)
             .padding(.top, 12)
 
-            // Main visual — Session 390: prefer Meshy v6 3D mesh (rotatable
-            // SCNView) over the flux 2D PNG. If meshUrl is nil (timeout /
-            // failure) fall back to the 2D image so the card never goes blank.
+            // Main visual — Session 390 round 14: render the Meshy GLB via
+            // WebGLBViewer (WKWebView + Google <model-viewer>) — the SAME
+            // component NPC chats use, which is why NPC 3D works while the
+            // MDLAsset/RealModel3DPreview path was always blank (iOS
+            // ModelIO can't import GLB: canImportGLB=false on device, proven
+            // by round-12 console logs assetCount=0). model-viewer renders
+            // GLB through WebGL with full textures + drag-rotate + pinch-zoom,
+            // bypassing Apple's broken GLB importer entirely. Falls back to
+            // the Meshy thumbnail / flux 2D only when there's no mesh URL.
             ZStack {
                 Color.white
-                if let meshURL = response.meshUrl.flatMap(URL.init(string:)), !mesh3DFailed {
-                    RealModel3DPreview(modelURL: meshURL, onLoadResult: { ok in
-                        if !ok { mesh3DFailed = true }
-                    })
+                if let meshURL = response.meshUrl.flatMap(URL.init(string:)) {
+                    WebGLBViewer(modelURL: meshURL)
                         .background(Color.white)
                     // Small "3D — drag to rotate" hint pinned bottom-left so
                     // users discover the interactivity without instructions.
@@ -72,8 +71,8 @@ struct CursedUGCResultView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: "rotate.3d")
                                     .font(.caption2.bold())
-                                Text(loc(en: "3D — drag to rotate",
-                                         ru: "3D — крути пальцем"))
+                                Text(loc(en: "3D — drag to rotate, pinch to zoom",
+                                         ru: "3D — крути и зумь пальцами"))
                                     .font(.caption2.bold())
                             }
                             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -85,8 +84,8 @@ struct CursedUGCResultView: View {
                         .padding(8)
                     }
                 } else if let url = (response.meshThumbnailUrl ?? response.mainImageUrl).flatMap(URL.init(string:)) {
-                    // 3D failed (or no mesh) → show the Meshy thumbnail render
-                    // (textured, correct colors) when available, else flux 2D.
+                    // No mesh URL (Meshy timed out) → show the Meshy thumbnail
+                    // render (textured) when available, else the flux 2D concept.
                     AsyncImage(url: url) { phase in
                         switch phase {
                         case .success(let img): img.resizable().scaledToFit()
