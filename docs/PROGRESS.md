@@ -18,6 +18,23 @@
 
 ## Выполненные задачи
 
+### ✅ [Glow-Up + Outfit] Оба генератора переведены на РЕАЛЬНЫЙ общий чат ChatView (2026-05-29, сессия 395)
+- **Задача**: пользователь хочет, чтобы экраны Avatar Glow-Up и 1-Click Outfit Generator открывали **такой же чат, как во всех чатах** (общий ChatView / Smart Interview), а не grid-пресеты + форму и не свой scripted-клон. Вариант «б» — две отдельные content-подкатегории (`glowup` + `outfit`), как `disaster_spawner`/`voice_aura`/`fitting_room`/`cursed_ugc`.
+- **Поворот**: первая попытка (scripted chat-interview внутри каждой фичи) была отклонена — пользователь прислал скриншот, уточнил «как во всех чатах». Итоговое решение — миграция на общий ChatView (см. ниже). Scripted-UI Phase-1 (`GlowupInterviewSection`/`OutfitInterviewSection`) остаётся в файлах, но больше не запускается (dead-but-compiling).
+- **Backend** (закоммичено + задеплоено):
+  - [viralChatDispatch.ts](apps/functions/src/viralChatDispatch.ts): `handleGlowup`/`handleOutfit` — keyword-экстракторы маппят prompt чата в vibe/aesthetic/gender/intensity enum'ы → существующие `generateGlowup`/`assembleOutfit` → `recordViralGeneration` (Firestore doc, payload идентичен ответу live `/api/{glowup,outfit}/generate`).
+  - [index.ts](apps/functions/src/index.ts): `outfit`/`glowup` добавлены в pipeline-title gate + `isViralChatJob` (синхронный путь, не async 3D-pipeline).
+- **iOS** (закоммичено):
+  - chat-bridge'ы inline в [GlowupStudioView.swift](apps/ios/AIGoldRoblox/Features/Glowup/GlowupStudioView.swift) (`GlowupChatBridge`) + [OutfitStudioView.swift](apps/ios/AIGoldRoblox/Features/Outfit/OutfitStudioView.swift) (`OutfitChatBridge`) — БЕЗ правок pbxproj. По `generationId` тянут doc → отдают в существующий `GlowupResultView`/`OutfitResultView` (богатый результат вместо generic completion-preview).
+  - [ViralLibraryAPIClient.swift](apps/ios/AIGoldRoblox/Features/ViralLibrary/ViralLibraryAPIClient.swift): `fetchGlowupById`/`fetchOutfitById` + Doc-типы.
+  - [ChatView.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatView.swift): routing `viralKind` glowup/outfit → bridge.
+  - [ChatPresets.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatPresets.swift): keyword-несущие стартовые чипы.
+  - [ChatStore.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatStore.swift): generation stages + preview payload + welcome message (3 хунка, файл parallel-dirty с сессией 391 → закоммичено через приватный индекс, чужие хунки сохранены).
+  - [ForgeView.swift](apps/ios/AIGoldRoblox/Features/Forge/ForgeView.swift): тайлы `fake_limited`→`glowup` / `outfit_generator`→`outfit`, форс `.content` kind; убраны early-return'ы на старые full-screen picker'ы (2 хунка, parallel-dirty с сессией 391 → приватный индекс).
+- **Проверка**: iOS `xcodebuild ... -derivedDataPath /tmp/aigold-claude-395 build` ✅ `** BUILD SUCCEEDED **` (изолированный DerivedData — Xcode открыт, §0.7); backend `npm run build --workspace apps/functions` ✅.
+- **Commit/Deploy**: commit `fc394fd` (main, только мои 11 файлов — хунки сессии 391 в ChatStore/ForgeView НЕ затронуты); `firebase deploy --only functions:api` ✅ через `safe-deploy-functions.sh`; health `/api/health` ✅. Push в origin — ждёт отдельной команды пользователя (§0.5 п.7).
+- **Что проверить в Xcode**: Forge → Avatar Glow-Up и Outfit Generator → должен открыться **обычный чат** (как у других виральных инструментов) с стартовыми чипами; отправить промпт/чип → дойти до результата → откроется богатый `GlowupResultView`/`OutfitResultView` (preview + asset pack + share).
+
 ### ✅ [Fitting Room] Манекен показывает реальную одежду (classic Shirt/Pants), а не пустое тело (2026-05-29, сессия 394)
 - **Проблема**: после round-5 (CFrame fix) шляпа/волосы/аксессуары встали ровно, но одежды (shirt/pants overlay) на манекене Fitting Room не было вовсе. Пользователь: «нет одежды… нужен прям одежда хоть какая то»; мелкий T-Shirt принт отклонён («мелкий принт нам не катит»).
 - **Root cause** (подтверждён prod-логами): ассемблер клал в shirt-слот не-classic items (T-Shirt/ShirtGraphic, layered-clothing accessory type 64-72, aura type 44, мис-слот pants). У них нет 2D-шаблона ShirtTemplate → запрос `type=shirt` → backend возвращает null → route `/api/roblox-clothing/texture` 502 → пустое тело. `isItemAllowed` фильтровал только имя/цену, НЕ assetType.
