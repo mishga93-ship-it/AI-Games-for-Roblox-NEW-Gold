@@ -290,11 +290,22 @@ struct RobloxAvatar3DViewer: View {
     @MainActor
     private static func applyTextureToBody(image: UIImage, type: String, in avatarRoot: SCNNode, avatarAabb: Avatar3DAABB) {
         // After centering, the avatar Y axis runs -h/2 .. +h/2. Anything
-        // above 0 is upper body (head + torso + arms), below 0 is legs.
-        // Use a small margin so the waist-line band lands cleanly.
+        // above 0 is upper body (torso + arms), below 0 is legs. The
+        // head sits above `headFloor` and must NOT receive the shirt
+        // texture (otherwise its UVs sample the shirt watermark/empty
+        // regions — user feedback 2026-05-28 «одежда покрыла с головы
+        // до пят», visible "RIGHT* permission" text on the head was
+        // the Roblox shirt-template watermark area).
+        //
+        // headFloor was originally h*0.38 (head bottom anatomically),
+        // but the bundled R-15 mannequin's head bbox CENTRE lands at
+        // roughly h*0.35 (the head is short relative to the whole
+        // avatar). Lowering the threshold to h*0.30 catches the head
+        // reliably while still keeping the full upper torso + arms
+        // (centres around h*0.10–0.20) within the shirt region.
         let avatarHeight = Float(avatarAabb.max.y - avatarAabb.min.y)
         let upperLowerSplit: Float = 0  // centered avatar — split at hip
-        let headFloor: Float = avatarHeight * 0.38  // head bottom — shirt should NOT cover the head
+        let headFloor: Float = avatarHeight * 0.30
 
         for child in avatarRoot.childNodes where child.name?.hasPrefix("AccessoryAttachment-") != true {
             guard let geom = child.geometry else { continue }
