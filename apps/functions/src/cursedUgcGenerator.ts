@@ -221,10 +221,30 @@ async function meshyOnceFor(args: {
 }): Promise<{ meshUrl?: string; thumbnailUrl?: string } | undefined> {
   try {
     const meshyPromise = runMeshy(args.prompt, {
-      // Treat cursed UGC items as 'character' content so Meshy's negative
-      // prompt strips background scene / environment / floating parts — we
-      // want a clean iso-style object on white, matching the flux output.
-      contentCategory: 'character',
+      // Session 390 round 5 — switched from 'character' → 'item_tool'.
+      //
+      // 'character' triggers runMeshy's `isCharacterContent` branch, which
+      // makes build3DPrompt rewrite the prompt to demand a humanoid
+      // standing in T-pose ("Stylized low-poly 3D game character standing
+      // upright in a neutral resting pose: arms hanging straight down..."),
+      // discarding the original cursed-item description entirely. Prod
+      // logs from 2026-05-28T13:37:09 and 2026-05-29T03:35:51 showed the
+      // ORIGINAL prompt was «A massively oversized Roblox UGC backpack
+      // that is comically larger than the avatar wearing it» and the
+      // CLEAN prompt sent to Meshy was «Cursed UGC Item. Stylized low-
+      // poly 3D game character. Standing upright in a neutral resting
+      // pose...» — Meshy then generated a full sigma chad with a
+      // backpack baked onto his torso instead of a standalone backpack.
+      // The resulting GLB was multi-MB of character mesh, which the iOS
+      // viewer struggled to load → empty 3D preview.
+      //
+      // 'item_tool' keeps the original item-centric prompt intact AND
+      // bolts on a strong negative prompt ('human body, person,
+      // character, hands holding, body, face, mannequin, background
+      // scene...') so Meshy renders the cursed accessory alone on a
+      // clean background, matching the flux 2D concepts the user sees
+      // alongside it.
+      contentCategory: 'item_tool',
       contentSubcategory: args.contentSubcategory ?? 'cursed_ugc',
       title: 'Cursed UGC Item',
     });
