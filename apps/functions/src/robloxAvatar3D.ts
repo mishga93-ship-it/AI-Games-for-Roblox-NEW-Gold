@@ -91,6 +91,92 @@ export function hashToCdnUrl(hash: string): string {
 }
 
 /**
+ * Shared: given a Completed render manifest URL (the `imageUrl` returned by
+ * users/avatar-3d OR POST /v1/avatar/render), fetch the manifest JSON,
+ * resolve each CDN hash, and mirror obj/mtl/textures into our GCS cache.
+ * Returns stable HTTPS URLs + camera/aabb, or null on any failure.
+ */
+async function resolveManifest3D(
+  imageUrl: string,
+  logCtx: Record<string, unknown>,
+): Promise<{
+  objUrl: string;
+  mtlUrl: string;
+  textureUrls: string[];
+  camera: RobloxAvatar3DUrls['camera'];
+  aabb: RobloxAvatar3DUrls['aabb'];
+} | null> {
+  let manifest: { obj: string; mtl: string; textures: string[]; camera: unknown; aabb: unknown };
+  try {
+    const resp = await fetch(imageUrl, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!resp.ok) {
+      logger.warn('[robloxAvatar3D] manifest non-200', { ...logCtx, status: resp.status });
+      return null;
+    }
+    manifest = await resp.json();
+  } catch (err) {
+    logger.warn('[robloxAvatar3D] manifest fetch failed', {
+      ...logCtx, err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+
+  if (!manifest?.obj || !manifest?.mtl || !Array.isArray(manifest?.textures)) {
+    logger.warn('[robloxAvatar3D] manifest missing required fields', logCtx);
+    return null;
+  }
+
+  // Resolve CDN URLs (rbxcdn) — these are FRAGILE (S3 access rotates), so we
+  // immediately mirror each to our GCS cache. Object keys use the ORIGINAL
+  // Roblox hash so the signed URL's last path component matches what the MTL
+  // references (`map_Kd <hash>`) — iOS extracts the path component as a
+  // filename and SceneKit's material lookup just works.
+  let objSrc: string, mtlSrc: string, texSrcs: string[];
+  try {
+    objSrc = hashToCdnUrl(manifest.obj);
+    mtlSrc = hashToCdnUrl(manifest.mtl);
+    texSrcs = manifest.textures.map((h) => hashToCdnUrl(h));
+  } catch (err) {
+    logger.warn('[robloxAvatar3D] hash→URL conversion failed', {
+      ...logCtx, err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+
+  let objUrl: string, mtlUrl: string, textureUrls: string[];
+  try {
+    [objUrl, mtlUrl] = await Promise.all([
+      cacheRobloxCdnFile({ sourceUrl: objSrc, contentType: 'text/plain', objectKey: manifest.obj }),
+      cacheRobloxCdnFile({ sourceUrl: mtlSrc, contentType: 'text/plain', objectKey: manifest.mtl }),
+    ]);
+    textureUrls = await Promise.all(
+      manifest.textures.map((h, i) => cacheRobloxCdnFile({
+        sourceUrl: texSrcs[i],
+        contentType: 'image/png',
+        objectKey: h,
+      }))
+    );
+  } catch (err) {
+    logger.warn('[robloxAvatar3D] CDN cache mirror failed', {
+      ...logCtx, err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+
+  return {
+    objUrl,
+    mtlUrl,
+    textureUrls,
+    camera: parseCamera(manifest.camera),
+    aabb: parseAabb(manifest.aabb),
+  };
+}
+
+/**
  * Fetch a user's rendered 3D avatar manifest and resolve all CDN URLs.
  *
  * The first call to /avatar-3d for a fresh user can return state='Pending'
@@ -167,84 +253,10 @@ export async function fetchRobloxAvatar3D(args: {
     return null;
   }
 
-  // Step 2: fetch the JSON manifest at imageUrl (hashes + camera).
-  let manifest: { obj: string; mtl: string; textures: string[]; camera: unknown; aabb: unknown };
-  try {
-    const resp = await fetch(imageUrl, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!resp.ok) {
-      logger.warn('[robloxAvatar3D] manifest non-200', { userId, status: resp.status });
-      return null;
-    }
-    manifest = await resp.json();
-  } catch (err) {
-    logger.warn('[robloxAvatar3D] manifest fetch failed', {
-      userId, err: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-
-  if (!manifest?.obj || !manifest?.mtl || !Array.isArray(manifest?.textures)) {
-    logger.warn('[robloxAvatar3D] manifest missing required fields', { userId });
-    return null;
-  }
-
-  // Step 3: resolve CDN URLs (rbxcdn) — these are FRAGILE (S3 access
-  // rotates), so step 4 mirrors each to our GCS cache.
-  let objSrc: string, mtlSrc: string, texSrcs: string[];
-  try {
-    objSrc = hashToCdnUrl(manifest.obj);
-    mtlSrc = hashToCdnUrl(manifest.mtl);
-    texSrcs = manifest.textures.map((h) => hashToCdnUrl(h));
-  } catch (err) {
-    logger.warn('[robloxAvatar3D] hash→URL conversion failed', {
-      userId, err: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-
-  // Step 4: mirror each file into our GCS bucket so iOS never touches
-  // rbxcdn directly. Object keys use the ORIGINAL Roblox hash so the
-  // signed URL's last path component matches what MTL references
-  // (`map_Kd <hash>`) — iOS extracts the path component as a filename
-  // and SceneKit's material lookup just works. Cached forever; only
-  // the signed URL has a 7-day TTL.
-  let objUrl: string, mtlUrl: string, textureUrls: string[];
-  try {
-    [objUrl, mtlUrl] = await Promise.all([
-      cacheRobloxCdnFile({ sourceUrl: objSrc, contentType: 'text/plain', objectKey: manifest.obj }),
-      cacheRobloxCdnFile({ sourceUrl: mtlSrc, contentType: 'text/plain', objectKey: manifest.mtl }),
-    ]);
-    textureUrls = await Promise.all(
-      manifest.textures.map((h, i) => cacheRobloxCdnFile({
-        sourceUrl: texSrcs[i],
-        contentType: 'image/png',
-        objectKey: h,
-      }))
-    );
-  } catch (err) {
-    logger.warn('[robloxAvatar3D] CDN cache mirror failed', {
-      userId, err: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-
-  // Step 5: shape camera/aabb into typed structures (best-effort — Roblox
-  // sometimes nests these inconsistently; missing fields → safe defaults).
-  const camera = parseCamera(manifest.camera);
-  const aabb = parseAabb(manifest.aabb);
-
-  return {
-    userId: String(userId),
-    objUrl,
-    mtlUrl,
-    textureUrls,
-    camera,
-    aabb,
-  };
+  // Steps 2-5: fetch manifest, resolve hashes, mirror to GCS, shape camera.
+  const resolved = await resolveManifest3D(imageUrl, { userId });
+  if (!resolved) return null;
+  return { userId: String(userId), ...resolved };
 }
 
 function parseCamera(raw: unknown): RobloxAvatar3DUrls['camera'] {
@@ -411,4 +423,196 @@ export async function fetchRobloxAsset3D(args: {
     camera: parseCamera(manifest.camera),
     aabb: parseAabb(manifest.aabb),
   };
+}
+
+// ─── Phase C: composited outfit 3D render (try-on, no ownership) ──────
+//
+// POST https://avatar.roblox.com/v1/avatar/render renders an ARBITRARY
+// asset list onto a base avatar WITHOUT requiring the authenticated bot
+// to own those assets (the same path the web "Try On" button uses). The
+// response shape matches users/avatar-3d:
+//   { state: 'Completed'|'Pending'|'Error', imageUrl }
+// where imageUrl → the same JSON manifest { obj, mtl, textures[], … }.
+//
+// This is how the Fitting Room shows REAL classic clothing (shirt+pants)
+// on the mannequin: Roblox composites the UVs server-side, we mirror the
+// resulting OBJ+textures and hand them to SceneKit — exactly like the
+// .realUser avatar path. No bot-avatar mutation, no ownership requirement,
+// no staleness, no concurrency lock.
+
+const AVATAR_RENDER_ENDPOINT = 'https://avatar.roblox.com/v1/avatar/render';
+
+export type RobloxOutfit3DUrls = Omit<RobloxAvatar3DUrls, 'userId'>;
+
+/**
+ * Cosmetic base avatar for the render — neutral grey body (BrickColor 194
+ * = "Medium stone grey"), R15, default scales. The clothing/accessories
+ * come entirely from the `assets` list; this is just the body underneath.
+ */
+const BASE_AVATAR_DEFINITION = {
+  bodyColors: {
+    headColorId: 194,
+    torsoColorId: 194,
+    rightArmColorId: 194,
+    leftArmColorId: 194,
+    rightLegColorId: 194,
+    leftLegColorId: 194,
+  },
+  scales: { height: 1, width: 1, head: 1, depth: 1, proportion: 0, bodyType: 0 },
+  playerAvatarType: { playerAvatarType: 'R15' },
+};
+
+/**
+ * Fetch a fresh X-CSRF-TOKEN for authenticated Roblox POSTs. Roblox returns
+ * the token in the `x-csrf-token` response header of any state-changing
+ * request — we hit a harmless endpoint (accountsettings email, empty body)
+ * to read it. Same pattern as uploadClassicClothing in robloxWorker.ts.
+ */
+async function getRobloxCsrfToken(cookieHeader: string): Promise<string | null> {
+  try {
+    const resp = await fetch('https://accountsettings.roblox.com/v1/email', {
+      method: 'POST',
+      headers: { 'Cookie': cookieHeader, 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: AbortSignal.timeout(8_000),
+    });
+    const token = resp.headers.get('x-csrf-token');
+    return token && token.length > 0 ? token : null;
+  } catch (err) {
+    logger.warn('[renderOutfit3D] csrf fetch failed', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/**
+ * Render a composited 3D model wearing the given asset list (shirt, pants,
+ * hats, hair, accessories…) and return stable HTTPS URLs for the OBJ + MTL
+ * + textures, same shape as fetchRobloxAvatar3D. Does NOT require the bot
+ * to own the assets (try-on render). Returns null on any failure.
+ */
+export async function renderOutfit3D(args: {
+  assetIds: Array<string | number>;
+  maxAttempts?: number;
+  pollDelayMs?: number;
+}): Promise<RobloxOutfit3DUrls | null> {
+  const maxAttempts = args.maxAttempts ?? 10;
+  const pollDelayMs = args.pollDelayMs ?? 2_000;
+
+  // Dedupe + validate asset ids → positive integers.
+  const ids = Array.from(new Set(
+    (args.assetIds ?? [])
+      .map((x) => Number(x))
+      .filter((n) => Number.isInteger(n) && n > 0)
+  ));
+  if (ids.length === 0) {
+    logger.warn('[renderOutfit3D] no valid asset ids', { raw: args.assetIds });
+    return null;
+  }
+
+  const cookie = process.env.ROBLOX_SERVICE_COOKIE ?? '';
+  if (!cookie) {
+    logger.warn('[renderOutfit3D] ROBLOX_SERVICE_COOKIE not set — render requires auth');
+    return null;
+  }
+  const cookieHeader = `.ROBLOSECURITY=${cookie}`;
+
+  let csrf = await getRobloxCsrfToken(cookieHeader);
+  if (!csrf) {
+    logger.warn('[renderOutfit3D] could not obtain csrf token');
+    return null;
+  }
+
+  const body = JSON.stringify({
+    thumbnailConfig: { thumbnailId: 1, size: '420x420', thumbnailType: '3d' },
+    avatarDefinition: {
+      ...BASE_AVATAR_DEFINITION,
+      assets: ids.map((id) => ({ id })),
+    },
+  });
+
+  // POST the render request. On a 403 with a stale token, refresh once.
+  const postRender = async (): Promise<Response | null> => {
+    for (let csrfTry = 0; csrfTry < 2; csrfTry++) {
+      const resp = await fetch(AVATAR_RENDER_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Cookie': cookieHeader,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf as string,
+        },
+        body,
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (resp.status === 403 && csrfTry === 0) {
+        const fresh = resp.headers.get('x-csrf-token') || await getRobloxCsrfToken(cookieHeader);
+        if (fresh) { csrf = fresh; continue; }
+      }
+      return resp;
+    }
+    return null;
+  };
+
+  // Poll: re-POST the (idempotent) render until state=Completed. Roblox
+  // keys the render by the avatar definition, so a repeat POST returns the
+  // progressing/cached render rather than starting a fresh one.
+  let imageUrl: string | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let resp: Response | null = null;
+    try {
+      resp = await postRender();
+    } catch (err) {
+      logger.warn('[renderOutfit3D] render POST failed', {
+        attempt, err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (resp && !resp.ok) {
+      // Log the full body so we can diagnose the exact rejection in prod
+      // (local cookie is empty — prod logs are the only way to see the shape).
+      let errBody = '';
+      try { errBody = (await resp.text()).slice(0, 600); } catch { /* ignore */ }
+      logger.warn('[renderOutfit3D] render non-200', {
+        attempt, status: resp.status, body: errBody, assetIds: ids,
+      });
+      return null;
+    }
+    if (resp && resp.ok) {
+      let json: { state?: string; imageUrl?: string; data?: Array<{ state?: string; imageUrl?: string }> };
+      try {
+        json = await resp.json();
+      } catch (err) {
+        logger.warn('[renderOutfit3D] render body parse failed', {
+          attempt, err: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }
+      const entry = ('data' in json && Array.isArray(json.data)) ? json.data[0] : json;
+      if (entry?.state === 'Completed' && typeof entry.imageUrl === 'string' && entry.imageUrl.length > 0) {
+        imageUrl = entry.imageUrl;
+        break;
+      }
+      if (entry?.state === 'Error') {
+        logger.warn('[renderOutfit3D] render state=Error', { attempt, assetIds: ids });
+        return null;
+      }
+      // Pending / unknown → wait and re-POST.
+    }
+    if (attempt < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, pollDelayMs));
+    }
+  }
+  if (!imageUrl) {
+    logger.warn('[renderOutfit3D] render never reached Completed', { maxAttempts, assetIds: ids });
+    return null;
+  }
+
+  const resolved = await resolveManifest3D(imageUrl, { source: 'render', assetCount: ids.length });
+  if (!resolved) return null;
+  logger.info('[renderOutfit3D] success', {
+    assetCount: ids.length,
+    textureCount: resolved.textureUrls.length,
+  });
+  return resolved;
 }

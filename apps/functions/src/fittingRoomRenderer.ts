@@ -21,6 +21,7 @@ import { runFal, generatePreviewTexture } from './providers.js';
 import { downloadAvatarThumbnailBuffer, resolveRobloxUsername } from './robloxUserLookup.js';
 import { getRobloxUserToken } from './robloxOAuth.js';
 import { assembleOutfit, type OutfitItem } from './outfitAssembler.js';
+import { renderOutfit3D, type RobloxOutfit3DUrls } from './robloxAvatar3D.js';
 import { CURSED_UGC_STYLES } from './data/cursedUgcCategories.js';  // unused but reserved for later
 import { AURA_STYLES } from './data/auraStyles.js';                // unused but reserved for later
 import {
@@ -87,6 +88,8 @@ interface FittingRoomDoc {
   robloxUserId?: string;
   fitOnUser: boolean;
   renders: { front?: string; three_quarter?: string; back?: string };
+  /** Roblox server-composited 3D model wearing the outfit (OBJ+MTL+textures). */
+  render3d?: RobloxOutfit3DUrls;
   items: OutfitItem[];
   totalCostRobux: number;
   savedRobux: number;
@@ -357,6 +360,18 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
     remix: input.remix,
   });
 
+  // 3b) Kick off the Roblox server-side composited 3D render (real clothing
+  // on the mannequin) as soon as the outfit's asset list is known — runs
+  // concurrently with the img2img angle loop below. Non-fatal: a failure
+  // here just means the result has no 3D model, the 2D angle renders still
+  // ship. Roblox does the UV compositing; no asset ownership required.
+  const render3dPromise: Promise<RobloxOutfit3DUrls | null> = outfitResultPromise
+    .then((o) => renderOutfit3D({ assetIds: o.items.map((i) => i.assetId) }))
+    .catch((err) => {
+      logger.warn('[fittingRoom] render3d non-fatal', { err: err instanceof Error ? err.message : String(err) });
+      return null;
+    });
+
   // 4) For each angle, run img2img sequentially-but-progressively.
   // Two-stage: front from raw avatar (low strength = face preserved);
   // 3/4 and back use the FRONT render as input (higher strength rotates
@@ -393,8 +408,11 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
     }
   }
 
-  // 5) Wait for outfit items to finish + merge into final doc.
+  // 5) Wait for outfit items + the 3D render to finish, merge into final doc.
+  // render3dPromise resolves in parallel; by now it's almost always done
+  // (the angle loop above takes longer than the ~20s render poll).
   const outfit = await outfitResultPromise;
+  const render3d = await render3dPromise;
   await patchDoc(generationId, {
     items: outfit.items,
     totalCostRobux: outfit.totalCostRobux,
@@ -405,5 +423,6 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
     done: true,
     fitOnUser,
     robloxUserId,
+    ...(render3d ? { render3d } : {}),
   });
 }
