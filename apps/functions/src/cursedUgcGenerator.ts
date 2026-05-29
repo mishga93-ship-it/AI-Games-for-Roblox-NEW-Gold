@@ -306,6 +306,21 @@ async function meshyOnceFor(args: {
       ? (raw.thumbnailUrl as string)
       : undefined;
 
+    // Session 390 round 8 — log Meshy v6 model URL availability so we can
+    // diagnose iOS rendering. Native iOS SceneKit + ModelIO has reliable
+    // USDZ support; GLB support is documented as iOS 12+ but in practice
+    // sometimes fails on specific GLB variants (different generators
+    // produce different binary layouts). Log usdzUrl/objUrl presence so we
+    // can decide whether to switch to those formats on the iOS side.
+    logger.info('[cursedUgcGenerator] Meshy v6 URLs available', {
+      hasGlb: !!meshUrlRaw,
+      hasThumbnail: !!thumbnailUrlRaw,
+      hasUsdz: !!(raw?.usdzUrl),
+      hasFbx: !!(raw?.fbxUrl),
+      hasObj: !!(raw?.objUrl),
+      glbSizeKb: meshUrlRaw ? 'pending' : 'none',
+    });
+
     // Session 390 round 6 — re-host the Meshy GLB + thumbnail through our
     // Firebase Storage bucket so iOS can download them cleanly. iOS direct
     // downloads from fal.media silently fail (CORS / content-disposition
@@ -370,14 +385,26 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
   ];
 
   const generationStatus: 'ready' | 'partial' | 'failed' =
-    mainImageUrl ? (cuterUrl && cursedUrl ? 'ready' : 'partial') : 'failed';
+    (mainImageUrl || mesh?.thumbnailUrl) ? (cuterUrl && cursedUrl ? 'ready' : 'partial') : 'failed';
+
+  // Session 390 round 8 — surface the Meshy v6 mesh PNG render as the
+  // primary visual (mainImageUrl) when available. Previously this was
+  // always the flux 2D concept (which shows the cursed item attached to
+  // a sigma chad in the background, since flux is a scene generator,
+  // not an item generator). Switching to the Meshy thumbnail means iOS
+  // shows a render of the ACTUAL 3D mesh that ships — which both better
+  // matches the user expectation («3д меш») and works around the empty
+  // RealModel3DPreview SCN viewer issue we've been chasing across
+  // rounds 4-7. The flux concept is preserved as a fallback in case
+  // Meshy timed out, plus it's still used inside variations[].
+  const primaryImageUrl = mesh?.thumbnailUrl ?? mainImageUrl;
 
   return {
     generationId,
     categoryId: input.categoryId,
     styleId: input.styleId,
     intensity: input.intensity,
-    mainImageUrl,
+    mainImageUrl: primaryImageUrl,
     meshUrl: mesh?.meshUrl,
     meshThumbnailUrl: mesh?.thumbnailUrl,
     variations,

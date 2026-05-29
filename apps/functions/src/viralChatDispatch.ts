@@ -947,7 +947,19 @@ async function handleCursedUGC(args: {
       styleId: result.styleId,
       intensity: result.intensity,
       mainImageUrl: result.mainImageUrl,
-      meshUrl: result.meshUrl,
+      // Session 390 round 8 — meshUrl is intentionally NOT included in the
+      // payload right now. iOS RealModel3DPreview (the same SCN/MDLAsset
+      // viewer that renders NPC GLBs fine) consistently shows an empty
+      // canvas for Meshy v6 cursed-UGC GLBs, even after rounds 4-7
+      // (item_tool prompt fix, Firebase Storage re-host, timeout bump).
+      // Withholding meshUrl makes iOS fall through to the mainImageUrl
+      // PNG fallback, which is now a render of the actual 3D mesh
+      // (cursedUgcGenerator round 8 surfaces meshThumbnailUrl as the
+      // primary). User sees a real 3D-render image instead of a blank
+      // viewer or a flux 2D concept. Re-enable once we figure out the
+      // SCN/Meshy compatibility issue (likely needs an iOS-side fallback
+      // timer + AsyncImage fallback, requires Xcode rebuild).
+      // meshUrl: result.meshUrl,
       meshThumbnailUrl: result.meshThumbnailUrl,
       variations: result.variations,
       titleEN: result.titleEN,
