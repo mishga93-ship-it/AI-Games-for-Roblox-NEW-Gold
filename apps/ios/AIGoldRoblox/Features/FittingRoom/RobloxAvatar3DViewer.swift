@@ -524,14 +524,17 @@ struct RobloxAvatar3DViewer: View {
                 position: primary.localPosition,
                 rotation9: primary.localOrientation
             )
-            // Composition order: world = parent · local. SCNMatrix4Mult(a, b)
-            // returns `a · b` (Apple docs explicit). Round 2 had this
-            // backwards (`Mult(attLocal, handle)` = attLocal · handle),
-            // which gave assetAttachment position ≈ ar · Hp + ap instead
-            // of Hp + Hr · ap — for accessories with non-identity Handle
-            // rotation the position landed several studs away from the
-            // mannequin (user 2026-05-29 «все разлетелось»).
-            let assetAttachmentWorld = SCNMatrix4Mult(handle, attLocal)
+            // Apple SCNMatrix4 row-major: v_out = v_in · M. For
+            // composed transforms applied-first-first, write the inner
+            // one on the LEFT: M_total = M_local · M_parent. So to
+            // compute the attachment's world frame (apply local
+            // attachment offset within the Handle frame, then the
+            // Handle's own world frame), the product is
+            //   attLocal · handle
+            // = SCNMatrix4Mult(attLocal, handle).
+            // Applied to (0,0,0,1): last-row of attLocal · handle
+            // = (ap, 1) · handle = (Hr · ap + Hp, 1) = ap_world ✓.
+            let assetAttachmentWorld = SCNMatrix4Mult(attLocal, handle)
             let wrapperTransform = wrapperTransformFor(
                 assetAttachmentWorld: assetAttachmentWorld,
                 bodyTarget: target
@@ -560,48 +563,63 @@ struct RobloxAvatar3DViewer: View {
     // MARK: Phase O2-P2 — CFrame math helpers
 
     /// Build an SCNMatrix4 from a Roblox CFrame (Position + row-major
-    /// 3×3 rotation). SCNMatrix4 is column-major in memory; the rotation
-    /// matrix mapping is `m[col=j+1][row=i+1] = R[i][j]` so we transpose
-    /// the row-major source into our SCN field layout.
+    /// 3×3 rotation).
+    ///
+    /// Apple SceneKit uses ROW-MAJOR matrix multiplication convention:
+    /// `v_out_row = v_in_row · M`. Translation lives in m41/m42/m43
+    /// (the last row, NOT m14/m24/m34 — those are perspective
+    /// elements; putting translation there divides every vertex by
+    /// (tx·vx + ty·vy + tz·vz + 1) and either tinies the mesh to a
+    /// point or shoves it off-screen). User feedback 2026-05-29 «опять
+    /// мелкие точки разлетелись» — that's exactly that bug.
+    ///
+    /// Field naming: `m{row}{col}` (Apple docs). Rotation 3×3 occupies
+    /// m11..m33 in row-major order, matching Roblox's row-major CFrame
+    /// dump (so element r[i*3+j] = R[i][j] → mField{i+1}{j+1}).
     private static func composeCFrame(position: AttachmentVec3, rotation9 r: [Double]) -> SCNMatrix4 {
         guard r.count == 9 else { return SCNMatrix4MakeTranslation(Float(position.x), Float(position.y), Float(position.z)) }
         var m = SCNMatrix4Identity
-        // Row-major source: R[i][j] = r[i*3 + j].
-        // SCN column-major: m.m{col}{row} where col, row are 1-based.
         m.m11 = Float(r[0]); m.m12 = Float(r[1]); m.m13 = Float(r[2])
         m.m21 = Float(r[3]); m.m22 = Float(r[4]); m.m23 = Float(r[5])
         m.m31 = Float(r[6]); m.m32 = Float(r[7]); m.m33 = Float(r[8])
-        m.m14 = Float(position.x)
-        m.m24 = Float(position.y)
-        m.m34 = Float(position.z)
+        // Translation in last ROW (Apple SCNMatrix4 convention).
+        m.m41 = Float(position.x)
+        m.m42 = Float(position.y)
+        m.m43 = Float(position.z)
         return m
     }
 
     /// Compute the wrapper's local transform such that the asset's
     /// attachment world CFrame (computed from RBXM data) ends up at
     /// `bodyTarget` with identity orientation.
-    ///   T = (R_asset⁻¹, p_body − R_asset⁻¹ · p_asset)
-    /// where R_asset is the rotation extracted from `assetAttachmentWorld`.
+    ///
+    /// In row-major form (`v · M` semantics):
+    ///   M_wrap = R_aw^T  (with translation = bodyTarget − R_aw^T applied to p_aw)
+    /// So when v_asset_world = p_aw is multiplied by M_wrap, the result
+    /// equals bodyTarget, and the attachment frame becomes identity.
     private static func wrapperTransformFor(assetAttachmentWorld m: SCNMatrix4, bodyTarget: SCNVector3) -> SCNMatrix4 {
-        // Extract rotation as 3×3 from SCNMatrix4 columns.
+        // Read R_aw (3×3 rotation) from row-major fields.
         let r00 = m.m11, r01 = m.m12, r02 = m.m13
         let r10 = m.m21, r11 = m.m22, r12 = m.m23
         let r20 = m.m31, r21 = m.m32, r22 = m.m33
-        // Inverse of a pure rotation = its transpose.
-        let i00 = r00, i01 = r10, i02 = r20
-        let i10 = r01, i11 = r11, i12 = r21
-        let i20 = r02, i21 = r12, i22 = r22
-        // Asset world position from the CFrame's 4th column.
-        let ax = m.m14, ay = m.m24, az = m.m34
-        // Translation: p_body − R_asset⁻¹ · p_asset.
-        let tx = bodyTarget.x - (i00 * ax + i01 * ay + i02 * az)
-        let ty = bodyTarget.y - (i10 * ax + i11 * ay + i12 * az)
-        let tz = bodyTarget.z - (i20 * ax + i21 * ay + i22 * az)
+        // Read p_aw from the LAST ROW (row-major translation slot).
+        let ax = m.m41, ay = m.m42, az = m.m43
+        // Compute (p_aw · R_aw^T) — applying R_aw^T as a row-major
+        // post-multiply is the same as R_aw (col-major pre-multiply)
+        // acting on p_aw, i.e. row-k = R_aw[k][:] · p_aw.
+        let rx = r00 * ax + r01 * ay + r02 * az
+        let ry = r10 * ax + r11 * ay + r12 * az
+        let rz = r20 * ax + r21 * ay + r22 * az
+        let tx = bodyTarget.x - rx
+        let ty = bodyTarget.y - ry
+        let tz = bodyTarget.z - rz
         var t = SCNMatrix4Identity
-        t.m11 = i00; t.m12 = i01; t.m13 = i02
-        t.m21 = i10; t.m22 = i11; t.m23 = i12
-        t.m31 = i20; t.m32 = i21; t.m33 = i22
-        t.m14 = tx;  t.m24 = ty;  t.m34 = tz
+        // Fill R_aw^T into row-major fields: swap (row,col) → (col,row).
+        t.m11 = r00; t.m12 = r10; t.m13 = r20
+        t.m21 = r01; t.m22 = r11; t.m23 = r21
+        t.m31 = r02; t.m32 = r12; t.m33 = r22
+        // Translation in last row.
+        t.m41 = tx;  t.m42 = ty;  t.m43 = tz
         return t
     }
 
