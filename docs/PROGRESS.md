@@ -18,6 +18,14 @@
 
 ## Выполненные задачи
 
+### 🔧 [Vehicles Physics Fix] Машину больше не трясёт и не выкидывает под карту при посадке (2026-05-29, сессия 397)
+- **Проблема**: пользователь прислал 2 свежих template-машины (PoliceCar + Sedan) — при посадке за руль машину трясёт, иногда выбрасывает под карту. «У всех» машин.
+- **Root cause**: template-машины (community A-Chassis) ездят через собственный constraint-привод (Cylindrical/Spring/Hinge + свои скрипты). Модульный tuning безусловно ставил `VehicleSeat.MaxSpeed`/`Torque>0`, что заново включало встроенный мотор VehicleSeat → две системы управления дрались → осцилляция (тряска) и выброс сквозь baseplate (на `MaxSpeed=170` особенно). Тот же класс бага, что чинили в Round 7 для подвески, но через свойство сиденья (комментарий «MaxSpeed override is safe» был ошибочным).
+- **Решение**: `vehicleModular.library.ts` + `vehicleModular.builder.ts` — для car-family пресетов добавлен `skipSeatMotorOverride`, который убирает `buildMaxSpeedTuningLua` из tuning-блока. Косметика (boost-пламя, drift-дым, suspension) сохранена; процедурный fallback-chassis не затронут.
+- **Проверка**: `npm run build --workspace apps/functions` ✅; unit-проверка скомпилированного `buildTuningLuaBlock` (skip=true → нет MaxSpeed/Torque, FX на месте; skip=false → override присутствует) ✅. Детали и диагностика — `cursor/changelog-397.md`.
+- **Deploy**: ✅ закоммичено `de3d94c` (только 2 файла фикса) + задеплоено через `scripts/safe-deploy-functions.sh` (api(us-central1) updated, `/api/health` ok). Фикс в проде.
+- **Известные ограничения**: старые скачанные .rbxm НЕ меняются — нужен **fresh Vehicles generation** (police interceptor + sedan), затем проверить в Studio: посадка за руль без тряски, машина не уходит под карту.
+
 ### ✅ [Glow-Up + Outfit] Оба генератора переведены на РЕАЛЬНЫЙ общий чат ChatView (2026-05-29, сессия 395)
 - **Задача**: пользователь хочет, чтобы экраны Avatar Glow-Up и 1-Click Outfit Generator открывали **такой же чат, как во всех чатах** (общий ChatView / Smart Interview), а не grid-пресеты + форму и не свой scripted-клон. Вариант «б» — две отдельные content-подкатегории (`glowup` + `outfit`), как `disaster_spawner`/`voice_aura`/`fitting_room`/`cursed_ugc`.
 - **Поворот**: первая попытка (scripted chat-interview внутри каждой фичи) была отклонена — пользователь прислал скриншот, уточнил «как во всех чатах». Итоговое решение — миграция на общий ChatView (см. ниже). Scripted-UI Phase-1 (`GlowupInterviewSection`/`OutfitInterviewSection`) остаётся в файлах, но больше не запускается (dead-but-compiling).
