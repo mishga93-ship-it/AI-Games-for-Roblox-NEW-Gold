@@ -49,6 +49,10 @@ struct FittingRoomDocResponse: Codable {
     let fitOnUser: Bool
     let renders: FittingRoomRenders
     let render3d: FittingRoomRender3D?
+    /// O2-P (session 394) — same fit composited onto the USER's own avatar
+    /// body (Your-Avatar mode). Absent on docs created before the deploy,
+    /// or when no Roblox userId was resolved / the render failed.
+    let render3dUser: FittingRoomRender3D?
     let items: [OutfitItem]
     let totalCostRobux: Int
     let savedRobux: Int

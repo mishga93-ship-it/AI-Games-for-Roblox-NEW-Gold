@@ -89,11 +89,34 @@ struct FittingRoomResultView: View {
         )
     }
 
-    /// True when we should show the server-composited outfit as the hero:
-    /// the user is in "dress-up" (non-avatar) mode AND the render exists.
-    /// Toggling to "Your Avatar" still shows their real Roblox avatar.
+    /// Phase O2-P (session 394) — same fit composited onto the USER's own
+    /// avatar body (their skin/scales/face), used in "Your Avatar" mode.
+    /// Distinct synthetic `userId` → separate temp dir from the grey render.
+    private var composited3DUserURLs: Avatar3DURLs? {
+        guard let r = response.render3dUser else { return nil }
+        return Avatar3DURLs(
+            userId: "outfit-user-\(response.generationId)",
+            objUrl: r.objUrl,
+            mtlUrl: r.mtlUrl,
+            textureUrls: r.textureUrls,
+            camera: r.camera,
+            aabb: r.aabb
+        )
+    }
+
+    /// The composited model to show for the CURRENT toggle: grey-body fit
+    /// in Mannequin mode, the user's-body fit in "Your Avatar" mode. Either
+    /// may be nil (older doc / render failed) → caller falls back.
+    private var activeComposited: Avatar3DURLs? {
+        useMannequin ? composited3DURLs : composited3DUserURLs
+    }
+
+    /// True when a server-composited model exists for the current toggle.
+    /// Both modes now prefer the baked render (no client-side attachment);
+    /// "Your Avatar" falls back to the real avatar + attachments only when
+    /// the personalized render is absent.
     private var showComposited: Bool {
-        useMannequin && composited3DURLs != nil
+        activeComposited != nil
     }
 
     /// Phase O2-P4 — map OutfitItems → clothing texture overlays for
@@ -313,14 +336,17 @@ struct FittingRoomResultView: View {
                 // current outfit). Items attach to whichever base is
                 // active — accessories aren't re-fetched on toggle.
                 Group {
-                    if showComposited, let composited = composited3DURLs {
+                    if let composited = activeComposited {
                         // Phase O2-P — server-composited full outfit: real
                         // shirt + pants + hats + hair, all baked in by
                         // Roblox /v1/avatar/render. No attachments / texture
                         // overlays needed (would double-stack the look).
+                        // Key is mode-specific so toggling Mannequin↔Your
+                        // Avatar reloads the right baked model (grey body vs
+                        // the user's own body) instead of reusing the cache.
                         RobloxAvatar3DViewer(
                             compositedOutfit: composited,
-                            key: response.generationId
+                            key: "\(response.generationId)-\(useMannequin ? "m" : "u")"
                         )
                     } else if useMannequin {
                         RobloxAvatar3DViewer(
