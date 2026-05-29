@@ -247,13 +247,16 @@ export interface CursedUGCResult extends CursedUGCMetadata {
 // Session 390 — Meshy v6 text-to-3D wrapper for cursed UGC. Returns undefined
 // on any failure / timeout so the main flow keeps going on 2D images alone.
 //
-// Round 3 (session 390 round 3) — bumped timeout 75s → 180s after prod logs
-// showed real Meshy completions for cursed UGC items run ~90-130s wall-clock
-// (28+ polling attempts × 5s = ~140s). At 75s the timeout fired BEFORE
-// Meshy actually finished, the generator silently fell back to 2D-only, and
-// the user saw flat flux concepts despite Meshy having succeeded ~50-60s
-// later in the background (wasted spend). 180s comfortably covers the long
-// tail without blowing through Cloud Run's 300s function timeout.
+// Round 3 — bumped timeout 75s → 180s after prod logs showed Meshy
+// completing at ~131s.
+//
+// Round 7 (session 390 round 7) — bumped 180s → 250s after prod logs from
+// 2026-05-29T04:25:11 showed a 37-attempt poll completing at 04:28:12
+// (~181s wall-clock); the 180s timer fired 11s before COMPLETED, the
+// generator fell back to 2D, but the GLB was already paid for and arrived
+// 11s later — same wasted spend pattern as round 2. Cloud Run function
+// timeout is 300s, so 250s leaves ~50s headroom for the recordViralGen
+// Firestore write + push notification path.
 async function meshyOnceFor(args: {
   prompt: string;
   contentSubcategory?: string;
@@ -289,11 +292,11 @@ async function meshyOnceFor(args: {
       title: 'Cursed UGC Item',
     });
     const timeoutPromise = new Promise<undefined>((resolve) =>
-      setTimeout(() => resolve(undefined), 180_000),
+      setTimeout(() => resolve(undefined), 250_000),
     );
     const winner = await Promise.race([meshyPromise, timeoutPromise]);
     if (!winner) {
-      logger.warn('[cursedUgcGenerator] Meshy timed out at 180s — falling back to 2D-only result');
+      logger.warn('[cursedUgcGenerator] Meshy timed out at 250s — falling back to 2D-only result');
       return undefined;
     }
     const raw = winner.raw as Record<string, unknown> | undefined;
