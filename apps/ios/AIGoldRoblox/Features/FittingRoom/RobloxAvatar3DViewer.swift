@@ -302,13 +302,35 @@ struct RobloxAvatar3DViewer: View {
         // textures.
         let _ = avatarAabb // (unused here now; kept for signature compat)
         let upperLowerSplit: Float = 0
-        let bodyParts = avatarRoot.childNodes.filter {
-            $0.geometry != nil && $0.name?.hasPrefix("AccessoryAttachment-") != true
+        // Collect every mannequin mesh node RECURSIVELY. The old code only
+        // looked at avatarRoot's DIRECT children — but Xcode's OBJ→SCN
+        // conversion can wrap all Rig# body groups under a single
+        // intermediate container node, in which case the direct-child
+        // filter found ZERO geometry and silently applied no clothing
+        // (user report «нет одежды», 2026-05-29). Recursing finds the body
+        // parts at any depth; we skip accessory subtrees (named
+        // "AccessoryAttachment-…") so a shirt texture never lands on a
+        // hat / hair mesh.
+        var bodyParts: [SCNNode] = []
+        func collectBodyParts(_ node: SCNNode) {
+            for child in node.childNodes {
+                if child.name?.hasPrefix("AccessoryAttachment-") == true { continue }
+                if child.geometry != nil { bodyParts.append(child) }
+                collectBodyParts(child)
+            }
         }
-        // Y centre for each body part (geometry local centre + node offset).
+        collectBodyParts(avatarRoot)
+        // Y centre for each body part, expressed in AvatarRoot's coordinate
+        // space. convertPosition accumulates the full parent chain, so this
+        // stays correct even when parts sit under a container node (local
+        // node.position.y alone would miss the container's offset).
         let partYs: [(node: SCNNode, y: Float)] = bodyParts.map { node in
             let (lmin, lmax) = node.geometry!.boundingBox
-            return (node, (lmin.y + lmax.y) / 2 + node.position.y)
+            let localCentre = SCNVector3((lmin.x + lmax.x) / 2,
+                                         (lmin.y + lmax.y) / 2,
+                                         (lmin.z + lmax.z) / 2)
+            let inRoot = avatarRoot.convertPosition(localCentre, from: node)
+            return (node, inRoot.y)
         }
         let headNode  = partYs.max(by: { $0.y < $1.y })?.node
         let chestY    = partYs.filter { $0.node !== headNode && $0.y > 0 }
