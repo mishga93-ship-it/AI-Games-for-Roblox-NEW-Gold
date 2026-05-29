@@ -94,6 +94,33 @@ function isItemAllowed(item: RobloxCatalogItem): boolean {
   return true;
 }
 
+// ─── Classic-clothing slot guard (session 394) ───────────────────
+//
+// The Fitting Room mannequin renders a garment by painting its 2D
+// template PNG onto the R-15 body parts. Only a classic Shirt
+// (assetType 11 → ShirtTemplate, wraps torso+arms) or classic Pants
+// (assetType 12 → PantsTemplate, legs) HAS such a full template.
+// Layered-clothing accessories (64-72), effects/auras (44) and
+// mis-slotted items carry NO 2D template — the texture route returns
+// 502 and the mannequin shows no clothing at all (user report «нет
+// одежды», 2026-05-29). T-Shirts (assetType 2) only have a tiny chest
+// decal, which the user explicitly rejected («мелкий принт нам не
+// катит»). So for clothing slots we keep ONLY the classic type that
+// yields a real, full garment; if a slot somehow has none, fall back
+// to the unfiltered pool rather than dropping the slot entirely.
+const CLASSIC_CLOTHING_TYPE: Partial<Record<OutfitSlot, number>> = {
+  shirt: 11,
+  jacket: 11,
+  pants: 12,
+};
+
+function filterClassicClothing(items: RobloxCatalogItem[], slot: OutfitSlot): RobloxCatalogItem[] {
+  const want = CLASSIC_CLOTHING_TYPE[slot];
+  if (want == null) return items;            // non-clothing slot — untouched
+  const classic = items.filter((it) => it.assetType === want);
+  return classic.length > 0 ? classic : items;
+}
+
 // ─── Live catalog search per slot ────────────────────────────────
 
 async function searchSlotCandidates(args: {
@@ -107,7 +134,7 @@ async function searchSlotCandidates(args: {
   // blocked from Roblox catalog). Cap 8 items per slot.
   const staticPool = STATIC_POOL[args.aesthetic.id]?.[args.slot] ?? [];
   if (staticPool.length > 0) {
-    return staticPool.filter(isItemAllowed);
+    return filterClassicClothing(staticPool.filter(isItemAllowed), args.slot);
   }
 
   // Fallback: live API (rarely succeeds from Cloud Run, but kept for
