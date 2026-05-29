@@ -455,6 +455,33 @@ struct RobloxAvatar3DViewer: View {
         }
         let assetScene = try source.scene(options: nil)
 
+        // Phase O2-P2 round 3 — sanity check: reject Bundles / full-body
+        // Packages routed through asset-3d (user feedback 2026-05-29
+        // «на перса накладывается перс все криво»). When the catalog
+        // ranker accidentally picks a Bundle ID (e.g., a full character
+        // package whose thumbnail-3d render contains the entire R-15
+        // body), the OBJ comes back ~5–6 studs tall and our placement
+        // logic stacks it on top of the mannequin in full size. There
+        // is no per-attachment fix for that — the data is wrong by
+        // assumption (we expect one accessory mesh, got a character).
+        // So: measure the loaded mesh AABB; if any extent exceeds
+        // 1.2× the mannequin height, soft-fail so this slot is dropped
+        // rather than rendered as a duplicate avatar.
+        let assetBBox = recursiveWorldBoundingBox(of: assetScene.rootNode)
+        let assetExtX = assetBBox.1.x - assetBBox.0.x
+        let assetExtY = assetBBox.1.y - assetBBox.0.y
+        let assetExtZ = assetBBox.1.z - assetBBox.0.z
+        let assetMaxExtent = max(assetExtX, max(assetExtY, assetExtZ))
+        let mannequinHeight = max(Float(avatarAabb.max.y - avatarAabb.min.y), 1)
+        let extentCap: Float = mannequinHeight * 1.2
+        print("[RobloxAvatar3D] asset \(assetId) slot=\(slot) extent=(\(assetExtX),\(assetExtY),\(assetExtZ)) cap=\(extentCap)")
+        if assetMaxExtent > extentCap {
+            throw NSError(domain: "RobloxAsset3D", code: -2, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Asset \(assetId) slot=\(slot) extent \(assetMaxExtent) exceeds \(extentCap) — looks like a full-body bundle, skipping",
+            ])
+        }
+
         // Phase O2-P2 — attachment-driven placement. For an asset that
         // exposes an Attachment instance, we know its EXACT local
         // position on the Handle Part and the Handle's world position
