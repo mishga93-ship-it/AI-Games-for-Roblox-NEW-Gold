@@ -300,23 +300,33 @@ async function meshyOnceFor(args: {
       return undefined;
     }
     const raw = winner.raw as Record<string, unknown> | undefined;
-    // Session 390 round 9 — switched primary mesh format GLB → USDZ.
-    // Meshy v6 returns BOTH glbUrl and usdzUrl. Apple's native ModelIO
-    // has rock-solid USDZ support (it's the format AR Quick Look uses);
-    // GLB is technically supported via MDLAsset but real-world Meshy v6
-    // GLBs hit edge cases where MDLAsset returns asset.count=0 and the
-    // SCN viewer renders blank (NPC pipeline avoids this because it goes
-    // through copyExternalArtifact, which produces a different binary
-    // structure than Meshy's pygltflib generator). Round 8 logging
-    // confirmed every Meshy v6 cursed-UGC response includes usdzUrl, so
-    // we can switch the iOS mesh viewer to USDZ and skip the GLB-on-SCN
-    // compatibility roulette entirely.
+    // Session 390 round 10 — switched back USDZ → GLB after the round-9
+    // USDZ render came up TEXTURELESS (mono-orange mesh, user: «почему
+    // цвета такие странные… смотри нпс там все настроено»).
+    //
+    // Root cause: iOS RealModel3DPreview has two code paths —
+    //   GLB:  MDLAsset(url) + asset.loadTextures() → SCNScene(mdlAsset:)
+    //   USDZ: SCNScene(url:)  (no loadTextures call)
+    // Meshy v6 USDZ stores its base-color map in a way SCNScene(url:)
+    // doesn't apply on a re-hosted single file, so geometry renders but
+    // every surface falls back to the material's baseColorFactor
+    // (the orange tint). The GLB, by contrast, embeds the base-color as
+    // an image/jpeg bufferView INSIDE the binary (verified:
+    // images:[{mimeType:'image/jpeg',bufferView:4}], 1 texture, material
+    // with baseColorTexture) — and the GLB path's asset.loadTextures()
+    // pulls it in. That's exactly why NPC chats (same RealModel3DPreview,
+    // GLB format) show correct textures.
+    //
+    // The earlier "blank GLB" rounds (4-5) were the raw fal.media URL +
+    // character-mesh issues, both fixed since (item_tool prompt + Firebase
+    // Storage re-host). GLB never got a fair 3D test after those fixes
+    // because round 8 hid meshUrl and round 9 jumped straight to USDZ.
     const usdzUrlRaw = typeof raw?.usdzUrl === 'string'
       ? (raw.usdzUrl as string)
       : undefined;
     const glbUrlRaw = winner.outputUrl
       ?? (typeof raw?.modelUrl === 'string' ? (raw.modelUrl as string) : undefined);
-    const meshUrlRaw = usdzUrlRaw ?? glbUrlRaw;  // prefer USDZ for iOS
+    const meshUrlRaw = glbUrlRaw ?? usdzUrlRaw;  // prefer GLB (embedded textures)
     const thumbnailUrlRaw = typeof raw?.thumbnailUrl === 'string'
       ? (raw.thumbnailUrl as string)
       : undefined;
@@ -324,7 +334,7 @@ async function meshyOnceFor(args: {
     logger.info('[cursedUgcGenerator] Meshy v6 URLs available', {
       hasGlb: !!glbUrlRaw,
       hasUsdz: !!usdzUrlRaw,
-      meshFormatChosen: usdzUrlRaw ? 'usdz' : 'glb',
+      meshFormatChosen: glbUrlRaw ? 'glb' : 'usdz',
       hasThumbnail: !!thumbnailUrlRaw,
       hasFbx: !!(raw?.fbxUrl),
       hasObj: !!(raw?.objUrl),
@@ -337,10 +347,10 @@ async function meshyOnceFor(args: {
     // copyExternalArtifact, which is why NPC chats show 3D fine. Both
     // re-hosts run in parallel and tolerate individual failures.
     //
-    // Round 9 — extension/content-type now follows whichever format we
-    // picked above (USDZ if present, else GLB). `.usdz` + `model/vnd.usdz+zip`
-    // for the iOS-native path; `.glb` + `model/gltf-binary` as fallback.
-    const meshIsUsdz = !!usdzUrlRaw;
+    // Round 10 — extension/content-type follows the chosen format. We now
+    // prefer GLB (embedded JPEG base-color texture + iOS loadTextures()
+    // path), falling back to USDZ only if GLB is somehow absent.
+    const meshIsUsdz = !glbUrlRaw && !!usdzUrlRaw;
     const meshFilename = meshIsUsdz ? 'mesh.usdz' : 'mesh.glb';
     const meshContentType = meshIsUsdz ? 'model/vnd.usdz+zip' : 'model/gltf-binary';
 
