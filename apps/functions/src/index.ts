@@ -2503,6 +2503,36 @@ ${viralStyleInjection.promptBlock}`, 8000);
 
     await db.collection('generationJobs').doc(jobId).set(job);
 
+    // Session 391 round 6 — record `latestJobId` on the chat thread the MOMENT
+    // the job is created, not only on completion (syncThreadProjectMemoryFromJob
+    // runs at the end). Viral chat generations block /api/content/generate for
+    // the full ~30s run, so iOS never learns the jobId until completion. If the
+    // user closes the chat and reopens mid-generation, neither the local
+    // session nor the thread knew the jobId → the reopened chat showed nothing
+    // (logs: `lastJobId=nil` + `no latestJobId in projectMemory`). Pre-writing
+    // it here lets iOS `hydrateLatestJobFromRemoteThread` find the in-flight
+    // job, poll it, and show live progress + the eventual result. Best-effort,
+    // merge-only — completion still overwrites with the full projectMemory.
+    if (job.threadId) {
+      const preMemoryUpdatedAt = new Date().toISOString();
+      db.collection('threads').doc(job.threadId).set({
+        latestJobId: jobId,
+        updatedAt: FieldValue.serverTimestamp(),
+        // Nested-map merge keeps any existing projectMemory fields intact.
+        // version + updatedAt are required by the iOS ProjectMemory Codable
+        // (both non-optional), so include them in the minimal seed.
+        projectMemory: {
+          version: PROJECT_MEMORY_VERSION,
+          latestJobId: jobId,
+          updatedAt: preMemoryUpdatedAt,
+        },
+      }, { merge: true }).catch((err) => {
+        logger.warn('content-generate: failed to pre-record latestJobId on thread', {
+          jobId, threadId: job.threadId, error: errorMessage(err),
+        });
+      });
+    }
+
     const asyncKinds: GenerationJob['kind'][] = ['character_3d', 'clothing_3d', 'pet_3d', 'vehicle_3d', 'animation', 'game_package', 'rbxl_build', 'rbxm_build', 'code'];
     // Session 389 — viral chat-flow generations (fitting_room / voice_aura /
     // disaster_spawner) must NOT take the async-3D pipeline dispatch path even

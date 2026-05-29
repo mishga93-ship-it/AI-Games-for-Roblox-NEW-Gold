@@ -304,7 +304,12 @@ struct ChatView: View {
                 saveToHistory()
             }
             .onChange(of: chatStore.currentThread?.id) {
-                chatStore.bindHistorySession(id: effectiveHistorySessionId)
+                chatStore.bindHistorySession(
+                    id: effectiveHistorySessionId,
+                    title: customTitle,
+                    category: welcomeContext ?? customTitle,
+                    chatMode: entryMode
+                )
                 saveToHistory()
             }
             .task {
@@ -468,7 +473,12 @@ struct ChatView: View {
     }
 
     private func handleOnAppear() {
-        chatStore.bindHistorySession(id: effectiveHistorySessionId)
+        chatStore.bindHistorySession(
+            id: effectiveHistorySessionId,
+            title: customTitle,
+            category: welcomeContext ?? customTitle,
+            chatMode: entryMode
+        )
         chatStore.loadThreads()
         if chatStore.currentThread == nil && !chatStore.threads.isEmpty {
             chatStore.selectThread(chatStore.threads.first!)
@@ -478,9 +488,27 @@ struct ChatView: View {
             if let template {
                 chatStore.preloadTemplate(template)
             } else if isResuming {
+                // Session 391 — pin currentThread to sessionId BEFORE restore
+                // work. See ChatStore.attachResumedThread doc-comment for the
+                // three race conditions this guards against (orphaned saves
+                // via new defaultThreads UUID + selectThread clobber on
+                // title-mismatch in handleThreadsLoaded).
+                chatStore.attachResumedThread(threadId: sessionId, title: customTitle)
                 let saved = ChatHistoryStore.shared.loadMessages(for: sessionId)
+                print("[ResumeChat] sessionId=\(sessionId) localSaved=\(saved.count) lastJobId=\(resumeJobId ?? "nil") contentSub=\(chatStore.contentSubcategory ?? "nil")")
                 if !saved.isEmpty {
                     chatStore.restoreMessages(saved)
+                    // Session 391 round 5 — the local file may be stale (the
+                    // user closed the chat before the background generation
+                    // finished, so the "ready" message + lastJobId never got
+                    // saved). The backend ALWAYS records latestJobId in the
+                    // thread's projectMemory when a viral job finishes, so
+                    // pull it and restore the result preview. Without this the
+                    // reopened chat stops at "Locked. I'm generating…".
+                    chatStore.hydrateLatestJobFromRemoteThread(
+                        threadId: sessionId,
+                        openWhenReady: openGenerationOnLaunch
+                    )
                 } else {
                     chatStore.resumeFromRemoteThread(threadId: sessionId, title: customTitle)
                 }
@@ -502,22 +530,46 @@ struct ChatView: View {
     /// so the initial `resumeFromRemoteThread(threadId: sessionId, ...)` fetches
     /// nothing and the old history stays invisible until the user manually picks
     /// a thread from the sidebar. This handler reacts once, finds the thread
-    /// whose title matches `customTitle` (fallback: most recent), and selects it
-    /// so `loadRemoteMessages(for: realThreadId)` fetches the actual history.
-    /// Skipped when the local message cache already restored the conversation
-    /// (to avoid the welcome-flash caused by `selectThread` resetting messages).
+    /// whose id matches `sessionId` (preferred) or `customTitle` (fallback),
+    /// and selects it so `loadRemoteMessages(for: realThreadId)` fetches the
+    /// actual history. Skipped when the local message cache already restored
+    /// the conversation (to avoid the welcome-flash caused by `selectThread`
+    /// resetting messages).
+    ///
+    /// Session 391 — two hardening changes:
+    /// 1. Prefer matching by `sessionId` over title. Title-only matching could
+    ///    pick the wrong thread when the user has several "Voice-Controlled
+    ///    Disaster Spawner — …" rows in their backend thread list. `sessionId`
+    ///    is the stable identifier that `attachResumedThread` already pinned
+    ///    currentThread to.
+    /// 2. If `attachResumedThread` already set currentThread to a thread that
+    ///    is now present in the loaded `threads` list, bail out without ever
+    ///    calling `selectThread`. `selectThread` is destructive — it wipes
+    ///    `messages`, `activePreview`, and `lastPreview` — so any accidental
+    ///    invocation during resume erases the state we just restored.
     private func handleThreadsLoaded() {
         guard isResuming,
               !didAutoSelectResumedThread,
               !chatStore.threads.isEmpty else { return }
+        didAutoSelectResumedThread = true
+
+        // If the pre-attached currentThread is in the loaded list, the resume
+        // flow already wired the right thread — nothing to do.
+        if let current = chatStore.currentThread,
+           chatStore.threads.contains(where: { $0.id == current.id }) {
+            return
+        }
+
         // Only auto-select when the view is still showing just the welcome
         // message — i.e., local cache was empty and server fetch under the
-        // wrong threadId returned nothing.
+        // wrong threadId returned nothing. Otherwise selectThread would
+        // wipe the restored messages.
         let showsOnlyWelcome = chatStore.messages.count == 1
             && chatStore.messages.first?.id == "welcome"
         guard showsOnlyWelcome else { return }
-        didAutoSelectResumedThread = true
-        let target = chatStore.threads.first(where: { $0.title == customTitle })
+
+        let target = chatStore.threads.first(where: { $0.id == sessionId })
+            ?? chatStore.threads.first(where: { $0.title == customTitle })
             ?? chatStore.threads.first
         if let t = target, chatStore.currentThread?.id != t.id {
             chatStore.selectThread(t)
@@ -873,7 +925,8 @@ struct ChatView: View {
             return (iconName, stage.title, subtitle, .accentPrimary, nil, true)
         }
 
-        if let snapshot = chatStore.backgroundGenerationSnapshot {
+        if chatStore.backgroundGenerationJobs.isEmpty,
+           let snapshot = chatStore.backgroundGenerationSnapshot {
             let tint = statusTint(for: snapshot)
             let subtitle = snapshot.title
             let actionTitle: String
@@ -892,6 +945,21 @@ struct ChatView: View {
             let title: String
             let iconName: String
             let actionTitle: String
+            // Session 391 round 3 — also show "Step N/M" subtitle for background
+            // jobs (viral chats / detached 3D). Before this, only foreground
+            // pipeline jobs showed step info; user couldn't see what stage of
+            // cursed_ugc / disaster_spawner / vehicles was running.
+            let subtitle: String
+            if !job.isTerminal && job.stages.count > 0 {
+                let total = job.stages.count
+                let completed = job.stages.filter { $0.isComplete }.count
+                let position = min(max(completed + 1, 1), total)
+                subtitle = isRu
+                    ? "Шаг \(position)/\(total) · \(job.title)"
+                    : "Step \(position)/\(total) · \(job.title)"
+            } else {
+                subtitle = job.title
+            }
             if job.needsReview {
                 tint = ChatStatusPalette.review
                 title = isRu ? "Нужен апрув" : "Needs review"
@@ -920,7 +988,7 @@ struct ChatView: View {
                 iconName = "clock.arrow.circlepath"
                 actionTitle = isRu ? "Детали" : "Details"
             }
-            return (iconName, title, job.title, tint, job.isTerminal ? actionTitle : nil, !job.isTerminal)
+            return (iconName, title, subtitle, tint, job.isTerminal ? actionTitle : nil, !job.isTerminal)
         }
 
         guard let stage = currentGenerationStage else { return nil }
@@ -1936,12 +2004,16 @@ struct ChatView: View {
     }
 
     private func saveToHistory() {
-        guard chatStore.messages.count > 1 else { return }
+        guard chatStore.messages.count > 1 else {
+            print("[SaveChat] SKIP — messages.count=\(chatStore.messages.count) sessionId=\(sessionId) currentThread=\(chatStore.currentThread?.id ?? "nil")")
+            return
+        }
         let lastPreview = chatStore.messages.last(where: { $0.role == .user })?.content
             ?? chatStore.messages.last?.content
             ?? ""
         let store = ChatHistoryStore.shared
         let historySessionId = effectiveHistorySessionId
+        print("[SaveChat] writing id=\(historySessionId) messages=\(chatStore.messages.count) lastJobId=\(chatStore.lastJobId ?? "nil") sessionId=\(sessionId) currentThread=\(chatStore.currentThread?.id ?? "nil")")
         store.saveSession(
             id: historySessionId,
             title: customTitle,

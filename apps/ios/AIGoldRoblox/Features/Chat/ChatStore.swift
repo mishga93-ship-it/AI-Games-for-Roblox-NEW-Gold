@@ -15,7 +15,20 @@ import UIKit
 final class ChatStore: ObservableObject {
     @Published var threads: [ChatThread] = []
     @Published var currentThread: ChatThread?
-    @Published var messages: [ChatMessage] = []
+    // Session 391 — `messages` auto-persists to ChatHistoryStore on every
+    // mutation so background work (job poll → handleBackgroundGenerationTerminal
+    // → appendBackgroundCompletionMessage) survives ChatView dismissal. Before
+    // this, ChatView.onDisappear / .onChange were the only save triggers; if
+    // the user closed the chat right after tapping Send, the final "ready"
+    // assistant message (appended ~30s later when the background job finishes)
+    // never reached the file. Re-opening the chat showed only the first 2-3
+    // messages — looked "empty" to the user.
+    @Published var messages: [ChatMessage] = [] {
+        didSet {
+            print("[MessagesDidSet] count=\(messages.count) historySessionId=\(historySessionId ?? "nil")")
+            persistMessagesToHistoryIfNeeded()
+        }
+    }
     @Published var searchResults: [ChatThread]?
     private var searchTask: Task<Void, Never>?
     @Published var isRecording = false
@@ -72,8 +85,15 @@ final class ChatStore: ObservableObject {
     @Published private var threadProjectMemory: AIWorkspaceAPI.ProjectMemory?
     private let launchContentSubcategory: String?
     private var historySessionId: String?
+    private var historySessionContext: HistorySessionContext?
 
     private(set) var templateStarterPrompt: String?
+
+    private struct HistorySessionContext {
+        var title: String
+        var category: String
+        var chatMode: ChatView.EntryChatMode
+    }
 
     struct SmartStubInfo {
         let message: String
@@ -771,6 +791,40 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// Session 391 — bind the chat to its persisted thread BEFORE any restore
+    /// work runs. Without this, `currentThread` stays nil during a resume:
+    /// (a) `effectiveHistorySessionId` and `saveToHistory` still work because
+    /// they fall back to the launch sessionId, but (b) the next `send()`
+    /// hits `currentThread ?? defaultThreads().first!` which mints a brand-
+    /// new UUID, so subsequent saves land under a different id and orphan
+    /// the resumed chat under the historical sessionId, and (c) the
+    /// `.onChange(of: chatStore.threads.count)` `handleThreadsLoaded` race
+    /// can pick a wrong thread by title-match and call `selectThread`,
+    /// which wipes `messages`, `activePreview`, and `lastPreview`. Pre-
+    /// attaching here makes the resume flow idempotent w.r.t. those races.
+    /// Does NOT touch `messages` (separate from `selectThread`).
+    func attachResumedThread(threadId: String, title: String) {
+        let trimmed = threadId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let existing = threads.first(where: { $0.id == trimmed }) {
+            currentThread = existing
+            return
+        }
+        let thread = ChatThread(
+            id: trimmed,
+            title: title,
+            updatedAt: Date(),
+            promptHint: title,
+            type: ThreadType.from(projectKind),
+            projectKindRaw: promptProjectKind,
+            contentSubcategory: contentSubcategory,
+            latestJobId: lastJobId,
+            projectMemory: threadProjectMemory
+        )
+        threads.insert(thread, at: 0)
+        currentThread = thread
+    }
+
     /// Resume a cloud-restored session: set thread and fetch messages from the API.
     func resumeFromRemoteThread(threadId: String, title: String) {
         let thread = ChatThread(
@@ -867,6 +921,57 @@ final class ChatStore: ObservableObject {
     func restorePreviewFromJob(jobId: String, openWhenReady: Bool = false) {
         applyLatestJobId(jobId)
         restoreGenerationJob(jobId: jobId, openWhenReady: openWhenReady)
+    }
+
+    /// Session 391 round 5 — backend safety net for viral-chat reopen.
+    ///
+    /// Symptom: user starts a viral generation (cursed_ugc / disaster_spawner
+    /// / voice_aura / fitting_room), closes the chat before it finishes, then
+    /// reopens. The chat showed only up to "Locked. I'm generating…" with no
+    /// result, no badge, no preview.
+    ///
+    /// Why local-only persistence wasn't enough: the "ready" message + the
+    /// `lastJobId` link are appended/set by the background poll Task. If the
+    /// app suspends or the Task is torn down before it persists, the local
+    /// session never learns the job id. BUT the backend ALWAYS writes
+    /// `projectMemory.latestJobId` to the thread when the job finishes
+    /// (`syncThreadProjectMemoryFromJob` in index.ts, called from
+    /// `runGenerationJobLifecycle` for completed/partial/awaiting_review —
+    /// viral jobs included because they bypass the async-3D dispatch).
+    ///
+    /// So on every resume we ALSO pull the thread's projectMemory from the
+    /// backend (cheap — limit:1). If it carries a `latestJobId` we don't yet
+    /// know about, we restore that job's preview. This makes reopen robust
+    /// regardless of what the client managed to save locally before the user
+    /// backgrounded the app. Runs in addition to the local-file restore (the
+    /// `restoreMessages` path) which doesn't otherwise touch project memory.
+    func hydrateLatestJobFromRemoteThread(threadId: String, openWhenReady: Bool = false) {
+        let trimmed = threadId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        Task {
+            do {
+                let response = try await AIWorkspaceAPI.fetchThreadMessages(threadId: trimmed, limit: 1)
+                applyProjectMemory(response.projectMemory)
+                guard let remoteJobId = response.projectMemory?.latestJobId?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                    !remoteJobId.isEmpty else {
+                    print("[HydrateRemoteJob] thread=\(trimmed) no latestJobId in projectMemory")
+                    return
+                }
+                // Skip if we already have this job tracked (local restore
+                // already covered it) unless caller wants to force-open.
+                if backgroundGenerationJobs.contains(where: { $0.id == remoteJobId }), !openWhenReady {
+                    print("[HydrateRemoteJob] thread=\(trimmed) job \(remoteJobId) already tracked")
+                    return
+                }
+                print("[HydrateRemoteJob] thread=\(trimmed) restoring job=\(remoteJobId) openWhenReady=\(openWhenReady)")
+                restoreGenerationJob(jobId: remoteJobId, openWhenReady: openWhenReady)
+            } catch {
+                // Offline / thread not on backend — local resume already ran,
+                // nothing more to do.
+                print("[HydrateRemoteJob] thread=\(trimmed) fetch failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func replaceWelcome(context: String, isVoice: Bool) {
@@ -2044,8 +2149,68 @@ final class ChatStore: ObservableObject {
         historyGenerationStatus?.digest ?? ""
     }
 
-    func bindHistorySession(id: String) {
+    func bindHistorySession(
+        id: String,
+        title: String? = nil,
+        category: String? = nil,
+        chatMode: ChatView.EntryChatMode? = nil
+    ) {
         historySessionId = id
+        if title != nil || category != nil || chatMode != nil {
+            let existing = historySessionContext
+            historySessionContext = HistorySessionContext(
+                title: title ?? existing?.title ?? backgroundGenerationTitle(),
+                category: category ?? existing?.category ?? title ?? existing?.title ?? backgroundGenerationTitle(),
+                chatMode: chatMode ?? existing?.chatMode ?? .text
+            )
+        }
+        persistMessagesToHistoryIfNeeded()
+    }
+
+    /// Session 391 — write `messages` to ChatHistoryStore's per-session file
+    /// whenever the array changes. Called from `messages.didSet`. Independent
+    /// of ChatView's `.onDisappear` / `.onChange` save triggers — so it keeps
+    /// working when the user closes the chat while a background generation is
+    /// still polling. Without this, the final "ready" message appended by
+    /// `appendBackgroundCompletionMessage` ~30s after dismissal never made it
+    /// to disk, and reopen showed only the initial 2-3 messages.
+    private func persistMessagesToHistoryIfNeeded() {
+        guard let historySessionId,
+              !historySessionId.isEmpty,
+              messages.count > 1 else { return }
+        ChatHistoryStore.shared.saveMessages(messages, for: historySessionId)
+    }
+
+    private func ensureHistorySessionExistsForStatus() {
+        guard let historySessionId,
+              !historySessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let context = historySessionContext
+        let title = Self.nonEmptyHistoryText(context?.title)
+            ?? Self.nonEmptyHistoryText(currentThread?.title)
+            ?? backgroundGenerationTitle()
+        let category = Self.nonEmptyHistoryText(context?.category)
+            ?? Self.nonEmptyHistoryText(currentThread?.promptHint)
+            ?? title
+        let lastPreview = messages.last(where: { $0.role == .user })?.content
+            ?? messages.last?.content
+            ?? title
+        ChatHistoryStore.shared.saveSession(
+            id: historySessionId,
+            title: title,
+            category: category,
+            projectKind: projectKind,
+            chatMode: context?.chatMode ?? .text,
+            messageCount: max(messages.count, 1),
+            lastMessagePreview: lastPreview,
+            lastJobId: lastJobId,
+            contentSubcategory: contentSubcategory,
+            generationStatus: nil
+        )
+    }
+
+    private static func nonEmptyHistoryText(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private var liveGenerationHistoryStatus: ChatHistoryStore.GenerationStatus? {
@@ -2679,7 +2844,12 @@ final class ChatStore: ObservableObject {
     }
 
     private func persistHistoryGenerationStatus(_ job: BackgroundGenerationJob) {
-        guard let historySessionId else { return }
+        guard let historySessionId else {
+            print("[PersistGenStatus] SKIP — historySessionId=nil jobId=\(job.id) status=\(job.status)")
+            return
+        }
+        print("[PersistGenStatus] writing sessionId=\(historySessionId) jobId=\(job.id) status=\(job.status) stages=\(job.stages.count) contentSub=\(contentSubcategory ?? "nil")")
+        ensureHistorySessionExistsForStatus()
         ChatHistoryStore.shared.updateGenerationStatus(
             sessionId: historySessionId,
             status: historyStatus(for: job),
@@ -2696,6 +2866,7 @@ final class ChatStore: ObservableObject {
         updatedAt: Date = Date()
     ) {
         guard let historySessionId else { return }
+        ensureHistorySessionExistsForStatus()
         ChatHistoryStore.shared.updateGenerationStatus(
             sessionId: historySessionId,
             status: historyStatus(
@@ -2881,6 +3052,14 @@ final class ChatStore: ObservableObject {
                 createdAt: Date()
             )
         )
+        // Session 391 round 3 — explicit save (belt-and-braces alongside didSet)
+        // because this append runs in the background poll Task AFTER ChatView
+        // is gone. ChatView's .onChange/.onDisappear can't trigger here. If the
+        // didSet on messages doesn't fire (Swift @Published + property observer
+        // edge cases), we still need this "ready" assistant msg on disk so the
+        // reopened chat shows the completed result instead of "generating..."
+        print("[AppendCompletion] forcing save after ready msg, count=\(messages.count) historySessionId=\(historySessionId ?? "nil")")
+        persistMessagesToHistoryIfNeeded()
     }
 
     private func handleBackgroundGenerationTimeout(_ timeout: GenerationPollingTimeout, title: String) {
@@ -3440,6 +3619,9 @@ final class ChatStore: ObservableObject {
                 createdAt: Date()
             )
         )
+        // Session 391 round 3 — explicit save (see appendBackgroundCompletionMessage comment)
+        print("[GenerateFromPlan] forcing save after Locked msg, count=\(messages.count) historySessionId=\(historySessionId ?? "nil")")
+        persistMessagesToHistoryIfNeeded()
 
         Task {
             do {
@@ -3453,17 +3635,23 @@ final class ChatStore: ObservableObject {
                     threadId: thread.id,
                     metadata: generationMetadata()
                 )
+                applyLatestJobId(response.jobId)
 
                 if generationStages.count > 1 {
                     generationStages[1].status = response.status == "failed" ? "failed" : "processing"
                 }
+                let liveTitle = self.backgroundGenerationTitle()
+                persistLiveGenerationStatus(
+                    jobId: response.jobId,
+                    title: liveTitle,
+                    status: response.status,
+                    stages: generationStages
+                )
 
                 if self.shouldRunGenerationDetached {
-                    applyLatestJobId(response.jobId)
-                    let title = self.backgroundGenerationTitle()
                     self.beginBackgroundGenerationMonitor(
                         jobId: response.jobId,
-                        title: title,
+                        title: liveTitle,
                         generationKind: generationKind,
                         initialStages: generationStages
                     )
@@ -3474,12 +3662,17 @@ final class ChatStore: ObservableObject {
                         ChatMessage(
                             id: UUID().uuidString,
                             role: .assistant,
-                            content: self.detachedGenerationStartedMessage(title: title),
+                            content: self.detachedGenerationStartedMessage(title: liveTitle),
                             quickReplies: self.preferredResponseLanguageCode() == "ru" ? ["Открыть задачи", "Начать ещё"] : ["View jobs", "Start another"],
                             gddRows: nil,
                             createdAt: Date()
                         )
                     )
+                    // Session 391 round 3 — explicit save (this Task is the LAST
+                    // thing that runs while ChatView is reliably alive — user
+                    // commonly closes the chat right after seeing this msg).
+                    print("[DetachedStart] forcing save after detached-started msg, count=\(messages.count) historySessionId=\(historySessionId ?? "nil")")
+                    persistMessagesToHistoryIfNeeded()
                     return
                 }
 
@@ -4110,6 +4303,10 @@ final class ChatStore: ObservableObject {
                 localImageKey: localImageKey
             )
             messages.append(userMsg)
+            // Session 391 round 3 — explicit save (first user msg; without this
+            // a fast-close right after preset tap loses the user's prompt too)
+            print("[SendUserMsg] forcing save after user msg, count=\(messages.count) historySessionId=\(historySessionId ?? "nil")")
+            persistMessagesToHistoryIfNeeded()
         }
 
         // Session 382 — Fake Headless & Korblox AI Crafter intercept.
@@ -4378,6 +4575,9 @@ final class ChatStore: ObservableObject {
                 weaponColors: colorPayload
             )
         )
+        // Session 391 round 3 — explicit save (interview Q+A turns)
+        print("[ApplyResponse] forcing save after assistant msg, count=\(messages.count) historySessionId=\(historySessionId ?? "nil") action=\(response.action ?? "nil")")
+        persistMessagesToHistoryIfNeeded()
 
         if let title = response.threadTitle {
             updateThread(threadId: threadId, title: title, promptHint: draft.genre)
@@ -5118,9 +5318,16 @@ final class ChatStore: ObservableObject {
                     threadId: repairThreadId,
                     metadata: repairMetadata
                 )
+                applyLatestJobId(response.jobId)
                 if generationStages.count > 1 {
                     generationStages[1].status = response.status == "failed" ? "failed" : "processing"
                 }
+                persistLiveGenerationStatus(
+                    jobId: response.jobId,
+                    title: self.backgroundGenerationTitle(),
+                    status: response.status,
+                    stages: generationStages
+                )
 
                 let job = try await pollJob(jobId: response.jobId)
                 generationStages = mapStages(from: job) ?? generationStages

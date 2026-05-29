@@ -233,12 +233,16 @@ final class ChatHistoryStore: ObservableObject {
             generationStatus: status
         )
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId })
-            ?? Self.duplicateIndex(for: candidate, in: sessions) else { return }
+            ?? Self.duplicateIndex(for: candidate, in: sessions) else {
+            print("[UpdateGenStatus] SKIP — no matching session id=\(sessionId) jobId=\(lastJobId ?? "nil") sessionsCount=\(sessions.count)")
+            return
+        }
         let previousStatus = sessions[idx].generationStatus
         sessions[idx].updatedAt = Date()
         sessions[idx].generationStatus = status
         if let lastJobId { sessions[idx].lastJobId = lastJobId }
         if let contentSubcategory { sessions[idx].contentSubcategory = contentSubcategory }
+        print("[UpdateGenStatus] OK id=\(sessions[idx].id) requestedId=\(sessionId) jobId=\(sessions[idx].lastJobId ?? "nil") status=\(status?.status ?? "nil") foundByDup=\(sessions[idx].id != sessionId)")
         postForegroundGenerationAlertIfNeeded(for: sessions[idx], previousStatus: previousStatus)
         persist()
     }
@@ -277,14 +281,30 @@ final class ChatHistoryStore: ObservableObject {
 
     func saveMessages(_ messages: [ChatMessage], for sessionId: String) {
         let url = messagesFileURL(for: sessionId)
-        guard let data = try? JSONEncoder().encode(messages) else { return }
-        try? data.write(to: url, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(messages)
+            try data.write(to: url, options: .atomic)
+            print("[ChatHistoryStore] saveMessages OK id=\(sessionId) count=\(messages.count) bytes=\(data.count) path=\(url.path)")
+        } catch {
+            print("[ChatHistoryStore] saveMessages FAILED id=\(sessionId) error=\(error)")
+        }
     }
 
     func loadMessages(for sessionId: String) -> [ChatMessage] {
         let url = messagesFileURL(for: sessionId)
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        return (try? JSONDecoder().decode([ChatMessage].self, from: data)) ?? []
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        guard let data = try? Data(contentsOf: url) else {
+            print("[ChatHistoryStore] loadMessages MISS id=\(sessionId) exists=\(exists) path=\(url.path)")
+            return []
+        }
+        do {
+            let decoded = try JSONDecoder().decode([ChatMessage].self, from: data)
+            print("[ChatHistoryStore] loadMessages OK id=\(sessionId) count=\(decoded.count) bytes=\(data.count)")
+            return decoded
+        } catch {
+            print("[ChatHistoryStore] loadMessages DECODE FAIL id=\(sessionId) bytes=\(data.count) error=\(error)")
+            return []
+        }
     }
 
     private func deleteMessages(for sessionId: String) {

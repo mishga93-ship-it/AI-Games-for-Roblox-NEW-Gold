@@ -124,10 +124,17 @@ struct ForgeView: View {
     @State private var isShowingFittingRoom = false
     // Session 387 — Disaster Spawner.
     @State private var isShowingDisasterSpawner = false
-    // Session 385 round 6 — Recents/Library for fire-and-forget viral
-    // generations (Outfit, Glowup, CursedUGC, VoiceAura, DisasterSpawner,
-    // FittingRoom). Backend persists each into `viralGenerations` collection.
-    @State private var isShowingViralLibrary = false
+    // Session 385 round 6 — Recents/Library was a parallel grid for viral
+    // generations. Session 391 round 4 — entry UI removed; viral chats now
+    // appear in the standard Forge Chat History list (same as every other
+    // chat), so the duplicate Recents grid was redundant. ViralLibraryView
+    // file + ViralLibraryAPIClient stay in the project because
+    // VoiceAuraChatBridge still uses the API client for direct fetch-by-id.
+    // If we decide later to fully remove, also delete:
+    //   apps/ios/AIGoldRoblox/Features/ViralLibrary/ViralLibraryView.swift
+    //   apps/ios/AIGoldRoblox/Features/ViralLibrary/ViralLibraryAPIClient.swift
+    // (after replacing the VoiceAuraChatBridge call with a direct
+    //  APIClient.request to GET /api/viral-generations/:id).
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
@@ -224,21 +231,11 @@ struct ForgeView: View {
         .fullScreenCover(isPresented: $isShowingDisasterSpawner) {
             NavigationStack { DisasterSpawnerStudioView() }
         }
-        .fullScreenCover(isPresented: $isShowingViralLibrary) {
-            NavigationStack { ViralLibraryView() }
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    isShowingViralLibrary = true
-                } label: {
-                    Image(systemName: "sparkles.rectangle.stack")
-                        .font(.title3.weight(.semibold))
-                        .foregroundColor(.accentPrimary)
-                }
-                .accessibilityLabel(Text(isRussianInterface ? "Мои генерации" : "My Creations"))
-            }
-        }
+        // Session 391 round 4 — ViralLibrary fullScreenCover + toolbar
+        // sparkles button removed. Viral chats now appear in the same Forge
+        // Chat History list as every other chat, so the dedicated Recents
+        // grid was duplicating UI. See state-declaration comment above for
+        // full context and follow-up cleanup notes.
         .alert("Delete Chat", isPresented: Binding<Bool>(
             get: { history.sessionToDelete != nil },
             set: { if !$0 { history.sessionToDelete = nil } }

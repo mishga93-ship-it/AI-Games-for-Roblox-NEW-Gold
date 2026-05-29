@@ -18,6 +18,61 @@
 
 ## Выполненные задачи
 
+### ✅ [Viral Chat Active Resume] Active foreground generation restores top dock after leaving/re-entering chat (2026-05-29, сессия 393)
+- **Проблема**: after session 392, messages were restored, but fresh repro still failed: while generation was live the chat showed `3D mesh (Meshy v6) Step 2/3`; after exiting to Forge the new row had no active status; re-entering the same chat restored messages but not the top live status dock.
+- **Root cause**: foreground/non-detached generation saved `lastJobId` only inside the detached branch or after terminal `pollJob`. Viral `cursed_ugc` could be mid-generation with `generationStages` visible in the current `ChatStore`, but `ChatHistoryStore` had no `lastJobId/generationStatus`, so `ForgeView.resumeSession` could not pass `launchJobId` back into `ChatView`.
+- **Решение**: `ChatStore.generateFromCurrentPlan()` now calls `applyLatestJobId(response.jobId)` immediately after `AIWorkspaceAPI.startGeneration`, then persists the first live status snapshot with the current stages. The same early `jobId/status` persistence was added to quality-retry generation. Re-entering an active history row can now fetch the job and hydrate `backgroundGenerationJobs`, restoring the status dock.
+- **Проверка**: `git diff --check` ✅; `xcrun swiftc -parse` по `ChatHistoryStore/ChatStore/ChatView` ✅; iOS Debug `xcodebuild ... -derivedDataPath /private/tmp/aigold-chat-active-resume-393 ... build` ✅ `BUILD SUCCEEDED`; временный DerivedData удалён.
+- **Commit/Deploy**: НЕ закоммичено; backend не затронут, deploy не нужен.
+- **Что проверить в Xcode**: Giant & Cursed UGC Modeler → старт генерации → дождаться live dock `Step 2/3` → выйти в Forge → row должен иметь active status/step → открыть row обратно → top dock должен восстановиться как на исходном live screen, а не просто показывать старые сообщения.
+
+### ✅ [Viral Chat Live Status] Active generation rows restore messages + steps while rendering (2026-05-29, сессия 392)
+- **Проблема**: новые viral-чаты попадали в Forge history во время генерации, но при открытии active row чат мог выглядеть пустым/без typing и активных шагов; после завершения top status dock не показывал актуальный progress.
+- **Root cause**:
+  1. `ChatStore.persistHistoryGenerationStatus` зависел от того, что `ChatView.saveToHistory()` уже успел создать row. При fast-close status update мог попасть в `ChatHistoryStore.updateGenerationStatus`, который молча `return`-ил без session row.
+  2. `ChatView.generationStatusSummary` проверял `backgroundGenerationSnapshot` раньше `backgroundGenerationJobs`; snapshot сам строился из job, поэтому ветка с живым `Step N/M` была unreachable.
+- **Решение**:
+  - `ChatStore.bindHistorySession` теперь получает `title/category/chatMode`, хранит `HistorySessionContext` и при смене id сразу пере-сохраняет messages под актуальный thread id.
+  - Перед status update `ChatStore` гарантирует session row через `ensureHistorySessionExistsForStatus()`; `lastJobId/contentSubcategory` закрепляются даже если ChatView уже закрыт.
+  - `ChatView` использует generic snapshot fallback только когда `backgroundGenerationJobs` пустой; live background job теперь показывает `Шаг N/M · title`.
+- **Проверка**: `git diff --check` ✅; `xcrun swiftc -parse` по `ChatHistoryStore/ChatStore/ChatView` ✅; iOS Debug `xcodebuild ... -derivedDataPath /private/tmp/aigold-chat-status-392 ... build` ✅ `BUILD SUCCEEDED`; временный DerivedData удалён.
+- **Commit/Deploy**: НЕ закоммичено; backend не затронут, deploy не нужен.
+- **Что проверить в Xcode**: открыть любой viral-chat (disaster_spawner / voice_aura / fitting_room / cursed_ugc), запустить генерацию, сразу закрыть чат, зайти в Forge history row пока job ещё идёт. Ожидается: сообщения видны, top status dock/Forge row показывает текущий шаг; после completion row получает Ready/Review и открывает preview/bridge.
+
+### ✅ [Chat Resume] Tap on Forge history row no longer opens a blank chat / fresh interview (2026-05-28, сессия 391, ждёт Xcode build)
+- **Проблема**: User repro «Voice-Controlled Disaster Spawner — Meteor Storm»: generate → Apply ✓ → close → reopen from Forge → chat history → tap. ChatView re-opened with prior messages + generated artifacts + awaiting-review job context all GONE, showing a generic «Safe Lua spawner Step 2/3» pipeline-progress sheet instead of the disaster bridge. User confused: «поч два раза мне пришлось апрувить?», «по переходу не запоминает и заново начинается». Previous attempt `77d4327` made the preview AUTO-OPEN on resume, but the underlying chat state still raced into a fresh thread.
+- **Root cause** (3 compounding issues):
+  1. `handleOnAppear` set `messages = saved` via `restoreMessages` but left `currentThread = nil`. Subsequent `send()` hit `currentThread ?? defaultThreads().first!` ([ChatStore.swift:4126](apps/ios/AIGoldRoblox/Features/Chat/ChatStore.swift:4126)) → minted a brand-NEW UUID → all future saves landed under that new id, orphaning the original sessionId's `chat-<id>.json`.
+  2. `handleThreadsLoaded` used fragile title-match (`threads.first(where: { $0.title == customTitle })`) as the auto-select fallback. With multiple backend threads sharing the «Voice-Controlled Disaster Spawner — …» prefix, this picked the wrong one → `selectThread(wrong)`.
+  3. `selectThread` is destructive — clears `messages`, `activePreview`, `lastPreview`, then `loadRemoteMessages(for: wrongId)`. The auto-opened preview then fell back to `makeBackgroundPipelinePreview` (generic 3-stage pipeline-progress view, NOT the viral bridge), explaining the user-visible «Safe Lua spawner Step 2/3».
+- **Решение** (3 правки, all iOS Swift, no backend touch):
+  - **ChatStore.swift**: новый `func attachResumedThread(threadId:title:)` — non-destructive thread pin (sets `currentThread` without wiping `messages`/`activePreview`/`lastPreview`, idempotent on already-loaded threads array).
+  - **ChatView.swift** (`handleOnAppear`): вызов `chatStore.attachResumedThread(threadId: sessionId, title: customTitle)` FIRST в `else if isResuming` branch — до loadMessages / restoreMessages / resumeFromRemoteThread решения. Currentthread.id == sessionId с самого старта resume flow.
+  - **ChatView.swift** (`handleThreadsLoaded`): (a) early-bail если pre-attached currentThread уже в loaded threads list (нечего auto-select'ить — pin сработал), (b) preferred matching by `sessionId` over title (stable identifier vs. fragile prefix-shared title).
+- **Проверка**: `git diff --check` clean (no whitespace errors). Grep подтвердил wiring (1 definition, 1 call site, matching arg labels). iOS xcodebuild — пропущен (Xcode пользователя open, AGENTS.md §0.7 build.db lock). Ждёт user verification.
+- **Commit/Deploy**: НЕ закоммичено в этой сессии (CLAUDE.md «only commit when explicitly asked»). Backend не затронут — deploy не нужен.
+- **Что пользователь должен проверить в Xcode**:
+  1. Generate any viral chat (disaster_spawner / voice_aura / fitting_room / cursed_ugc) → approve → close.
+  2. Forge → tap that history row → expect: prior messages visible AND rich bridge result auto-opens.
+  3. Должно НЕ показаться: blank chat, fresh interview, pipeline-progress sheet «Step X/3», a second Apply prompt.
+  4. Fresh chat tile tap (sessionId=nil) → still starts at interview step 0 — fix doesn't affect new-chat flow.
+- **Известные ограничения**: фикс не восстанавливает потерянные данные ранее (если у юзера в истории есть запись с orphaned messages под предыдущим UUID-mismatch — она останется orphan'd). Новые resumed chats работают корректно с момента билда.
+
+### ✅ [Fitting Room] Чат-флоу с интервью + R-15 dress-up room результат (2026-05-28, сессия 389)
+- **Проблема**: пользователь попросил «нужно переделать чат зеро-робукс фиттинг рум: (1) сделать чат генерации с интервью как и все чаты; (2) после генерации сделать р-15 персонажа в одежде и примерять на него новую одежду как в играх по переодиванию; (3) сделать всё визуально прикольным и современным».
+- **Решение** (3 части):
+  - **iOS chat entry**: `ForgeView.swift` — убран early-return `isShowingFittingRoom = true` (tile теперь fall-through на standard ChatView с `contentSubcategory: "fitting_room"`); `ChatPresets.swift` — 12 vibe chip-промптов (sigma/baddie/y2k/goth/rich_emo/slender/cyber/softie/anime_demon + headless-korblox illusion / brainrot italian fit / drip lord). Mirror Disaster Spawner (385) + Voice-to-Aura (388) паттерна.
+  - **Backend dispatch**: `apps/functions/src/viralChatDispatch.ts` — новый `handleFittingRoom` + `extractFittingRoomParams`. Чат-prompt → aesthetic/gender/style extraction (keyword + LLM fallback) → `startFittingRoomJob()` → 75s polling → emit 3 PNG angles + items summary → mirror в Recents. Подключено через тот же `tryHandleViralChatGeneration` switch который commit `36157c2` параллельной сессией wired в `processGenerationJob`.
+  - **Dress-up room result UI**: `FittingRoomResultView.swift` — полный визуальный редизайн (~580 строк). Hero glass-frame avatar card с accent-color glow + swipe-rotate. Новый 2-col slot grid (Hair/Face/Top/Bottom/Outer/Shoes/Accessory/Aura/Neck/Shoulder/Back) — каждая плитка показывает item thumbnail (Roblox catalog `thumbnailUrl`), localized slot label, item name, price chip (FREE/N R$), tappable Swap capsule. Tap → trigger `studio.start(remix: .remix)` (full outfit refresh; per-slot lock — future iteration требует backend поддержки). Animated angle dots, pill stats row, gradient share button, modern card aesthetic.
+- **Проверка**: `npm run build --workspace apps/functions` ✅ tsc clean. iOS xcodebuild пропущен (Xcode открыт у пользователя — AGENTS.md §0.7 build.db lock).
+- **Commit/Deploy**: `1e30909` (атомарно 4 файла, включая folded session 388 voice_aura iOS-half). `bash scripts/safe-deploy-functions.sh` ✅ → Cloud Run `api(us-central1)` update OK → `/api/health` ✅. Function URL `https://api-z4yzt6dhjq-uc.a.run.app`.
+- **Что пользователь должен проверить визуально в Xcode**:
+  1. Tile «Zero-Robux Fitting Room» в Forge открывает ChatView (а не fullScreenCover)
+  2. В chat виден chip rail с 12 fitting_room промптами
+  3. Prompt → 3 angle renders + items summary в chat артефактах (через свежий deploy)
+  4. Recents/share-poster открывает новый dress-up FittingRoomResultView
+- **Известные ограничения**: per-slot lock не реализован — Swap делает full outfit refresh. Старые скачанные artifacts не меняются (UI-only redesign).
+
 ### 🟡 [Pet 3D Visual] Три симптома пет-генерации: два меша, белый цвет, статичные крылья (2026-05-22, сессия 375, не задеплоено)
 - **Проблема**: пользователь прислал скриншот Roblox с двумя белыми драконами и сообщением «он без цвета и не машет крыльями нет движения».
 - **Root causes**:
@@ -3850,6 +3905,7 @@
 ## Known Issues
 
 - iOS app требует rebuild в Xcode — все iOS файлы изменены
+- **[Vehicles mesh-mode QA blind spot]** (сессия 380): свежий `content-project-vehicle-20260522-161446.rbxm` содержит только `13` BasePart и один `MeshPart VehicleMeshBody` с `MeshContent=rbxassetid://78314244286946`, но без `TextureID/TextureContent`; из-за белого identity tint Studio показывает серо-белый blob. Причина системная: при `vehicleMeshAssetId` builder отключает rich `FamilyCar*` baseline, deterministic QA проверяет только наличие `VehicleMeshBody/DriveSeat/VehicleController`, а LLM/vision critic для mesh-mode пропущен. Нужно добавить texture-required gate, vision QA по Meshy thumbnail/preview, vehicle multi-view refs и fallback/overlay baseline для некачественного mesh-mode.
 - ~~**[Remote Push APNs credentials blocker]** (сессия 329): production FCM logs показывали `messaging/third-party-auth-error` / `successCount=0` из-за missing/invalid APNs key.~~ → **закрыто 2026-05-13** после загрузки `AuthKey_2DU7BK2B4Z.p8`: session 330 production logs для `generation_review_needed` показали `successCount=1`, `failureCount=0`. Оставшийся foreground UX закрыт in-app alert фиксом session 330; нужен fresh iOS build/TestFlight.
 - **[Smart Interview header iOS build dependency]** (сессия 300): backend routing fix уже задеплоен, но top bar title fix (`Smart NPC` dark/short principal title) требует fresh iOS build/TestFlight install. Старые локальные/TestFlight builds могут продолжать показывать белый/обрезанный navigation title.
 - **[Smart Interview iOS build dependency]** (сессии 276, 287, 313): backend prompt fix задеплоен, но iOS-side conversational welcome без preset-card menu требует свежую iOS-сборку/TestFlight. Старые локальные/TestFlight builds могут продолжать показывать старый welcome UI или category preset cards в Smart Interview.
