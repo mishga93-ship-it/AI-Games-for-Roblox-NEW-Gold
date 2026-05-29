@@ -524,7 +524,14 @@ struct RobloxAvatar3DViewer: View {
                 position: primary.localPosition,
                 rotation9: primary.localOrientation
             )
-            let assetAttachmentWorld = SCNMatrix4Mult(attLocal, handle)
+            // Composition order: world = parent · local. SCNMatrix4Mult(a, b)
+            // returns `a · b` (Apple docs explicit). Round 2 had this
+            // backwards (`Mult(attLocal, handle)` = attLocal · handle),
+            // which gave assetAttachment position ≈ ar · Hp + ap instead
+            // of Hp + Hr · ap — for accessories with non-identity Handle
+            // rotation the position landed several studs away from the
+            // mannequin (user 2026-05-29 «все разлетелось»).
+            let assetAttachmentWorld = SCNMatrix4Mult(handle, attLocal)
             let wrapperTransform = wrapperTransformFor(
                 assetAttachmentWorld: assetAttachmentWorld,
                 bodyTarget: target
