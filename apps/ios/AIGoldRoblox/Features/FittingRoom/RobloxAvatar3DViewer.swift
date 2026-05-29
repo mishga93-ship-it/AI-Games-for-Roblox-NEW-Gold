@@ -475,25 +475,37 @@ struct RobloxAvatar3DViewer: View {
         let primary = primaryAttachment(in: attachments?.attachments ?? [], slot: slot)
         if let primary,
            let target = bodyAttachmentTarget(name: primary.name, avatarHeight: avatarHeight) {
-            // Attachment world position in the OBJ vertex frame.
-            // Both the OBJ vertices AND the handleWorld/localPosition
-            // backend gives us are in the SAME Roblox-render world
-            // coordinates — no axis flip needed. (Earlier attempt to
-            // flip Z to "convert to SceneKit" put assets at Z=-22 stud
-            // away from the avatar; verified by user screenshot 2026-05-
-            // 28 «три разлетелись».)
-            let anchorX = Float(primary.handleWorld.x + primary.localPosition.x)
-            let anchorY = Float(primary.handleWorld.y + primary.localPosition.y)
-            let anchorZ = Float(primary.handleWorld.z + primary.localPosition.z)
+            // Phase O2-P2 rotation pass: position-only alignment left
+            // hats/hair/glasses TILTED because Roblox accessories often
+            // have a 90° pre-rotation on the Handle (e.g., the example
+            // hat we tested ships with Handle orientation [0 0 -1;
+            // 0 1 0; 1 0 0]). We now build the asset world CFrame as
+            //   H = HandleCFrame                    (pos + 3×3)
+            //   A = AttachmentCFrame_local          (pos + 3×3)
+            //   AssetAttachment_world = H · A
+            // and set the wrapper transform to the rigid transform that
+            // maps that CFrame onto the body's attachment (target pos,
+            // identity rotation) — i.e.,
+            //   T = (R_body · R_asset⁻¹, p_body − R_body·R_asset⁻¹·p_asset)
+            // For our bundled mannequin, body attachments are identity-
+            // rotated, so R_body = I and R_t = R_asset⁻¹ = R_asset^T.
+            let handle = composeCFrame(
+                position: primary.handleWorld,
+                rotation9: primary.handleOrientation
+            )
+            let attLocal = composeCFrame(
+                position: primary.localPosition,
+                rotation9: primary.localOrientation
+            )
+            let assetAttachmentWorld = SCNMatrix4Mult(attLocal, handle)
+            let wrapperTransform = wrapperTransformFor(
+                assetAttachmentWorld: assetAttachmentWorld,
+                bodyTarget: target
+            )
             for child in assetScene.rootNode.childNodes {
-                child.position = SCNVector3(
-                    child.position.x - anchorX,
-                    child.position.y - anchorY,
-                    child.position.z - anchorZ
-                )
                 wrapper.addChildNode(child)
             }
-            wrapper.position = target
+            wrapper.transform = wrapperTransform
         } else {
             // Fallback: bbox-based empirical placement (Phase C3 path).
             let placement = slotPlacement(slot: slot, avatarHeight: Double(avatarHeight))
@@ -509,6 +521,54 @@ struct RobloxAvatar3DViewer: View {
             wrapper.position = SCNVector3(placement.x, placement.y, placement.z)
         }
         return wrapper
+    }
+
+    // MARK: Phase O2-P2 — CFrame math helpers
+
+    /// Build an SCNMatrix4 from a Roblox CFrame (Position + row-major
+    /// 3×3 rotation). SCNMatrix4 is column-major in memory; the rotation
+    /// matrix mapping is `m[col=j+1][row=i+1] = R[i][j]` so we transpose
+    /// the row-major source into our SCN field layout.
+    private static func composeCFrame(position: AttachmentVec3, rotation9 r: [Double]) -> SCNMatrix4 {
+        guard r.count == 9 else { return SCNMatrix4MakeTranslation(Float(position.x), Float(position.y), Float(position.z)) }
+        var m = SCNMatrix4Identity
+        // Row-major source: R[i][j] = r[i*3 + j].
+        // SCN column-major: m.m{col}{row} where col, row are 1-based.
+        m.m11 = Float(r[0]); m.m12 = Float(r[1]); m.m13 = Float(r[2])
+        m.m21 = Float(r[3]); m.m22 = Float(r[4]); m.m23 = Float(r[5])
+        m.m31 = Float(r[6]); m.m32 = Float(r[7]); m.m33 = Float(r[8])
+        m.m14 = Float(position.x)
+        m.m24 = Float(position.y)
+        m.m34 = Float(position.z)
+        return m
+    }
+
+    /// Compute the wrapper's local transform such that the asset's
+    /// attachment world CFrame (computed from RBXM data) ends up at
+    /// `bodyTarget` with identity orientation.
+    ///   T = (R_asset⁻¹, p_body − R_asset⁻¹ · p_asset)
+    /// where R_asset is the rotation extracted from `assetAttachmentWorld`.
+    private static func wrapperTransformFor(assetAttachmentWorld m: SCNMatrix4, bodyTarget: SCNVector3) -> SCNMatrix4 {
+        // Extract rotation as 3×3 from SCNMatrix4 columns.
+        let r00 = m.m11, r01 = m.m12, r02 = m.m13
+        let r10 = m.m21, r11 = m.m22, r12 = m.m23
+        let r20 = m.m31, r21 = m.m32, r22 = m.m33
+        // Inverse of a pure rotation = its transpose.
+        let i00 = r00, i01 = r10, i02 = r20
+        let i10 = r01, i11 = r11, i12 = r21
+        let i20 = r02, i21 = r12, i22 = r22
+        // Asset world position from the CFrame's 4th column.
+        let ax = m.m14, ay = m.m24, az = m.m34
+        // Translation: p_body − R_asset⁻¹ · p_asset.
+        let tx = bodyTarget.x - (i00 * ax + i01 * ay + i02 * az)
+        let ty = bodyTarget.y - (i10 * ax + i11 * ay + i12 * az)
+        let tz = bodyTarget.z - (i20 * ax + i21 * ay + i22 * az)
+        var t = SCNMatrix4Identity
+        t.m11 = i00; t.m12 = i01; t.m13 = i02
+        t.m21 = i10; t.m22 = i11; t.m23 = i12
+        t.m31 = i20; t.m32 = i21; t.m33 = i22
+        t.m14 = tx;  t.m24 = ty;  t.m34 = tz
+        return t
     }
 
     // MARK: Phase O2-P2 — attachment lookup helpers
@@ -1017,7 +1077,15 @@ struct AssetAttachmentsResp: Decodable {
 struct AssetAttachmentEntry: Decodable {
     let name: String
     let localPosition: AttachmentVec3
+    /// Attachment's rotation in Handle-local frame (row-major 3×3 = 9
+    /// floats: R00 R01 R02 R10 R11 R12 R20 R21 R22). Identity matrix
+    /// if the Roblox CFrame didn't carry orientation (rare).
+    let localOrientation: [Double]
     let handleWorld: AttachmentVec3
+    /// Handle's rotation in world frame (row-major 3×3). Many
+    /// accessories have a 90° pre-rotation here — without applying it,
+    /// hats/glasses render sideways.
+    let handleOrientation: [Double]
 }
 
 struct AttachmentVec3: Decodable {

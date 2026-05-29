@@ -45,10 +45,16 @@ export interface AssetAttachmentRef {
   name: string;
   /// Attachment position in Handle-local coordinates (3 floats).
   localPosition: { x: number; y: number; z: number };
-  /// Parent Handle's world position (3 floats). iOS computes
-  /// `attachmentWorld = handleWorld + localPosition` to find the
-  /// attachment point in the OBJ vertex frame.
+  /// Attachment rotation 3×3 matrix in Handle-local coordinates,
+  /// ROW-MAJOR ([R00 R01 R02 R10 R11 R12 R20 R21 R22]). Falls back to
+  /// identity if the CFrame doesn't expose Orientation.
+  localOrientation: number[];
+  /// Parent Handle's world position (3 floats).
   handleWorld: { x: number; y: number; z: number };
+  /// Parent Handle's world orientation 3×3 (row-major). Many
+  /// accessories have a 90° pre-rotation on the Handle — without
+  /// applying it, hats/glasses render sideways.
+  handleOrientation: number[];
 }
 
 export interface AssetAttachmentsResult {
@@ -119,6 +125,7 @@ export async function fetchRobloxAssetAttachments(args: {
   }
 
   const out: AssetAttachmentRef[] = [];
+  const identity9 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   for (const att of attachmentInstances) {
     try {
       const name = typeof att.Name === 'string' ? att.Name : '';
@@ -126,8 +133,10 @@ export async function fetchRobloxAssetAttachments(args: {
       const cf = att.CFrame;
       const pos = cf?.Position ?? cf?.position ?? null;
       if (!pos || typeof pos.X !== 'number') continue;
+      const localOrient = readOrientation9(cf) ?? identity9;
 
       let handlePos = { x: 0, y: 0, z: 0 };
+      let handleOrient: number[] = identity9;
       const parent = att.Parent;
       if (parent && parent.ClassName === 'Part') {
         const pcf = parent.CFrame;
@@ -135,12 +144,15 @@ export async function fetchRobloxAssetAttachments(args: {
         if (pp && typeof pp.X === 'number') {
           handlePos = { x: pp.X, y: pp.Y, z: pp.Z };
         }
+        handleOrient = readOrientation9(pcf) ?? identity9;
       }
 
       out.push({
         name,
         localPosition: { x: pos.X, y: pos.Y, z: pos.Z },
+        localOrientation: localOrient,
         handleWorld: handlePos,
+        handleOrientation: handleOrient,
       });
     } catch (err) {
       logger.warn('[assetAttachments] attachment read failed', {
@@ -154,4 +166,21 @@ export async function fetchRobloxAssetAttachments(args: {
 
 function isGzip(b: Buffer): boolean {
   return b.length >= 2 && b[0] === 0x1f && b[1] === 0x8b;
+}
+
+/// Pull a 9-float row-major rotation matrix out of a parsed Roblox CFrame.
+/// rbxm-parser exposes it as `cf.Orientation` (an array of 9 numbers) but
+/// older variants stored it as nine individual R00..R22 properties. Try
+/// both shapes; return null if neither is present.
+function readOrientation9(cf: any): number[] | null {
+  if (!cf) return null;
+  const arr = cf.Orientation ?? cf.orientation;
+  if (Array.isArray(arr) && arr.length === 9 && arr.every((v: any) => typeof v === 'number')) {
+    return arr.slice();
+  }
+  const keys = ['R00', 'R01', 'R02', 'R10', 'R11', 'R12', 'R20', 'R21', 'R22'];
+  if (keys.every((k) => typeof cf[k] === 'number')) {
+    return keys.map((k) => cf[k] as number);
+  }
+  return null;
 }
