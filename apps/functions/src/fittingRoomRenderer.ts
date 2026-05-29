@@ -21,7 +21,7 @@ import { runFal, generatePreviewTexture } from './providers.js';
 import { downloadAvatarThumbnailBuffer, resolveRobloxUsername } from './robloxUserLookup.js';
 import { getRobloxUserToken } from './robloxOAuth.js';
 import { assembleOutfit, type OutfitItem } from './outfitAssembler.js';
-import { renderOutfit3D, type RobloxOutfit3DUrls } from './robloxAvatar3D.js';
+import { renderOutfit3D, renderOutfitOnUser3D, type RobloxOutfit3DUrls } from './robloxAvatar3D.js';
 import { CURSED_UGC_STYLES } from './data/cursedUgcCategories.js';  // unused but reserved for later
 import { AURA_STYLES } from './data/auraStyles.js';                // unused but reserved for later
 import {
@@ -90,6 +90,8 @@ interface FittingRoomDoc {
   renders: { front?: string; three_quarter?: string; back?: string };
   /** Roblox server-composited 3D model wearing the outfit (OBJ+MTL+textures). */
   render3d?: RobloxOutfit3DUrls;
+  /** Same fit composited onto the USER's own avatar body (Your-Avatar mode). */
+  render3dUser?: RobloxOutfit3DUrls;
   items: OutfitItem[];
   totalCostRobux: number;
   savedRobux: number;
@@ -372,6 +374,20 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
       return null;
     });
 
+  // 3c) Phase O2-P (session 394) — personalized "Your Avatar" render: the
+  // same fit composited onto the user's OWN body (skin/scales/face), so the
+  // viewer's Your-Avatar toggle shows a clean baked model instead of
+  // client-side accessory attachment (the floating-hat bug). Only when we
+  // resolved a Roblox userId; non-fatal — falls back to the grey render3d.
+  const render3dUserPromise: Promise<RobloxOutfit3DUrls | null> = robloxUserId
+    ? outfitResultPromise
+        .then((o) => renderOutfitOnUser3D({ userId: robloxUserId as string, assetIds: o.items.map((i) => i.assetId) }))
+        .catch((err) => {
+          logger.warn('[fittingRoom] render3dUser non-fatal', { err: err instanceof Error ? err.message : String(err) });
+          return null;
+        })
+    : Promise.resolve(null);
+
   // 4) For each angle, run img2img sequentially-but-progressively.
   // Two-stage: front from raw avatar (low strength = face preserved);
   // 3/4 and back use the FRONT render as input (higher strength rotates
@@ -413,6 +429,7 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
   // (the angle loop above takes longer than the ~20s render poll).
   const outfit = await outfitResultPromise;
   const render3d = await render3dPromise;
+  const render3dUser = await render3dUserPromise;
   await patchDoc(generationId, {
     items: outfit.items,
     totalCostRobux: outfit.totalCostRobux,
@@ -424,5 +441,6 @@ async function runFittingRoomJob(input: FittingRoomStartInput, generationId: str
     fitOnUser,
     robloxUserId,
     ...(render3d ? { render3d } : {}),
+    ...(render3dUser ? { render3dUser } : {}),
   });
 }

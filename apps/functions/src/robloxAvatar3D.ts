@@ -501,39 +501,94 @@ export async function renderOutfit3D(args: {
   maxAttempts?: number;
   pollDelayMs?: number;
 }): Promise<RobloxOutfit3DUrls | null> {
-  const maxAttempts = args.maxAttempts ?? 10;
-  const pollDelayMs = args.pollDelayMs ?? 2_000;
-
-  // Dedupe + validate asset ids → positive integers.
-  const ids = Array.from(new Set(
-    (args.assetIds ?? [])
-      .map((x) => Number(x))
-      .filter((n) => Number.isInteger(n) && n > 0)
-  ));
+  const ids = sanitizeAssetIds(args.assetIds);
   if (ids.length === 0) {
     logger.warn('[renderOutfit3D] no valid asset ids', { raw: args.assetIds });
     return null;
   }
+  return renderAvatarDefinition3D({
+    avatarDefinition: { ...BASE_AVATAR_DEFINITION, assets: ids.map((id) => ({ id })) },
+    logLabel: 'renderOutfit3D',
+    assetCount: ids.length,
+    maxAttempts: args.maxAttempts ?? 10,
+    pollDelayMs: args.pollDelayMs ?? 2_000,
+  });
+}
+
+/**
+ * Phase O2-P (session 394) — personalized "Your Avatar" render. Same fit
+ * asset list as renderOutfit3D, but composited onto the CALLER'S avatar
+ * (their body parts, skin tone, scales, head/face) instead of the neutral
+ * grey body. We fetch the user's avatar definition, keep only their
+ * physical body/face assets, drop all their own cosmetics (clothing, hats,
+ * hair, accessories) and add the fit — so the Mannequin and Your-Avatar
+ * toggle show the IDENTICAL fit, differing only in the body underneath.
+ * Returns null on any failure (caller falls back to the grey render).
+ */
+export async function renderOutfitOnUser3D(args: {
+  userId: string | number;
+  assetIds: Array<string | number>;
+  maxAttempts?: number;
+  pollDelayMs?: number;
+}): Promise<RobloxOutfit3DUrls | null> {
+  const ids = sanitizeAssetIds(args.assetIds);
+  if (ids.length === 0) {
+    logger.warn('[renderOutfitOnUser3D] no valid asset ids', { raw: args.assetIds });
+    return null;
+  }
+  const userDef = await fetchUserAvatarDefinition(args.userId);
+  if (!userDef) return null;   // could not read the user's avatar → caller falls back
+  const avatarDefinition = await buildPersonalizedDefinition(userDef, ids);
+  return renderAvatarDefinition3D({
+    avatarDefinition,
+    logLabel: 'renderOutfitOnUser3D',
+    assetCount: ids.length,
+    maxAttempts: args.maxAttempts ?? 10,
+    pollDelayMs: args.pollDelayMs ?? 2_000,
+  });
+}
+
+/** Dedupe + validate asset ids → positive integers. */
+function sanitizeAssetIds(raw: Array<string | number> | undefined): number[] {
+  return Array.from(new Set(
+    (raw ?? [])
+      .map((x) => Number(x))
+      .filter((n) => Number.isInteger(n) && n > 0)
+  ));
+}
+
+/**
+ * Core render: POST an arbitrary avatarDefinition to /v1/avatar/render,
+ * poll the (idempotent) request until state=Completed, then resolve the
+ * manifest → stable OBJ/MTL/texture URLs. Shared by renderOutfit3D (grey
+ * body) and renderOutfitOnUser3D (the user's own body). Returns null on
+ * any failure.
+ */
+async function renderAvatarDefinition3D(args: {
+  avatarDefinition: Record<string, unknown>;
+  logLabel: string;
+  assetCount: number;
+  maxAttempts: number;
+  pollDelayMs: number;
+}): Promise<RobloxOutfit3DUrls | null> {
+  const { avatarDefinition, logLabel, assetCount, maxAttempts, pollDelayMs } = args;
 
   const cookie = process.env.ROBLOX_SERVICE_COOKIE ?? '';
   if (!cookie) {
-    logger.warn('[renderOutfit3D] ROBLOX_SERVICE_COOKIE not set — render requires auth');
+    logger.warn(`[${logLabel}] ROBLOX_SERVICE_COOKIE not set — render requires auth`);
     return null;
   }
   const cookieHeader = `.ROBLOSECURITY=${cookie}`;
 
   let csrf = await getRobloxCsrfToken(cookieHeader);
   if (!csrf) {
-    logger.warn('[renderOutfit3D] could not obtain csrf token');
+    logger.warn(`[${logLabel}] could not obtain csrf token`);
     return null;
   }
 
   const body = JSON.stringify({
     thumbnailConfig: { thumbnailId: 1, size: '420x420', thumbnailType: '3d' },
-    avatarDefinition: {
-      ...BASE_AVATAR_DEFINITION,
-      assets: ids.map((id) => ({ id })),
-    },
+    avatarDefinition,
   });
 
   // POST the render request. On a 403 with a stale token, refresh once.
@@ -568,7 +623,7 @@ export async function renderOutfit3D(args: {
     try {
       resp = await postRender();
     } catch (err) {
-      logger.warn('[renderOutfit3D] render POST failed', {
+      logger.warn(`[${logLabel}] render POST failed`, {
         attempt, err: err instanceof Error ? err.message : String(err),
       });
     }
@@ -577,8 +632,8 @@ export async function renderOutfit3D(args: {
       // (local cookie is empty — prod logs are the only way to see the shape).
       let errBody = '';
       try { errBody = (await resp.text()).slice(0, 600); } catch { /* ignore */ }
-      logger.warn('[renderOutfit3D] render non-200', {
-        attempt, status: resp.status, body: errBody, assetIds: ids,
+      logger.warn(`[${logLabel}] render non-200`, {
+        attempt, status: resp.status, body: errBody, assetCount,
       });
       return null;
     }
@@ -587,7 +642,7 @@ export async function renderOutfit3D(args: {
       try {
         json = await resp.json();
       } catch (err) {
-        logger.warn('[renderOutfit3D] render body parse failed', {
+        logger.warn(`[${logLabel}] render body parse failed`, {
           attempt, err: err instanceof Error ? err.message : String(err),
         });
         return null;
@@ -598,7 +653,7 @@ export async function renderOutfit3D(args: {
         break;
       }
       if (entry?.state === 'Error') {
-        logger.warn('[renderOutfit3D] render state=Error', { attempt, assetIds: ids });
+        logger.warn(`[${logLabel}] render state=Error`, { attempt, assetCount });
         return null;
       }
       // Pending / unknown → wait and re-POST.
@@ -608,15 +663,159 @@ export async function renderOutfit3D(args: {
     }
   }
   if (!imageUrl) {
-    logger.warn('[renderOutfit3D] render never reached Completed', { maxAttempts, assetIds: ids });
+    logger.warn(`[${logLabel}] render never reached Completed`, { maxAttempts, assetCount });
     return null;
   }
 
-  const resolved = await resolveManifest3D(imageUrl, { source: 'render', assetCount: ids.length });
+  const resolved = await resolveManifest3D(imageUrl, { source: 'render', assetCount });
   if (!resolved) return null;
-  logger.info('[renderOutfit3D] success', {
-    assetCount: ids.length,
+  logger.info(`[${logLabel}] success`, {
+    assetCount,
     textureCount: resolved.textureUrls.length,
   });
   return resolved;
+}
+
+// ─── Personalized "Your Avatar" helpers (session 394) ────────────
+
+interface RobloxUserAvatarDefinition {
+  bodyColors?: Record<string, number | string>;
+  scales?: Record<string, number>;
+  playerAvatarType?: string | { playerAvatarType?: string };
+  assets?: Array<{ id: number; assetType?: { id?: number; name?: string } }>;
+}
+
+/**
+ * Fetch a user's avatar definition (public endpoint, no auth). Shape:
+ * bodyColors as ColorId ints (`headColorId`…), playerAvatarType as a bare
+ * string ("R15"), assets[] each with `assetType.id`. Returns null on any
+ * failure.
+ */
+async function fetchUserAvatarDefinition(
+  userId: string | number,
+): Promise<RobloxUserAvatarDefinition | null> {
+  try {
+    const resp = await fetch(`https://avatar.roblox.com/v1/users/${userId}/avatar`, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) {
+      logger.warn('[renderOutfitOnUser3D] user avatar fetch non-200', {
+        userId: String(userId), status: resp.status,
+      });
+      return null;
+    }
+    return await resp.json() as RobloxUserAvatarDefinition;
+  } catch (err) {
+    logger.warn('[renderOutfitOnUser3D] user avatar fetch failed', {
+      userId: String(userId), err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+// GET /v1/users/{id}/avatar returns bodyColors as BrickColor ids, but
+// /v1/avatar/render requires hex strings (ColorId ints → HTTP 500, see
+// BASE_AVATAR_DEFINITION note). avatar-rules.bodyColorsPalette is the
+// ColorId→hex map. Cached process-wide (it is static Roblox data).
+const AVATAR_RULES_ENDPOINT = 'https://avatar.roblox.com/v1/avatar-rules';
+let bodyColorHexCache: Record<number, string> | null = null;
+
+async function getBodyColorHexMap(): Promise<Record<number, string>> {
+  if (bodyColorHexCache) return bodyColorHexCache;
+  const map: Record<number, string> = {};
+  try {
+    const resp = await fetch(AVATAR_RULES_ENDPOINT, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (resp.ok) {
+      const j = await resp.json() as { bodyColorsPalette?: Array<{ brickColorId?: number; hexColor?: string }> };
+      for (const p of j.bodyColorsPalette ?? []) {
+        if (typeof p.brickColorId === 'number' && typeof p.hexColor === 'string') {
+          map[p.brickColorId] = p.hexColor.startsWith('#') ? p.hexColor : `#${p.hexColor}`;
+        }
+      }
+    } else {
+      logger.warn('[renderOutfitOnUser3D] avatar-rules non-200', { status: resp.status });
+    }
+  } catch (err) {
+    logger.warn('[renderOutfitOnUser3D] avatar-rules fetch failed', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+  if (Object.keys(map).length > 0) bodyColorHexCache = map;   // cache only on success
+  return map;
+}
+
+// Asset types that ARE the user's physical body/face — kept so the render
+// shows THEIR avatar. Everything else (clothing 2/11/12, hats/hair/
+// accessories 8/41-47/57-67, animations 78…) is dropped and replaced by
+// the fit, so the two toggle modes show the identical fit.
+const PHYSICAL_BODY_ASSET_TYPES = new Set<number>([
+  17, // Head (classic)
+  18, // Face
+  27, // Torso (R15)
+  28, // RightArm
+  29, // LeftArm
+  30, // LeftLeg
+  31, // RightLeg
+  79, // DynamicHead
+]);
+
+const BODY_COLOR_SLOTS = ['head', 'torso', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'] as const;
+
+/**
+ * Build a /v1/avatar/render avatarDefinition that puts the FIT onto the
+ * USER's body: their hex body colors + scales + physical body/face assets,
+ * plus the fit's asset ids. Drops the user's own cosmetics so nothing
+ * double-stacks.
+ */
+async function buildPersonalizedDefinition(
+  userDef: RobloxUserAvatarDefinition,
+  fitAssetIds: number[],
+): Promise<Record<string, unknown>> {
+  // bodyColors: ColorId ints → hex (render rejects ints). Tolerate a hex
+  // response too, in case Roblox ever changes the shape.
+  const hexMap = await getBodyColorHexMap();
+  const rawColors = userDef.bodyColors ?? {};
+  const bodyColors: Record<string, string> = {};
+  for (const slot of BODY_COLOR_SLOTS) {
+    const hexVal = rawColors[`${slot}Color`];
+    const idVal = rawColors[`${slot}ColorId`];
+    if (typeof hexVal === 'string' && hexVal.startsWith('#')) {
+      bodyColors[`${slot}Color`] = hexVal;
+    } else if (typeof idVal === 'number' && hexMap[idVal]) {
+      bodyColors[`${slot}Color`] = hexMap[idVal];
+    } else {
+      bodyColors[`${slot}Color`] = '#a3a2a5';   // medium stone grey fallback
+    }
+  }
+
+  // playerAvatarType: GET returns a bare string ("R15"); render needs an obj.
+  const patRaw = userDef.playerAvatarType;
+  const playerAvatarType = typeof patRaw === 'string'
+    ? { playerAvatarType: patRaw }
+    : (patRaw && typeof patRaw.playerAvatarType === 'string'
+        ? { playerAvatarType: patRaw.playerAvatarType }
+        : { playerAvatarType: 'R15' });
+
+  // Keep the user's physical body/face; drop their cosmetics; add the fit.
+  const keptBody = (userDef.assets ?? [])
+    .filter((a) => PHYSICAL_BODY_ASSET_TYPES.has(Number(a?.assetType?.id)))
+    .map((a) => a.id);
+
+  const seen = new Set<number>();
+  const assets: Array<{ id: number }> = [];
+  for (const raw of [...keptBody, ...fitAssetIds]) {
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > 0 && !seen.has(n)) { seen.add(n); assets.push({ id: n }); }
+  }
+
+  return {
+    bodyColors,
+    scales: userDef.scales ?? BASE_AVATAR_DEFINITION.scales,
+    playerAvatarType,
+    assets,
+  };
 }
