@@ -445,18 +445,22 @@ const AVATAR_RENDER_ENDPOINT = 'https://avatar.roblox.com/v1/avatar/render';
 export type RobloxOutfit3DUrls = Omit<RobloxAvatar3DUrls, 'userId'>;
 
 /**
- * Cosmetic base avatar for the render — neutral grey body (BrickColor 194
- * = "Medium stone grey"), R15, default scales. The clothing/accessories
- * come entirely from the `assets` list; this is just the body underneath.
+ * Cosmetic base avatar for the render — neutral grey body ("Medium stone
+ * grey" #a3a2a5), R15, default scales. The clothing/accessories come
+ * entirely from the `assets` list; this is just the body underneath.
+ *
+ * NOTE: /v1/avatar/render expects bodyColors as HEX STRINGS (`headColor:
+ * "#rrggbb"`), NOT BrickColor ids — passing `*ColorId` integers returns
+ * HTTP 500 InternalServerError (verified empirically 2026-05-29).
  */
 const BASE_AVATAR_DEFINITION = {
   bodyColors: {
-    headColorId: 194,
-    torsoColorId: 194,
-    rightArmColorId: 194,
-    leftArmColorId: 194,
-    rightLegColorId: 194,
-    leftLegColorId: 194,
+    headColor: '#a3a2a5',
+    torsoColor: '#a3a2a5',
+    rightArmColor: '#a3a2a5',
+    leftArmColor: '#a3a2a5',
+    rightLegColor: '#a3a2a5',
+    leftLegColor: '#a3a2a5',
   },
   scales: { height: 1, width: 1, head: 1, depth: 1, proportion: 0, bodyType: 0 },
   playerAvatarType: { playerAvatarType: 'R15' },
