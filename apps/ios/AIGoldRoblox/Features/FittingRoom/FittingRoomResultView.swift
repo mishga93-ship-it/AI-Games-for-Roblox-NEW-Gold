@@ -622,46 +622,57 @@ struct FittingRoomResultView: View {
             // buttons below the grid for a full outfit reshuffle.
             slotPickerTile = tile
         }) {
-            HStack(alignment: .top, spacing: 10) {
-                slotThumbnail(tile)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(tile.slotLabel)
-                            .font(.caption2.bold()).foregroundColor(.textSecondary)
-                            .textCase(.uppercase)
-                            .tracking(0.5)
-                        Spacer()
-                        if swappingSlot == tile.id {
-                            ProgressView().scaleEffect(0.6).tint(accentColor)
-                        } else {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.caption2.bold())
-                                .foregroundColor(accentColor)
+            VStack(alignment: .leading, spacing: 8) {
+                // Top — thumbnail + slot label + item name. Label never
+                // wraps (shrinks to fit), name caps at 2 lines.
+                HStack(alignment: .top, spacing: 10) {
+                    slotThumbnail(tile)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 4) {
+                            Text(tile.slotLabel)
+                                .font(.caption2.bold()).foregroundColor(.textSecondary)
+                                .textCase(.uppercase)
+                                .tracking(0.5)
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                            Spacer(minLength: 4)
+                            if swappingSlot == tile.id {
+                                ProgressView().scaleEffect(0.6).tint(accentColor)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.caption2.bold())
+                                    .foregroundColor(accentColor)
+                            }
                         }
+                        Text(tile.itemName)
+                            .font(.appBody.bold()).foregroundColor(.textPrimary)
+                            .lineLimit(2).multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Text(tile.itemName)
-                        .font(.appBody.bold()).foregroundColor(.textPrimary)
-                        .lineLimit(2).multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 6) {
-                        Text(tile.priceLabel)
-                            .font(.caption2.monospaced().bold())
-                            .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(tile.priceTint.opacity(0.22))
-                            .foregroundColor(tile.priceTint)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        Spacer()
-                        Text(loc(en: "Swap", ru: "Замен."))
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(accentColor.opacity(0.18))
-                            .foregroundColor(accentColor)
-                            .clipShape(Capsule())
-                    }
+                }
+                Spacer(minLength: 4)
+                // Bottom — price + Swap span the full card width, so neither
+                // ever wraps ("FREE"/"Swap" stay on one line via fixedSize).
+                HStack(spacing: 6) {
+                    Text(tile.priceLabel)
+                        .font(.caption2.monospaced().bold())
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(tile.priceTint.opacity(0.22))
+                        .foregroundColor(tile.priceTint)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                    Spacer(minLength: 6)
+                    Text(loc(en: "Swap", ru: "Замена"))
+                        .font(.caption2.bold())
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(accentColor.opacity(0.18))
+                        .foregroundColor(accentColor)
+                        .clipShape(Capsule())
                 }
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
             .background(
                 ZStack {
                     LinearGradient(colors: [Color.cardBackground, Color.cardBackground.opacity(0.85)],
