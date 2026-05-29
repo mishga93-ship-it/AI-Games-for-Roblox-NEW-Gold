@@ -1016,6 +1016,7 @@ async function handleOutfit(args: {
       aestheticId: params.aestheticId,
       gender: params.gender,
       style: params.style,
+      firebaseUid,  // round 16 — enables 3D mesh bake of the outfit avatar
     });
   } catch (err) {
     logger.error('[viralChatDispatch] assembleOutfit failed', { jobId, err });
@@ -1042,6 +1043,26 @@ async function handleOutfit(args: {
       metadata: {
         generationId,
         aestheticId: result.aestheticId,
+        kind: 'outfit',
+      },
+    });
+  }
+
+  // Round 16 — 3D mesh of the outfit avatar (Blender-optimized GLB). Chat
+  // shows a download chip; iOS OutfitResultView renders it via WebGLBViewer.
+  if (result.meshUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'rbxm',
+      extension: 'glb',
+      name: `${baseName}.glb`,
+      url: result.meshUrl,
+      artifactRole: 'export_binary',
+      previewText: 'Rotatable 3D mesh of the outfit avatar. Open in any GLB viewer.',
+      metadata: {
+        generationId,
+        aestheticId: result.aestheticId,
+        meshThumbnailUrl: result.meshThumbnailUrl ?? null,
         kind: 'outfit',
       },
     });

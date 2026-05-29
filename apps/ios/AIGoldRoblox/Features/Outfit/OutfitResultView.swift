@@ -27,7 +27,30 @@ struct OutfitResultView: View {
 
     @ViewBuilder
     private var heroPreview: some View {
-        if let urlString = response.heroPreviewUrl, let url = URL(string: urlString) {
+        // Session 390 round 16 — prefer the rotatable 3D mesh (WebGLBViewer /
+        // <model-viewer>, same component as Cursed UGC + NPC) when the backend
+        // baked one; fall back to the 2D flux hero render, then a placeholder.
+        // WebGLBViewer renders GLB via WebGL (textures + drag-rotate + pinch-
+        // zoom), bypassing Apple ModelIO which can't import GLB on device.
+        if let meshString = response.meshUrl, let meshURL = URL(string: meshString) {
+            ZStack(alignment: .bottomLeading) {
+                WebGLBViewer(modelURL: meshURL)
+                    .background(Color.cardBackground)
+                HStack(spacing: 5) {
+                    Image(systemName: "rotate.3d").font(.caption2.bold())
+                    Text(loc(en: "3D — drag to rotate, pinch to zoom",
+                             ru: "3D — крути и зумь пальцами"))
+                        .font(.caption2.bold())
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color.black.opacity(0.55))
+                .foregroundColor(.white)
+                .clipShape(Capsule())
+                .padding(8)
+            }
+            .frame(maxWidth: .infinity, minHeight: 320, maxHeight: 440)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        } else if let urlString = (response.meshThumbnailUrl ?? response.heroPreviewUrl), let url = URL(string: urlString) {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let img):

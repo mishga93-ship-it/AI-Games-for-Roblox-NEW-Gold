@@ -124,6 +124,12 @@ struct OutfitGenerationResponse: Codable {
     /// AI-rendered hero preview of an avatar in this outfit (optional —
     /// flux call may fail and the response still carries the item list).
     let heroPreviewUrl: String?
+    /// Session 390 round 16 — rotatable 3D GLB of the outfit avatar
+    /// (Meshy v6 + Blender). When present, OutfitResultView renders it via
+    /// WebGLBViewer (model-viewer); else falls back to heroPreviewUrl 2D.
+    let meshUrl: String?
+    /// Meshy thumbnail render of the 3D mesh (2D fallback).
+    let meshThumbnailUrl: String?
 
     var localizedPitch: String {
         GlowupLocale.isRussian ? pitchRU : pitchEN

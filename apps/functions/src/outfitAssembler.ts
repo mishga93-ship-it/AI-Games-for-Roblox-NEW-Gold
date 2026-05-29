@@ -14,6 +14,10 @@ import { logger } from 'firebase-functions/v2';
 import { createRequire } from 'node:module';
 import { fetchCatalogByKeyword, type RobloxCatalogItem } from './robloxCatalog.js';
 import { runChatProvider, generatePreviewTexture } from './providers.js';
+// Session 390 round 16 — optional 3D mesh of the outfit avatar, via the
+// shared bake helper (Meshy v6 → Blender re-export → hosted GLB). iOS
+// renders it with WebGLBViewer (<model-viewer>), same as Cursed UGC.
+import { bakeMeshFromPrompt } from './meshBake.js';
 
 // Static catalog pool — pre-fetched on dev machine via scripts/prefetch-outfit-pool.mjs.
 // Roblox catalog API is blocked from Cloud Run egress; this JSON is the source
@@ -61,6 +65,12 @@ export interface OutfitAssembleResult {
   rerollSeed: string;                   // pass back to /generate to get a different selection
   /** AI-rendered preview of an avatar wearing this outfit (~3-5s, optional). */
   heroPreviewUrl?: string;
+  /** Rotatable 3D GLB of the outfit avatar (Meshy v6 + Blender, ~200s,
+   *  optional). iOS renders via WebGLBViewer. nil when mesh baking is
+   *  skipped (no firebaseUid) or times out → client uses heroPreviewUrl. */
+  meshUrl?: string;
+  /** Meshy thumbnail render of the 3D mesh (fallback still for the 2D card). */
+  meshThumbnailUrl?: string;
 }
 
 export interface OutfitAssembleInput {
@@ -70,6 +80,9 @@ export interface OutfitAssembleInput {
   remix?: OutfitRemixMode;              // pushes selection toward variant
   /** Optional seed to deterministically vary live-search picks. */
   seed?: string;
+  /** Session 390 round 16 — when present, bake a 3D GLB of the outfit
+   *  avatar (hosted under this uid in Storage). Omit to skip 3D entirely. */
+  firebaseUid?: string;
 }
 
 // ─── Blacklist & filters ─────────────────────────────────────────
@@ -328,12 +341,12 @@ async function aiRankSelections(args: {
  * outfit (vs. a list of items). Falls back to undefined on any failure —
  * client renders the item grid alone.
  */
-async function generateOutfitHeroPreview(args: {
+function buildOutfitHeroPrompt(args: {
   aesthetic: OutfitAesthetic;
   items: OutfitItem[];
   gender: OutfitGender;
   style: OutfitStyleMode;
-}): Promise<string | undefined> {
+}): string {
   // Build a tight prompt from the actual picked items.
   const itemNamesByCategory: Record<string, string> = {};
   for (const it of args.items) {
@@ -359,14 +372,22 @@ async function generateOutfitHeroPreview(args: {
     ? ' Dark, dramatic studio lighting.'
     : ' Bright, colorful pop lighting.';
 
-  const prompt = [
+  return [
     `A Roblox blocky avatar in the "${args.aesthetic.title}" aesthetic.`,
     args.aesthetic.pitchEN,
     `The avatar is wearing: ${wearing}.`,
     genderClause + styleClause,
     'Full body 3/4 view, plain pure white background, soft studio lighting, sharp clean stylized 3D cartoon render. Family-friendly, no horror, no gore, no text, no logos.',
   ].join(' ');
+}
 
+async function generateOutfitHeroPreview(args: {
+  aesthetic: OutfitAesthetic;
+  items: OutfitItem[];
+  gender: OutfitGender;
+  style: OutfitStyleMode;
+}): Promise<string | undefined> {
+  const prompt = buildOutfitHeroPrompt(args);
   try {
     const url = await generatePreviewTexture(prompt, 'roblox', 'character');
     return url;
@@ -440,10 +461,23 @@ export async function assembleOutfit(input: OutfitAssembleInput): Promise<Outfit
   const totalCostRobux = items.reduce((acc, it) => acc + (it.priceRobux ?? 0), 0);
   const savedRobux = Math.max(0, aesthetic.imitatedRetailRobux - totalCostRobux);
 
-  // Caption + hero in parallel — hero is the expensive one (~3-5s flux).
-  const [caption, heroPreviewUrl] = await Promise.all([
+  // Caption + hero + 3D mesh in parallel. Hero is flux (~3-5s); mesh is
+  // Meshy v6 + Blender (~200s) and only runs when a firebaseUid is given
+  // (so the GLB can be hosted). Both tolerate failure → client falls back
+  // to whatever's available (mesh → hero → item grid).
+  const heroPrompt = buildOutfitHeroPrompt({ aesthetic, items, gender: input.gender, style: input.style });
+  const [caption, heroPreviewUrl, bakedMesh] = await Promise.all([
     pickCaption(aesthetic, input.remix),
     generateOutfitHeroPreview({ aesthetic, items, gender: input.gender, style: input.style }),
+    input.firebaseUid
+      ? bakeMeshFromPrompt({
+          prompt: heroPrompt,
+          firebaseUid: input.firebaseUid,
+          contentCategory: 'character',   // full avatar — keep T-pose framing
+          contentSubcategory: 'outfit',
+          title: `${aesthetic.title} Outfit`,
+        })
+      : Promise.resolve({ meshUrl: undefined, thumbnailUrl: undefined }),
   ]);
 
   return {
@@ -465,5 +499,7 @@ export async function assembleOutfit(input: OutfitAssembleInput): Promise<Outfit
     savedRobux,
     rerollSeed: input.seed ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     heroPreviewUrl,
+    meshUrl: bakedMesh.meshUrl,
+    meshThumbnailUrl: bakedMesh.thumbnailUrl,
   };
 }
