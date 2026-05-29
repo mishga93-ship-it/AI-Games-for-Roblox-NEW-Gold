@@ -44,17 +44,56 @@ async function uploadSigned(args: {
   firebaseUid: string;
   filename: string;
   buf: Buffer;
+  contentType?: string;
 }): Promise<string> {
   const b = await bucket();
   const path = `cursed-ugc/${args.firebaseUid}/${Date.now()}-${args.filename}`;
   const file = b.file(path);
-  await file.save(args.buf, { contentType: 'image/png', resumable: false });
+  await file.save(args.buf, { contentType: args.contentType ?? 'image/png', resumable: false });
   const [url] = await file.getSignedUrl({
     version: 'v4',
     action: 'read',
     expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
   });
   return url;
+}
+
+// Session 390 round 6 — re-host Meshy GLB through Firebase Storage so iOS
+// can download it cleanly. NPC pipeline (which renders 3D fine in iOS via
+// the same RealModel3DPreview component) uses copyExternalArtifact for
+// this — fetches Meshy's signed fal.media URL server-side, re-uploads to
+// our Firebase Storage bucket, and hands iOS a Firebase Storage signed
+// URL. iOS direct downloads from fal.media silently fail (CORS or
+// content-disposition: attachment quirks), so the 3D preview ended up
+// blank despite meshUrl being non-null.
+async function rehostMeshBinary(args: {
+  firebaseUid: string;
+  url: string;
+  filename: string;
+  contentType: string;
+}): Promise<string | undefined> {
+  try {
+    const resp = await fetch(args.url, { signal: AbortSignal.timeout(45_000) });
+    if (!resp.ok) {
+      logger.warn('[cursedUgcGenerator] mesh re-host fetch failed', {
+        status: resp.status, filename: args.filename,
+      });
+      return undefined;
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return await uploadSigned({
+      firebaseUid: args.firebaseUid,
+      filename: args.filename,
+      buf,
+      contentType: args.contentType,
+    });
+  } catch (err) {
+    logger.warn('[cursedUgcGenerator] mesh re-host failed (non-fatal)', {
+      err: err instanceof Error ? err.message : String(err),
+      filename: args.filename,
+    });
+    return undefined;
+  }
 }
 
 async function fluxOnceToSignedUrl(args: {
@@ -218,6 +257,7 @@ export interface CursedUGCResult extends CursedUGCMetadata {
 async function meshyOnceFor(args: {
   prompt: string;
   contentSubcategory?: string;
+  firebaseUid: string;
 }): Promise<{ meshUrl?: string; thumbnailUrl?: string } | undefined> {
   try {
     const meshyPromise = runMeshy(args.prompt, {
@@ -257,11 +297,37 @@ async function meshyOnceFor(args: {
       return undefined;
     }
     const raw = winner.raw as Record<string, unknown> | undefined;
-    const meshUrl = winner.outputUrl
+    const meshUrlRaw = winner.outputUrl
       ?? (typeof raw?.modelUrl === 'string' ? (raw.modelUrl as string) : undefined);
-    const thumbnailUrl = typeof raw?.thumbnailUrl === 'string'
+    const thumbnailUrlRaw = typeof raw?.thumbnailUrl === 'string'
       ? (raw.thumbnailUrl as string)
       : undefined;
+
+    // Session 390 round 6 — re-host the Meshy GLB + thumbnail through our
+    // Firebase Storage bucket so iOS can download them cleanly. iOS direct
+    // downloads from fal.media silently fail (CORS / content-disposition
+    // quirks) — NPC pipeline already does the same re-host via
+    // copyExternalArtifact, which is why NPC chats show 3D fine. Both
+    // re-hosts run in parallel and tolerate individual failures.
+    const [meshUrl, thumbnailUrl] = await Promise.all([
+      meshUrlRaw
+        ? rehostMeshBinary({
+            firebaseUid: args.firebaseUid,
+            url: meshUrlRaw,
+            filename: 'mesh.glb',
+            contentType: 'model/gltf-binary',
+          }).then((rehosted) => rehosted ?? meshUrlRaw)
+        : Promise.resolve(undefined),
+      thumbnailUrlRaw
+        ? rehostMeshBinary({
+            firebaseUid: args.firebaseUid,
+            url: thumbnailUrlRaw,
+            filename: 'mesh-thumb.png',
+            contentType: 'image/png',
+          }).then((rehosted) => rehosted ?? thumbnailUrlRaw)
+        : Promise.resolve(undefined),
+    ]);
+
     return { meshUrl, thumbnailUrl };
   } catch (err) {
     logger.warn('[cursedUgcGenerator] Meshy 3D step failed (non-fatal)', {
@@ -292,7 +358,7 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
       intensity: input.intensity,
       userPrompt: input.userPrompt,
     }),
-    meshyOnceFor({ prompt: mainPrompt, contentSubcategory: 'cursed_ugc' }),
+    meshyOnceFor({ prompt: mainPrompt, contentSubcategory: 'cursed_ugc', firebaseUid: input.firebaseUid }),
   ]);
 
   const variations: Array<{ label: string; imageUrl?: string }> = [
