@@ -18,7 +18,9 @@ import { wrapGenericScriptAsRbxmx } from './uiTemplates.js';
 import {
   buildAuraImagePrompt,
   buildAuraLuaPrompt,
+  resolveAuraVisuals,
   AURA_STYLES,
+  type Rgb,
   type AuraStyleId,
   type AuraIntensity,
   type AuraSize,
@@ -128,7 +130,12 @@ function extractLuaFromMarkdown(text: string): string | undefined {
   return undefined;
 }
 
-const FALLBACK_LUA = `-- Safe fallback aura (used when LLM generation failed)
+// Safe fallback aura — color + texture are derived from the user's prompt so
+// even a failed LLM generation still matches the requested vibe (not a
+// one-size-fits-all magenta sparkle).
+function buildFallbackLua(rgb: Rgb, textureId: string): string {
+  const [r, g, b] = rgb;
+  return `-- Safe fallback aura (used when LLM generation failed)
 -- ServerScriptService → new Script → paste this → Play.
 local Players = game:GetService("Players")
 
@@ -137,13 +144,18 @@ local function attachAura(character)
 \tlocal a = Instance.new("Attachment", hrp)
 \ta.Name = "AuraAttachment"
 \tlocal p = Instance.new("ParticleEmitter", a)
-\tp.Texture = "rbxassetid://243660364"
+\tp.Texture = "${textureId}"
 \tp.Rate = 60
 \tp.Lifetime = NumberRange.new(1.0, 2.0)
 \tp.Size = NumberSequence.new(1.2)
 \tp.Transparency = NumberSequence.new(0.2)
 \tp.Speed = NumberRange.new(3, 6)
-\tp.Color = ColorSequence.new(Color3.fromRGB(180, 80, 255))
+\tp.Color = ColorSequence.new(Color3.fromRGB(${r}, ${g}, ${b}))
+\t-- Tinted glow so the aura reads even on dark avatars.
+\tlocal light = Instance.new("PointLight", hrp)
+\tlight.Color = Color3.fromRGB(${r}, ${g}, ${b})
+\tlight.Range = 8
+\tlight.Brightness = 2
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -151,6 +163,7 @@ Players.PlayerAdded:Connect(function(player)
 \tif player.Character then attachAura(player.Character) end
 end)
 `;
+}
 
 async function generateLuaScript(input: {
   userPrompt: string;
@@ -160,6 +173,7 @@ async function generateLuaScript(input: {
   tone: AuraTone;
 }): Promise<{ lua: string; safeUsedFallback: boolean }> {
   const prompt = buildAuraLuaPrompt(input);
+  const visuals = resolveAuraVisuals(input);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const r = await runChatProvider('anthropic', prompt, undefined, { timeoutMs: 20_000 });
@@ -179,7 +193,7 @@ async function generateLuaScript(input: {
       logger.warn('[auraGenerator] LLM call failed', { attempt, err: err instanceof Error ? err.message : String(err) });
     }
   }
-  return { lua: FALLBACK_LUA, safeUsedFallback: true };
+  return { lua: buildFallbackLua(visuals.primaryRgb, visuals.texture.id), safeUsedFallback: true };
 }
 
 // ─── Metadata via single LLM call ──────────────────────────────
