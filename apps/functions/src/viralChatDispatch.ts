@@ -991,6 +991,13 @@ async function handleCursedUGC(args: {
       // / extension change in the re-host helper.
       meshUrl: result.meshUrl,
       meshThumbnailUrl: result.meshThumbnailUrl,
+      // Session 396 — persist the .rbxm URL into the doc payload so the
+      // chat-bridge result view (CursedUGCResultView) can show an
+      // "Export .rbxm" button. The artifact emitted above is enough for the
+      // generic ChatView preview, but cursed_ugc routes to its own view that
+      // re-hydrates from this payload via /api/viral-generations/:id.
+      // Undefined when OC/Engine creds are absent → GLB-only fallback.
+      rbxmUrl: result.rbxmUrl,
       variations: result.variations,
       titleEN: result.titleEN,
       titleRU: result.titleRU,

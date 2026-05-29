@@ -125,6 +125,41 @@ final class CursedUGCStudio: ObservableObject {
         }
     }
 
+    /// Session 396 — download the Roblox-ready .rbxm (or the GLB fallback) to
+    /// a temp file and present the iOS share sheet so the user can "Save to
+    /// Files" → import the finished 3D item into Roblox Studio. The generic
+    /// ChatView ExportView isn't reachable from this standalone bridge view,
+    /// so we reuse the same UIActivityViewController path as sharePoster().
+    func exportModelFile(urlString: String?, fileExtension: String) {
+        guard let urlString, let url = URL(string: urlString) else {
+            toast(loc(en: "Bad URL — can't export.", ru: "Некорректный URL — не могу экспортировать."))
+            return
+        }
+        toast(loc(en: "Preparing .\(fileExtension)…", ru: "Готовлю .\(fileExtension)…"))
+        Task { @MainActor in
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                let baseName: String = {
+                    if case let .result(resp) = step {
+                        let safe = resp.localizedTitle
+                            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                            .filter { !$0.isEmpty }
+                            .joined(separator: "_")
+                        return safe.isEmpty ? "cursed_ugc_item" : safe
+                    }
+                    return "cursed_ugc_item"
+                }()
+                let fileURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(baseName).\(fileExtension)")
+                try data.write(to: fileURL, options: .atomic)
+                presentActivitySheet(items: [fileURL])
+            } catch {
+                toast(loc(en: "⚠️ Export failed: \(error.localizedDescription)",
+                          ru: "⚠️ Ошибка экспорта"))
+            }
+        }
+    }
+
     func sharePoster() {
         guard case let .result(resp) = step else { return }
         Task { @MainActor in

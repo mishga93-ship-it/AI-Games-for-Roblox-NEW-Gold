@@ -18,6 +18,7 @@ struct CursedUGCResultView: View {
             VStack(spacing: 16) {
                 marketplaceCard
                 variationsStrip
+                exportButton
                 makeMoreCursedButton
                 shareButton
                 tagsRow
@@ -241,6 +242,53 @@ struct CursedUGCResultView: View {
     }
 
     // MARK: - Actions
+
+    // Session 396 — the headline deliverable: export the finished 3D item as
+    // a Roblox-ready .rbxm (single static MeshPart, imports straight into
+    // Studio). When the .rbxm pipeline is unavailable (no Open Cloud / Engine
+    // API creds) we fall back to the raw GLB so the user always gets a 3D
+    // file, never just the 2D concept.
+    @ViewBuilder
+    private var exportButton: some View {
+        if let rbxm = response.rbxmUrl, !rbxm.isEmpty {
+            Button(action: { studio.exportModelFile(urlString: rbxm, fileExtension: "rbxm") }) {
+                exportButtonLabel(
+                    title: loc(en: "Export .rbxm for Roblox Studio",
+                               ru: "Экспорт .rbxm для Roblox Studio"),
+                    subtitle: loc(en: "Finished 3D item — drop straight into Studio",
+                                  ru: "Готовый 3D-айтем — закинь прямо в Studio"),
+                    icon: "cube.transparent.fill"
+                )
+            }
+        } else if let glb = response.meshUrl, !glb.isEmpty {
+            Button(action: { studio.exportModelFile(urlString: glb, fileExtension: "glb") }) {
+                exportButtonLabel(
+                    title: loc(en: "Export 3D model (.glb)",
+                               ru: "Экспорт 3D-модели (.glb)"),
+                    subtitle: loc(en: "Open in any 3D tool or the Studio importer",
+                                  ru: "Открой в любом 3D-редакторе или импортёре Studio"),
+                    icon: "move.3d"
+                )
+            }
+        }
+    }
+
+    private func exportButtonLabel(title: String, subtitle: String, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).font(.title3.bold())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.appHeadline.bold())
+                Text(subtitle).font(.caption).opacity(0.9)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "square.and.arrow.down.fill").font(.body.bold())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 14).padding(.horizontal, 16)
+        .background(LinearGradient(colors: [.green, .accentPrimary], startPoint: .leading, endPoint: .trailing))
+        .foregroundColor(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
 
     private var makeMoreCursedButton: some View {
         Button(action: { Task { await studio.generate(forceMoreCursed: true) } }) {

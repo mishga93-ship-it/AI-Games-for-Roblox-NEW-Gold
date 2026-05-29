@@ -148,6 +148,11 @@ struct CursedUGCResponse: Codable {
     /** Meshy v6 PNG thumbnail of the 3D model — more accurate than the
      *  flux concept image and used as fallback in the share-poster + grids. */
     let meshThumbnailUrl: String?
+    /// Session 396 — Roblox-ready .rbxm (one static MeshPart) built from the
+    /// Meshy GLB via Open Cloud + Engine API. Populated when those creds are
+    /// configured; nil → the result view offers the GLB as a 3D fallback so
+    /// the deliverable is never just a 2D image.
+    let rbxmUrl: String?
     let variations: [CursedUGCVariation]
     let generationStatus: String
 
@@ -277,6 +282,7 @@ struct CursedUGCGenerationDoc: Codable {
             mainImageUrl: payload.mainImageUrl ?? thumbnailUrl,
             meshUrl: payload.meshUrl,
             meshThumbnailUrl: payload.meshThumbnailUrl,
+            rbxmUrl: payload.rbxmUrl,
             variations: payload.variations ?? [],
             generationStatus: payload.generationStatus ?? "ready"
         )
@@ -290,6 +296,7 @@ struct CursedUGCGenerationPayload: Codable {
     let mainImageUrl: String?
     let meshUrl: String?
     let meshThumbnailUrl: String?
+    let rbxmUrl: String?
     let variations: [CursedUGCVariation]?
     let titleEN: String?
     let titleRU: String?

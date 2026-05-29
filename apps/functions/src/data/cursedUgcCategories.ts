@@ -3,6 +3,14 @@
 // 7 categories × 8 styles × 3 intensity levels. Each combination produces
 // a flux text-to-image prompt that biases toward "cursed Roblox meme UGC"
 // — absurd, stylized, oversized, but NEVER real horror/gore.
+//
+// session 396 — prompts rewritten to describe the ISOLATED ITEM only.
+//   User repro: "тут человек с айтемом а не просто рюкзак" — every promptBase
+//   referenced "the avatar wearing it" / "cartoon character" and the sigma
+//   style described a person ("sunglasses, suit, jaw-line"), so both flux (2D)
+//   and Meshy (3D, item_tool) rendered a CHARACTER. Now every base/style
+//   describes the standalone accessory and SAFETY_SUFFIX hard-negatives any
+//   avatar/person/body/wearer.
 
 export type CursedUGCCategoryId =
   | 'giant_backpack'
@@ -56,7 +64,7 @@ export const CURSED_UGC_CATEGORIES: Record<CursedUGCCategoryId, CursedUGCCategor
     pitchRU: 'Абсурдно огромные плюшевые рюкзаки размером с маленькую машину.',
     iconSymbol: 'backpack.fill',
     accentHex: 'FF6B9D',
-    promptBase: 'A massively oversized Roblox UGC backpack that is comically larger than the avatar wearing it — the backpack alone is 3-4x bigger than the character.',
+    promptBase: 'A single massively oversized Roblox UGC backpack accessory, shown entirely on its own as one standalone object — an absurdly huge plushie-style backpack, the item alone, nobody wearing it.',
   },
   cursed_face: {
     id: 'cursed_face',
@@ -66,7 +74,7 @@ export const CURSED_UGC_CATEGORIES: Record<CursedUGCCategoryId, CursedUGCCategor
     pitchRU: 'Roblox face accessory с absolutely cursed-but-meme энергией.',
     iconSymbol: 'face.dashed.fill',
     accentHex: '8B0000',
-    promptBase: 'A Roblox UGC face accessory with comically exaggerated cursed-meme features — wide unsettling smile, asymmetric eyes, "deep-fried" texture, but stylized cartoon (NOT real horror, NOT gore).',
+    promptBase: 'A single Roblox UGC face accessory (a wearable face-decal accessory, shown by itself as one floating standalone object) with comically exaggerated cursed-meme features — wide unsettling smile, asymmetric eyes, "deep-fried" texture, stylized cartoon (NOT real horror, NOT gore), just the accessory alone with no body.',
   },
   meme_plushie: {
     id: 'meme_plushie',
@@ -76,7 +84,7 @@ export const CURSED_UGC_CATEGORIES: Record<CursedUGCCategoryId, CursedUGCCategor
     pitchRU: 'Гигантские плюшевые игрушки на плечо на основе мем-существ.',
     iconSymbol: 'pawprint.fill',
     accentHex: 'FFB347',
-    promptBase: 'A Roblox UGC shoulder plushie of an absurd meme creature, comically oversized, sitting on the avatar shoulder. The plushie itself is the size of the avatar head.',
+    promptBase: 'A single Roblox UGC shoulder-plushie accessory of an absurd meme creature, comically oversized, shown entirely on its own as one standalone plushie toy object — just the plushie, no avatar, no shoulder, no person.',
   },
   giant_pet: {
     id: 'giant_pet',
@@ -86,7 +94,7 @@ export const CURSED_UGC_CATEGORIES: Record<CursedUGCCategoryId, CursedUGCCategor
     pitchRU: 'Огромные follow-pets — больше самого аватара.',
     iconSymbol: 'tortoise.fill',
     accentHex: '00B4D8',
-    promptBase: 'A Roblox UGC pet companion that is massively oversized — bigger than the player avatar. Following next to a tiny avatar that looks helpless next to it.',
+    promptBase: 'A single Roblox UGC pet companion accessory, massively oversized, shown entirely on its own as one standalone creature-prop centered in frame — just the pet object alone, no avatar, no person standing next to it.',
   },
   weird_mask: {
     id: 'weird_mask',
@@ -96,7 +104,7 @@ export const CURSED_UGC_CATEGORIES: Record<CursedUGCCategoryId, CursedUGCCategor
     pitchRU: 'Cursed-meme маски, странно закрывающие всю голову.',
     iconSymbol: 'theatermasks.fill',
     accentHex: '6A0DAD',
-    promptBase: 'A Roblox UGC head mask that bizarrely covers the entire head with a meme creature face. Stylized cartoon — exaggerated proportions but NOT scary realistic.',
+    promptBase: 'A single Roblox UGC head-mask accessory with a bizarre meme creature face, shown by itself as one standalone hollow mask object (as if displayed on an invisible stand) — just the mask alone, no head, no body, no avatar wearing it. Stylized cartoon, exaggerated proportions, NOT scary realistic.',
   },
   brainrot_item: {
     id: 'brainrot_item',
@@ -106,7 +114,7 @@ export const CURSED_UGC_CATEGORIES: Record<CursedUGCCategoryId, CursedUGCCategor
     pitchRU: 'Steal-a-Brainrot стиль — абсурдные мем-аксессуары.',
     iconSymbol: 'brain.head.profile',
     accentHex: '39FF14',
-    promptBase: 'A Roblox UGC accessory in the Steal-a-Brainrot meme aesthetic — absurd cartoon character combining 2-3 unrelated things (e.g., banana with shark legs, hamster with sunglasses and chains, cat with rocket boosters).',
+    promptBase: 'A single Roblox UGC accessory prop in the Steal-a-Brainrot meme aesthetic — one absurd standalone OBJECT that mashes together 2-3 unrelated things (e.g., banana with shark fins, donut with rocket boosters, ice-cream cone with tank treads), shown by itself centered in frame. It is an object/prop, NOT a living character, NOT a person, NOT a humanoid.',
   },
   oversized_hat: {
     id: 'oversized_hat',
@@ -116,7 +124,7 @@ export const CURSED_UGC_CATEGORIES: Record<CursedUGCCategoryId, CursedUGCCategor
     pitchRU: 'Абсурдные шапки больше аватара.',
     iconSymbol: 'graduationcap.fill',
     accentHex: 'F4A460',
-    promptBase: 'A Roblox UGC hat that is comically oversized — the hat itself is 2-3x bigger than the avatar head, almost crushing them.',
+    promptBase: 'A single Roblox UGC hat accessory, comically oversized, shown entirely on its own as one standalone hat object — just the hat alone, no head, no avatar, no person wearing it.',
   },
 };
 
@@ -127,7 +135,7 @@ export const CURSED_UGC_STYLES: Record<CursedUGCStyleId, CursedUGCStyle> = {
     titleRU: 'Cute',
     iconSymbol: 'heart.fill',
     accentHex: 'FFB6C1',
-    promptStyle: 'Kawaii cute aesthetic, pastel colors, big sparkly eyes, soft plushie texture, family-friendly cute.',
+    promptStyle: 'Kawaii cute aesthetic applied to the item — pastel colors, soft plushie texture, glossy highlights, family-friendly cute styling on the object itself.',
   },
   horror: {
     id: 'horror',
@@ -135,7 +143,7 @@ export const CURSED_UGC_STYLES: Record<CursedUGCStyleId, CursedUGCStyle> = {
     titleRU: 'Horror',
     iconSymbol: 'flame.fill',
     accentHex: '2A0A0A',
-    promptStyle: 'Stylized cartoon-horror aesthetic — exaggerated unsettling features but NOT real gore. Dark color palette, edge-lighting, dramatic shadows. Family-friendly meme-horror only.',
+    promptStyle: 'Stylized cartoon-horror aesthetic on the item — exaggerated unsettling shapes but NOT real gore. Dark color palette, edge-lighting, dramatic shadows. Family-friendly meme-horror only.',
   },
   sigma: {
     id: 'sigma',
@@ -143,7 +151,7 @@ export const CURSED_UGC_STYLES: Record<CursedUGCStyleId, CursedUGCStyle> = {
     titleRU: 'Sigma',
     iconSymbol: 'person.fill.checkmark',
     accentHex: '1F2530',
-    promptStyle: 'Sigma chad meme aesthetic — sunglasses, suit, cold stoic vibe, gold chains, jaw-line. Even the cursed item should feel "alpha".',
+    promptStyle: 'Sigma "alpha" meme aesthetic applied to the OBJECT only — sleek black-and-gold color scheme, gold-chain accents draped on the item, cold premium stoic vibe. Style the item itself; do NOT add a person, suit, sunglasses or face.',
   },
   brainrot: {
     id: 'brainrot',
@@ -151,7 +159,7 @@ export const CURSED_UGC_STYLES: Record<CursedUGCStyleId, CursedUGCStyle> = {
     titleRU: 'Brainrot',
     iconSymbol: 'sparkles',
     accentHex: '39FF14',
-    promptStyle: 'Steal-a-Brainrot meme aesthetic — combines 2-3 unrelated absurd elements, hyperactive colors, chaotic energy, "what the hell is this" vibe.',
+    promptStyle: 'Steal-a-Brainrot meme aesthetic on the item — combines 2-3 unrelated absurd object elements, hyperactive colors, chaotic energy, "what the hell is this" vibe.',
   },
   anime: {
     id: 'anime',
@@ -159,7 +167,7 @@ export const CURSED_UGC_STYLES: Record<CursedUGCStyleId, CursedUGCStyle> = {
     titleRU: 'Anime',
     iconSymbol: 'star.fill',
     accentHex: 'FF1493',
-    promptStyle: 'Anime aesthetic — huge sparkling eyes, dramatic hair, kawaii expression, anime cel-shading, deformed cute proportions.',
+    promptStyle: 'Anime aesthetic applied to the item — glossy cel-shaded surfaces, sparkly highlights, bright saturated colors, deformed cute proportions on the object itself.',
   },
   hyperreal: {
     id: 'hyperreal',
@@ -183,7 +191,7 @@ export const CURSED_UGC_STYLES: Record<CursedUGCStyleId, CursedUGCStyle> = {
     titleRU: 'Emo',
     iconSymbol: 'music.note',
     accentHex: '6B0F1A',
-    promptStyle: 'Emo 2007 aesthetic — black, chains, side-bangs, eyeliner, MySpace vibes, sad designer energy.',
+    promptStyle: 'Emo 2007 aesthetic applied to the item — black-and-dark color scheme, chains, studs, MySpace-era designer energy styled onto the object itself, no person.',
   },
 };
 
@@ -193,9 +201,13 @@ export const INTENSITY_MULTIPLIERS: Record<CursedUGCIntensity, string> = {
   extreme: 'ABSOLUTELY UNHINGED. Maximum absurdity. The kind of item that makes people screenshot and forward it. Still NO real horror or gore — just maxed-out meme cursedness.',
 };
 
-// Always-appended safety + style suffix.
+// Always-appended isolation + safety + style suffix.
+// session 396 — the isolation clause is the hard negative that keeps flux/Meshy
+// from drawing a character. Keep it first so it carries the most weight.
 export const SAFETY_SUFFIX =
-  ' Stylized 3D cartoon render, plain white background, soft studio lighting, blocky Roblox aesthetic.' +
+  ' Show ONLY the item itself as a single standalone Roblox UGC accessory, isolated and centered, floating on a plain white background.' +
+  ' Do NOT show any avatar, person, character, humanoid, body, mannequin, hands, arms, legs or anyone wearing, holding or standing next to the item — just the item by itself.' +
+  ' Stylized 3D cartoon render, soft studio lighting, blocky Roblox aesthetic.' +
   ' Family-friendly meme content only. NO real horror, NO gore, NO blood, NO disturbing imagery,' +
   ' NO realistic violence. NO text, NO logos, NO watermarks.';
 
