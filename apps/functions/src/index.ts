@@ -6326,6 +6326,17 @@ const SMART_STUB_SUPPORTED_GAME_SUBCATEGORIES = new Set([
   'horror',
   'pvp',
   'pvp_arena',
+  // Session 399: all genres below now have dedicated deterministic runtime
+  // builders (buildGameplayScript), so Smart Stubs must NOT show the
+  // "coming in the next update" placeholder for them.
+  'tower_defense',
+  'roleplay_town',
+  'racing',
+  'story_game',
+  'minigame_hub',
+  'survival',
+  'fighting',
+  'custom',
 ]);
 
 function isSmartStubSupportedGame(metadata?: Record<string, unknown>): boolean {
