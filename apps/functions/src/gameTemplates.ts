@@ -11837,7 +11837,7 @@ local function addCash(player, amount) local ls = player:FindFirstChild("leaders
 
 local coinActive = {}
 local function makeCoin(pos)
-    local coin = part("Coin_" .. math.random(1, 99999), Vector3.new(3, 3, 0.6), pos, theme.coin, Enum.Material.Neon)
+    local coin = part("Coin_" .. math.random(1, 99999), Vector3.new(0.5, 3, 3), pos, theme.coin, Enum.Material.Neon)
     coin.Shape = Enum.PartType.Cylinder; coin.CanCollide = false; coin.Orientation = Vector3.new(0, 0, 90)
     coinActive[coin] = true
     coin.Touched:Connect(function(hit)
@@ -11852,7 +11852,7 @@ for i = 1, 16 do local a = math.rad(i * 22.5); local r = 50 + (i % 3) * 14; make
 
 local platforms = {Vector3.new(70, 6, 0), Vector3.new(86, 11, 14), Vector3.new(100, 16, 0), Vector3.new(86, 21, -14)}
 for i, p in ipairs(platforms) do part("Platform_" .. i, Vector3.new(12, 1, 12), p, theme.plaza, Enum.Material.SmoothPlastic) end
-local topCoin = part("TopCoin", Vector3.new(4, 4, 0.6), Vector3.new(86, 25, -14), theme.coin, Enum.Material.Neon); topCoin.Shape = Enum.PartType.Cylinder; topCoin.CanCollide = false; topCoin.Orientation = Vector3.new(0, 0, 90)
+local topCoin = part("TopCoin", Vector3.new(0.5, 4, 4), Vector3.new(86, 25, -14), theme.coin, Enum.Material.Neon); topCoin.Shape = Enum.PartType.Cylinder; topCoin.CanCollide = false; topCoin.Orientation = Vector3.new(0, 0, 90)
 coinActive[topCoin] = true
 label3d(topCoin, "+25 climb reward", 3, theme.coin, 200)
 topCoin.Touched:Connect(function(hit)
