@@ -10,6 +10,7 @@ struct ForgeView: View {
         case games = "Games"
         case content = "Content"
         case viral = "🔥 Viral"
+        case fix = "🩺 Fix"
 
         var id: String { rawValue }
     }
@@ -1102,12 +1103,11 @@ private extension ForgeView {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Picker("Type", selection: $selectedGroup) {
-                        ForEach(ProjectGroup.allCases) { group in
-                            Text(group.rawValue).tag(group)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    BrandSegmentedControl(
+                        items: ProjectGroup.allCases,
+                        selection: $selectedGroup,
+                        title: { $0.rawValue }
+                    )
 
                     chipStrip
 
@@ -1303,6 +1303,8 @@ private extension ForgeView {
                     ProjectChip(id: "ai", label: "🤖 AI"),
                     ProjectChip(id: "tiktok", label: "⚡ TikTok-ready"),
                     ProjectChip(id: "meme", label: "😂 Meme")]
+        case .fix:
+            return [ProjectChip(id: "all", label: "All")]
         }
     }
 
@@ -1315,6 +1317,7 @@ private extension ForgeView {
         case .games: return gameOptions
         case .content: return contentOptions
         case .viral: return viralOptions
+        case .fix: return fixOptions
         }
     }
 
@@ -1440,6 +1443,20 @@ private extension ForgeView {
             resumeSessionId: nil,
             contentSubcategory: mappedSubcategory
         )
+    }
+
+    var fixOptions: [ProjectOption] {
+        [
+            ProjectOption(
+                id: "luau_fix",
+                title: "AI Luau Doctor",
+                details: isRussianInterface
+                    ? "Загрузи свой .lua (📎) или вставь код и опиши проблему голосом/текстом. AI находит причину, переписывает скрипт и советует, что добавить или убрать."
+                    : "Upload your .lua (📎) or paste code and describe the problem by voice/text. AI finds the root cause, rewrites the script, and suggests what to add or remove.",
+                kind: .fix,
+                tags: ["new", "ai"]
+            )
+        ]
     }
 
     var contentOptions: [ProjectOption] {
@@ -1679,4 +1696,61 @@ private struct ShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// Branded replacement for the gray `.pickerStyle(.segmented)` — a sliding teal→blue pill on a soft capsule track.
+fileprivate struct BrandSegmentedControl<Item: Hashable>: View {
+    let items: [Item]
+    @Binding var selection: Item
+    let title: (Item) -> String
+    @Namespace private var pillNamespace
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(items, id: \.self) { item in
+                segment(item)
+            }
+        }
+        .padding(5)
+        .background(
+            Capsule(style: .continuous).fill(Color.cardBackground.opacity(0.7))
+        )
+        .overlay(
+            Capsule(style: .continuous).stroke(Color.bubbleBorder.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func segment(_ item: Item) -> some View {
+        let isSelected = item == selection
+        Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                selection = item
+            }
+        } label: {
+            Text(title(item))
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(isSelected ? .white : .textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background {
+                    if isSelected {
+                        Capsule(style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.accentTeal, .brandElectricBlue],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .shadow(color: Color.brandElectricBlue.opacity(0.35), radius: 6, y: 3)
+                            .matchedGeometryEffect(id: "selectedPill", in: pillNamespace)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 }

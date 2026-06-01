@@ -10,6 +10,7 @@ import PhotosUI
 import UniformTypeIdentifiers
 import AVFoundation
 import Combine
+import UIKit
 
 struct ChatView: View {
     enum EntryChatMode {
@@ -30,6 +31,7 @@ struct ChatView: View {
     @State private var exportGuide: ExportGuide?
     @State private var isShowingLinkPrompt = false
     @State private var isImportingFile = false
+    @State private var isShowingFixDiff = false
     @State private var selectedPhoto: PhotosPickerItem?
     // Bug 16: PhotosPicker нельзя размещать напрямую в Menu { } — Menu закрывается
     // раньше, чем PhotosPicker успевает презентовать sheet, и тап уходит в никуда.
@@ -270,6 +272,12 @@ struct ChatView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.light, for: .navigationBar)
             .tint(.textPrimary)
+            .sheet(isPresented: $isShowingFixDiff) {
+                LuauDiffView(
+                    original: chatStore.fixDiffOriginal ?? "",
+                    fixed: chatStore.fixDiffFixed ?? ""
+                )
+            }
     }
 
     @ToolbarContentBuilder
@@ -286,6 +294,16 @@ struct ChatView: View {
         }
         ToolbarItem(placement: .principal) {
             navigationTitleLabel
+        }
+        if chatStore.canShowFixDiff {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isShowingFixDiff = true
+                } label: {
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                }
+                .accessibilityLabel("Red to green diff")
+            }
         }
         ToolbarItem(placement: .topBarTrailing) {
             trailingToolbarContent
@@ -1968,38 +1986,42 @@ struct ChatView: View {
         }
     }
 
+    @ViewBuilder
     private var generateForMeButton: some View {
-        let isRu = chatStore.preferredResponseLanguageCode() == "ru"
-        return Button {
-            let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-            let prompt = text.isEmpty
-                ? (isRu ? "Сгенерируй лучший вариант с учётом текущих игровых трендов и лучших практик" : "Generate the best version using current gaming trends and best practices")
-                : text
-            chatStore.sendSkipInterview(prompt)
-            inputText = ""
-            dismissKeyboard()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 12, weight: .bold))
-                Text(isRu ? "Быстрая генерация" : "Quick Generate")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-            }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(
-                LinearGradient(
-                    colors: [.accentPrimary, .accentPrimary.opacity(0.8)],
-                    startPoint: .leading,
-                    endPoint: .trailing
+        // Hidden for Voice-to-Fix / Analyze — those are conversational, nothing to "generate".
+        if chatStore.projectKind != .fix && chatStore.projectKind != .analyze {
+            let isRu = chatStore.preferredResponseLanguageCode() == "ru"
+            Button {
+                let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                let prompt = text.isEmpty
+                    ? (isRu ? "Сгенерируй лучший вариант с учётом текущих игровых трендов и лучших практик" : "Generate the best version using current gaming trends and best practices")
+                    : text
+                chatStore.sendSkipInterview(prompt)
+                inputText = ""
+                dismissKeyboard()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 12, weight: .bold))
+                    Text(isRu ? "Быстрая генерация" : "Quick Generate")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    LinearGradient(
+                        colors: [.accentPrimary, .accentPrimary.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .disabled(chatStore.isLoading)
+            .opacity(chatStore.isLoading ? 0.5 : 1.0)
         }
-        .buttonStyle(.plain)
-        .disabled(chatStore.isLoading)
-        .opacity(chatStore.isLoading ? 0.5 : 1.0)
     }
 
     private func sendIfNeeded() {
@@ -3309,5 +3331,92 @@ private struct FlowModePicker: View {
         case .quickGenerate: return "Быстро"
         case .smartInterview: return "Интервью"
         }
+    }
+}
+
+// Voice-to-Fix red→green diff: unified line diff of the user's original vs the doctor's fixed Luau.
+private struct LuauDiffView: View {
+    let original: String
+    let fixed: String
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Kind { case same, removed, added }
+    private struct Row { let kind: Kind; let text: String }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        rowView(row)
+                    }
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(Color(red: 0.07, green: 0.08, blue: 0.11).ignoresSafeArea())
+            .navigationTitle("Red → Green")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        UIPasteboard.general.string = fixed
+                    } label: {
+                        Label("Copy fixed", systemImage: "doc.on.doc")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func rowView(_ row: Row) -> some View {
+        let style = style(for: row.kind)
+        return Text(style.prefix + (row.text.isEmpty ? " " : row.text))
+            .font(.system(size: 12, weight: .regular, design: .monospaced))
+            .foregroundColor(style.fg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 1)
+            .background(style.bg)
+            .textSelection(.enabled)
+    }
+
+    private func style(for kind: Kind) -> (bg: Color, fg: Color, prefix: String) {
+        switch kind {
+        case .same:    return (.clear, Color.white.opacity(0.7), "  ")
+        case .removed: return (Color.red.opacity(0.22), Color(red: 1, green: 0.6, blue: 0.6), "- ")
+        case .added:   return (Color.green.opacity(0.20), Color(red: 0.55, green: 1, blue: 0.7), "+ ")
+        }
+    }
+
+    private var rows: [Row] {
+        let a = original.components(separatedBy: "\n")
+        let b = fixed.components(separatedBy: "\n")
+        let diff = b.difference(from: a)
+        var aRemoved = Array(repeating: false, count: a.count)
+        var bInserted = Array(repeating: false, count: b.count)
+        for change in diff {
+            switch change {
+            case let .remove(offset, _, _): if offset < aRemoved.count { aRemoved[offset] = true }
+            case let .insert(offset, _, _): if offset < bInserted.count { bInserted[offset] = true }
+            }
+        }
+        var out: [Row] = []
+        var i = 0, j = 0
+        while i < a.count && j < b.count {
+            if aRemoved[i] {
+                out.append(Row(kind: .removed, text: a[i])); i += 1
+            } else if bInserted[j] {
+                out.append(Row(kind: .added, text: b[j])); j += 1
+            } else {
+                out.append(Row(kind: .same, text: a[i])); i += 1; j += 1
+            }
+        }
+        while i < a.count { out.append(Row(kind: .removed, text: a[i])); i += 1 }
+        while j < b.count { out.append(Row(kind: .added, text: b[j])); j += 1 }
+        return out
     }
 }

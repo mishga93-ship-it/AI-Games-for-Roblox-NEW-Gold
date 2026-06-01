@@ -78,6 +78,8 @@ final class ChatStore: ObservableObject {
     private var oldestMessageCursor: String?
 
     let projectKind: ProjectKind
+    // Voice-to-Fix: raw original .lua captured at upload (not in the transcript) for the red→green diff.
+    @Published var fixOriginalSource: String?
     @Published private(set) var contentSubcategory: String?
     @Published var preferredFlow: WorkspaceFlow
     @Published var presetsVisible = true
@@ -981,6 +983,11 @@ final class ChatStore: ObservableObject {
         // Clothing & Outfits…" welcome with Hoodie/Jacket/Dress quick-replies fires
         // on first entry and confuses the user.
         if contentSubcategory == "clothing" {
+            messages = [welcomeMessage()]
+            return
+        }
+        // Voice-to-Fix / Analyze are conversational doctors — use their own welcome, not the generic "build a game" one.
+        if projectKind == .fix || projectKind == .analyze {
             messages = [welcomeMessage()]
             return
         }
@@ -3332,6 +3339,11 @@ final class ChatStore: ObservableObject {
     }
 
     func ingestFile(data: Data, fileName: String, mimeType: String = "text/plain") {
+        if projectKind == .fix,
+           let raw = String(data: data, encoding: .utf8),
+           !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            fixOriginalSource = raw
+        }
         Task {
             do {
                 let asset = try await AIWorkspaceAPI.ingestAttachment(
@@ -3355,6 +3367,47 @@ final class ChatStore: ObservableObject {
                 appendAssistantMessage("I couldn't ingest that file yet. Try a smaller `.lua`, `.txt`, or `.json` file.")
             }
         }
+    }
+
+    // Voice-to-Fix diff: original from upload (raw .lua isn't in the transcript), else a pasted code message.
+    var fixDiffOriginal: String? {
+        if let s = fixOriginalSource?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            return s
+        }
+        for msg in messages.reversed() where msg.role == .user {
+            if let code = Self.extractLuaCode(from: msg.content) { return code }
+        }
+        return nil
+    }
+
+    var fixDiffFixed: String? {
+        for msg in messages.reversed() where msg.role == .assistant {
+            if let code = Self.extractLuaCode(from: msg.content) { return code }
+        }
+        return nil
+    }
+
+    var canShowFixDiff: Bool {
+        projectKind == .fix && fixDiffOriginal != nil && fixDiffFixed != nil
+    }
+
+    static func extractLuaCode(from text: String) -> String? {
+        let pattern = "```[a-zA-Z]*\\n([\\s\\S]*?)```"
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let full = NSRange(text.startIndex..., in: text)
+            if let last = regex.matches(in: text, range: full).last,
+               let r = Range(last.range(at: 1), in: text) {
+                let block = String(text[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !block.isEmpty { return block }
+            }
+        }
+        let looksLua = text.contains("function ") || text.contains("local ")
+            || text.range(of: "\\bend\\b", options: .regularExpression) != nil
+        let lineCount = text.split(separator: "\n").count
+        if looksLua && lineCount >= 3 && text.count >= 40 {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
     }
 
     /// Stages an image as a pending attachment chip and starts uploading in the
@@ -3535,6 +3588,17 @@ final class ChatStore: ObservableObject {
 
     func generateFromCurrentPlan() {
         guard !isGenerating else { return }
+
+        // Voice-to-Fix / Analyze are conversational — no game-style "package" generation; the doctor answers inline in chat.
+        if projectKind == .fix || projectKind == .analyze {
+            let nudge = projectKind == .fix
+                ? "Paste or upload your script (tap 📎) and tell me what's broken — I'll fix it right here and show a red→green diff."
+                : "Tell me about your game (or paste a link) and I'll give targeted recommendations right here."
+            if messages.last?.content != nudge {
+                appendAssistantMessage(nudge)
+            }
+            return
+        }
 
         if needsNpcVisualPipelineChoice {
             appendNpcVisualPipelineChoiceMessage()
@@ -7309,7 +7373,7 @@ final class ChatStore: ObservableObject {
                 content = "Fake Limiteds — выбери, какую дорогую лимитку имитируем за 0 Robux. Я подберу рецепт из бесплатных Catalog-аксессуаров и нарисую превью."
                 replies = ["Headless", "Korblox", "Combo (Headless+Korblox)"]
             case .fix:
-                content = "Quick mode — paste your script or describe the issue, I'll fix it immediately."
+                content = "Quick mode — upload your .lua (📎), paste the script, or describe the issue, and I'll fix it immediately."
                 replies = ["Paste a script", "Describe the bug", "Optimize performance", "Switch to Interview"]
             case .analyze:
                 content = "Quick mode — describe your game or paste a link, I'll analyze instantly."
@@ -7324,7 +7388,7 @@ final class ChatStore: ObservableObject {
             case .fakeLimited:
                 content = "Привет! Я соберу иллюзию дорогих лимиток (Headless ~31 000 R$, Korblox ~17 000 R$) из бесплатных и дешёвых Catalog-аксессуаров. Что собираем?"
             case .fix:
-                content = "What needs fixing? Paste a script or describe the problem."
+                content = "What needs fixing? Upload your .lua (tap 📎), paste the script, or describe the problem — I'll find the root cause, rewrite it, and suggest what to add or remove."
             case .analyze:
                 content = "What game should I analyze? Tell me about it and I'll give targeted recommendations."
             }
