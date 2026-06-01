@@ -101,16 +101,18 @@
 - [x] Simulator
 - [x] RPG
 - [x] Horror
-- [x] Roleplay / Town
+- [ ] Roleplay / Town
 - [x] PvP Arena
 - [x] Tower Defense
-- [x] Racing
-- [x] Parkour
-- [x] Story Game
-- [x] Mini-games Hub
-- [x] Survival
-- [x] Fighting
-- [x] Custom (любой жанр по описанию)
+- [ ] Racing
+- [ ] Parkour
+- [ ] Story Game
+- [ ] Mini-games Hub
+- [ ] Survival
+- [ ] Fighting
+- [ ] Custom (любой жанр по описанию)
+
+> **Статус билдеров (2026-06-01, сессия 399)**: выделенный детерминированный playable-билдер есть у Obby, Tycoon, Simulator (+ sim-семейство: clicker/mining/muscle/fighting/brainrot), RPG, Horror, PvP Arena, **Tower Defense** (новый). Roleplay/Town, Racing, Parkour, Story Game, Mini-games Hub, Survival, Fighting, Custom — пока БЕЗ собственного билдера (флаг `[ ]`); реализуются по очереди тем же 5-слойным паттерном по согласованному плану «по одному, полный билдер».
 
 ### 3.2 Контент — отдельные ассеты
 
