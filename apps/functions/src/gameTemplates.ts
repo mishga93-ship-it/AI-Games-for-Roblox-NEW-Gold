@@ -10969,9 +10969,128 @@ end)
   };
 }
 
+/**
+ * Session 399 ("wow" pass): shared visual-quality Lua layer for generated
+ * worlds. Cinematic atmosphere/lighting/clouds + procedural nature (multi-part
+ * trees, rock clusters, grass tufts) + Terrain ground/water — no external asset
+ * IDs (moderation-safe). Any genre builder can splice this into its serverScript
+ * (it defines `local function`s in scope) and then call setupAtmosphere{...},
+ * buildTerrainGround{...}, makeTree(...), makeRock(...), makeGrassTuft(...).
+ */
+function worldVisualsLua(): string {
+  return `
+-- ===== Generated Visual Layer (Session 399) =====
+local _Lighting = game:GetService("Lighting")
+local _Terrain = workspace.Terrain
+
+local function _vpart(parent, name, shape, size, cframe, color, material, collide)
+    local p = Instance.new("Part"); p.Name = name; p.Anchored = true; p.CanCollide = collide or false
+    p.Size = size; p.CFrame = cframe; p.Color = color; p.Material = material or Enum.Material.SmoothPlastic
+    if shape then p.Shape = shape end
+    p.Parent = parent; return p
+end
+
+local function setupAtmosphere(opts)
+    opts = opts or {}
+    _Lighting.Brightness = opts.brightness or 2.6
+    _Lighting.ExposureCompensation = opts.exposure or 0.2
+    _Lighting.Ambient = opts.ambient or Color3.fromRGB(70, 80, 95)
+    _Lighting.OutdoorAmbient = opts.outdoor or Color3.fromRGB(150, 158, 172)
+    _Lighting.EnvironmentDiffuseScale = 0.65
+    _Lighting.EnvironmentSpecularScale = 0.7
+    _Lighting.GlobalShadows = true
+    if opts.clockTime then _Lighting.ClockTime = opts.clockTime end
+    pcall(function() _Lighting.Technology = Enum.Technology.Future end)
+    local function ensure(cls)
+        local e = _Lighting:FindFirstChildOfClass(cls); if not e then e = Instance.new(cls); e.Parent = _Lighting end; return e
+    end
+    local atmo = ensure("Atmosphere"); atmo.Density = opts.density or 0.34; atmo.Offset = 0.1; atmo.Color = opts.atmoColor or Color3.fromRGB(199, 175, 130); atmo.Decay = opts.decay or Color3.fromRGB(104, 112, 128); atmo.Glare = 0.4; atmo.Haze = opts.haze or 1.8
+    local bloom = ensure("BloomEffect"); bloom.Intensity = opts.bloom or 0.6; bloom.Size = 24; bloom.Threshold = 0.85
+    local cc = ensure("ColorCorrectionEffect"); cc.Brightness = 0; cc.Contrast = opts.contrast or 0.14; cc.Saturation = opts.saturation or 0.2; cc.TintColor = opts.tint or Color3.fromRGB(255, 250, 244)
+    local sun = ensure("SunRaysEffect"); sun.Intensity = 0.16; sun.Spread = 0.82
+    local sky = ensure("Sky"); sky.SunAngularSize = 13; sky.StarCount = 4000
+    if _Terrain then
+        local clouds = _Terrain:FindFirstChildOfClass("Clouds"); if not clouds then clouds = Instance.new("Clouds"); clouds.Parent = _Terrain end
+        clouds.Cover = opts.cloudCover or 0.6; clouds.Density = opts.cloudDensity or 0.45; clouds.Color = Color3.fromRGB(245, 248, 255)
+    end
+end
+
+-- kind: "palm" | "pine" | "round" | "dead"
+local function makeTree(parent, pos, scale, kind, trunkColor, leafColor)
+    scale = scale or 1
+    trunkColor = trunkColor or Color3.fromRGB(104, 74, 48)
+    leafColor = leafColor or Color3.fromRGB(74, 134, 70)
+    local m = Instance.new("Model"); m.Name = "Tree"; m.Parent = parent
+    local th = 12 * scale
+    local trunk = _vpart(m, "Trunk", Enum.PartType.Cylinder, Vector3.new(2.2 * scale, th, 2.2 * scale), CFrame.new(pos + Vector3.new(0, th / 2, 0)) * CFrame.Angles(0, 0, math.rad(90)), trunkColor, Enum.Material.Wood, true)
+    if kind == "palm" then
+        for i = 1, 6 do
+            local a = math.rad(i * 60)
+            _vpart(m, "Frond", nil, Vector3.new(11 * scale, 0.7 * scale, 3.2 * scale), CFrame.new(pos + Vector3.new(0, th, 0)) * CFrame.Angles(0, a, math.rad(-20)) * CFrame.new(5.2 * scale, 0, 0), leafColor, Enum.Material.Grass)
+        end
+        _vpart(m, "Coco", Enum.PartType.Ball, Vector3.new(2 * scale, 2 * scale, 2 * scale), CFrame.new(pos + Vector3.new(0, th - 1, 0)), Color3.fromRGB(110, 80, 50), Enum.Material.SmoothPlastic)
+    elseif kind == "pine" then
+        for i = 0, 2 do
+            local s = (10 - i * 2.4) * scale
+            _vpart(m, "Canopy" .. i, nil, Vector3.new(s, 5 * scale, s), CFrame.new(pos + Vector3.new(0, th - 1 + i * 3.6 * scale, 0)) * CFrame.Angles(0, math.rad(45), 0), leafColor, Enum.Material.Grass)
+        end
+    elseif kind == "dead" then
+        for i = 1, 3 do
+            _vpart(m, "Branch" .. i, Enum.PartType.Cylinder, Vector3.new(0.8 * scale, 6 * scale, 0.8 * scale), CFrame.new(pos + Vector3.new(0, th, 0)) * CFrame.Angles(0, math.rad(i * 120), math.rad(40)) * CFrame.new(0, 3 * scale, 0), trunkColor, Enum.Material.Wood)
+        end
+    else
+        for i = 1, 3 do
+            local off = Vector3.new(math.random(-3, 3) * scale, th + math.random(-1, 3) * scale, math.random(-3, 3) * scale)
+            _vpart(m, "Leaf" .. i, Enum.PartType.Ball, Vector3.new(9 * scale, 8 * scale, 9 * scale), CFrame.new(pos + off), leafColor, Enum.Material.Grass)
+        end
+    end
+    return m, trunk
+end
+
+local function makeRock(parent, pos, scale, color)
+    scale = scale or 1
+    color = color or Color3.fromRGB(128, 128, 134)
+    local m = Instance.new("Model"); m.Name = "Rock"; m.Parent = parent
+    local main = _vpart(m, "Rock", Enum.PartType.Ball, Vector3.new(7 * scale, 5.5 * scale, 7 * scale), CFrame.new(pos + Vector3.new(0, 2 * scale, 0)) * CFrame.Angles(math.rad(math.random(0, 35)), math.rad(math.random(0, 360)), math.rad(math.random(0, 35))), color, Enum.Material.Rock, true)
+    for i = 1, 3 do
+        local off = Vector3.new(math.random(-4, 4) * scale, 0, math.random(-4, 4) * scale)
+        _vpart(m, "Chunk" .. i, Enum.PartType.Ball, Vector3.new((3 + math.random(0, 3)) * scale, (2 + math.random(0, 2)) * scale, (3 + math.random(0, 3)) * scale), CFrame.new(pos + off + Vector3.new(0, 1.5 * scale, 0)) * CFrame.Angles(math.rad(math.random(0, 360)), math.rad(math.random(0, 360)), 0), color:Lerp(Color3.new(0, 0, 0), 0.14), Enum.Material.Slate)
+    end
+    return m, main
+end
+
+local function makeGrassTuft(parent, pos, color)
+    color = color or Color3.fromRGB(86, 150, 70)
+    for i = 1, 4 do
+        local a = math.rad(i * 90 + math.random(0, 50))
+        _vpart(parent, "Blade", nil, Vector3.new(0.4, 2.4, 0.4), CFrame.new(pos + Vector3.new(math.cos(a) * 1.1, 1.2, math.sin(a) * 1.1)) * CFrame.Angles(math.rad(math.random(-14, 14)), a, 0), color, Enum.Material.Grass)
+    end
+end
+
+-- Flat island plateau (top ~y=1) with optional surrounding Terrain water + beach.
+local function buildTerrainGround(opts)
+    opts = opts or {}
+    if not _Terrain then return end
+    pcall(function() _Terrain:Clear() end)
+    local size = opts.size or 280
+    local mat = opts.material or Enum.Material.Grass
+    if opts.water then
+        _Terrain:FillBlock(CFrame.new(0, -10, 0), Vector3.new(size * 2.6, 20, size * 2.6), Enum.Material.Water)
+        _Terrain.WaterColor = opts.waterColor or Color3.fromRGB(24, 112, 142)
+        _Terrain.WaterWaveSize = 0.18; _Terrain.WaterWaveSpeed = 12; _Terrain.WaterTransparency = 0.55; _Terrain.WaterReflectance = 0.9
+        if opts.beach then _Terrain:FillBlock(CFrame.new(0, -8.5, 0), Vector3.new(size + 56, 18, size + 56), opts.beach) end
+    end
+    _Terrain:FillBlock(CFrame.new(0, -9, 0), Vector3.new(size, 20, size), mat)
+end
+`;
+}
+
 // Session 399 (cont.): Survival — gather wood/stone from nodes, heal at the
 // campfire, survive nights when chasing enemies spawn and attack your Humanoid.
 // Day/night cycle increments Days survived. leaderstats Days + Wood + Stone.
+// Session 399 ("wow" pass): Terrain island + water, cinematic atmosphere,
+// procedural trees/rocks, styled enemy creatures, and a crafting bench (wood+
+// stone -> defensive walls) so gathered resources have a purpose.
 function buildSurvivalScript(params: GameTemplateParams): MultiScriptResult {
   const titleLua = safeLuaString(params.title, 'Last Survivor');
   const dayLength = Math.max(20, Math.min(120, Math.round(Number(params.dayLength) || 45)));
@@ -10995,10 +11114,10 @@ local Lighting = game:GetService("Lighting")
 local Config = {Title=${titleLua}, Theme=${themeLua}, DayLength=${dayLength}, StartHealth=${startHealth}, Difficulty=${difficultyLua}}
 
 local THEMES = {
-    island = {ground=Color3.fromRGB(214,196,140), groundMat=Enum.Material.Sand, tree=Color3.fromRGB(90,140,70), rock=Color3.fromRGB(130,130,135), enemy=Color3.fromRGB(120,90,160)},
-    forest = {ground=Color3.fromRGB(96,140,80), groundMat=Enum.Material.Grass, tree=Color3.fromRGB(70,110,55), rock=Color3.fromRGB(120,122,128), enemy=Color3.fromRGB(90,70,120)},
-    winter = {ground=Color3.fromRGB(228,236,244), groundMat=Enum.Material.Snow, tree=Color3.fromRGB(120,150,130), rock=Color3.fromRGB(150,160,175), enemy=Color3.fromRGB(120,150,200)},
-    zombie = {ground=Color3.fromRGB(78,82,70), groundMat=Enum.Material.Ground, tree=Color3.fromRGB(80,90,60), rock=Color3.fromRGB(96,96,100), enemy=Color3.fromRGB(110,150,80)},
+    island = {groundMat=Enum.Material.Grass, water=true, beach=Enum.Material.Sand, waterColor=Color3.fromRGB(28,124,150), treeKind="palm", trunk=Color3.fromRGB(122,86,54), leaf=Color3.fromRGB(86,162,72), rock=Color3.fromRGB(150,140,120), enemy=Color3.fromRGB(120,90,160), atmo=Color3.fromRGB(205,180,135), ambient=Color3.fromRGB(96,102,114), tint=Color3.fromRGB(255,250,238), clock=14},
+    forest = {groundMat=Enum.Material.Grass, water=false, treeKind="pine", trunk=Color3.fromRGB(96,66,42), leaf=Color3.fromRGB(58,112,56), rock=Color3.fromRGB(120,122,128), enemy=Color3.fromRGB(90,70,120), atmo=Color3.fromRGB(158,176,156), ambient=Color3.fromRGB(74,86,76), tint=Color3.fromRGB(244,250,242), clock=15},
+    winter = {groundMat=Enum.Material.Snow, water=false, treeKind="pine", trunk=Color3.fromRGB(110,96,84), leaf=Color3.fromRGB(150,180,165), rock=Color3.fromRGB(160,170,185), enemy=Color3.fromRGB(120,150,200), atmo=Color3.fromRGB(212,224,238), ambient=Color3.fromRGB(124,136,154), tint=Color3.fromRGB(238,246,255), clock=9},
+    zombie = {groundMat=Enum.Material.Ground, water=false, treeKind="dead", trunk=Color3.fromRGB(70,60,48), leaf=Color3.fromRGB(86,96,64), rock=Color3.fromRGB(96,96,100), enemy=Color3.fromRGB(110,150,80), atmo=Color3.fromRGB(122,122,112), ambient=Color3.fromRGB(60,62,60), tint=Color3.fromRGB(228,226,214), clock=6},
 }
 local theme = THEMES[Config.Theme] or THEMES.island
 local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.6 or 1.0)
@@ -11017,25 +11136,48 @@ local function label3d(adornee, text, offsetY, color)
     local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
 end
 
-part("Island", Vector3.new(360, 2, 360), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
-local campfire = part("Campfire", Vector3.new(10, 5, 10), Vector3.new(0, 2.5, 0), Color3.fromRGB(240, 130, 50), Enum.Material.Neon)
-label3d(campfire, "Campfire (safe zone)", 6, Color3.fromRGB(255, 190, 110))
-local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "SurvivalSpawn"; spawnLoc.Size = Vector3.new(18, 1, 18); spawnLoc.Position = Vector3.new(0, 1.6, 22); spawnLoc.Anchored = true; spawnLoc.Color = Color3.fromRGB(240, 190, 120); spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${worldVisualsLua()}
+
+buildTerrainGround({size = 300, material = theme.groundMat, water = theme.water, waterColor = theme.waterColor, beach = theme.beach})
+setupAtmosphere({clockTime = theme.clock, ambient = theme.ambient, atmoColor = theme.atmo, tint = theme.tint, haze = theme.water and 2.2 or 1.6, cloudCover = theme.water and 0.55 or 0.45})
+
+-- Cozy campfire (logs + real Fire + warm light) as the safe heal zone.
+part("CampStones", Vector3.new(9, 1, 9), Vector3.new(0, 1.1, 0), Color3.fromRGB(120, 116, 110), Enum.Material.Rock)
+part("CampLogs", Vector3.new(5.5, 2, 5.5), Vector3.new(0, 2, 0), Color3.fromRGB(92, 62, 40), Enum.Material.Wood)
+local flame = part("CampFlame", Vector3.new(3, 4, 3), Vector3.new(0, 4, 0), Color3.fromRGB(255, 140, 40), Enum.Material.Neon); flame.Shape = Enum.PartType.Ball; flame.CanCollide = false
+local fire = Instance.new("Fire"); fire.Size = 14; fire.Heat = 14; fire.Color = Color3.fromRGB(255, 150, 45); fire.SecondaryColor = Color3.fromRGB(255, 92, 24); fire.Parent = flame
+local campLight = Instance.new("PointLight"); campLight.Range = 44; campLight.Brightness = 3; campLight.Color = Color3.fromRGB(255, 172, 96); campLight.Parent = flame
+label3d(flame, "Campfire (safe zone)", 5, Color3.fromRGB(255, 192, 112))
+local campfirePos = Vector3.new(0, 3, 0)
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "SurvivalSpawn"; spawnLoc.Size = Vector3.new(16, 1, 16); spawnLoc.Position = Vector3.new(0, 2, 24); spawnLoc.Anchored = true; spawnLoc.Color = Color3.fromRGB(240, 200, 130); spawnLoc.Material = Enum.Material.Neon; spawnLoc.Transparency = 0.4; spawnLoc.Parent = world
+
+-- Decorative nature scatter for a lush, full world (non-harvestable).
+for i = 1, 30 do
+    local a = math.rad(math.random(0, 360)); local r = 34 + math.random(0, 118)
+    local p = Vector3.new(math.cos(a) * r, 1, math.sin(a) * r)
+    local roll = math.random(1, 10)
+    if roll <= 5 then makeTree(world, p, 0.8 + math.random() * 0.7, theme.treeKind, theme.trunk, theme.leaf)
+    elseif roll <= 7 then makeRock(world, p, 0.6 + math.random() * 0.7, theme.rock)
+    else makeGrassTuft(world, p, theme.leaf) end
+end
 
 local function addResource(player, kind, amount)
     local ls = player:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild(kind); if v then v.Value += amount end
 end
 local function spawnNode(kind, pos)
     local isWood = kind == "Wood"
-    local node = part(kind .. "Node", isWood and Vector3.new(4, 14, 4) or Vector3.new(7, 6, 7), pos + Vector3.new(0, isWood and 7 or 3, 0), isWood and theme.tree or theme.rock, isWood and Enum.Material.Wood or Enum.Material.Rock)
-    if isWood then part(kind .. "Leaves_" .. math.random(1, 9999), Vector3.new(12, 8, 12), pos + Vector3.new(0, 15, 0), theme.tree:Lerp(Color3.new(0, 0, 0), 0.1), Enum.Material.Grass).CanCollide = false end
-    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Gather"; prompt.ObjectText = kind; prompt.HoldDuration = 0.6; prompt.MaxActivationDistance = 12; prompt.RequiresLineOfSight = false; prompt.Parent = node
+    local model, main
+    if isWood then model, main = makeTree(world, pos, 1.3, theme.treeKind, theme.trunk, theme.leaf)
+    else model, main = makeRock(world, pos, 1.2, theme.rock) end
+    label3d(main, kind .. " (gather)", isWood and 10 or 6, Color3.fromRGB(255, 255, 255))
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Gather"; prompt.ObjectText = kind; prompt.HoldDuration = 0.6; prompt.MaxActivationDistance = 14; prompt.RequiresLineOfSight = false; prompt.Parent = main
     prompt.Triggered:Connect(function(player)
         if not prompt.Enabled then return end
         addResource(player, kind, isWood and 2 or 1)
         SvEvent:FireClient(player, {kind="toast", text="+" .. (isWood and 2 or 1) .. " " .. kind})
-        prompt.Enabled = false; node.Transparency = 0.7
-        task.delay(8, function() if node and node.Parent then prompt.Enabled = true; node.Transparency = 0 end end)
+        prompt.Enabled = false
+        for _, pt in ipairs(model:GetDescendants()) do if pt:IsA("BasePart") then pt.Transparency = 0.75 end end
+        task.delay(8, function() if model and model.Parent then prompt.Enabled = true; for _, pt in ipairs(model:GetDescendants()) do if pt:IsA("BasePart") then pt.Transparency = 0 end end end end)
     end)
 end
 for i = 1, 14 do
@@ -11045,34 +11187,70 @@ end
 
 local enemies = {}
 local isNight = false
+local function makeEnemyModel(spawnPos)
+    local m = Instance.new("Model"); m.Name = "Enemy"; m.Parent = world
+    local body = part("EBody", Vector3.new(3.4, 5, 2.2), spawnPos + Vector3.new(0, 3, 0), theme.enemy, Enum.Material.SmoothPlastic, m); body.CanCollide = false
+    m.PrimaryPart = body
+    part("EHead", Vector3.new(2.4, 2.4, 2.4), spawnPos + Vector3.new(0, 6.4, 0), theme.enemy:Lerp(Color3.new(0, 0, 0), 0.18), Enum.Material.SmoothPlastic, m).CanCollide = false
+    part("EEyeL", Vector3.new(0.5, 0.5, 0.4), spawnPos + Vector3.new(-0.6, 6.6, 1.1), Color3.fromRGB(255, 60, 40), Enum.Material.Neon, m).CanCollide = false
+    part("EEyeR", Vector3.new(0.5, 0.5, 0.4), spawnPos + Vector3.new(0.6, 6.6, 1.1), Color3.fromRGB(255, 60, 40), Enum.Material.Neon, m).CanCollide = false
+    part("EArmL", Vector3.new(0.9, 3.4, 0.9), spawnPos + Vector3.new(-2.2, 3.2, 0), theme.enemy, Enum.Material.SmoothPlastic, m).CanCollide = false
+    part("EArmR", Vector3.new(0.9, 3.4, 0.9), spawnPos + Vector3.new(2.2, 3.2, 0), theme.enemy, Enum.Material.SmoothPlastic, m).CanCollide = false
+    return m
+end
 local function spawnEnemy()
     local a = math.random() * math.pi * 2
-    local e = part("Enemy_" .. math.random(1, 99999), Vector3.new(4, 6, 4), Vector3.new(math.cos(a) * 150, 4, math.sin(a) * 150), theme.enemy, Enum.Material.SmoothPlastic); e.CanCollide = false
-    table.insert(enemies, {part = e, cd = 0})
+    local m = makeEnemyModel(Vector3.new(math.cos(a) * 150, 1, math.sin(a) * 150))
+    table.insert(enemies, {model = m, cd = 0})
 end
 local function clearEnemies()
-    for _, e in ipairs(enemies) do if e.part then e.part:Destroy() end end
+    for _, e in ipairs(enemies) do if e.model then e.model:Destroy() end end
     table.clear(enemies)
 end
+
+-- Crafting bench: turn gathered resources into a defensive wall (resource sink + night defense).
+local bench = part("CraftBench", Vector3.new(8, 3, 5), Vector3.new(16, 2.5, 18), Color3.fromRGB(120, 86, 54), Enum.Material.WoodPlanks)
+label3d(bench, "Craft: Build Wall (4 Wood, 2 Stone)", 5, Color3.fromRGB(255, 235, 170))
+local craftPrompt = Instance.new("ProximityPrompt"); craftPrompt.ActionText = "Build Wall"; craftPrompt.ObjectText = "4 Wood + 2 Stone"; craftPrompt.HoldDuration = 0.4; craftPrompt.MaxActivationDistance = 14; craftPrompt.RequiresLineOfSight = false; craftPrompt.Parent = bench
+craftPrompt.Triggered:Connect(function(player)
+    local ls = player:FindFirstChild("leaderstats"); local wd = ls and ls:FindFirstChild("Wood"); local st = ls and ls:FindFirstChild("Stone")
+    if not (wd and st) then return end
+    if wd.Value >= 4 and st.Value >= 2 then
+        wd.Value -= 4; st.Value -= 2
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            local f = root.CFrame.LookVector; local fp = Vector3.new(f.X, 0, f.Z); if fp.Magnitude < 0.1 then fp = Vector3.new(0, 0, 1) end
+            local wallPos = root.Position + fp.Unit * 7
+            local wall = part("Wall", Vector3.new(12, 9, 1.6), Vector3.new(wallPos.X, 4.5, wallPos.Z), theme.rock, Enum.Material.Brick)
+            wall.CanCollide = true; wall.CFrame = CFrame.lookAt(Vector3.new(wallPos.X, 4.5, wallPos.Z), Vector3.new(root.Position.X, 4.5, root.Position.Z))
+        end
+        SvEvent:FireClient(player, {kind="toast", text="Built a defensive wall!"})
+    else
+        SvEvent:FireClient(player, {kind="toast", text="Need 4 Wood + 2 Stone"})
+    end
+end)
 
 RunService.Heartbeat:Connect(function(dt)
     for _, p in Players:GetPlayers() do
         local char = p.Character; local root = char and char:FindFirstChild("HumanoidRootPart"); local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if root and hum and (root.Position - campfire.Position).Magnitude < 22 then hum.Health = math.min(hum.MaxHealth, hum.Health + 14 * dt) end
+        if root and hum and (root.Position - campfirePos).Magnitude < 22 then hum.Health = math.min(hum.MaxHealth, hum.Health + 14 * dt) end
     end
     for idx = #enemies, 1, -1 do
         local e = enemies[idx]
-        if not e.part or not e.part.Parent then table.remove(enemies, idx)
+        if not e.model or not e.model.Parent or not e.model.PrimaryPart then table.remove(enemies, idx)
         else
-            local nearest, nd
+            local epos = e.model:GetPivot().Position
+            local nearest, nd, nroot
             for _, p in Players:GetPlayers() do
                 local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
-                if root then local d = (root.Position - e.part.Position).Magnitude; if not nd or d < nd then nearest, nd = p, d end end
+                if root then local d = (root.Position - epos).Magnitude; if not nd or d < nd then nearest, nd, nroot = p, d, root end end
             end
-            if nearest then
-                local root = nearest.Character:FindFirstChild("HumanoidRootPart")
-                local dir = Vector3.new(root.Position.X - e.part.Position.X, 0, root.Position.Z - e.part.Position.Z)
-                if dir.Magnitude > 0.1 then e.part.Position = e.part.Position + dir.Unit * math.min(enemySpeed * dt, dir.Magnitude) end
+            if nearest and nroot then
+                local dir = Vector3.new(nroot.Position.X - epos.X, 0, nroot.Position.Z - epos.Z)
+                if dir.Magnitude > 0.1 then
+                    local newPos = epos + dir.Unit * math.min(enemySpeed * dt, dir.Magnitude)
+                    e.model:PivotTo(CFrame.lookAt(newPos, Vector3.new(nroot.Position.X, newPos.Y, nroot.Position.Z)))
+                end
                 e.cd = math.max(0, e.cd - dt)
                 if nd and nd < 6 and e.cd <= 0 then local hum = nearest.Character:FindFirstChildOfClass("Humanoid"); if hum then hum:TakeDamage(enemyDmg); e.cd = 1.2 end end
             end
