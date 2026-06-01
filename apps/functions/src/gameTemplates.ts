@@ -85,6 +85,14 @@ export interface GameTemplateParams {
   startingCash?: number;
   baseHealth?: number;
   difficulty?: 'casual' | 'normal' | 'hard' | string;
+  /** Session 399 (cont.): remaining playable genres reuse mapTheme/difficulty/
+   * startingCash/baseHealth and add these per-genre counts. */
+  jobCount?: number;       // roleplay_town
+  lapCount?: number;       // racing
+  chapterCount?: number;   // story_game
+  roundCount?: number;     // minigame_hub / fighting
+  dayLength?: number;      // survival
+  roundTime?: number;      // fighting
   hasObbyShop?: boolean;
   obbyDescription?: string;
   /** Master Plan Phase 0+A (session 219): live Roblox catalog items welded
@@ -10231,6 +10239,1430 @@ end)
   };
 }
 
+// Session 399 (cont.): Roleplay / Town — persistent social world. Deterministic
+// town (plaza + roads + 6 named buildings), job pads that pay cash on a shift,
+// a role shop (Citizen/VIP/Tycoon/Legend), flavor NPCs, day/night cycle, and
+// leaderstats Cash+Role persisted via DataStore. No round loop — it's a hangout.
+function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Town RP');
+  const startingCash = Math.max(0, Math.min(5000, Math.round(Number(params.startingCash) || 150)));
+  const jobCount = Math.max(2, Math.min(6, Math.round(Number(params.jobCount) || 4)));
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const townTheme = ['suburb', 'city', 'medieval', 'modern'].find((t) => themeRaw.includes(t))
+    || (/medieval|castle|fantasy|village|old/.test(themeRaw) ? 'medieval'
+      : /city|urban|downtown|metro|skyscraper/.test(themeRaw) ? 'city'
+      : /modern|future|neon|tech|sleek/.test(themeRaw) ? 'modern'
+      : 'suburb');
+  const themeLua = safeLuaString(townTheme, 'suburb');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+local Lighting = game:GetService("Lighting")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}, StartingCash=${startingCash}, JobCount=${jobCount}}
+
+local THEMES = {
+    suburb = {ground=Color3.fromRGB(120,170,95), groundMat=Enum.Material.Grass, road=Color3.fromRGB(70,72,78), plaza=Color3.fromRGB(180,170,150), wall=Color3.fromRGB(225,210,180), roof=Color3.fromRGB(170,80,70), accent=Color3.fromRGB(250,210,90)},
+    city = {ground=Color3.fromRGB(90,92,98), groundMat=Enum.Material.Concrete, road=Color3.fromRGB(45,46,52), plaza=Color3.fromRGB(120,124,132), wall=Color3.fromRGB(150,165,185), roof=Color3.fromRGB(70,78,92), accent=Color3.fromRGB(90,200,255)},
+    medieval = {ground=Color3.fromRGB(96,140,80), groundMat=Enum.Material.Grass, road=Color3.fromRGB(120,105,85), plaza=Color3.fromRGB(150,135,110), wall=Color3.fromRGB(205,185,150), roof=Color3.fromRGB(120,60,50), accent=Color3.fromRGB(220,180,90)},
+    modern = {ground=Color3.fromRGB(70,74,82), groundMat=Enum.Material.Slate, road=Color3.fromRGB(40,42,48), plaza=Color3.fromRGB(120,130,140), wall=Color3.fromRGB(210,225,240), roof=Color3.fromRGB(90,150,200), accent=Color3.fromRGB(120,255,210)},
+}
+local theme = THEMES[Config.Theme] or THEMES.suburb
+
+local dataStore
+local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("TownRpStats_v1") end)
+if not okStore then warn("[TownRP] DataStore unavailable: " .. tostring(storeErr)) end
+
+local remotes = Instance.new("Folder"); remotes.Name = "RpRemotes"; remotes.Parent = ReplicatedStorage
+local RpEvent = Instance.new("RemoteEvent"); RpEvent.Name = "RpEvent"; RpEvent.Parent = remotes
+local RpAction = Instance.new("RemoteEvent"); RpAction.Name = "RpAction"; RpAction.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedTown"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+local function label3d(adornee, text, offsetY, color)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 210, 0, 40); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+    return t
+end
+
+part("TownGround", Vector3.new(380, 1, 380), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+part("Plaza", Vector3.new(86, 1, 86), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
+part("RoadNS", Vector3.new(20, 1, 380), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
+part("RoadEW", Vector3.new(380, 1, 20), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
+
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "TownSpawn"; spawnLoc.Size = Vector3.new(16, 1, 16); spawnLoc.Position = Vector3.new(0, 1.2, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+label3d(spawnLoc, Config.Title, 7, theme.accent)
+
+local function buildHouse(name, pos, size, color, sign)
+    local body = part(name, size, pos + Vector3.new(0, size.Y / 2, 0), color, Enum.Material.Brick)
+    part(name .. "_Roof", Vector3.new(size.X + 5, 4, size.Z + 5), pos + Vector3.new(0, size.Y + 2, 0), theme.roof, Enum.Material.Slate)
+    local door = part(name .. "_Door", Vector3.new(9, 13, 1.4), pos + Vector3.new(0, 6.5, size.Z / 2 + 0.4), Color3.fromRGB(70, 46, 32), Enum.Material.Wood); door.CanCollide = false
+    label3d(body, sign, size.Y / 2 + 7, Color3.fromRGB(255, 255, 255))
+    return body
+end
+
+local buildingDefs = {
+    {name="TownHall", pos=Vector3.new(0, 0, -130), size=Vector3.new(56, 34, 44), sign="Town Hall"},
+    {name="Bank", pos=Vector3.new(-120, 0, -70), size=Vector3.new(42, 26, 38), sign="Bank"},
+    {name="Shop", pos=Vector3.new(120, 0, -70), size=Vector3.new(42, 24, 38), sign="Shop"},
+    {name="Cafe", pos=Vector3.new(-120, 0, 70), size=Vector3.new(40, 22, 36), sign="Cafe"},
+    {name="Police", pos=Vector3.new(120, 0, 70), size=Vector3.new(42, 24, 38), sign="Police Station"},
+    {name="House", pos=Vector3.new(0, 0, 130), size=Vector3.new(46, 24, 40), sign="Apartments"},
+}
+for _, d in ipairs(buildingDefs) do buildHouse(d.name, d.pos, d.size, theme.wall, d.sign) end
+
+local function getCash(player) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); return c and c.Value or 0 end
+local function addCash(player, amount) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); if c then c.Value = math.max(0, c.Value + amount) end end
+local roleColors = {Citizen=Color3.fromRGB(200,200,200), VIP=Color3.fromRGB(255,210,90), Tycoon=Color3.fromRGB(120,230,160), Legend=Color3.fromRGB(190,130,255)}
+local function updateRoleTag(player)
+    local char = player.Character; local head = char and char:FindFirstChild("Head"); if not head then return end
+    local ls = player:FindFirstChild("leaderstats"); local role = ls and ls:FindFirstChild("Role"); local roleName = role and role.Value or "Citizen"
+    local old = head:FindFirstChild("RpRoleTag"); if old then old:Destroy() end
+    local bb = Instance.new("BillboardGui"); bb.Name = "RpRoleTag"; bb.Size = UDim2.new(0, 170, 0, 30); bb.StudsOffset = Vector3.new(0, 3.4, 0); bb.AlwaysOnTop = true; bb.Parent = head
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = roleColors[roleName] or Color3.fromRGB(220, 220, 220); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = "[" .. roleName .. "] " .. player.DisplayName; t.Parent = bb
+end
+local function setRole(player, roleName)
+    local ls = player:FindFirstChild("leaderstats"); local role = ls and ls:FindFirstChild("Role"); if role then role.Value = roleName end
+    updateRoleTag(player)
+end
+
+local JOBS = {
+    {name="Cashier", pay=35, pos=Vector3.new(120, 1.2, -44)},
+    {name="Barista", pay=30, pos=Vector3.new(-120, 1.2, 44)},
+    {name="Officer", pay=48, pos=Vector3.new(120, 1.2, 44)},
+    {name="Teller", pay=42, pos=Vector3.new(-120, 1.2, -44)},
+    {name="Mayor", pay=65, pos=Vector3.new(0, 1.2, -104)},
+    {name="Janitor", pay=26, pos=Vector3.new(0, 1.2, 104)},
+}
+local working = {}
+local employed = {}
+for i = 1, math.min(Config.JobCount, #JOBS) do
+    local job = JOBS[i]
+    local pad = part("Job_" .. job.name, Vector3.new(9, 1, 9), job.pos, theme.accent, Enum.Material.Neon); pad.Transparency = 0.35
+    label3d(pad, job.name .. " (+$" .. job.pay .. ")", 4, theme.accent)
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Work"; prompt.ObjectText = job.name; prompt.HoldDuration = 0.5; prompt.MaxActivationDistance = 14; prompt.RequiresLineOfSight = false; prompt.Parent = pad
+    prompt.Triggered:Connect(function(player)
+        if working[player] then return end
+        working[player] = true
+        employed[player] = job.name
+        setRole(player, job.name)
+        RpEvent:FireClient(player, {kind="toast", text="On shift as " .. job.name .. "..."})
+        task.delay(2.5, function()
+            if player and player.Parent then addCash(player, job.pay); RpEvent:FireClient(player, {kind="toast", text="Paycheck +$" .. job.pay}) end
+            working[player] = false
+        end)
+    end)
+end
+
+local ROLES = {
+    {name="Citizen", cost=0}, {name="VIP", cost=300}, {name="Tycoon", cost=1200}, {name="Legend", cost=4000},
+}
+local shopPad = part("RoleShopDesk", Vector3.new(11, 5, 4), Vector3.new(120, 2.5, -47), theme.accent, Enum.Material.Neon)
+label3d(shopPad, "Role Shop", 5, theme.accent)
+local shopPrompt = Instance.new("ProximityPrompt"); shopPrompt.ActionText = "Open Role Shop"; shopPrompt.ObjectText = "Buy a status role"; shopPrompt.HoldDuration = 0.2; shopPrompt.MaxActivationDistance = 16; shopPrompt.RequiresLineOfSight = false; shopPrompt.Parent = shopPad
+shopPrompt.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="openShop", roles=ROLES, cash=getCash(player)}) end)
+
+RpAction.OnServerEvent:Connect(function(player, payload)
+    if typeof(payload) ~= "table" then return end
+    if payload.action == "buyRole" then
+        local pick
+        for _, r in ipairs(ROLES) do if r.name == payload.role then pick = r; break end end
+        if not pick then return end
+        if getCash(player) >= pick.cost then
+            if pick.cost > 0 then addCash(player, -pick.cost) end
+            setRole(player, pick.name)
+            RpEvent:FireClient(player, {kind="toast", text="You are now " .. pick.name .. "!"})
+        else
+            RpEvent:FireClient(player, {kind="toast", text="Need $" .. pick.cost .. " for " .. pick.name})
+        end
+    end
+end)
+
+local NPCS = {
+    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash."},
+    {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status."},
+    {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!"},
+}
+for _, n in ipairs(NPCS) do
+    local body = part("NPC_" .. n.name, Vector3.new(3, 7, 2), n.pos + Vector3.new(0, 4, 0), n.color, Enum.Material.SmoothPlastic)
+    local head = part("NPCHead_" .. n.name, Vector3.new(2, 2, 2), n.pos + Vector3.new(0, 8.5, 0), n.color:Lerp(Color3.new(1, 1, 1), 0.2), Enum.Material.SmoothPlastic); head.CanCollide = false
+    label3d(head, n.name, 2.2, Color3.fromRGB(255, 255, 255))
+    local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 12; pr.RequiresLineOfSight = false; pr.Parent = body
+    pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
+end
+
+local function saveData(player)
+    if not dataStore then return end
+    local ls = player:FindFirstChild("leaderstats"); if not ls then return end
+    local c = ls:FindFirstChild("Cash"); local r = ls:FindFirstChild("Role")
+    pcall(function() dataStore:SetAsync("rp_" .. player.UserId, {cash = c and c.Value or Config.StartingCash, role = r and r.Value or "Citizen"}) end)
+end
+local function setupPlayer(player)
+    local cash = Config.StartingCash; local role = "Citizen"
+    if dataStore then pcall(function() local v = dataStore:GetAsync("rp_" .. player.UserId); if typeof(v) == "table" then cash = tonumber(v.cash) or cash; role = tostring(v.role or role) end end) end
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local c = Instance.new("IntValue"); c.Name = "Cash"; c.Value = cash; c.Parent = ls
+    local r = Instance.new("StringValue"); r.Name = "Role"; r.Value = role; r.Parent = ls
+    player.CharacterAdded:Connect(function() task.wait(0.6); updateRoleTag(player) end)
+    if player.Character then task.delay(0.3, function() updateRoleTag(player) end) end
+end
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(function(player) saveData(player); working[player] = nil; employed[player] = nil end)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+task.spawn(function()
+    while true do
+        task.wait(45)
+        for _, p in Players:GetPlayers() do
+            if employed[p] then addCash(p, 15); RpEvent:FireClient(p, {kind="toast", text="Salary +$15 (" .. employed[p] .. ")"}) end
+        end
+    end
+end)
+task.spawn(function() while true do task.wait(60); for _, p in Players:GetPlayers() do saveData(p) end end end)
+task.spawn(function()
+    Lighting.ClockTime = 14
+    while true do Lighting.ClockTime = (Lighting.ClockTime + 0.05) % 24; task.wait(0.5) end
+end)
+
+print("[TownRP] " .. Config.Title .. " ready - theme=" .. Config.Theme .. ", jobs=" .. Config.JobCount)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("RpRemotes")
+local RpEvent = remotes:WaitForChild("RpEvent")
+local RpAction = remotes:WaitForChild("RpAction")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "TownRpHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local cashLabel = Instance.new("TextLabel"); cashLabel.Size = UDim2.new(0, 170, 0, 42); cashLabel.Position = UDim2.new(1, -186, 0, 14); cashLabel.BackgroundColor3 = Color3.fromRGB(18, 40, 26); cashLabel.BackgroundTransparency = 0.1; cashLabel.TextColor3 = Color3.fromRGB(150, 255, 180); cashLabel.TextScaled = true; cashLabel.Font = Enum.Font.GothamBold; cashLabel.Text = "$0"; cashLabel.Parent = gui
+local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 10); cc.Parent = cashLabel
+local roleLabel = Instance.new("TextLabel"); roleLabel.Size = UDim2.new(0, 210, 0, 42); roleLabel.Position = UDim2.new(0, 14, 0, 14); roleLabel.BackgroundColor3 = Color3.fromRGB(24, 26, 40); roleLabel.BackgroundTransparency = 0.1; roleLabel.TextColor3 = Color3.fromRGB(225, 225, 255); roleLabel.TextScaled = true; roleLabel.Font = Enum.Font.GothamBold; roleLabel.Text = "Citizen"; roleLabel.Parent = gui
+local rcn = Instance.new("UICorner"); rcn.CornerRadius = UDim.new(0, 10); rcn.Parent = roleLabel
+local toast = Instance.new("TextLabel"); toast.Size = UDim2.new(0, 460, 0, 40); toast.Position = UDim2.new(0.5, -230, 0, 70); toast.BackgroundColor3 = Color3.fromRGB(20, 24, 34); toast.BackgroundTransparency = 0.12; toast.TextColor3 = Color3.fromRGB(235, 235, 245); toast.TextScaled = true; toast.Font = Enum.Font.GothamBold; toast.Visible = false; toast.Parent = gui
+local tcn = Instance.new("UICorner"); tcn.CornerRadius = UDim.new(0, 8); tcn.Parent = toast
+
+local shop = Instance.new("Frame"); shop.Size = UDim2.new(0, 330, 0, 380); shop.Position = UDim2.new(0.5, -165, 0.5, -190); shop.BackgroundColor3 = Color3.fromRGB(22, 24, 34); shop.BackgroundTransparency = 0.05; shop.Visible = false; shop.Parent = gui
+local scn = Instance.new("UICorner"); scn.CornerRadius = UDim.new(0, 12); scn.Parent = shop
+local shopTitle = Instance.new("TextLabel"); shopTitle.Size = UDim2.new(1, 0, 0, 48); shopTitle.BackgroundTransparency = 1; shopTitle.TextColor3 = Color3.fromRGB(255, 255, 255); shopTitle.TextScaled = true; shopTitle.Font = Enum.Font.GothamBlack; shopTitle.Text = "Role Shop"; shopTitle.Parent = shop
+local list = Instance.new("Frame"); list.Size = UDim2.new(1, -24, 1, -112); list.Position = UDim2.new(0, 12, 0, 54); list.BackgroundTransparency = 1; list.Parent = shop
+local layout = Instance.new("UIListLayout"); layout.Padding = UDim.new(0, 8); layout.Parent = list
+local closeBtn = Instance.new("TextButton"); closeBtn.Size = UDim2.new(1, -24, 0, 40); closeBtn.Position = UDim2.new(0, 12, 1, -50); closeBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40); closeBtn.TextColor3 = Color3.fromRGB(255, 220, 220); closeBtn.TextScaled = true; closeBtn.Font = Enum.Font.GothamBold; closeBtn.Text = "Close"; closeBtn.Parent = shop
+local clc = Instance.new("UICorner"); clc.CornerRadius = UDim.new(0, 8); clc.Parent = closeBtn
+closeBtn.Activated:Connect(function() shop.Visible = false end)
+
+local function showToast(text)
+    toast.Text = text; toast.Visible = true
+    task.delay(2.4, function() if toast.Text == text then toast.Visible = false end end)
+end
+local function buildShop(roles)
+    for _, c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+    for _, r in ipairs(roles) do
+        local b = Instance.new("TextButton"); b.Size = UDim2.new(1, 0, 0, 54); b.BackgroundColor3 = Color3.fromRGB(40, 44, 60); b.TextColor3 = Color3.fromRGB(240, 240, 250); b.TextScaled = true; b.Font = Enum.Font.GothamBold
+        b.Text = r.name .. (r.cost > 0 and ("   $" .. r.cost) or "   Free"); b.Parent = list
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 8); bc.Parent = b
+        b.Activated:Connect(function() RpAction:FireServer({action="buyRole", role=r.name}); shop.Visible = false end)
+    end
+    shop.Visible = true
+end
+
+task.spawn(function()
+    local ls = player:WaitForChild("leaderstats")
+    local c = ls:WaitForChild("Cash"); local r = ls:WaitForChild("Role")
+    local function rc() cashLabel.Text = "$" .. c.Value end
+    local function rr() roleLabel.Text = r.Value end
+    rc(); rr(); c.Changed:Connect(rc); r.Changed:Connect(rr)
+end)
+
+RpEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "toast" then showToast(p.text)
+    elseif p.kind == "openShop" then buildShop(p.roles) end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'TownRpHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
+// Session 399 (cont.): Racing — on-foot lap race on a closed oval track. We use
+// a foot race (WalkSpeed boost) + ordered checkpoint Touched detection rather
+// than vehicle physics, which is unreliable in generated games. Round loop:
+// countdown -> race -> results -> restart. leaderstats Wins + Best Time.
+function buildRacingScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Speed Circuit');
+  const lapCount = Math.max(1, Math.min(5, Math.round(Number(params.lapCount) || 3)));
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const trackTheme = ['city', 'desert', 'winter', 'space'].find((t) => themeRaw.includes(t))
+    || (/desert|sand|dune|canyon/.test(themeRaw) ? 'desert'
+      : /winter|snow|ice|frozen/.test(themeRaw) ? 'winter'
+      : /space|neon|cyber|sci|galaxy/.test(themeRaw) ? 'space'
+      : 'city');
+  const diffRaw = String(params.difficulty || '').toLowerCase();
+  const difficulty = /hard|insane|pro/.test(diffRaw) ? 'hard' : /casual|easy|chill/.test(diffRaw) ? 'casual' : 'normal';
+  const themeLua = safeLuaString(trackTheme, 'city');
+  const difficultyLua = safeLuaString(difficulty, 'normal');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}, Laps=${lapCount}, Difficulty=${difficultyLua}}
+
+local THEMES = {
+    city = {ground=Color3.fromRGB(80,84,92), groundMat=Enum.Material.Concrete, road=Color3.fromRGB(48,50,56), accent=Color3.fromRGB(90,200,255)},
+    desert = {ground=Color3.fromRGB(216,186,124), groundMat=Enum.Material.Sand, road=Color3.fromRGB(120,96,64), accent=Color3.fromRGB(255,170,70)},
+    winter = {ground=Color3.fromRGB(228,236,244), groundMat=Enum.Material.Snow, road=Color3.fromRGB(120,135,150), accent=Color3.fromRGB(120,220,255)},
+    space = {ground=Color3.fromRGB(30,34,48), groundMat=Enum.Material.Metal, road=Color3.fromRGB(46,52,72), accent=Color3.fromRGB(150,255,210)},
+}
+local theme = THEMES[Config.Theme] or THEMES.city
+local boost = Config.Difficulty == "hard" and 42 or (Config.Difficulty == "casual" and 28 or 34)
+
+local dataStore
+local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("RacingStats_v1") end)
+if not okStore then warn("[Racing] DataStore unavailable: " .. tostring(storeErr)) end
+
+local remotes = Instance.new("Folder"); remotes.Name = "RaceRemotes"; remotes.Parent = ReplicatedStorage
+local RaceEvent = Instance.new("RemoteEvent"); RaceEvent.Name = "RaceEvent"; RaceEvent.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedRace"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+
+part("RaceGround", Vector3.new(420, 1, 320), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+
+local waypoints = {}
+local rx, rz = 155, 100
+for i = 0, 11 do local a = math.rad(i * 30); table.insert(waypoints, Vector3.new(math.cos(a) * rx, 2, math.sin(a) * rz)) end
+local N = #waypoints
+for i = 1, N do
+    local a = waypoints[i]; local b = waypoints[(i % N) + 1]
+    local mid = Vector3.new((a.X + b.X) / 2, 1, (a.Z + b.Z) / 2)
+    local seg = Instance.new("Part"); seg.Name = "Track_" .. i; seg.Anchored = true; seg.Color = theme.road; seg.Material = Enum.Material.Asphalt
+    seg.Size = Vector3.new(30, 1, (b - a).Magnitude + 8); seg.CFrame = CFrame.lookAt(mid, Vector3.new(b.X, 1, b.Z)); seg.Parent = world
+end
+
+local checkpoints = {}
+for i = 1, N do
+    local a = waypoints[i]; local b = waypoints[(i % N) + 1]
+    local cp = Instance.new("Part"); cp.Name = "CP_" .. i; cp.Anchored = true; cp.CanCollide = false; cp.Transparency = 0.55
+    cp.Size = Vector3.new(32, 16, 3); cp.CFrame = CFrame.lookAt(Vector3.new(a.X, 8, a.Z), Vector3.new(b.X, 8, b.Z))
+    cp.Color = (i == 1) and Color3.fromRGB(255, 255, 255) or theme.accent; cp.Material = Enum.Material.ForceField; cp.Parent = world
+    checkpoints[i] = cp
+end
+local startBb = Instance.new("BillboardGui"); startBb.Size = UDim2.new(0, 220, 0, 44); startBb.StudsOffset = Vector3.new(0, 11, 0); startBb.AlwaysOnTop = true; startBb.Parent = checkpoints[1]
+local startLabel = Instance.new("TextLabel"); startLabel.Size = UDim2.new(1, 0, 1, 0); startLabel.BackgroundTransparency = 1; startLabel.TextColor3 = Color3.fromRGB(255, 255, 255); startLabel.TextStrokeTransparency = 0.3; startLabel.TextScaled = true; startLabel.Font = Enum.Font.GothamBlack; startLabel.Text = "START / FINISH"; startLabel.Parent = startBb
+
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "RaceSpawn"; spawnLoc.Size = Vector3.new(24, 1, 16); spawnLoc.Position = Vector3.new(rx, 1.2, -10); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+
+local raceState = {}
+local racing = false
+local finishOrder = 0
+
+local function fmt(t) return string.format("%.1f", t) end
+local function applySpeed(player, speed)
+    local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid"); if hum then hum.WalkSpeed = speed end
+end
+local function teleport(player, pos)
+    local char = player.Character; local root = char and char:FindFirstChild("HumanoidRootPart"); if root then root.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
+end
+local function addWin(player)
+    local ls = player:FindFirstChild("leaderstats"); local w = ls and ls:FindFirstChild("Wins"); if w then w.Value += 1 end
+end
+local function recordBest(player, t)
+    local ls = player:FindFirstChild("leaderstats"); local bt = ls and ls:FindFirstChild("Best Time"); if not bt then return end
+    local secs = math.floor(t)
+    if bt.Value == 0 or secs < bt.Value then bt.Value = secs; if dataStore then pcall(function() dataStore:SetAsync("race_" .. player.UserId, secs) end) end end
+end
+
+for i = 1, N do
+    checkpoints[i].Touched:Connect(function(hit)
+        local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+        local st = raceState[player]; if not st or st.finished or not racing then return end
+        if st.nextCp ~= i then return end
+        if i == 1 then
+            st.lap += 1
+            if st.lap >= Config.Laps then
+                st.finished = true; finishOrder += 1; st.place = finishOrder
+                local elapsed = os.clock() - st.startTime
+                addWin(player); recordBest(player, elapsed)
+                RaceEvent:FireClient(player, {kind="finish", place=finishOrder, time=fmt(elapsed)})
+            else
+                st.nextCp = 2
+                RaceEvent:FireClient(player, {kind="lap", lap=st.lap, total=Config.Laps})
+            end
+        else
+            st.nextCp = i + 1
+            if st.nextCp > N then st.nextCp = 1 end
+        end
+    end)
+end
+
+local function setupPlayer(player)
+    local best = 0
+    if dataStore then pcall(function() local v = dataStore:GetAsync("race_" .. player.UserId); if typeof(v) == "number" then best = v end end) end
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local w = Instance.new("IntValue"); w.Name = "Wins"; w.Value = 0; w.Parent = ls
+    local bt = Instance.new("IntValue"); bt.Name = "Best Time"; bt.Value = best; bt.Parent = ls
+    raceState[player] = {nextCp = 1, lap = 0, startTime = 0, finished = false, place = nil}
+end
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(function(player) raceState[player] = nil end)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+local function broadcast(phase, info)
+    RaceEvent:FireAllClients({kind="state", phase=phase, info=info or 0, laps=Config.Laps, title=Config.Title})
+end
+
+task.spawn(function()
+    while true do
+        racing = false; finishOrder = 0
+        for _, p in Players:GetPlayers() do
+            local st = raceState[p]; if st then st.nextCp = 1; st.lap = 0; st.finished = false; st.place = nil end
+            applySpeed(p, 16); teleport(p, spawnLoc.Position)
+        end
+        for t = 5, 1, -1 do broadcast("countdown", t); task.wait(1) end
+        racing = true
+        for _, p in Players:GetPlayers() do
+            local st = raceState[p]; if st then st.nextCp = 2; st.lap = 0; st.finished = false; st.startTime = os.clock() end
+            applySpeed(p, boost)
+        end
+        broadcast("race", 0)
+        local elapsed = 0; local maxTime = 150
+        while racing and elapsed < maxTime do
+            local players = Players:GetPlayers(); local allDone = #players > 0
+            for _, p in players do if raceState[p] and not raceState[p].finished then allDone = false; break end end
+            if allDone then break end
+            broadcast("race", elapsed); task.wait(0.5); elapsed += 0.5
+        end
+        racing = false
+        for _, p in Players:GetPlayers() do applySpeed(p, 16) end
+        broadcast("results", 0)
+        task.wait(8)
+    end
+end)
+print("[Racing] " .. Config.Title .. " ready - " .. Config.Laps .. " laps, theme=" .. Config.Theme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("RaceRemotes")
+local RaceEvent = remotes:WaitForChild("RaceEvent")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "RacingHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 480, 0, 54); top.Position = UDim2.new(0.5, -240, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.1; top.TextColor3 = Color3.fromRGB(225, 240, 255); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Racing"; top.Parent = gui
+local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = top
+local lap = Instance.new("TextLabel"); lap.Size = UDim2.new(0, 180, 0, 40); lap.Position = UDim2.new(0, 14, 0, 12); lap.BackgroundColor3 = Color3.fromRGB(22, 30, 44); lap.BackgroundTransparency = 0.1; lap.TextColor3 = Color3.fromRGB(160, 220, 255); lap.TextScaled = true; lap.Font = Enum.Font.GothamBold; lap.Text = "Lap 0"; lap.Parent = gui
+local lc = Instance.new("UICorner"); lc.CornerRadius = UDim.new(0, 10); lc.Parent = lap
+local big = Instance.new("TextLabel"); big.Size = UDim2.new(0, 400, 0, 80); big.Position = UDim2.new(0.5, -200, 0.4, 0); big.BackgroundTransparency = 1; big.TextColor3 = Color3.fromRGB(255, 255, 255); big.TextStrokeTransparency = 0.2; big.TextScaled = true; big.Font = Enum.Font.GothamBlack; big.Text = ""; big.Parent = gui
+
+local myLap = 0
+RaceEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "state" then
+        if p.phase == "countdown" then big.Text = tostring(p.info); top.Text = "Get ready... " .. p.info
+        elseif p.phase == "race" then big.Text = ""; top.Text = p.title .. "  |  " .. string.format("%.1f", p.info) .. "s"
+        elseif p.phase == "results" then big.Text = ""; top.Text = "Race over - restarting..." end
+    elseif p.kind == "lap" then myLap = p.lap; lap.Text = "Lap " .. p.lap .. "/" .. p.total
+    elseif p.kind == "finish" then big.Text = "FINISH #" .. p.place; lap.Text = "Done " .. p.time .. "s"; top.Text = "You placed #" .. p.place .. " (" .. p.time .. "s)" end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'RacingHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
+// Session 399 (cont.): Parkour — ascending spiral of floating platforms with
+// checkpoints every 5 stages, a void floor that respawns you at your last
+// checkpoint (no death), and a finish pad that records Best Time + Wins.
+// Difficulty tunes jump gap (angle step) and platform size.
+function buildParkourScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Parkour Rush');
+  const stageCount = Math.max(5, Math.min(24, Math.round(Number(params.stageCount) || 12)));
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const parkourTheme = ['neon', 'jungle', 'lava', 'ice'].find((t) => themeRaw.includes(t))
+    || (/jungle|forest|tree|green/.test(themeRaw) ? 'jungle'
+      : /lava|volcano|fire|magma/.test(themeRaw) ? 'lava'
+      : /ice|snow|winter|frost/.test(themeRaw) ? 'ice'
+      : 'neon');
+  const diffRaw = String(params.difficulty || '').toLowerCase();
+  const difficulty = /hard|insane|pro/.test(diffRaw) ? 'hard' : /casual|easy|chill/.test(diffRaw) ? 'casual' : 'normal';
+  const themeLua = safeLuaString(parkourTheme, 'neon');
+  const difficultyLua = safeLuaString(difficulty, 'normal');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}, Stages=${stageCount}, Difficulty=${difficultyLua}}
+
+local THEMES = {
+    neon = {platform=Color3.fromRGB(40,150,235), platMat=Enum.Material.SmoothPlastic, checkpoint=Color3.fromRGB(120,255,180), void=Color3.fromRGB(28,20,46), voidMat=Enum.Material.Neon},
+    jungle = {platform=Color3.fromRGB(120,90,60), platMat=Enum.Material.Wood, checkpoint=Color3.fromRGB(240,220,120), void=Color3.fromRGB(40,70,45), voidMat=Enum.Material.Grass},
+    lava = {platform=Color3.fromRGB(80,72,72), platMat=Enum.Material.Basalt, checkpoint=Color3.fromRGB(255,200,90), void=Color3.fromRGB(225,90,30), voidMat=Enum.Material.Neon},
+    ice = {platform=Color3.fromRGB(205,228,246), platMat=Enum.Material.Ice, checkpoint=Color3.fromRGB(120,220,255), void=Color3.fromRGB(110,150,195), voidMat=Enum.Material.Glass},
+}
+local theme = THEMES[Config.Theme] or THEMES.neon
+local angleStep = Config.Difficulty == "hard" and 0.63 or (Config.Difficulty == "casual" and 0.46 or 0.55)
+local platSize = Config.Difficulty == "hard" and 5.5 or (Config.Difficulty == "casual" and 9 or 7)
+
+local dataStore
+local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("ParkourStats_v1") end)
+if not okStore then warn("[Parkour] DataStore unavailable: " .. tostring(storeErr)) end
+
+local remotes = Instance.new("Folder"); remotes.Name = "PkRemotes"; remotes.Parent = ReplicatedStorage
+local PkEvent = Instance.new("RemoteEvent"); PkEvent.Name = "PkEvent"; PkEvent.Parent = remotes
+local PkAction = Instance.new("RemoteEvent"); PkAction.Name = "PkAction"; PkAction.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedParkour"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+local function label3d(adornee, text, offsetY, color)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 180, 0, 36); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+end
+
+local floor = part("VoidFloor", Vector3.new(440, 1, 440), Vector3.new(0, 0, 0), theme.void, theme.voidMat)
+
+local radius = 38
+local startPos = Vector3.new(radius, 6, 0)
+local startPad = part("StartPad", Vector3.new(18, 1, 18), startPos, theme.checkpoint, Enum.Material.Neon)
+label3d(startPad, "START", 4, theme.checkpoint)
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "ParkourSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = startPos + Vector3.new(0, 1, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.checkpoint; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+
+local checkpointPos = {}
+local runState = {}
+local function getCp(player) return checkpointPos[player] or (startPos + Vector3.new(0, 4, 0)) end
+local function fmt(t) return string.format("%.1f", t) end
+
+local lastPos = startPos
+for i = 1, Config.Stages do
+    local ang = i * angleStep
+    local pos = Vector3.new(math.cos(ang) * radius, 6 + i * 3.6, math.sin(ang) * radius)
+    local isCp = (i % 5 == 0)
+    local sz = isCp and Vector3.new(12, 1, 12) or Vector3.new(platSize, 1, platSize)
+    local plat = part("Stage_" .. i, sz, pos, isCp and theme.checkpoint or theme.platform, isCp and Enum.Material.Neon or theme.platMat)
+    if isCp then label3d(plat, "Checkpoint " .. i, 4, theme.checkpoint) end
+    local stageIndex = i
+    plat.Touched:Connect(function(hit)
+        local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+        local ls = player:FindFirstChild("leaderstats"); local s = ls and ls:FindFirstChild("Stage")
+        if s and stageIndex > s.Value then s.Value = stageIndex; PkEvent:FireClient(player, {kind="stage", stage=stageIndex, total=Config.Stages}) end
+        if isCp then checkpointPos[player] = pos + Vector3.new(0, 4, 0) end
+    end)
+    lastPos = pos
+end
+
+local fang = (Config.Stages + 1) * angleStep
+local finishPos = Vector3.new(math.cos(fang) * radius, 6 + (Config.Stages + 1) * 3.6, math.sin(fang) * radius)
+local finish = part("Finish", Vector3.new(20, 1, 20), finishPos, Color3.fromRGB(255, 215, 90), Enum.Material.Neon)
+label3d(finish, "FINISH", 5, Color3.fromRGB(255, 225, 120))
+finish.Touched:Connect(function(hit)
+    local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+    local st = runState[player]; if not st or st.done then return end
+    st.done = true
+    local elapsed = os.clock() - st.start
+    local ls = player:FindFirstChild("leaderstats")
+    if ls then
+        local w = ls:FindFirstChild("Wins"); if w then w.Value += 1 end
+        local s = ls:FindFirstChild("Stage"); if s and Config.Stages + 1 > s.Value then s.Value = Config.Stages + 1 end
+        local bt = ls:FindFirstChild("Best Time"); local secs = math.floor(elapsed)
+        if bt and (bt.Value == 0 or secs < bt.Value) then bt.Value = secs; if dataStore then pcall(function() dataStore:SetAsync("pk_" .. player.UserId, secs) end) end end
+    end
+    PkEvent:FireClient(player, {kind="finish", time=fmt(elapsed)})
+end)
+
+startPad.Touched:Connect(function(hit)
+    local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+    local st = runState[player]; if not st then return end
+    st.start = os.clock(); st.done = false
+    checkpointPos[player] = startPos + Vector3.new(0, 4, 0)
+    PkEvent:FireClient(player, {kind="begin"})
+end)
+
+floor.Touched:Connect(function(hit)
+    local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+    local root = hit.Parent:FindFirstChild("HumanoidRootPart"); if root then root.CFrame = CFrame.new(getCp(player)) end
+end)
+
+PkAction.OnServerEvent:Connect(function(player, payload)
+    if typeof(payload) == "table" and payload.action == "reset" then
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); if root then root.CFrame = CFrame.new(getCp(player)) end
+    end
+end)
+
+local function setupPlayer(player)
+    local best = 0
+    if dataStore then pcall(function() local v = dataStore:GetAsync("pk_" .. player.UserId); if typeof(v) == "number" then best = v end end) end
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local s = Instance.new("IntValue"); s.Name = "Stage"; s.Value = 0; s.Parent = ls
+    local w = Instance.new("IntValue"); w.Name = "Wins"; w.Value = 0; w.Parent = ls
+    local bt = Instance.new("IntValue"); bt.Name = "Best Time"; bt.Value = best; bt.Parent = ls
+    runState[player] = {start = os.clock(), done = false}
+    player.CharacterAdded:Connect(function() local st = runState[player]; if st then st.start = os.clock(); st.done = false end end)
+end
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(function(player) runState[player] = nil; checkpointPos[player] = nil end)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+print("[Parkour] " .. Config.Title .. " ready - " .. Config.Stages .. " stages, theme=" .. Config.Theme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("PkRemotes")
+local PkEvent = remotes:WaitForChild("PkEvent")
+local PkAction = remotes:WaitForChild("PkAction")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "ParkourHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local stageLabel = Instance.new("TextLabel"); stageLabel.Size = UDim2.new(0, 220, 0, 48); stageLabel.Position = UDim2.new(0.5, -110, 0, 12); stageLabel.BackgroundColor3 = Color3.fromRGB(16, 18, 26); stageLabel.BackgroundTransparency = 0.1; stageLabel.TextColor3 = Color3.fromRGB(225, 240, 255); stageLabel.TextScaled = true; stageLabel.Font = Enum.Font.GothamBlack; stageLabel.Text = "Stage 0"; stageLabel.Parent = gui
+local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 10); sc.Parent = stageLabel
+local timeLabel = Instance.new("TextLabel"); timeLabel.Size = UDim2.new(0, 150, 0, 40); timeLabel.Position = UDim2.new(0, 14, 0, 12); timeLabel.BackgroundColor3 = Color3.fromRGB(22, 30, 44); timeLabel.BackgroundTransparency = 0.1; timeLabel.TextColor3 = Color3.fromRGB(160, 220, 255); timeLabel.TextScaled = true; timeLabel.Font = Enum.Font.GothamBold; timeLabel.Text = "0.0s"; timeLabel.Parent = gui
+local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = timeLabel
+local resetBtn = Instance.new("TextButton"); resetBtn.Size = UDim2.new(0, 200, 0, 46); resetBtn.Position = UDim2.new(0.5, -100, 1, -64); resetBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 70); resetBtn.TextColor3 = Color3.fromRGB(235, 230, 250); resetBtn.TextScaled = true; resetBtn.Font = Enum.Font.GothamBold; resetBtn.Text = "Reset to checkpoint"; resetBtn.Parent = gui
+local rbc = Instance.new("UICorner"); rbc.CornerRadius = UDim.new(0, 10); rbc.Parent = resetBtn
+resetBtn.Activated:Connect(function() PkAction:FireServer({action="reset"}) end)
+local banner = Instance.new("TextLabel"); banner.Size = UDim2.new(0, 420, 0, 60); banner.Position = UDim2.new(0.5, -210, 0.42, 0); banner.BackgroundTransparency = 1; banner.TextColor3 = Color3.fromRGB(255, 235, 130); banner.TextStrokeTransparency = 0.2; banner.TextScaled = true; banner.Font = Enum.Font.GothamBlack; banner.Text = ""; banner.Parent = gui
+
+local running = true
+local elapsed = 0
+RunService.Heartbeat:Connect(function(dt) if running then elapsed += dt; timeLabel.Text = string.format("%.1f", elapsed) .. "s" end end)
+
+PkEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "begin" then running = true; elapsed = 0; banner.Text = ""
+    elseif p.kind == "stage" then stageLabel.Text = "Stage " .. p.stage .. "/" .. p.total
+    elseif p.kind == "finish" then running = false; banner.Text = "FINISH! " .. p.time .. "s"; stageLabel.Text = "Complete!" end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'ParkourHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
+// Session 399 (cont.): Story Game — a linear narrative walk. Themed chapter
+// zones along a path; entering the next zone advances the story and reveals a
+// narrative beat. Narrator NPCs replay beats. leaderstats Chapter. Beats are
+// deterministic per theme (fantasy/scifi/mystery/horror).
+function buildStoryGameScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Untold Story');
+  const chapterCount = Math.max(3, Math.min(8, Math.round(Number(params.chapterCount) || 6)));
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const storyTheme = ['fantasy', 'scifi', 'mystery', 'horror'].find((t) => themeRaw.includes(t))
+    || (/sci|space|robot|cyber|future/.test(themeRaw) ? 'scifi'
+      : /mystery|detective|crime|noir/.test(themeRaw) ? 'mystery'
+      : /horror|scary|dark|haunt/.test(themeRaw) ? 'horror'
+      : 'fantasy');
+  const themeLua = safeLuaString(storyTheme, 'fantasy');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}, Chapters=${chapterCount}}
+
+local THEMES = {
+    fantasy = {floor=Color3.fromRGB(110,150,90), floorMat=Enum.Material.Grass, gate=Color3.fromRGB(150,120,80), decor=Color3.fromRGB(90,200,150), accent=Color3.fromRGB(255,230,140), clock=14},
+    scifi = {floor=Color3.fromRGB(54,60,78), floorMat=Enum.Material.Metal, gate=Color3.fromRGB(70,80,110), decor=Color3.fromRGB(90,220,255), accent=Color3.fromRGB(150,255,210), clock=10},
+    mystery = {floor=Color3.fromRGB(70,72,82), floorMat=Enum.Material.Slate, gate=Color3.fromRGB(96,90,80), decor=Color3.fromRGB(200,180,120), accent=Color3.fromRGB(230,200,120), clock=2},
+    horror = {floor=Color3.fromRGB(44,42,48), floorMat=Enum.Material.Concrete, gate=Color3.fromRGB(60,54,54), decor=Color3.fromRGB(150,40,50), accent=Color3.fromRGB(200,60,70), clock=0},
+}
+local theme = THEMES[Config.Theme] or THEMES.fantasy
+Lighting.ClockTime = theme.clock
+
+local BEATS = {
+    fantasy = {"You awaken at the edge of the Kingdom of Aethel. A voice calls you north.", "The Whispering Woods part before you. Something watches from the leaves.", "A ruined bridge. You leap across and find an old knight's blade.", "The Crystal Caverns glow. You hear the dragon stir below.", "A village begs for help. You vow to end the curse.", "The Dark Tower looms. Its gate creaks open for you alone.", "Face to face with the Shadow King. Steel your heart.", "The curse breaks. Dawn returns to Aethel. You are the hero."},
+    scifi = {"Your cryo-pod opens aboard the derelict Station Vega. Alarms blare.", "The corridors are dark. A rogue AI reroutes the doors.", "You reach the reactor. Coolant is failing fast.", "An escape bay - but the AI locked the launch codes.", "You splice the mainframe and learn the truth about the crew.", "The AI core chamber. It pleads, then attacks.", "Override accepted. The station's fate is in your hands.", "You launch free as Vega burns. Stars stretch ahead."},
+    mystery = {"Rain on Blackwood Manor. A guest is dead. You are the detective.", "The study holds a torn letter and a missing key.", "The maid lies - her alibi doesn't match the clock.", "A hidden passage behind the bookshelf. Footprints lead down.", "The cellar reveals the stolen inheritance.", "You gather the suspects in the drawing room.", "The truth: it was the one no one suspected.", "Case closed. The rain finally stops over Blackwood."},
+    horror = {"The asylum gate locks behind you. The lights flicker out.", "Wet footsteps echo. They aren't yours.", "Ward C. The walls are scratched from the inside.", "You find a tape recorder. The voice begs you to run.", "The thing in the dark knows your name.", "The chapel. Candles relight themselves one by one.", "You face it. Do not blink.", "Sunrise. You walk out alive - but it followed."},
+}
+local beats = BEATS[Config.Theme] or BEATS.fantasy
+
+local remotes = Instance.new("Folder"); remotes.Name = "StRemotes"; remotes.Parent = ReplicatedStorage
+local StEvent = Instance.new("RemoteEvent"); StEvent.Name = "StEvent"; StEvent.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedStory"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+local function label3d(adornee, text, offsetY, color)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 200, 0, 38); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+end
+
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "StorySpawn"; spawnLoc.Size = Vector3.new(20, 1, 16); spawnLoc.Position = Vector3.new(0, 1, -8); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+label3d(spawnLoc, Config.Title, 7, theme.accent)
+part("PathStart", Vector3.new(40, 1, 24), Vector3.new(0, 0, -8), theme.floor, theme.floorMat)
+
+local function buildChapter(i)
+    local z = i * 60
+    part("Floor_" .. i, Vector3.new(44, 1, 56), Vector3.new(0, 0, z), theme.floor, theme.floorMat)
+    part("PillarL_" .. i, Vector3.new(4, 26, 4), Vector3.new(-20, 13, z - 26), theme.gate, Enum.Material.Concrete)
+    part("PillarR_" .. i, Vector3.new(4, 26, 4), Vector3.new(20, 13, z - 26), theme.gate, Enum.Material.Concrete)
+    local lintel = part("Lintel_" .. i, Vector3.new(46, 5, 4), Vector3.new(0, 24, z - 26), theme.gate, Enum.Material.Concrete)
+    label3d(lintel, "Chapter " .. i, 4, theme.accent)
+    part("Glow_" .. i, Vector3.new(8, 8, 8), Vector3.new(-14, 5, z + 8), theme.decor, Enum.Material.Neon)
+    part("Glow2_" .. i, Vector3.new(6, 6, 6), Vector3.new(15, 4, z + 12), theme.decor, Enum.Material.Neon)
+    -- narrator NPC
+    local body = part("Narrator_" .. i, Vector3.new(3, 7, 2), Vector3.new(12, 4, z), Color3.fromRGB(220, 210, 190), Enum.Material.SmoothPlastic)
+    local head = part("NarratorHead_" .. i, Vector3.new(2, 2, 2), Vector3.new(12, 8.5, z), Color3.fromRGB(235, 225, 205), Enum.Material.SmoothPlastic); head.CanCollide = false
+    label3d(head, "Narrator", 2.2, theme.accent)
+    local talk = Instance.new("ProximityPrompt"); talk.ActionText = "Talk"; talk.ObjectText = "Chapter " .. i; talk.HoldDuration = 0; talk.MaxActivationDistance = 12; talk.RequiresLineOfSight = false; talk.Parent = body
+    talk.Triggered:Connect(function(player) StEvent:FireClient(player, {kind="beat", chapter=i, total=Config.Chapters, text=beats[i] or "..."}) end)
+    -- advance trigger
+    local trig = Instance.new("Part"); trig.Name = "Trigger_" .. i; trig.Anchored = true; trig.CanCollide = false; trig.Transparency = 1; trig.Size = Vector3.new(44, 22, 6); trig.Position = Vector3.new(0, 11, z); trig.Parent = world
+    trig.Touched:Connect(function(hit)
+        local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+        local ls = player:FindFirstChild("leaderstats"); local ch = ls and ls:FindFirstChild("Chapter"); if not ch then return end
+        if ch.Value == i - 1 then
+            ch.Value = i
+            StEvent:FireClient(player, {kind="beat", chapter=i, total=Config.Chapters, text=beats[i] or "..."})
+            if i >= Config.Chapters then StEvent:FireClient(player, {kind="end", title=Config.Title}) end
+        end
+    end)
+end
+for i = 1, Config.Chapters do buildChapter(i) end
+
+local function setupPlayer(player)
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local ch = Instance.new("IntValue"); ch.Name = "Chapter"; ch.Value = 0; ch.Parent = ls
+end
+Players.PlayerAdded:Connect(setupPlayer)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+print("[Story] " .. Config.Title .. " ready - " .. Config.Chapters .. " chapters, theme=" .. Config.Theme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("StRemotes")
+local StEvent = remotes:WaitForChild("StEvent")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "StoryHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local chapterLabel = Instance.new("TextLabel"); chapterLabel.Size = UDim2.new(0, 300, 0, 46); chapterLabel.Position = UDim2.new(0.5, -150, 0, 12); chapterLabel.BackgroundColor3 = Color3.fromRGB(16, 18, 26); chapterLabel.BackgroundTransparency = 0.15; chapterLabel.TextColor3 = Color3.fromRGB(235, 225, 200); chapterLabel.TextScaled = true; chapterLabel.Font = Enum.Font.GothamBlack; chapterLabel.Text = "Walk forward to begin"; chapterLabel.Parent = gui
+local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 10); cc.Parent = chapterLabel
+local box = Instance.new("TextLabel"); box.Size = UDim2.new(0, 720, 0, 96); box.Position = UDim2.new(0.5, -360, 1, -120); box.BackgroundColor3 = Color3.fromRGB(12, 14, 20); box.BackgroundTransparency = 0.12; box.TextColor3 = Color3.fromRGB(240, 238, 230); box.TextScaled = true; box.Font = Enum.Font.Gotham; box.TextWrapped = true; box.Text = ""; box.Visible = false; box.Parent = gui
+local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 12); bc.Parent = box
+local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0, 16); pad.PaddingRight = UDim.new(0, 16); pad.Parent = box
+
+local function showBeat(text)
+    box.Text = text; box.Visible = true
+    task.delay(7, function() if box.Text == text then box.Visible = false end end)
+end
+StEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "beat" then chapterLabel.Text = "Chapter " .. p.chapter .. "/" .. p.total; showBeat(p.text)
+    elseif p.kind == "end" then chapterLabel.Text = "THE END"; showBeat("THE END - thanks for playing " .. p.title .. "!") end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'StoryHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
+// Session 399 (cont.): Survival — gather wood/stone from nodes, heal at the
+// campfire, survive nights when chasing enemies spawn and attack your Humanoid.
+// Day/night cycle increments Days survived. leaderstats Days + Wood + Stone.
+function buildSurvivalScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Last Survivor');
+  const dayLength = Math.max(20, Math.min(120, Math.round(Number(params.dayLength) || 45)));
+  const startHealth = Math.max(50, Math.min(250, Math.round(Number(params.baseHealth) || 100)));
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const survivalTheme = ['island', 'forest', 'winter', 'zombie'].find((t) => themeRaw.includes(t))
+    || (/forest|jungle|wood|tree/.test(themeRaw) ? 'forest'
+      : /winter|snow|ice|arctic/.test(themeRaw) ? 'winter'
+      : /zombie|undead|apocalypse|horror/.test(themeRaw) ? 'zombie'
+      : 'island');
+  const diffRaw = String(params.difficulty || '').toLowerCase();
+  const difficulty = /hard|insane|brutal/.test(diffRaw) ? 'hard' : /casual|easy|chill/.test(diffRaw) ? 'casual' : 'normal';
+  const themeLua = safeLuaString(survivalTheme, 'island');
+  const difficultyLua = safeLuaString(difficulty, 'normal');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}, DayLength=${dayLength}, StartHealth=${startHealth}, Difficulty=${difficultyLua}}
+
+local THEMES = {
+    island = {ground=Color3.fromRGB(214,196,140), groundMat=Enum.Material.Sand, tree=Color3.fromRGB(90,140,70), rock=Color3.fromRGB(130,130,135), enemy=Color3.fromRGB(120,90,160)},
+    forest = {ground=Color3.fromRGB(96,140,80), groundMat=Enum.Material.Grass, tree=Color3.fromRGB(70,110,55), rock=Color3.fromRGB(120,122,128), enemy=Color3.fromRGB(90,70,120)},
+    winter = {ground=Color3.fromRGB(228,236,244), groundMat=Enum.Material.Snow, tree=Color3.fromRGB(120,150,130), rock=Color3.fromRGB(150,160,175), enemy=Color3.fromRGB(120,150,200)},
+    zombie = {ground=Color3.fromRGB(78,82,70), groundMat=Enum.Material.Ground, tree=Color3.fromRGB(80,90,60), rock=Color3.fromRGB(96,96,100), enemy=Color3.fromRGB(110,150,80)},
+}
+local theme = THEMES[Config.Theme] or THEMES.island
+local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.6 or 1.0)
+local enemySpeed = 10 * (Config.Difficulty == "hard" and 1.25 or 1)
+local enemyDmg = math.floor(6 * diffMult)
+
+local remotes = Instance.new("Folder"); remotes.Name = "SvRemotes"; remotes.Parent = ReplicatedStorage
+local SvEvent = Instance.new("RemoteEvent"); SvEvent.Name = "SvEvent"; SvEvent.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedSurvival"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+local function label3d(adornee, text, offsetY, color)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 170, 0, 34); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+end
+
+part("Island", Vector3.new(360, 2, 360), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+local campfire = part("Campfire", Vector3.new(10, 5, 10), Vector3.new(0, 2.5, 0), Color3.fromRGB(240, 130, 50), Enum.Material.Neon)
+label3d(campfire, "Campfire (safe zone)", 6, Color3.fromRGB(255, 190, 110))
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "SurvivalSpawn"; spawnLoc.Size = Vector3.new(18, 1, 18); spawnLoc.Position = Vector3.new(0, 1.6, 22); spawnLoc.Anchored = true; spawnLoc.Color = Color3.fromRGB(240, 190, 120); spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+
+local function addResource(player, kind, amount)
+    local ls = player:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild(kind); if v then v.Value += amount end
+end
+local function spawnNode(kind, pos)
+    local isWood = kind == "Wood"
+    local node = part(kind .. "Node", isWood and Vector3.new(4, 14, 4) or Vector3.new(7, 6, 7), pos + Vector3.new(0, isWood and 7 or 3, 0), isWood and theme.tree or theme.rock, isWood and Enum.Material.Wood or Enum.Material.Rock)
+    if isWood then part(kind .. "Leaves_" .. math.random(1, 9999), Vector3.new(12, 8, 12), pos + Vector3.new(0, 15, 0), theme.tree:Lerp(Color3.new(0, 0, 0), 0.1), Enum.Material.Grass).CanCollide = false end
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Gather"; prompt.ObjectText = kind; prompt.HoldDuration = 0.6; prompt.MaxActivationDistance = 12; prompt.RequiresLineOfSight = false; prompt.Parent = node
+    prompt.Triggered:Connect(function(player)
+        if not prompt.Enabled then return end
+        addResource(player, kind, isWood and 2 or 1)
+        SvEvent:FireClient(player, {kind="toast", text="+" .. (isWood and 2 or 1) .. " " .. kind})
+        prompt.Enabled = false; node.Transparency = 0.7
+        task.delay(8, function() if node and node.Parent then prompt.Enabled = true; node.Transparency = 0 end end)
+    end)
+end
+for i = 1, 14 do
+    local a = math.rad(i * 26); local r = 56 + (i % 3) * 20
+    spawnNode((i % 2 == 0) and "Wood" or "Stone", Vector3.new(math.cos(a) * r, 1, math.sin(a) * r))
+end
+
+local enemies = {}
+local isNight = false
+local function spawnEnemy()
+    local a = math.random() * math.pi * 2
+    local e = part("Enemy_" .. math.random(1, 99999), Vector3.new(4, 6, 4), Vector3.new(math.cos(a) * 150, 4, math.sin(a) * 150), theme.enemy, Enum.Material.SmoothPlastic); e.CanCollide = false
+    table.insert(enemies, {part = e, cd = 0})
+end
+local function clearEnemies()
+    for _, e in ipairs(enemies) do if e.part then e.part:Destroy() end end
+    table.clear(enemies)
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    for _, p in Players:GetPlayers() do
+        local char = p.Character; local root = char and char:FindFirstChild("HumanoidRootPart"); local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if root and hum and (root.Position - campfire.Position).Magnitude < 22 then hum.Health = math.min(hum.MaxHealth, hum.Health + 14 * dt) end
+    end
+    for idx = #enemies, 1, -1 do
+        local e = enemies[idx]
+        if not e.part or not e.part.Parent then table.remove(enemies, idx)
+        else
+            local nearest, nd
+            for _, p in Players:GetPlayers() do
+                local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+                if root then local d = (root.Position - e.part.Position).Magnitude; if not nd or d < nd then nearest, nd = p, d end end
+            end
+            if nearest then
+                local root = nearest.Character:FindFirstChild("HumanoidRootPart")
+                local dir = Vector3.new(root.Position.X - e.part.Position.X, 0, root.Position.Z - e.part.Position.Z)
+                if dir.Magnitude > 0.1 then e.part.Position = e.part.Position + dir.Unit * math.min(enemySpeed * dt, dir.Magnitude) end
+                e.cd = math.max(0, e.cd - dt)
+                if nd and nd < 6 and e.cd <= 0 then local hum = nearest.Character:FindFirstChildOfClass("Humanoid"); if hum then hum:TakeDamage(enemyDmg); e.cd = 1.2 end end
+            end
+        end
+    end
+end)
+
+local function setupPlayer(player)
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local d = Instance.new("IntValue"); d.Name = "Days"; d.Value = 0; d.Parent = ls
+    local wd = Instance.new("IntValue"); wd.Name = "Wood"; wd.Value = 0; wd.Parent = ls
+    local st = Instance.new("IntValue"); st.Name = "Stone"; st.Value = 0; st.Parent = ls
+    player.CharacterAdded:Connect(function(char)
+        local hum = char:WaitForChild("Humanoid"); hum.MaxHealth = Config.StartHealth; hum.Health = Config.StartHealth
+    end)
+end
+Players.PlayerAdded:Connect(setupPlayer)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+task.spawn(function()
+    local day = 0
+    while true do
+        isNight = false; Lighting.ClockTime = 14; clearEnemies()
+        SvEvent:FireAllClients({kind="phase", phase="day", day=day, title=Config.Title})
+        task.wait(Config.DayLength)
+        isNight = true; Lighting.ClockTime = 0
+        SvEvent:FireAllClients({kind="phase", phase="night", day=day, title=Config.Title})
+        local count = math.floor((4 + day * 1.5) * diffMult); count = math.min(count, 30)
+        for i = 1, count do if not isNight then break end spawnEnemy(); task.wait(0.6) end
+        task.wait(Config.DayLength)
+        day += 1
+        for _, p in Players:GetPlayers() do local ls = p:FindFirstChild("leaderstats"); local dv = ls and ls:FindFirstChild("Days"); if dv then dv.Value = day end end
+        clearEnemies()
+    end
+end)
+print("[Survival] " .. Config.Title .. " ready - dayLength=" .. Config.DayLength .. ", theme=" .. Config.Theme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("SvRemotes")
+local SvEvent = remotes:WaitForChild("SvEvent")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "SurvivalHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 360, 0, 50); top.Position = UDim2.new(0.5, -180, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.12; top.TextColor3 = Color3.fromRGB(230, 235, 245); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Day 0 - prepare"; top.Parent = gui
+local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = top
+local res = Instance.new("TextLabel"); res.Size = UDim2.new(0, 220, 0, 40); res.Position = UDim2.new(0, 14, 0, 12); res.BackgroundColor3 = Color3.fromRGB(28, 30, 24); res.BackgroundTransparency = 0.12; res.TextColor3 = Color3.fromRGB(210, 230, 170); res.TextScaled = true; res.Font = Enum.Font.GothamBold; res.Text = "Wood 0  Stone 0"; res.Parent = gui
+local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(0, 10); rc.Parent = res
+local toast = Instance.new("TextLabel"); toast.Size = UDim2.new(0, 320, 0, 36); toast.Position = UDim2.new(0.5, -160, 0, 70); toast.BackgroundColor3 = Color3.fromRGB(24, 30, 22); toast.BackgroundTransparency = 0.15; toast.TextColor3 = Color3.fromRGB(215, 240, 180); toast.TextScaled = true; toast.Font = Enum.Font.GothamBold; toast.Visible = false; toast.Parent = gui
+local toc = Instance.new("UICorner"); toc.CornerRadius = UDim.new(0, 8); toc.Parent = toast
+
+task.spawn(function()
+    local ls = player:WaitForChild("leaderstats")
+    local wd = ls:WaitForChild("Wood"); local st = ls:WaitForChild("Stone")
+    local function r() res.Text = "Wood " .. wd.Value .. "   Stone " .. st.Value end
+    r(); wd.Changed:Connect(r); st.Changed:Connect(r)
+end)
+SvEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "phase" then
+        if p.phase == "day" then top.Text = "DAY " .. (p.day + 1) .. " - gather and heal"; top.TextColor3 = Color3.fromRGB(230, 235, 245)
+        else top.Text = "NIGHT " .. (p.day + 1) .. " - survive!"; top.TextColor3 = Color3.fromRGB(255, 170, 170) end
+    elseif p.kind == "toast" then toast.Text = p.text; toast.Visible = true; task.delay(1.6, function() if toast.Text == p.text then toast.Visible = false end end) end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'SurvivalHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
+// Session 399 (cont.): Mini-games Hub — lobby + a shared tile-grid arena that
+// rotates 3 elimination modes (Tile Drop / Color Call / Edge Collapse). Fall =
+// out (teleport to a spectate pad). Survivors score Points; a lone survivor
+// gets a Win. Round loop is endless. leaderstats Points + Wins.
+function buildMinigameHubScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Mini Games');
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const hubTheme = ['party', 'neon', 'classic'].find((t) => themeRaw.includes(t))
+    || (/neon|cyber|glow|future/.test(themeRaw) ? 'neon'
+      : /classic|retro|simple|grass/.test(themeRaw) ? 'classic'
+      : 'party');
+  const themeLua = safeLuaString(hubTheme, 'party');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}}
+
+local THEMES = {
+    party = {lobby=Color3.fromRGB(120,90,200), lobbyMat=Enum.Material.SmoothPlastic, accent=Color3.fromRGB(255,200,90)},
+    neon = {lobby=Color3.fromRGB(30,34,52), lobbyMat=Enum.Material.Metal, accent=Color3.fromRGB(90,255,210)},
+    classic = {lobby=Color3.fromRGB(120,170,95), lobbyMat=Enum.Material.Grass, accent=Color3.fromRGB(255,230,120)},
+}
+local theme = THEMES[Config.Theme] or THEMES.party
+local COLORS = {Color3.fromRGB(235,90,90), Color3.fromRGB(90,150,235), Color3.fromRGB(110,210,120)}
+local CNAMES = {"RED", "BLUE", "GREEN"}
+
+local remotes = Instance.new("Folder"); remotes.Name = "MgRemotes"; remotes.Parent = ReplicatedStorage
+local MgEvent = Instance.new("RemoteEvent"); MgEvent.Name = "MgEvent"; MgEvent.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedHub"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+local function label3d(adornee, text, offsetY, color)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 200, 0, 38); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+end
+
+local lobby = part("Lobby", Vector3.new(90, 2, 90), Vector3.new(0, 0, 0), theme.lobby, theme.lobbyMat)
+label3d(lobby, Config.Title, 9, theme.accent)
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "HubSpawn"; spawnLoc.Size = Vector3.new(20, 1, 20); spawnLoc.Position = Vector3.new(0, 1.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+local lobbyPos = Vector3.new(0, 5, 0)
+
+local GRID, TS = 8, 13
+local acx, acy, acz = 240, 46, 0
+local tiles = {}
+for gx = 0, GRID - 1 do
+    for gz = 0, GRID - 1 do
+        local pos = Vector3.new(acx + (gx - (GRID - 1) / 2) * TS, acy, acz + (gz - (GRID - 1) / 2) * TS)
+        local g = ((gx + gz) % 3) + 1
+        local tile = part("Tile_" .. gx .. "_" .. gz, Vector3.new(TS - 1, 2, TS - 1), pos, COLORS[g], Enum.Material.SmoothPlastic)
+        table.insert(tiles, {part = tile, group = g, pos = pos, dist = math.abs(gx - (GRID - 1) / 2) + math.abs(gz - (GRID - 1) / 2)})
+    end
+end
+part("DeathPlane", Vector3.new(GRID * TS + 160, 1, GRID * TS + 160), Vector3.new(acx, acy - 30, acz), Color3.fromRGB(220, 80, 40), Enum.Material.Neon)
+local deathPlane = world:FindFirstChild("DeathPlane")
+local specPlatform = part("Spectate", Vector3.new(34, 2, 20), Vector3.new(acx, acy + 4, acz + (GRID * TS) / 2 + 44), theme.lobby, theme.lobbyMat)
+label3d(specPlatform, "Spectators", 5, theme.accent)
+local spectate = specPlatform.Position + Vector3.new(0, 4, 0)
+
+local inRound = false
+local eliminated = {}
+local function resetTiles() for _, t in ipairs(tiles) do t.part.CanCollide = true; t.part.Transparency = 0 end end
+local function dropTile(t) t.part.CanCollide = false; t.part.Transparency = 0.75 end
+local function alivePlayers() local n = 0; for _, p in Players:GetPlayers() do if not eliminated[p] then n += 1 end end; return n end
+local function teleport(player, pos) local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); if r then r.CFrame = CFrame.new(pos) end end
+local function teleportAll(pos) for _, p in Players:GetPlayers() do teleport(p, pos) end end
+
+deathPlane.Touched:Connect(function(hit)
+    local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+    if inRound and not eliminated[player] then eliminated[player] = true; teleport(player, spectate); MgEvent:FireClient(player, {kind="out"}) end
+end)
+
+local function award(points, winner)
+    for _, p in Players:GetPlayers() do
+        if not eliminated[p] then local ls = p:FindFirstChild("leaderstats"); local pts = ls and ls:FindFirstChild("Points"); if pts then pts.Value += points end end
+    end
+    if winner then local ls = winner:FindFirstChild("leaderstats"); local w = ls and ls:FindFirstChild("Wins"); if w then w.Value += 1 end end
+end
+local function broadcast(phase, text, mode)
+    MgEvent:FireAllClients({kind="state", phase=phase, text=text, alive=alivePlayers(), mode=mode or "", title=Config.Title})
+end
+
+local function setupPlayer(player)
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local pts = Instance.new("IntValue"); pts.Name = "Points"; pts.Value = 0; pts.Parent = ls
+    local w = Instance.new("IntValue"); w.Name = "Wins"; w.Value = 0; w.Parent = ls
+end
+Players.PlayerAdded:Connect(setupPlayer)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+task.spawn(function()
+    local round = 0
+    while true do
+        round += 1
+        inRound = false; resetTiles(); table.clear(eliminated)
+        teleportAll(lobbyPos)
+        local mode = ((round - 1) % 3) + 1
+        local modeName = (mode == 1 and "Tile Drop") or (mode == 2 and "Color Call") or "Edge Collapse"
+        for t = 5, 1, -1 do broadcast("lobby", modeName .. " in " .. t .. "s", modeName); task.wait(1) end
+        for _, p in Players:GetPlayers() do eliminated[p] = false; teleport(p, tiles[math.random(1, #tiles)].pos + Vector3.new(0, 4, 0)) end
+        inRound = true; broadcast("arena", modeName .. "!", modeName); task.wait(2)
+        if mode == 1 then
+            local order = {}; for i = 1, #tiles do order[i] = i end
+            for i = #order, 2, -1 do local j = math.random(1, i); order[i], order[j] = order[j], order[i] end
+            local interval = math.max(0.3, 1.3 - round * 0.04)
+            for _, idx in ipairs(order) do
+                if not inRound then break end
+                if alivePlayers() <= 1 and #Players:GetPlayers() > 1 then break end
+                dropTile(tiles[idx]); broadcast("arena", "Don't fall!", modeName); task.wait(interval)
+            end
+        elseif mode == 2 then
+            for callN = 1, 8 do
+                if not inRound then break end
+                if alivePlayers() <= 1 and #Players:GetPlayers() > 1 then break end
+                local cg = math.random(1, 3)
+                broadcast("arena", "Stand on " .. CNAMES[cg] .. "!", modeName); task.wait(2.4)
+                for _, t in ipairs(tiles) do if t.group ~= cg then dropTile(t) end end
+                task.wait(1.0); resetTiles()
+            end
+        else
+            local order = {}; for i = 1, #tiles do order[i] = i end
+            table.sort(order, function(a, b) return tiles[a].dist > tiles[b].dist end)
+            local interval = math.max(0.25, 0.9 - round * 0.02)
+            for _, idx in ipairs(order) do
+                if not inRound then break end
+                if alivePlayers() <= 1 and #Players:GetPlayers() > 1 then break end
+                dropTile(tiles[idx]); broadcast("arena", "Floor collapsing inward!", modeName); task.wait(interval)
+            end
+        end
+        inRound = false
+        local survivors = alivePlayers()
+        local winner = nil
+        if survivors == 1 then for _, p in Players:GetPlayers() do if not eliminated[p] then winner = p end end end
+        award(10, winner)
+        broadcast("result", survivors == 0 and "Everyone fell! Next round..." or (survivors .. " survived! +10 pts"), modeName)
+        task.wait(5)
+    end
+end)
+print("[Hub] " .. Config.Title .. " ready - theme=" .. Config.Theme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("MgRemotes")
+local MgEvent = remotes:WaitForChild("MgEvent")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "HubHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 480, 0, 52); top.Position = UDim2.new(0.5, -240, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.12; top.TextColor3 = Color3.fromRGB(230, 235, 250); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Welcome to the hub"; top.Parent = gui
+local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = top
+local sub = Instance.new("TextLabel"); sub.Size = UDim2.new(0, 320, 0, 38); sub.Position = UDim2.new(0.5, -160, 0, 68); sub.BackgroundColor3 = Color3.fromRGB(22, 26, 38); sub.BackgroundTransparency = 0.15; sub.TextColor3 = Color3.fromRGB(180, 220, 255); sub.TextScaled = true; sub.Font = Enum.Font.GothamBold; sub.Text = "Points 0   Alive 0"; sub.Parent = gui
+local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 8); sc.Parent = sub
+local banner = Instance.new("TextLabel"); banner.Size = UDim2.new(0, 420, 0, 70); banner.Position = UDim2.new(0.5, -210, 0.42, 0); banner.BackgroundTransparency = 1; banner.TextColor3 = Color3.fromRGB(255, 120, 120); banner.TextStrokeTransparency = 0.2; banner.TextScaled = true; banner.Font = Enum.Font.GothamBlack; banner.Text = ""; banner.Parent = gui
+
+local myPoints = 0
+task.spawn(function()
+    local ls = player:WaitForChild("leaderstats"); local pts = ls:WaitForChild("Points")
+    local function r() myPoints = pts.Value end
+    r(); pts.Changed:Connect(r)
+end)
+MgEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "state" then
+        top.Text = p.text; sub.Text = "Points " .. myPoints .. "   Alive " .. p.alive
+        if p.phase == "lobby" then banner.Text = "" end
+    elseif p.kind == "out" then banner.Text = "OUT! Spectating..."; task.delay(2.5, function() if banner.Text == "OUT! Spectating..." then banner.Text = "" end end) end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'HubHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
+// Session 399 (cont.): Fighting — raised ring with melee punches (server-
+// authoritative damage + knockback), ring-outs, and KO elimination. Round loop:
+// countdown -> fight -> last standing (or most health at time-up) wins a round.
+// leaderstats Wins + KOs.
+function buildFightingScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Arena Brawl');
+  const roundTime = Math.max(20, Math.min(90, Math.round(Number(params.roundTime) || 45)));
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const arenaTheme = ['dojo', 'street', 'arena', 'space'].find((t) => themeRaw.includes(t))
+    || (/street|city|urban/.test(themeRaw) ? 'street'
+      : /space|neon|cyber|sci/.test(themeRaw) ? 'space'
+      : /dojo|temple|japan|ninja/.test(themeRaw) ? 'dojo'
+      : 'arena');
+  const diffRaw = String(params.difficulty || '').toLowerCase();
+  const difficulty = /hard|insane|pro/.test(diffRaw) ? 'hard' : /casual|easy|chill/.test(diffRaw) ? 'casual' : 'normal';
+  const themeLua = safeLuaString(arenaTheme, 'arena');
+  const difficultyLua = safeLuaString(difficulty, 'normal');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}, RoundTime=${roundTime}, Difficulty=${difficultyLua}}
+
+local THEMES = {
+    dojo = {floor=Color3.fromRGB(180,140,90), floorMat=Enum.Material.WoodPlanks, kerb=Color3.fromRGB(120,60,50), accent=Color3.fromRGB(230,90,80)},
+    street = {floor=Color3.fromRGB(80,82,88), floorMat=Enum.Material.Concrete, kerb=Color3.fromRGB(50,52,58), accent=Color3.fromRGB(255,170,70)},
+    arena = {floor=Color3.fromRGB(150,150,160), floorMat=Enum.Material.Slate, kerb=Color3.fromRGB(90,92,100), accent=Color3.fromRGB(255,210,90)},
+    space = {floor=Color3.fromRGB(36,40,58), floorMat=Enum.Material.Metal, kerb=Color3.fromRGB(60,68,96), accent=Color3.fromRGB(150,255,210)},
+}
+local theme = THEMES[Config.Theme] or THEMES.arena
+local punchDmg = Config.Difficulty == "hard" and 24 or (Config.Difficulty == "casual" and 12 or 17)
+
+local remotes = Instance.new("Folder"); remotes.Name = "FtRemotes"; remotes.Parent = ReplicatedStorage
+local FtEvent = Instance.new("RemoteEvent"); FtEvent.Name = "FtEvent"; FtEvent.Parent = remotes
+local FtAction = Instance.new("RemoteEvent"); FtAction.Name = "FtAction"; FtAction.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedArena"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+local function label3d(adornee, text, offsetY, color)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 200, 0, 38); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+end
+
+local ring = part("Ring", Vector3.new(64, 2, 64), Vector3.new(0, 20, 0), theme.floor, theme.floorMat)
+label3d(ring, Config.Title, 18, theme.accent)
+local kerbs = {{Vector3.new(64, 3, 3), Vector3.new(0, 22, 32)}, {Vector3.new(64, 3, 3), Vector3.new(0, 22, -32)}, {Vector3.new(3, 3, 64), Vector3.new(32, 22, 0)}, {Vector3.new(3, 3, 64), Vector3.new(-32, 22, 0)}}
+for i, k in ipairs(kerbs) do part("Kerb_" .. i, k[1], k[2], theme.kerb, Enum.Material.Metal) end
+part("RingOut", Vector3.new(280, 1, 280), Vector3.new(0, 4, 0), Color3.fromRGB(40, 44, 60), Enum.Material.SmoothPlastic)
+local ringOut = world:FindFirstChild("RingOut")
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "ArenaSpawn"; spawnLoc.Size = Vector3.new(10, 1, 10); spawnLoc.Position = Vector3.new(0, 21.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+local specPad = part("Corner", Vector3.new(30, 2, 14), Vector3.new(0, 22, 70), theme.kerb, theme.floorMat)
+label3d(specPad, "KO Corner", 5, theme.accent)
+local spectate = specPad.Position + Vector3.new(0, 4, 0)
+local pads = {Vector3.new(22, 23, 22), Vector3.new(-22, 23, 22), Vector3.new(22, 23, -22), Vector3.new(-22, 23, -22)}
+
+local fighting = false
+local eliminated = {}
+local lastHitBy = {}
+local punchCd = {}
+local function alivePlayers() local n = 0; for _, p in Players:GetPlayers() do if not eliminated[p] then n += 1 end end; return n end
+local function teleport(player, pos) local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); if r then r.CFrame = CFrame.new(pos) end end
+local function setSpeed(player, s) local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid"); if hum then hum.WalkSpeed = s end end
+local function koPlayer(player, attacker)
+    if eliminated[player] then return end
+    eliminated[player] = true
+    if attacker and attacker ~= player then local ls = attacker:FindFirstChild("leaderstats"); local k = ls and ls:FindFirstChild("KOs"); if k then k.Value += 1 end end
+    local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid"); if hum then hum.Health = hum.MaxHealth end
+    setSpeed(player, 0); teleport(player, spectate)
+    FtEvent:FireClient(player, {kind="ko"})
+end
+
+ringOut.Touched:Connect(function(hit)
+    local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+    if fighting and not eliminated[player] then koPlayer(player, lastHitBy[player]) end
+end)
+
+FtAction.OnServerEvent:Connect(function(player, payload)
+    if not fighting or eliminated[player] then return end
+    if typeof(payload) ~= "table" or payload.action ~= "punch" then return end
+    local now = os.clock()
+    if punchCd[player] and now - punchCd[player] < 0.55 then return end
+    punchCd[player] = now
+    local char = player.Character; local root = char and char:FindFirstChild("HumanoidRootPart"); if not root then return end
+    FtEvent:FireAllClients({kind="swing", who=player.UserId})
+    for _, other in Players:GetPlayers() do
+        if other ~= player and not eliminated[other] then
+            local r2 = other.Character and other.Character:FindFirstChild("HumanoidRootPart")
+            local hum2 = other.Character and other.Character:FindFirstChildOfClass("Humanoid")
+            if r2 and hum2 then
+                local to = r2.Position - root.Position; local d = to.Magnitude
+                if d <= 10 then
+                    lastHitBy[other] = player
+                    local dir = (d > 0.1) and to.Unit or root.CFrame.LookVector
+                    r2.AssemblyLinearVelocity = dir * 58 + Vector3.new(0, 30, 0)
+                    if hum2.Health <= punchDmg then koPlayer(other, player) else hum2:TakeDamage(punchDmg) end
+                end
+            end
+        end
+    end
+end)
+
+local function setupPlayer(player)
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local w = Instance.new("IntValue"); w.Name = "Wins"; w.Value = 0; w.Parent = ls
+    local k = Instance.new("IntValue"); k.Name = "KOs"; k.Value = 0; k.Parent = ls
+    player.CharacterAdded:Connect(function() if fighting and eliminated[player] then task.wait(0.4); setSpeed(player, 0); teleport(player, spectate) end end)
+end
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(function(player) eliminated[player] = nil; lastHitBy[player] = nil; punchCd[player] = nil end)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+local function broadcast(phase, text, timeLeft)
+    FtEvent:FireAllClients({kind="state", phase=phase, text=text, time=timeLeft or 0, alive=alivePlayers(), title=Config.Title})
+end
+
+task.spawn(function()
+    while true do
+        fighting = false; table.clear(eliminated); table.clear(lastHitBy)
+        local i = 0
+        for _, p in Players:GetPlayers() do
+            i += 1; eliminated[p] = false; setSpeed(p, 16)
+            local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid"); if hum then hum.Health = hum.MaxHealth end
+            teleport(p, pads[((i - 1) % #pads) + 1])
+        end
+        for t = 4, 1, -1 do broadcast("countdown", "Fight in " .. t .. "...", t); task.wait(1) end
+        fighting = true
+        local timeLeft = Config.RoundTime
+        while fighting and timeLeft > 0 do
+            if alivePlayers() <= 1 and #Players:GetPlayers() > 1 then break end
+            broadcast("fight", "FIGHT! Punch nearby foes", timeLeft); task.wait(1); timeLeft -= 1
+        end
+        fighting = false
+        local winner, bestHp
+        for _, p in Players:GetPlayers() do
+            if not eliminated[p] then
+                local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid"); local hp = hum and hum.Health or 0
+                if not bestHp or hp > bestHp then winner, bestHp = p, hp end
+            end
+        end
+        if winner then local ls = winner:FindFirstChild("leaderstats"); local w = ls and ls:FindFirstChild("Wins"); if w then w.Value += 1 end end
+        for _, p in Players:GetPlayers() do setSpeed(p, 16) end
+        broadcast("result", winner and (winner.DisplayName .. " wins the round!") or "Draw - next round...", 0)
+        task.wait(6)
+    end
+end)
+print("[Fighting] " .. Config.Title .. " ready - roundTime=" .. Config.RoundTime .. ", theme=" .. Config.Theme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("FtRemotes")
+local FtEvent = remotes:WaitForChild("FtEvent")
+local FtAction = remotes:WaitForChild("FtAction")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "FightingHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 460, 0, 50); top.Position = UDim2.new(0.5, -230, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.12; top.TextColor3 = Color3.fromRGB(235, 225, 225); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Get ready"; top.Parent = gui
+local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = top
+local hpBack = Instance.new("Frame"); hpBack.Size = UDim2.new(0, 320, 0, 26); hpBack.Position = UDim2.new(0.5, -160, 0, 70); hpBack.BackgroundColor3 = Color3.fromRGB(30, 20, 20); hpBack.Parent = gui
+local hpc = Instance.new("UICorner"); hpc.CornerRadius = UDim.new(0, 8); hpc.Parent = hpBack
+local hpFill = Instance.new("Frame"); hpFill.Size = UDim2.new(1, 0, 1, 0); hpFill.BackgroundColor3 = Color3.fromRGB(90, 220, 90); hpFill.BorderSizePixel = 0; hpFill.Parent = hpBack
+local hfc = Instance.new("UICorner"); hfc.CornerRadius = UDim.new(0, 8); hfc.Parent = hpFill
+local punchBtn = Instance.new("TextButton"); punchBtn.Size = UDim2.new(0, 220, 0, 80); punchBtn.Position = UDim2.new(0.5, -110, 1, -100); punchBtn.BackgroundColor3 = Color3.fromRGB(220, 80, 70); punchBtn.TextColor3 = Color3.fromRGB(255, 255, 255); punchBtn.TextScaled = true; punchBtn.Font = Enum.Font.GothamBlack; punchBtn.Text = "PUNCH (F)"; punchBtn.Parent = gui
+local pbc = Instance.new("UICorner"); pbc.CornerRadius = UDim.new(0, 14); pbc.Parent = punchBtn
+local banner = Instance.new("TextLabel"); banner.Size = UDim2.new(0, 440, 0, 70); banner.Position = UDim2.new(0.5, -220, 0.4, 0); banner.BackgroundTransparency = 1; banner.TextColor3 = Color3.fromRGB(255, 230, 120); banner.TextStrokeTransparency = 0.2; banner.TextScaled = true; banner.Font = Enum.Font.GothamBlack; banner.Text = ""; banner.Parent = gui
+
+local function punch() FtAction:FireServer({action="punch"}) end
+punchBtn.Activated:Connect(punch)
+UserInputService.InputBegan:Connect(function(input, gp) if gp then return end if input.KeyCode == Enum.KeyCode.F then punch() end end)
+
+RunService.Heartbeat:Connect(function()
+    local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then local f = math.clamp(hum.Health / math.max(1, hum.MaxHealth), 0, 1); hpFill.Size = UDim2.new(f, 0, 1, 0); hpFill.BackgroundColor3 = Color3.fromRGB(math.floor(230 * (1 - f) + 60), math.floor(90 + 130 * f), 80) end
+end)
+FtEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "state" then
+        top.Text = p.text .. "  |  Alive " .. p.alive .. (p.phase == "fight" and ("  |  " .. p.time .. "s") or "")
+        if p.phase ~= "result" then banner.Text = "" end
+        if p.phase == "result" then banner.Text = p.text end
+    elseif p.kind == "ko" then banner.Text = "KO! You're out this round"; task.delay(2.5, function() if banner.Text == "KO! You're out this round" then banner.Text = "" end end) end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'FightingHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
+// Session 399 (cont.): Custom — a flexible playable sandbox for "any genre by
+// description". Title monument + summary, a coin-collection economy, Speed/Jump
+// upgrade pads, floating platforms, and a guide NPC. Always produces a playable
+// game even when the brief is open-ended. leaderstats Cash + Speed + Jump.
+function buildCustomGameScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Custom Game');
+  const summaryLua = safeLuaString(String(params.summary || 'Your custom Roblox experience.').slice(0, 140), 'Your custom Roblox experience.');
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const customTheme = ['neon', 'grass', 'space'].find((t) => themeRaw.includes(t))
+    || (/space|galaxy|cyber|sci|star/.test(themeRaw) ? 'space'
+      : /grass|nature|park|green|forest/.test(themeRaw) ? 'grass'
+      : 'neon');
+  const themeLua = safeLuaString(customTheme, 'neon');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = {Title=${titleLua}, Theme=${themeLua}, Summary=${summaryLua}}
+
+local THEMES = {
+    neon = {ground=Color3.fromRGB(34,36,52), groundMat=Enum.Material.Metal, plaza=Color3.fromRGB(54,58,82), accent=Color3.fromRGB(90,255,210), coin=Color3.fromRGB(255,215,90)},
+    grass = {ground=Color3.fromRGB(110,165,90), groundMat=Enum.Material.Grass, plaza=Color3.fromRGB(170,160,140), accent=Color3.fromRGB(255,210,100), coin=Color3.fromRGB(255,225,110)},
+    space = {ground=Color3.fromRGB(24,26,40), groundMat=Enum.Material.Slate, plaza=Color3.fromRGB(44,50,76), accent=Color3.fromRGB(150,200,255), coin=Color3.fromRGB(180,230,255)},
+}
+local theme = THEMES[Config.Theme] or THEMES.neon
+
+local remotes = Instance.new("Folder"); remotes.Name = "CtRemotes"; remotes.Parent = ReplicatedStorage
+local CtEvent = Instance.new("RemoteEvent"); CtEvent.Name = "CtEvent"; CtEvent.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedCustom"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+local function label3d(adornee, text, offsetY, color, width)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, width or 220, 0, 40); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+end
+
+part("CustomGround", Vector3.new(320, 1, 320), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+part("Plaza", Vector3.new(90, 1, 90), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
+local monument = part("Monument", Vector3.new(8, 30, 8), Vector3.new(0, 15, -36), theme.accent, Enum.Material.Neon)
+label3d(monument, Config.Title, 18, theme.accent, 280)
+label3d(monument, Config.Summary, 13, Color3.fromRGB(225, 230, 240), 320)
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "CustomSpawn"; spawnLoc.Size = Vector3.new(16, 1, 16); spawnLoc.Position = Vector3.new(0, 1.2, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+
+local function getCash(player) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); return c and c.Value or 0 end
+local function addCash(player, amount) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); if c then c.Value = math.max(0, c.Value + amount) end end
+
+local coinActive = {}
+local function makeCoin(pos)
+    local coin = part("Coin_" .. math.random(1, 99999), Vector3.new(3, 3, 0.6), pos, theme.coin, Enum.Material.Neon)
+    coin.Shape = Enum.PartType.Cylinder; coin.CanCollide = false; coin.Orientation = Vector3.new(0, 0, 90)
+    coinActive[coin] = true
+    coin.Touched:Connect(function(hit)
+        local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+        if not coinActive[coin] then return end
+        coinActive[coin] = false; coin.Transparency = 1
+        addCash(player, 5); CtEvent:FireClient(player, {kind="toast", text="+5 coins"})
+        task.delay(6, function() if coin and coin.Parent then coinActive[coin] = true; coin.Transparency = 0 end end)
+    end)
+end
+for i = 1, 16 do local a = math.rad(i * 22.5); local r = 50 + (i % 3) * 14; makeCoin(Vector3.new(math.cos(a) * r, 3, math.sin(a) * r)) end
+
+local platforms = {Vector3.new(70, 6, 0), Vector3.new(86, 11, 14), Vector3.new(100, 16, 0), Vector3.new(86, 21, -14)}
+for i, p in ipairs(platforms) do part("Platform_" .. i, Vector3.new(12, 1, 12), p, theme.plaza, Enum.Material.SmoothPlastic) end
+local topCoin = part("TopCoin", Vector3.new(4, 4, 0.6), Vector3.new(86, 25, -14), theme.coin, Enum.Material.Neon); topCoin.Shape = Enum.PartType.Cylinder; topCoin.CanCollide = false; topCoin.Orientation = Vector3.new(0, 0, 90)
+coinActive[topCoin] = true
+label3d(topCoin, "+25 climb reward", 3, theme.coin, 200)
+topCoin.Touched:Connect(function(hit)
+    local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
+    if not coinActive[topCoin] then return end
+    coinActive[topCoin] = false; topCoin.Transparency = 1
+    addCash(player, 25); CtEvent:FireClient(player, {kind="toast", text="+25 climb bonus!"})
+    task.delay(10, function() if topCoin and topCoin.Parent then coinActive[topCoin] = true; topCoin.Transparency = 0 end end)
+end)
+
+local function applyUpgrades(player)
+    local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid"); if not hum then return end
+    local ls = player:FindFirstChild("leaderstats")
+    local sp = ls and ls:FindFirstChild("Speed"); local jp = ls and ls:FindFirstChild("Jump")
+    hum.WalkSpeed = 16 + 2 * (sp and sp.Value or 0)
+    hum.UseJumpPower = true; hum.JumpPower = 50 + 6 * (jp and jp.Value or 0)
+end
+local function makeUpgrade(name, statName, pos, baseCost)
+    local pad = part("Upg_" .. name, Vector3.new(10, 4, 10), pos, theme.accent, Enum.Material.Neon); pad.Transparency = 0.2
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Buy " .. name; prompt.ObjectText = name .. " upgrade"; prompt.HoldDuration = 0.3; prompt.MaxActivationDistance = 14; prompt.RequiresLineOfSight = false; prompt.Parent = pad
+    local function refresh(player)
+        local ls = player:FindFirstChild("leaderstats"); local s = ls and ls:FindFirstChild(statName); local lv = s and s.Value or 0
+        prompt.ObjectText = name .. " Lv" .. lv .. " ($" .. (baseCost * (lv + 1)) .. ")"
+    end
+    label3d(pad, name .. " upgrade", 4, theme.accent)
+    prompt.Triggered:Connect(function(player)
+        local ls = player:FindFirstChild("leaderstats"); local s = ls and ls:FindFirstChild(statName); if not s then return end
+        local cost = baseCost * (s.Value + 1)
+        if getCash(player) >= cost then
+            addCash(player, -cost); s.Value += 1; applyUpgrades(player)
+            CtEvent:FireClient(player, {kind="toast", text=name .. " is now Lv" .. s.Value .. "!"}); refresh(player)
+        else
+            CtEvent:FireClient(player, {kind="toast", text="Need $" .. cost .. " for " .. name})
+        end
+    end)
+    prompt.PromptShown:Connect(function() for _, pl in Players:GetPlayers() do refresh(pl) end end)
+end
+makeUpgrade("Speed", "Speed", Vector3.new(-28, 2, 26), 20)
+makeUpgrade("Jump", "Jump", Vector3.new(28, 2, 26), 20)
+
+local guide = part("Guide", Vector3.new(3, 7, 2), Vector3.new(0, 4, 22), Color3.fromRGB(220, 210, 190), Enum.Material.SmoothPlastic)
+local guideHead = part("GuideHead", Vector3.new(2, 2, 2), Vector3.new(0, 8.5, 22), Color3.fromRGB(235, 225, 205), Enum.Material.SmoothPlastic); guideHead.CanCollide = false
+label3d(guideHead, "Guide", 2.2, theme.accent)
+local gp = Instance.new("ProximityPrompt"); gp.ActionText = "Talk"; gp.ObjectText = "Guide"; gp.HoldDuration = 0; gp.MaxActivationDistance = 12; gp.RequiresLineOfSight = false; gp.Parent = guide
+gp.Triggered:Connect(function(player) CtEvent:FireClient(player, {kind="toast", text="Collect coins, climb for the bonus, and buy Speed/Jump upgrades!"}) end)
+
+local function setupPlayer(player)
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local c = Instance.new("IntValue"); c.Name = "Cash"; c.Value = 0; c.Parent = ls
+    local sp = Instance.new("IntValue"); sp.Name = "Speed"; sp.Value = 0; sp.Parent = ls
+    local jp = Instance.new("IntValue"); jp.Name = "Jump"; jp.Value = 0; jp.Parent = ls
+    player.CharacterAdded:Connect(function() task.wait(0.4); applyUpgrades(player) end)
+end
+Players.PlayerAdded:Connect(setupPlayer)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+print("[Custom] " .. Config.Title .. " ready - theme=" .. Config.Theme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("CtRemotes")
+local CtEvent = remotes:WaitForChild("CtEvent")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "CustomHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local cashLabel = Instance.new("TextLabel"); cashLabel.Size = UDim2.new(0, 200, 0, 46); cashLabel.Position = UDim2.new(0.5, -100, 0, 12); cashLabel.BackgroundColor3 = Color3.fromRGB(16, 18, 26); cashLabel.BackgroundTransparency = 0.12; cashLabel.TextColor3 = Color3.fromRGB(255, 225, 130); cashLabel.TextScaled = true; cashLabel.Font = Enum.Font.GothamBlack; cashLabel.Text = "0 coins"; cashLabel.Parent = gui
+local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 10); cc.Parent = cashLabel
+local toast = Instance.new("TextLabel"); toast.Size = UDim2.new(0, 440, 0, 38); toast.Position = UDim2.new(0.5, -220, 0, 66); toast.BackgroundColor3 = Color3.fromRGB(20, 24, 34); toast.BackgroundTransparency = 0.15; toast.TextColor3 = Color3.fromRGB(235, 235, 245); toast.TextScaled = true; toast.Font = Enum.Font.GothamBold; toast.Visible = false; toast.Parent = gui
+local toc = Instance.new("UICorner"); toc.CornerRadius = UDim.new(0, 8); toc.Parent = toast
+
+task.spawn(function()
+    local ls = player:WaitForChild("leaderstats"); local c = ls:WaitForChild("Cash")
+    local function r() cashLabel.Text = c.Value .. " coins" end
+    r(); c.Changed:Connect(r)
+end)
+CtEvent.OnClientEvent:Connect(function(p)
+    if typeof(p) ~= "table" then return end
+    if p.kind == "toast" then toast.Text = p.text; toast.Visible = true; task.delay(2, function() if toast.Text == p.text then toast.Visible = false end end) end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'CustomHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
 function buildTrainingSimulatorScript(params: GameTemplateParams): MultiScriptResult {
   const simulatorKind = ['mining', 'fighting', 'muscle', 'clicker'].includes(String(params.simulatorKind)) ? String(params.simulatorKind) : 'mining';
   const titleLua = safeLuaString(params.title, simulatorKind === 'fighting' ? 'Fighting Simulator' : simulatorKind === 'muscle' ? 'Muscle Simulator' : simulatorKind === 'clicker' ? 'Clicker Simulator' : 'Mining Simulator');
@@ -13136,6 +14568,22 @@ function trendingShowcaseOptsFor(genreKey: string): TrendingShowcaseOpts {
       return { heading: '🏆 SPONSOR BANNERS', origin: { x: 0, y: 28, z: -45 }, layout: 'arc', marker: 'TrendingShowcase_pvp_v1', category: 'Animations' };
     case 'tower_defense':
       return { heading: '🏰 TOP DEFENSE GAMES', origin: { x: 118, y: 22, z: 12 }, layout: 'arc', marker: 'TrendingShowcase_td_v1', category: 'Featured' };
+    case 'roleplay_town':
+      return { heading: '🏙️ TOP ROLEPLAY GAMES', origin: { x: 0, y: 16, z: 48 }, layout: 'arc', marker: 'TrendingShowcase_rp_v1', category: 'Featured' };
+    case 'racing':
+      return { heading: '🏁 TOP RACING GAMES', origin: { x: 155, y: 16, z: -34 }, layout: 'wall', marker: 'TrendingShowcase_race_v1', category: 'Featured' };
+    case 'parkour':
+      return { heading: '🧗 TOP PARKOUR GAMES', origin: { x: 38, y: 14, z: -22 }, layout: 'wall', marker: 'TrendingShowcase_pk_v1', category: 'Featured' };
+    case 'story_game':
+      return { heading: '📖 TOP STORY GAMES', origin: { x: -30, y: 10, z: -8 }, layout: 'wall', marker: 'TrendingShowcase_story_v1', category: 'Featured' };
+    case 'survival':
+      return { heading: '🏕️ TOP SURVIVAL GAMES', origin: { x: 0, y: 14, z: 40 }, layout: 'arc', marker: 'TrendingShowcase_surv_v1', category: 'Featured' };
+    case 'minigame_hub':
+      return { heading: '🎉 TOP PARTY GAMES', origin: { x: 0, y: 14, z: 42 }, layout: 'arc', marker: 'TrendingShowcase_hub_v1', category: 'Featured' };
+    case 'fighting_arena':
+      return { heading: '🥊 TOP FIGHTING GAMES', origin: { x: 0, y: 34, z: -44 }, layout: 'arc', marker: 'TrendingShowcase_fight_v1', category: 'Animations' };
+    case 'custom_game':
+      return { heading: '✨ TRENDING IN ROBLOX', origin: { x: 0, y: 14, z: 44 }, layout: 'arc', marker: 'TrendingShowcase_custom_v1', category: 'Featured' };
     case 'brainrot_sim':
       return { heading: '💯 LIVE TRENDS', origin: { x: 0, y: 14, z: -55 }, layout: 'wall', marker: 'TrendingShowcase_brainrot_v1', accentColor: [255, 220, 80], category: 'Decals' };
     default:
@@ -13173,6 +14621,38 @@ export function buildGameplayScript(params: GameTemplateParams): string | MultiS
   // Session 399: tower_defense — runtime-owned wave/tower world (like rpg/pvp).
   if (params.gameKind === 'tower_defense') {
     return withCinematicCamera(withTrendingShowcase(buildTowerDefenseScript(params), params, trendingShowcaseOptsFor('tower_defense')));
+  }
+  // Session 399 (cont.): roleplay_town — persistent social town world.
+  if (params.gameKind === 'roleplay_town') {
+    return withCinematicCamera(withTrendingShowcase(buildRoleplayTownScript(params), params, trendingShowcaseOptsFor('roleplay_town')));
+  }
+  // Session 399 (cont.): racing — closed-loop foot race with laps + round loop.
+  if (params.gameKind === 'racing') {
+    return withCinematicCamera(withTrendingShowcase(buildRacingScript(params), params, trendingShowcaseOptsFor('racing')));
+  }
+  // Session 399 (cont.): parkour — ascending spiral course with checkpoints.
+  if (params.gameKind === 'parkour') {
+    return withCinematicCamera(withTrendingShowcase(buildParkourScript(params), params, trendingShowcaseOptsFor('parkour')));
+  }
+  // Session 399 (cont.): story_game — linear narrative chapter walk.
+  if (params.gameKind === 'story_game') {
+    return withCinematicCamera(withTrendingShowcase(buildStoryGameScript(params), params, trendingShowcaseOptsFor('story_game')));
+  }
+  // Session 399 (cont.): survival — resource gathering + day/night enemy nights.
+  if (params.gameKind === 'survival') {
+    return withCinematicCamera(withTrendingShowcase(buildSurvivalScript(params), params, trendingShowcaseOptsFor('survival')));
+  }
+  // Session 399 (cont.): minigame_hub — lobby + rotating tile-arena minigames.
+  if (params.gameKind === 'minigame_hub') {
+    return withCinematicCamera(withTrendingShowcase(buildMinigameHubScript(params), params, trendingShowcaseOptsFor('minigame_hub')));
+  }
+  // Session 399 (cont.): fighting_arena — melee ring brawl with rounds.
+  if (params.gameKind === 'fighting_arena') {
+    return withCinematicCamera(withTrendingShowcase(buildFightingScript(params), params, trendingShowcaseOptsFor('fighting_arena')));
+  }
+  // Session 399 (cont.): custom_game — flexible playable sandbox scaffold.
+  if (params.gameKind === 'custom_game') {
+    return withCinematicCamera(withTrendingShowcase(buildCustomGameScript(params), params, trendingShowcaseOptsFor('custom_game')));
   }
   const simulatorKind = String(params.simulatorKind || '').toLowerCase();
   if (

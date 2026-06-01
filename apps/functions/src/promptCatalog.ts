@@ -79,12 +79,12 @@ export const GAME_GENRE_BRANCHES: GameGenreBranch[] = [
   {
     name: 'Roleplay',
     aliases: ['roleplay', 'rp', 'town', 'city'],
-    turnCount: 5,
-    generationIntent: 'game_generation',
-    requiredRows: ['town theme', 'jobs', 'homes', 'social systems', 'economy systems'],
-    questionFlow: ['world/town fantasy', 'jobs + role identities', 'homes/vehicles/shops', 'social/economy rules', 'name + safety/monetization'],
-    quickReplies: ['Cozy town', 'School RP', 'Jobs + paychecks', 'Homes + furniture', 'Safe chat prompts', 'Decide for me'],
-    defaults: ['spawn plaza', '3 jobs', 'rentable homes', 'role tools', 'safe social prompts'],
+    turnCount: 3,
+    generationIntent: 'roleplay_town_generation',
+    requiredRows: ['town theme', 'starting cash', 'job count', 'role shop', 'day/night'],
+    questionFlow: ['town theme', 'starting cash + number of jobs', 'name + monetization'],
+    quickReplies: ['Suburb', 'City', 'Medieval', 'Lots of jobs', 'Rich start', 'Decide for me'],
+    defaults: ['6 named buildings + plaza', '4 job pads paying cash', 'Citizen/VIP/Tycoon/Legend role shop', 'day/night cycle', 'Cash+Role saved'],
   },
   {
     name: 'PvP Arena',
@@ -109,72 +109,72 @@ export const GAME_GENRE_BRANCHES: GameGenreBranch[] = [
   {
     name: 'Racing',
     aliases: ['racing', 'race', 'kart'],
-    turnCount: 4,
-    generationIntent: 'game_generation',
-    requiredRows: ['track', 'vehicle feel', 'laps', 'boosts', 'rewards'],
-    questionFlow: ['track theme + vehicle fantasy', 'laps + handling feel', 'boosts/hazards/rewards', 'name + monetization'],
-    quickReplies: ['Neon city', 'Jungle track', '3 laps', 'Drift boosts', 'Daily rewards', 'Decide for me'],
-    defaults: ['3-lap loop', 'boost pads', 'checkpoint timing', 'leaderboard rewards'],
+    turnCount: 3,
+    generationIntent: 'racing_generation',
+    requiredRows: ['track theme', 'lap count', 'difficulty', 'checkpoints', 'best time'],
+    questionFlow: ['track theme', 'laps + difficulty', 'name + monetization'],
+    quickReplies: ['City', 'Desert', 'Winter', '3 laps', 'Hard', 'Decide for me'],
+    defaults: ['closed oval loop', 'ordered checkpoints + laps', 'on-foot speed boost (no vehicle physics)', 'best-time leaderboard'],
   },
   {
     name: 'Parkour',
     aliases: ['parkour', 'movement'],
-    turnCount: 4,
-    generationIntent: 'game_generation',
-    requiredRows: ['movement verbs', 'route structure', 'checkpoints', 'timer', 'skill rewards'],
-    questionFlow: ['movement fantasy + theme', 'route complexity + verbs', 'checkpoint/timer/rewards', 'name + monetization'],
-    quickReplies: ['Rooftop route', 'Wall jumps', 'Dash pads', 'Time trials', 'Ghost replay vibe', 'Decide for me'],
-    defaults: ['checkpointed route', 'timer leaderboard', 'dash/jump pads as safe movement assists'],
+    turnCount: 3,
+    generationIntent: 'parkour_generation',
+    requiredRows: ['theme', 'stage count', 'difficulty', 'checkpoints', 'best time'],
+    questionFlow: ['theme', 'stage count + difficulty', 'name + monetization'],
+    quickReplies: ['Neon', 'Jungle', 'Lava', '15 stages', 'Hard', 'Decide for me'],
+    defaults: ['ascending spiral of platforms', 'checkpoint every 5 stages', 'void respawn to checkpoint', 'best-time finish'],
   },
   {
     name: 'Story',
     aliases: ['story', 'chapter', 'narrative'],
-    turnCount: 5,
-    generationIntent: 'game_generation',
-    requiredRows: ['chapters', 'choices', 'endings', 'NPC cast', 'objectives'],
-    questionFlow: ['premise + tone', 'main cast + conflict', 'chapter/objective structure', 'choices/endings', 'name + safety/monetization'],
-    quickReplies: ['Mystery school', 'Space rescue', '3 chapters', 'Branching choices', 'Multiple endings', 'Decide for me'],
-    defaults: ['3 chapters', '2 meaningful choices', 'safe NPC dialogue', 'objective HUD'],
+    turnCount: 3,
+    generationIntent: 'story_game_generation',
+    requiredRows: ['theme', 'chapter count', 'narrative beats', 'narrator NPCs'],
+    questionFlow: ['story theme', 'chapter count', 'name + monetization'],
+    quickReplies: ['Fantasy', 'Sci-fi', 'Mystery', 'Horror', '5 chapters', 'Decide for me'],
+    defaults: ['linear chapter path with gates', 'deterministic narrative beats per theme', 'narrator NPCs', 'creator-safe story'],
   },
   {
     name: 'Mini-games Hub',
     aliases: ['mini-games hub', 'minigames', 'mini games'],
-    turnCount: 5,
-    generationIntent: 'game_generation',
-    requiredRows: ['lobby', 'voting', 'minigame rotation', 'round rewards', 'leaderboard'],
-    questionFlow: ['hub theme', 'minigame roster', 'voting/round timing', 'rewards + leaderboard', 'name + monetization'],
-    quickReplies: ['Party lobby', '3 minigames', 'Map voting', 'Round coins', 'Win streaks', 'Decide for me'],
-    defaults: ['central lobby', '3 starter minigames', '30s vote + 2min rounds', 'coins + wins leaderboard'],
+    turnCount: 3,
+    generationIntent: 'minigame_hub_generation',
+    requiredRows: ['hub theme', 'round loop', 'minigame rotation', 'scoring'],
+    questionFlow: ['hub theme', 'confirm rotating minigames', 'name + monetization'],
+    quickReplies: ['Party', 'Neon', 'Classic', 'More chaotic', 'Decide for me'],
+    defaults: ['lobby + shared tile arena', '3 rotating modes (Tile Drop/Color Call/Edge Collapse)', 'survivor scoring', 'Points + Wins'],
   },
   {
     name: 'Survival',
     aliases: ['survival', 'crafting', 'base survival'],
-    turnCount: 5,
-    generationIntent: 'game_generation',
-    requiredRows: ['resources', 'crafting/base', 'threats', 'day/night', 'team/social rules'],
-    questionFlow: ['biome + survival fantasy', 'resources + crafting', 'base building + threats', 'day/night and fail state', 'name + monetization'],
-    quickReplies: ['Island survival', 'Zombie nights', 'Wood/stone/food', 'Base walls', 'Co-op teams', 'Decide for me'],
-    defaults: ['wood/stone/food resources', 'simple crafting stations', 'night threat waves', 'health + hunger HUD'],
+    turnCount: 3,
+    generationIntent: 'survival_generation',
+    requiredRows: ['theme', 'difficulty', 'day length', 'start health', 'night enemies'],
+    questionFlow: ['biome theme', 'difficulty + day length', 'name + monetization'],
+    quickReplies: ['Island', 'Forest', 'Winter', 'Zombie', 'Hard', 'Decide for me'],
+    defaults: ['wood/stone resource nodes', 'campfire heal zone', 'day/night cycle', 'night chasing enemies', 'Days survived stat'],
   },
   {
     name: 'Fighting',
     aliases: ['fighting', 'combat', 'brawler'],
-    turnCount: 4,
-    generationIntent: 'game_generation',
-    requiredRows: ['combat style', 'combo rules', 'arena/tournament', 'round rewards', 'scoreboard'],
-    questionFlow: ['combat fantasy + theme', 'moves/combo depth', 'arena/tournament structure', 'name + monetization'],
-    quickReplies: ['Anime brawler', 'Martial arts', '3-hit combo', 'Block + dodge', 'Tournament ladder', 'Decide for me'],
-    defaults: ['server-authoritative hit checks', '3-hit combo', 'block/dodge cooldown', 'wins + knockouts leaderboard'],
+    turnCount: 3,
+    generationIntent: 'fighting_generation',
+    requiredRows: ['arena theme', 'round time', 'difficulty', 'ring-outs', 'KOs'],
+    questionFlow: ['arena theme', 'round length + difficulty', 'name + monetization'],
+    quickReplies: ['Dojo', 'Street', 'Arena', 'Space', 'Hard', 'Decide for me'],
+    defaults: ['raised ring', 'server-authoritative melee punch + knockback', 'ring-out + KO elimination', 'last-standing rounds, Wins+KOs'],
   },
   {
     name: 'Custom',
     aliases: ['custom', 'anything', 'other'],
-    turnCount: 5,
-    generationIntent: 'game_generation',
-    requiredRows: ['nearest branch', 'custom rule', 'core loop', 'scope', 'technical risks'],
-    questionFlow: ['infer nearest genre + custom hook', 'core loop + player goal', 'map/content structure', 'systems/economy', 'name + implementation constraints'],
-    quickReplies: ['Infer genre', 'Mashup mode', 'One weird rule', 'Safe scope', 'Technical plan', 'Decide for me'],
-    defaults: ['choose nearest supported branch', 'state one custom differentiator', 'avoid promising unsupported systems'],
+    turnCount: 3,
+    generationIntent: 'custom_game_generation',
+    requiredRows: ['theme/vibe', 'emphasis', 'core loop', 'summary'],
+    questionFlow: ['vibe/theme', 'what to emphasize (collect/climb/upgrade)', 'name + summary'],
+    quickReplies: ['Neon', 'Grass', 'Space', 'Collecting', 'Upgrades', 'Decide for me'],
+    defaults: ['title monument + summary', 'coin economy', 'Speed/Jump upgrade pads', 'floating platforms', 'guide NPC'],
   },
 ];
 
@@ -4172,6 +4172,192 @@ Schema:
 }
 Three tower types exist (Cannon, Sniper, Splash) — do not invent extra tower types. Boss enemies appear every 5th wave automatically.
 `.trim(),
+
+  // ── Session 399 (cont.): remaining playable genres ──
+  smartInterviewRoleplayTown: `
+You are a Roblox roleplay/town designer. Output must become a playable persistent town hangout: named buildings, job pads that pay cash, a role shop, NPCs, day/night.
+FLOW: Turn 1 ask town theme quickReplies ["Suburb","City","Medieval","Modern","Decide for me"]. Turn 2 ask starting cash + number of jobs quickReplies ["Few jobs","Lots of jobs","Rich start","Decide for me"]. Turn 3 ask name/monetization then present GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "roleplay", gameKind "roleplay_town", mapTheme, startingCash, jobCount, summary. Also fill chat-display GDD fields (targetPlayer, coreLoop, economy, uiHud, dataStore, robloxServices, safetyNotes, visualStyle). Set action "generating" only after confirmation.
+`.trim(),
+  generateRoleplayTownGdd: `
+Output ONLY valid JSON for a playable same-server Roblox roleplay/town runtime builder.
+{
+  "title": "<2-5 word town name>",
+  "genre": "roleplay",
+  "gameKind": "roleplay_town",
+  "mapTheme": "suburb" | "city" | "medieval" | "modern",
+  "startingCash": 100 | 150 | 300,
+  "jobCount": 2 | 4 | 6,
+  "systems": ["jobs","economy","role_shop","npcs","day_night","leaderstats","datastore"],
+  "coreLoop": "spawn in town -> work job pads for cash -> buy status roles -> hang out / earn salary",
+  "economy": ["Cash per shift","Passive salary","Role purchases"],
+  "uiHud": ["Cash counter","Role tag","Role shop panel"],
+  "dataStore": ["Cash","Role"],
+  "robloxServices": ["DataStoreService","ReplicatedStorage RemoteEvents","Lighting"],
+  "safetyNotes": ["Family-friendly social hangout"],
+  "summary": "<2 sentence pitch>"
+}
+Roles available: Citizen/VIP/Tycoon/Legend. Jobs pay cash on a short shift. Do not invent vehicles or weapons.
+`.trim(),
+  smartInterviewRacing: `
+You are a Roblox racing designer. Output must become a playable on-foot lap race on a closed loop track with ordered checkpoints, lap counting, a timer, and a countdown->race->results round loop.
+FLOW: Turn 1 ask track theme quickReplies ["City","Desert","Winter","Space","Decide for me"]. Turn 2 ask laps + difficulty quickReplies ["1 lap","3 laps","5 laps","Casual","Hard","Decide for me"]. Turn 3 ask name then GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "racing", gameKind "racing", mapTheme, lapCount, difficulty, summary. Fill chat-display GDD fields too. action "generating" only after confirmation.
+`.trim(),
+  generateRacingGdd: `
+Output ONLY valid JSON for a playable same-server Roblox racing runtime builder.
+{
+  "title": "<2-5 word race name>",
+  "genre": "racing",
+  "gameKind": "racing",
+  "mapTheme": "city" | "desert" | "winter" | "space",
+  "lapCount": 1 | 3 | 5,
+  "difficulty": "casual" | "normal" | "hard",
+  "systems": ["checkpoints","lap_counter","timer","round_loop","leaderstats","datastore"],
+  "coreLoop": "countdown -> race the loop through ordered checkpoints -> complete laps -> placement + best time -> restart",
+  "uiHud": ["Lap counter","Race timer","Finish placement"],
+  "dataStore": ["Best Time"],
+  "robloxServices": ["DataStoreService","ReplicatedStorage RemoteEvents"],
+  "safetyNotes": ["No real vehicles physics; fast on-foot race"],
+  "summary": "<2 sentence pitch>"
+}
+It is an on-foot speed race (WalkSpeed boost), not vehicle physics. Do not invent car tuning.
+`.trim(),
+  smartInterviewParkour: `
+You are a Roblox parkour designer. Output must become a playable ascending obstacle course of floating platforms with checkpoints every 5 stages, a void that respawns you at your checkpoint, and a finish that records Best Time.
+FLOW: Turn 1 ask theme quickReplies ["Neon","Jungle","Lava","Ice","Decide for me"]. Turn 2 ask number of stages + difficulty quickReplies ["10 stages","15 stages","20 stages","Casual","Hard","Decide for me"]. Turn 3 ask name then GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "parkour", gameKind "parkour", mapTheme, stageCount, difficulty, summary. Fill chat-display fields. action "generating" only after confirmation.
+`.trim(),
+  generateParkourGdd: `
+Output ONLY valid JSON for a playable same-server Roblox parkour runtime builder.
+{
+  "title": "<2-5 word parkour name>",
+  "genre": "parkour",
+  "gameKind": "parkour",
+  "mapTheme": "neon" | "jungle" | "lava" | "ice",
+  "stageCount": 8 | 12 | 16 | 20,
+  "difficulty": "casual" | "normal" | "hard",
+  "systems": ["platforms","checkpoints","void_respawn","timer","leaderstats","datastore"],
+  "coreLoop": "jump up the spiral of platforms -> reach checkpoints -> fall = respawn at checkpoint -> reach finish for Best Time",
+  "uiHud": ["Stage counter","Run timer","Reset to checkpoint button"],
+  "dataStore": ["Best Time"],
+  "robloxServices": ["DataStoreService","ReplicatedStorage RemoteEvents"],
+  "safetyNotes": ["No combat; pure movement challenge"],
+  "summary": "<2 sentence pitch>"
+}
+Difficulty controls jump gap and platform size. Do not invent weapons or enemies.
+`.trim(),
+  smartInterviewStoryGame: `
+You are a Roblox story-game designer. Output must become a playable linear narrative walk: themed chapter zones along a path, entering the next zone advances the story and reveals a narrative beat, narrator NPCs replay beats.
+FLOW: Turn 1 ask story theme quickReplies ["Fantasy","Sci-fi","Mystery","Horror","Decide for me"]. Turn 2 ask number of chapters quickReplies ["3 chapters","5 chapters","8 chapters","Decide for me"]. Turn 3 ask name then GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "story", gameKind "story_game", mapTheme, chapterCount, summary. Fill chat-display fields. action "generating" only after confirmation.
+`.trim(),
+  generateStoryGameGdd: `
+Output ONLY valid JSON for a playable same-server Roblox story-game runtime builder.
+{
+  "title": "<2-5 word story title>",
+  "genre": "story",
+  "gameKind": "story_game",
+  "mapTheme": "fantasy" | "scifi" | "mystery" | "horror",
+  "chapterCount": 3 | 5 | 6 | 8,
+  "systems": ["chapter_zones","narrative_beats","narrator_npcs","progress_tracking","leaderstats"],
+  "coreLoop": "walk forward through chapter gates -> trigger reveals the next narrative beat -> reach the final chapter ending",
+  "uiHud": ["Chapter counter","Narrative text box"],
+  "robloxServices": ["ReplicatedStorage RemoteEvents","Lighting"],
+  "safetyNotes": ["Creator-safe narrative, no gore"],
+  "summary": "<2 sentence pitch>"
+}
+Narrative beats are deterministic per theme. Do not invent combat or inventory.
+`.trim(),
+  smartInterviewMinigameHub: `
+You are a Roblox party mini-games hub designer. Output must become a playable lobby + tile-arena that rotates 3 elimination modes (Tile Drop, Color Call, Edge Collapse). Falling = out; survivors score Points.
+FLOW: Turn 1 ask hub theme quickReplies ["Party","Neon","Classic","Decide for me"]. Turn 2 confirm rotating minigames quickReplies ["Sounds good","More chaotic","Decide for me"]. Turn 3 ask name then GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "mini-games", gameKind "minigame_hub", mapTheme, summary. Fill chat-display fields. action "generating" only after confirmation.
+`.trim(),
+  generateMinigameHubGdd: `
+Output ONLY valid JSON for a playable same-server Roblox mini-games hub runtime builder.
+{
+  "title": "<2-5 word hub name>",
+  "genre": "mini-games",
+  "gameKind": "minigame_hub",
+  "mapTheme": "party" | "neon" | "classic",
+  "systems": ["lobby","round_loop","tile_arena","elimination","scoring","leaderstats"],
+  "coreLoop": "gather in lobby -> teleport to arena -> survive the rotating minigame -> survivors score Points -> back to lobby",
+  "uiHud": ["Round/mode banner","Points + alive count","Eliminated banner"],
+  "robloxServices": ["ReplicatedStorage RemoteEvents"],
+  "safetyNotes": ["Party-friendly elimination, no combat"],
+  "summary": "<2 sentence pitch>"
+}
+Three rotating modes exist (Tile Drop, Color Call, Edge Collapse) — do not invent extra minigames.
+`.trim(),
+  smartInterviewSurvival: `
+You are a Roblox survival designer. Output must become a playable survival world: gather wood/stone from nodes, heal at a campfire, and survive nights when chasing enemies spawn and attack. Day/night cycle increments Days survived.
+FLOW: Turn 1 ask theme quickReplies ["Island","Forest","Winter","Zombie","Decide for me"]. Turn 2 ask difficulty + day length quickReplies ["Casual","Hard","Short days","Long days","Decide for me"]. Turn 3 ask name then GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "survival", gameKind "survival", mapTheme, dayLength, baseHealth, difficulty, summary. Fill chat-display fields. action "generating" only after confirmation.
+`.trim(),
+  generateSurvivalGdd: `
+Output ONLY valid JSON for a playable same-server Roblox survival runtime builder.
+{
+  "title": "<2-5 word survival name>",
+  "genre": "survival",
+  "gameKind": "survival",
+  "mapTheme": "island" | "forest" | "winter" | "zombie",
+  "dayLength": 30 | 45 | 60,
+  "baseHealth": 100 | 150 | 200,
+  "difficulty": "casual" | "normal" | "hard",
+  "systems": ["resource_gathering","campfire_heal","day_night","night_enemies","health","leaderstats"],
+  "coreLoop": "gather wood/stone by day -> heal at the campfire -> survive enemy nights -> bank another Day survived",
+  "uiHud": ["Day + phase banner","Wood/Stone counters"],
+  "robloxServices": ["RunService","ReplicatedStorage RemoteEvents","Lighting"],
+  "safetyNotes": ["Roblox-safe enemies, no gore"],
+  "summary": "<2 sentence pitch>"
+}
+baseHealth is the player's starting health. Do not invent crafting recipes beyond Wood/Stone resources.
+`.trim(),
+  smartInterviewFighting: `
+You are a Roblox fighting designer. Output must become a playable melee ring brawl: punch nearby foes (server-authoritative damage + knockback), ring-outs and KOs, round loop with last-standing winner.
+FLOW: Turn 1 ask arena theme quickReplies ["Dojo","Street","Arena","Space","Decide for me"]. Turn 2 ask round length + difficulty quickReplies ["Short rounds","Long rounds","Casual","Hard","Decide for me"]. Turn 3 ask name then GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "fighting", gameKind "fighting_arena", mapTheme, roundTime, difficulty, summary. Fill chat-display fields. action "generating" only after confirmation.
+`.trim(),
+  generateFightingGdd: `
+Output ONLY valid JSON for a playable same-server Roblox fighting runtime builder.
+{
+  "title": "<2-5 word fighting name>",
+  "genre": "fighting",
+  "gameKind": "fighting_arena",
+  "mapTheme": "dojo" | "street" | "arena" | "space",
+  "roundTime": 30 | 45 | 60,
+  "difficulty": "casual" | "normal" | "hard",
+  "systems": ["melee_combat","knockback","ring_out","round_loop","leaderstats"],
+  "coreLoop": "spawn on the ring -> punch (button/F) to damage + knock back foes -> ring-out or KO eliminates -> last standing wins the round",
+  "uiHud": ["Round + timer","Health bar","PUNCH button"],
+  "robloxServices": ["ReplicatedStorage RemoteEvents"],
+  "safetyNotes": ["Cartoon melee only, Roblox-safe, no weapons/gore"],
+  "summary": "<2 sentence pitch>"
+}
+Combat is unarmed melee (punch). Do not invent weapons or projectiles.
+`.trim(),
+  smartInterviewCustomGame: `
+You are a Roblox sandbox designer for an open-ended ("any genre") brief. Output must become a playable creative sandbox: a title monument, a coin-collection economy, Speed/Jump upgrade pads, floating platforms, and a guide NPC.
+FLOW: Turn 1 ask the vibe/theme quickReplies ["Neon","Grass","Space","Decide for me"]. Turn 2 ask what to emphasize (collecting / climbing / upgrades) quickReplies ["Collecting","Climbing","Upgrades","Decide for me"]. Turn 3 ask name then GDD with quickReplies ["Generate!","Change theme","Start over"].
+GDD fields: title, genre "custom", gameKind "custom_game", mapTheme, summary. Fill chat-display fields. action "generating" only after confirmation.
+`.trim(),
+  generateCustomGameGdd: `
+Output ONLY valid JSON for a playable same-server Roblox sandbox runtime builder.
+{
+  "title": "<2-5 word game name>",
+  "genre": "custom",
+  "gameKind": "custom_game",
+  "mapTheme": "neon" | "grass" | "space",
+  "systems": ["coin_economy","upgrade_pads","platforms","npc_guide","leaderstats"],
+  "coreLoop": "collect coins -> climb platforms for a bonus coin -> spend cash on Speed/Jump upgrades -> repeat",
+  "uiHud": ["Coin counter"],
+  "robloxServices": ["ReplicatedStorage RemoteEvents"],
+  "safetyNotes": ["Family-friendly sandbox"],
+  "summary": "<2 sentence pitch reflecting the user's described idea>"
+}
+Use summary to reflect the user's idea. Keep mechanics to coins + Speed/Jump upgrades.
+`.trim(),
 } as const;
 
 function metadataSummary(metadata?: PromptContextMetadata): string {
@@ -4218,6 +4404,14 @@ function explicitCategoryIntentFromMetadata(
     case 'pvp_arena': return useGenerationIntent ? 'pvp_arena_generation' : 'pvp_arena_interview';
     case 'simulator': return useGenerationIntent ? 'simulator_generation' : 'simulator_interview';
     case 'tower_defense': return useGenerationIntent ? 'tower_defense_generation' : 'tower_defense_interview';
+    case 'roleplay_town': return useGenerationIntent ? 'roleplay_town_generation' : 'roleplay_town_interview';
+    case 'racing': return useGenerationIntent ? 'racing_generation' : 'racing_interview';
+    case 'parkour': return useGenerationIntent ? 'parkour_generation' : 'parkour_interview';
+    case 'story_game': return useGenerationIntent ? 'story_game_generation' : 'story_game_interview';
+    case 'minigame_hub': return useGenerationIntent ? 'minigame_hub_generation' : 'minigame_hub_interview';
+    case 'survival': return useGenerationIntent ? 'survival_generation' : 'survival_interview';
+    case 'fighting': return useGenerationIntent ? 'fighting_generation' : 'fighting_interview';
+    case 'custom': return useGenerationIntent ? 'custom_game_generation' : 'custom_game_interview';
     case 'weapons': return useGenerationIntent ? 'weapon_generation' : 'weapon_interview';
     case 'vehicles': return useGenerationIntent ? 'vehicle_generation' : 'vehicle_interview';
     case 'items': return useGenerationIntent ? 'item_generation' : 'item_interview';
@@ -4259,6 +4453,14 @@ function promptIntentFamily(intent: PromptIntent): string {
   if (intent.startsWith('obby_troll_')) return 'obby_troll';
   if (intent.startsWith('pvp_arena_')) return 'pvp_arena';
   if (intent.startsWith('tower_defense_')) return 'tower_defense';
+  if (intent.startsWith('roleplay_town_')) return 'roleplay_town';
+  if (intent.startsWith('racing_')) return 'racing';
+  if (intent.startsWith('parkour_')) return 'parkour';
+  if (intent.startsWith('story_game_')) return 'story_game';
+  if (intent.startsWith('minigame_hub_')) return 'minigame_hub';
+  if (intent.startsWith('survival_')) return 'survival';
+  if (intent.startsWith('fighting_')) return 'fighting';
+  if (intent.startsWith('custom_game_')) return 'custom_game';
   if (intent.startsWith('audio_')) return 'audio';
   if (intent.startsWith('animation_')) return 'animation';
   if (intent.startsWith('script_') || intent === 'script_doctor') return 'script';
@@ -4307,6 +4509,14 @@ function chatIntentFromMetadata(metadata?: PromptContextMetadata): PromptIntent 
   if ((metadata as Record<string, unknown>)?.contentSubcategory === 'pvp' || (metadata as Record<string, unknown>)?.contentSubcategory === 'pvp_arena') return 'pvp_arena_interview';
   if ((metadata as Record<string, unknown>)?.contentSubcategory === 'simulator') return 'simulator_interview';
   if ((metadata as Record<string, unknown>)?.contentSubcategory === 'tower_defense') return 'tower_defense_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'roleplay_town') return 'roleplay_town_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'racing') return 'racing_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'parkour') return 'parkour_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'story_game') return 'story_game_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'minigame_hub') return 'minigame_hub_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'survival') return 'survival_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'fighting') return 'fighting_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'custom') return 'custom_game_interview';
   if (metadata?.contentCategory === 'audio') return 'audio_interview';
   if (metadata?.contentCategory === 'animation') return 'animation_interview';
   if (metadata?.contentCategory === 'script') return 'script_interview';
@@ -4378,6 +4588,14 @@ function generationIntentFromRequest(request: ContentGenerateRequest): PromptInt
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp' || (request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp_arena') return 'pvp_arena_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'simulator') return 'simulator_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'tower_defense') return 'tower_defense_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'roleplay_town') return 'roleplay_town_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'racing') return 'racing_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'parkour') return 'parkour_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'story_game') return 'story_game_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'minigame_hub') return 'minigame_hub_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'survival') return 'survival_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'fighting') return 'fighting_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'custom') return 'custom_game_generation';
       return request.metadata?.projectKind === 'clone' ? 'remix' : 'game_generation';
     case 'image':
       if (request.metadata?.contentCategory === 'decal_texture') {
@@ -4397,6 +4615,14 @@ function generationIntentFromRequest(request: ContentGenerateRequest): PromptInt
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp' || (request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp_arena') return 'pvp_arena_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'simulator') return 'simulator_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'tower_defense') return 'tower_defense_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'roleplay_town') return 'roleplay_town_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'racing') return 'racing_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'parkour') return 'parkour_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'story_game') return 'story_game_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'minigame_hub') return 'minigame_hub_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'survival') return 'survival_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'fighting') return 'fighting_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'custom') return 'custom_game_generation';
       return request.metadata?.projectKind === 'clone' ? 'remix' : 'game_generation';
   }
 }
@@ -4422,6 +4648,30 @@ function generationPromptBody(kind: GenerationKind | undefined, intent: PromptIn
   }
   if (intent === 'tower_defense_generation') {
     return PROMPT_CATALOG.generateTowerDefenseGdd;
+  }
+  if (intent === 'roleplay_town_generation') {
+    return PROMPT_CATALOG.generateRoleplayTownGdd;
+  }
+  if (intent === 'racing_generation') {
+    return PROMPT_CATALOG.generateRacingGdd;
+  }
+  if (intent === 'parkour_generation') {
+    return PROMPT_CATALOG.generateParkourGdd;
+  }
+  if (intent === 'story_game_generation') {
+    return PROMPT_CATALOG.generateStoryGameGdd;
+  }
+  if (intent === 'minigame_hub_generation') {
+    return PROMPT_CATALOG.generateMinigameHubGdd;
+  }
+  if (intent === 'survival_generation') {
+    return PROMPT_CATALOG.generateSurvivalGdd;
+  }
+  if (intent === 'fighting_generation') {
+    return PROMPT_CATALOG.generateFightingGdd;
+  }
+  if (intent === 'custom_game_generation') {
+    return PROMPT_CATALOG.generateCustomGameGdd;
   }
   if (intent === 'simulator_generation') {
     return PROMPT_CATALOG.generateSimulatorVariantGdd;
@@ -4626,6 +4876,38 @@ export function buildChatPrompt(args: {
         return PROMPT_CATALOG.smartInterviewTowerDefense;
       case 'tower_defense_generation':
         return PROMPT_CATALOG.generateTowerDefenseGdd;
+      case 'roleplay_town_interview':
+        return PROMPT_CATALOG.smartInterviewRoleplayTown;
+      case 'roleplay_town_generation':
+        return PROMPT_CATALOG.generateRoleplayTownGdd;
+      case 'racing_interview':
+        return PROMPT_CATALOG.smartInterviewRacing;
+      case 'racing_generation':
+        return PROMPT_CATALOG.generateRacingGdd;
+      case 'parkour_interview':
+        return PROMPT_CATALOG.smartInterviewParkour;
+      case 'parkour_generation':
+        return PROMPT_CATALOG.generateParkourGdd;
+      case 'story_game_interview':
+        return PROMPT_CATALOG.smartInterviewStoryGame;
+      case 'story_game_generation':
+        return PROMPT_CATALOG.generateStoryGameGdd;
+      case 'minigame_hub_interview':
+        return PROMPT_CATALOG.smartInterviewMinigameHub;
+      case 'minigame_hub_generation':
+        return PROMPT_CATALOG.generateMinigameHubGdd;
+      case 'survival_interview':
+        return PROMPT_CATALOG.smartInterviewSurvival;
+      case 'survival_generation':
+        return PROMPT_CATALOG.generateSurvivalGdd;
+      case 'fighting_interview':
+        return PROMPT_CATALOG.smartInterviewFighting;
+      case 'fighting_generation':
+        return PROMPT_CATALOG.generateFightingGdd;
+      case 'custom_game_interview':
+        return PROMPT_CATALOG.smartInterviewCustomGame;
+      case 'custom_game_generation':
+        return PROMPT_CATALOG.generateCustomGameGdd;
       case 'simulator_interview':
         return PROMPT_CATALOG.smartInterviewSimulatorVariant;
       case 'simulator_generation':
@@ -4705,7 +4987,15 @@ You are also a full Roblox expert. If the user asks questions (about development
     || intent === 'horror_interview' || intent === 'horror_generation'
     || intent === 'pvp_arena_interview' || intent === 'pvp_arena_generation'
     || intent === 'simulator_interview' || intent === 'simulator_generation'
-    || intent === 'tower_defense_interview' || intent === 'tower_defense_generation';
+    || intent === 'tower_defense_interview' || intent === 'tower_defense_generation'
+    || intent === 'roleplay_town_interview' || intent === 'roleplay_town_generation'
+    || intent === 'racing_interview' || intent === 'racing_generation'
+    || intent === 'parkour_interview' || intent === 'parkour_generation'
+    || intent === 'story_game_interview' || intent === 'story_game_generation'
+    || intent === 'minigame_hub_interview' || intent === 'minigame_hub_generation'
+    || intent === 'survival_interview' || intent === 'survival_generation'
+    || intent === 'fighting_interview' || intent === 'fighting_generation'
+    || intent === 'custom_game_interview' || intent === 'custom_game_generation';
   const interviewStateFlags: InterviewStateFlags = {
     isGameInterview,
     isContentInterview,

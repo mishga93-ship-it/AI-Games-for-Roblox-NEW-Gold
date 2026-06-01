@@ -110,7 +110,23 @@ export type PromptIntent =
   | 'simulator_interview'
   | 'simulator_generation'
   | 'tower_defense_interview'
-  | 'tower_defense_generation';
+  | 'tower_defense_generation'
+  | 'roleplay_town_interview'
+  | 'roleplay_town_generation'
+  | 'racing_interview'
+  | 'racing_generation'
+  | 'parkour_interview'
+  | 'parkour_generation'
+  | 'story_game_interview'
+  | 'story_game_generation'
+  | 'minigame_hub_interview'
+  | 'minigame_hub_generation'
+  | 'survival_interview'
+  | 'survival_generation'
+  | 'fighting_interview'
+  | 'fighting_generation'
+  | 'custom_game_interview'
+  | 'custom_game_generation';
 
 export interface PromptContextMetadata {
   projectKind?: ProjectKind;

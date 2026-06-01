@@ -31738,7 +31738,7 @@ async function continueGamePackagePhase2(jobId: string, job: GenerationJob): Pro
   };
 }
 
-const RUNTIME_PLAYABLE_SUBCATEGORIES = new Set(['rpg', 'horror', 'pvp', 'pvp_arena', 'tower_defense']);
+const RUNTIME_PLAYABLE_SUBCATEGORIES = new Set(['rpg', 'horror', 'pvp', 'pvp_arena', 'tower_defense', 'roleplay_town', 'racing', 'parkour', 'story_game', 'minigame_hub', 'survival', 'fighting', 'custom']);
 const TRAINING_SIMULATOR_KINDS = new Set(['mining', 'fighting', 'muscle', 'clicker']);
 
 function parsePlayableGddJson(text: string, context: string, jobId?: string): Record<string, unknown> {
@@ -33846,6 +33846,140 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       startingCash: gddInt(parsedGdd, 'startingCash', 150, 50, 500),
       baseHealth: gddInt(parsedGdd, 'baseHealth', 20, 5, 60),
       difficulty: gddEnum(parsedGdd, 'difficulty', ['casual', 'normal', 'hard'] as const, 'normal'),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  // Session 399 (cont.): remaining playable genres — each routes its subcategory
+  // to a bespoke deterministic runtime builder via gameKind (like tower_defense).
+  if (subcategoryForKind === 'roleplay_town') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'roleplay_town', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'roleplay',
+      gameKind: 'roleplay_town',
+      systems: ['jobs', 'economy', 'role_shop', 'npcs', 'day_night', 'leaderstats', 'datastore'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['suburb', 'city', 'medieval', 'modern'] as const, 'suburb'),
+      startingCash: gddInt(parsedGdd, 'startingCash', 150, 0, 5000),
+      jobCount: gddInt(parsedGdd, 'jobCount', 4, 2, 6),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'racing') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'racing', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'racing',
+      gameKind: 'racing',
+      systems: ['checkpoints', 'lap_counter', 'timer', 'round_loop', 'leaderstats', 'datastore'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['city', 'desert', 'winter', 'space'] as const, 'city'),
+      lapCount: gddInt(parsedGdd, 'lapCount', 3, 1, 5),
+      difficulty: gddEnum(parsedGdd, 'difficulty', ['casual', 'normal', 'hard'] as const, 'normal'),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'parkour') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'parkour', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'parkour',
+      gameKind: 'parkour',
+      systems: ['platforms', 'checkpoints', 'void_respawn', 'timer', 'leaderstats', 'datastore'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['neon', 'jungle', 'lava', 'ice'] as const, 'neon'),
+      stageCount: gddInt(parsedGdd, 'stageCount', 12, 5, 24),
+      difficulty: gddEnum(parsedGdd, 'difficulty', ['casual', 'normal', 'hard'] as const, 'normal'),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'story_game') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'story_game', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'story',
+      gameKind: 'story_game',
+      systems: ['chapter_zones', 'narrative_beats', 'narrator_npcs', 'progress_tracking', 'leaderstats'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['fantasy', 'scifi', 'mystery', 'horror'] as const, 'fantasy'),
+      chapterCount: gddInt(parsedGdd, 'chapterCount', 6, 3, 8),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'minigame_hub') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'minigame_hub', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'mini-games',
+      gameKind: 'minigame_hub',
+      systems: ['lobby', 'round_loop', 'tile_arena', 'elimination', 'scoring', 'leaderstats'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['party', 'neon', 'classic'] as const, 'party'),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'survival') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'survival', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'survival',
+      gameKind: 'survival',
+      systems: ['resource_gathering', 'campfire_heal', 'day_night', 'night_enemies', 'health', 'leaderstats'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['island', 'forest', 'winter', 'zombie'] as const, 'island'),
+      dayLength: gddInt(parsedGdd, 'dayLength', 45, 20, 120),
+      baseHealth: gddInt(parsedGdd, 'baseHealth', 100, 50, 250),
+      difficulty: gddEnum(parsedGdd, 'difficulty', ['casual', 'normal', 'hard'] as const, 'normal'),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'fighting') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'fighting', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'fighting',
+      gameKind: 'fighting_arena',
+      systems: ['melee_combat', 'knockback', 'ring_out', 'round_loop', 'leaderstats'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['dojo', 'street', 'arena', 'space'] as const, 'arena'),
+      roundTime: gddInt(parsedGdd, 'roundTime', 45, 20, 90),
+      difficulty: gddEnum(parsedGdd, 'difficulty', ['casual', 'normal', 'hard'] as const, 'normal'),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'custom') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'custom_game', job.id);
+    return buildGameplayScript({
+      title: gddString(parsedGdd, 'title', displayTitle),
+      genre: 'custom',
+      gameKind: 'custom_game',
+      systems: ['coin_economy', 'upgrade_pads', 'platforms', 'npc_guide', 'leaderstats'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['neon', 'grass', 'space'] as const, 'neon'),
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
