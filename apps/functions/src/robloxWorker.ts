@@ -7174,12 +7174,36 @@ function buildFurnitureModelManifest(
   // and visible too, but we hide them when a real mesh is baked so they don't
   // overlap the proper geometry.
   if (hasBakedFurnitureMesh) {
-    const meshSizeY = typeof metadata.furnitureRealMeshSizeY === 'number' && metadata.furnitureRealMeshSizeY > 0.1
-      ? Number(metadata.furnitureRealMeshSizeY) : handleSize[1];
-    const meshSizeX = typeof metadata.furnitureRealMeshSizeX === 'number' && metadata.furnitureRealMeshSizeX > 0.1
-      ? Number(metadata.furnitureRealMeshSizeX) : handleSize[0];
-    const meshSizeZ = typeof metadata.furnitureRealMeshSizeZ === 'number' && metadata.furnitureRealMeshSizeZ > 0.1
-      ? Number(metadata.furnitureRealMeshSizeZ) : handleSize[2];
+    // Session 402 — the raw values in furnitureRealMeshSize{X,Y,Z} are the inner
+    // MeshPart.Size exactly as Roblox imported the Meshy/Tripo GLB, which uses an
+    // arbitrary native scale (commonly tens of studs). Shipping that size RAW made
+    // the prop land enormous on the baseplate. The runtime InsertService loader
+    // below already fits the mesh via ScaleTo(targetLong/meshLong); the baked path
+    // must do the same. Scale all three axes by ONE factor so the mesh keeps its
+    // aspect ratio while its longest axis fits the per-type footprint (handleSize).
+    // Mirrors the vehicle builder's uniform MeshPart scaling (index.ts ~29465).
+    const rawMeshX = typeof metadata.furnitureRealMeshSizeX === 'number' && metadata.furnitureRealMeshSizeX > 0.1
+      ? Number(metadata.furnitureRealMeshSizeX) : 0;
+    const rawMeshY = typeof metadata.furnitureRealMeshSizeY === 'number' && metadata.furnitureRealMeshSizeY > 0.1
+      ? Number(metadata.furnitureRealMeshSizeY) : 0;
+    const rawMeshZ = typeof metadata.furnitureRealMeshSizeZ === 'number' && metadata.furnitureRealMeshSizeZ > 0.1
+      ? Number(metadata.furnitureRealMeshSizeZ) : 0;
+    const rawMeshLong = Math.max(rawMeshX, rawMeshY, rawMeshZ);
+    // Rugs are flat — fit the largest FOOTPRINT axis (X or Z), not the height.
+    const targetLong = furnitureType === 'rug'
+      ? Math.max(handleSize[0], handleSize[2])
+      : Math.max(handleSize[0], handleSize[1], handleSize[2]);
+    const meshFitScale = rawMeshLong > 0.01 && targetLong > 0.01 ? targetLong / rawMeshLong : 1;
+    const meshSizeX = rawMeshX > 0.1 ? rawMeshX * meshFitScale : handleSize[0];
+    const meshSizeY = rawMeshY > 0.1 ? rawMeshY * meshFitScale : handleSize[1];
+    const meshSizeZ = rawMeshZ > 0.1 ? rawMeshZ * meshFitScale : handleSize[2];
+    logger.info('[buildFurnitureModelManifest] AIMeshBody size normalized to footprint', {
+      furnitureType,
+      rawMesh: { x: Number(rawMeshX.toFixed(2)), y: Number(rawMeshY.toFixed(2)), z: Number(rawMeshZ.toFixed(2)) },
+      targetLong,
+      meshFitScale: Number(meshFitScale.toFixed(4)),
+      bakedSize: { x: Number(meshSizeX.toFixed(2)), y: Number(meshSizeY.toFixed(2)), z: Number(meshSizeZ.toFixed(2)) },
+    });
     // Session 359 — TextureID resolution mirroring NPC (robloxWorker.ts:6196-6203).
     // Priority: Engine API real TextureID > texture_upload's textureDecalAssetId >
     // texture_upload's textureAssetId. Meshy GLBs often bake textures into the
