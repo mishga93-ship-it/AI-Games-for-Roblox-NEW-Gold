@@ -9505,7 +9505,7 @@ spawn.Name = "RPGSpawn"; spawn.Size = Vector3.new(14, 1, 14); spawn.Position = V
 spawn.Color = Color3.fromRGB(90, 180, 255); spawn.Material = Enum.Material.Neon; spawn.Parent = world
 
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = Color3.fromRGB(196, 184, 150), tint = Color3.fromRGB(252, 250, 244), haze = 1.6})
+setupAtmosphere({atmoColor = Color3.fromRGB(196, 184, 150), tint = Color3.fromRGB(252, 250, 244), haze = 1.6, fx = "fireflies"})
 for i = 1, 16 do
     local a = math.rad(i * 22.5 + 11); local r = 52 + (i % 3) * 10
     local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
@@ -9802,7 +9802,7 @@ local function part(name, size, pos, color, mat)
 end
 part("ArenaFloor", Vector3.new(130, 1, 130), Vector3.new(0, 0, 0), Color3.fromRGB(55, 58, 66), Enum.Material.Slate)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = Color3.fromRGB(150, 158, 178), tint = Color3.fromRGB(250, 250, 252), haze = 1.5, bloom = 0.7})
+setupAtmosphere({atmoColor = Color3.fromRGB(150, 158, 178), tint = Color3.fromRGB(250, 250, 252), haze = 1.5, bloom = 0.7, fx = "embers"})
 for i = 1, 12 do
     local a = i / 12 * math.pi * 2
     part("ArenaPillar_" .. i, Vector3.new(4, 18, 4), Vector3.new(math.cos(a) * 58, 9, math.sin(a) * 58), Color3.fromRGB(110, 105, 95), Enum.Material.Concrete)
@@ -11021,6 +11021,7 @@ function worldVisualsLua(): string {
 -- ===== Generated Visual Layer (Session 399) =====
 local _Lighting = game:GetService("Lighting")
 local _Terrain = workspace.Terrain
+local ambientEmitter
 
 local function _vpart(parent, name, shape, size, cframe, color, material, collide)
     local p = Instance.new("Part"); p.Name = name; p.Anchored = true; p.CanCollide = collide or false
@@ -11051,6 +11052,7 @@ local function setupAtmosphere(opts)
         local clouds = _Terrain:FindFirstChildOfClass("Clouds"); if not clouds then clouds = Instance.new("Clouds"); clouds.Parent = _Terrain end
         clouds.Cover = opts.cloudCover or 0.6; clouds.Density = opts.cloudDensity or 0.45; clouds.Color = Color3.fromRGB(245, 248, 255)
     end
+    if ambientEmitter then ambientEmitter(workspace, opts.fx or "motes", opts.fxColor) end
 end
 
 -- kind: "palm" | "pine" | "round" | "dead"
@@ -11120,6 +11122,40 @@ local function buildTerrainGround(opts)
     end
     _Terrain:FillBlock(CFrame.new(0, -9, 0), Vector3.new(size, 20, size), mat)
 end
+
+-- ===== Juice layer (game feel) =====
+local _Debris = game:GetService("Debris")
+local _Tween = game:GetService("TweenService")
+
+-- Floating fade-up feedback text (e.g. "+2 Wood", damage, rewards).
+local function floatText(pos, text, color)
+    local p = Instance.new("Part"); p.Anchored = true; p.CanCollide = false; p.Transparency = 1; p.Size = Vector3.new(1, 1, 1); p.CFrame = CFrame.new(pos); p.Parent = workspace
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 130, 0, 42); bb.AlwaysOnTop = true; bb.Parent = p
+    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.2; t.TextScaled = true; t.Font = Enum.Font.GothamBlack; t.Text = text; t.Parent = bb
+    _Tween:Create(p, TweenInfo.new(1.1, Enum.EasingStyle.Quad), {CFrame = CFrame.new(pos + Vector3.new(0, 6.5, 0))}):Play()
+    _Tween:Create(t, TweenInfo.new(1.0), {TextTransparency = 1, TextStrokeTransparency = 1}):Play()
+    _Debris:AddItem(p, 1.25)
+end
+
+-- One-shot particle burst (gather/hit/build feedback).
+local function vfxBurst(pos, color, amount)
+    local p = Instance.new("Part"); p.Anchored = true; p.CanCollide = false; p.Transparency = 1; p.Size = Vector3.new(1, 1, 1); p.CFrame = CFrame.new(pos); p.Parent = workspace
+    local e = Instance.new("ParticleEmitter"); e.Color = ColorSequence.new(color or Color3.fromRGB(255, 240, 180)); e.Size = NumberSequence.new(1.4, 0); e.Lifetime = NumberRange.new(0.4, 0.75); e.Speed = NumberRange.new(8, 18); e.SpreadAngle = Vector2.new(180, 180); e.Rate = 0; e.Rotation = NumberRange.new(0, 360); e.LightEmission = 0.5; e.Parent = p
+    e:Emit(amount or 16)
+    _Debris:AddItem(p, 1.0)
+end
+
+-- Set-and-forget themed ambient particles over the map. kind: snow|embers|fireflies|motes
+ambientEmitter = function(parent, kind, color)
+    local p = Instance.new("Part"); p.Name = "AmbientFX"; p.Anchored = true; p.CanCollide = false; p.Transparency = 1; p.Size = Vector3.new(340, 1, 340); p.CFrame = CFrame.new(0, 26, 0); p.Parent = parent or workspace
+    local e = Instance.new("ParticleEmitter"); e.LightEmission = 0.6; e.SpreadAngle = Vector2.new(180, 180); e.Parent = p
+    e.Color = ColorSequence.new(color or Color3.fromRGB(255, 250, 210))
+    if kind == "snow" then e.Color = ColorSequence.new(Color3.fromRGB(245, 250, 255)); e.Size = NumberSequence.new(0.6); e.Lifetime = NumberRange.new(7, 11); e.Speed = NumberRange.new(2, 5); e.Rate = 45; e.Acceleration = Vector3.new(2, -7, 0)
+    elseif kind == "embers" then e.Color = ColorSequence.new(Color3.fromRGB(255, 150, 60)); e.Size = NumberSequence.new(0.45, 0); e.Lifetime = NumberRange.new(2, 4); e.Speed = NumberRange.new(1, 4); e.Rate = 16; e.Acceleration = Vector3.new(0, 5, 0)
+    elseif kind == "fireflies" then e.Color = ColorSequence.new(Color3.fromRGB(180, 255, 140)); e.Size = NumberSequence.new(0.4); e.Lifetime = NumberRange.new(3, 6); e.Speed = NumberRange.new(0.5, 2); e.Rate = 14
+    else e.Size = NumberSequence.new(0.45, 0); e.Lifetime = NumberRange.new(4, 8); e.Speed = NumberRange.new(0.5, 2); e.Rate = 16 end
+    return e
+end
 `;
 }
 
@@ -11177,7 +11213,7 @@ end
 ${worldVisualsLua()}
 
 buildTerrainGround({size = 300, material = theme.groundMat, water = theme.water, waterColor = theme.waterColor, beach = theme.beach})
-setupAtmosphere({clockTime = theme.clock, ambient = theme.ambient, atmoColor = theme.atmo, tint = theme.tint, haze = theme.water and 2.2 or 1.6, cloudCover = theme.water and 0.55 or 0.45})
+setupAtmosphere({clockTime = theme.clock, ambient = theme.ambient, atmoColor = theme.atmo, tint = theme.tint, haze = theme.water and 2.2 or 1.6, cloudCover = theme.water and 0.55 or 0.45, fx = (Config.Theme == "winter" and "snow") or (Config.Theme == "forest" and "fireflies") or "motes"})
 
 -- Cozy campfire (logs + real Fire + warm light) as the safe heal zone.
 part("CampStones", Vector3.new(9, 1, 9), Vector3.new(0, 1.1, 0), Color3.fromRGB(120, 116, 110), Enum.Material.Rock)
@@ -11187,6 +11223,7 @@ local fire = Instance.new("Fire"); fire.Size = 14; fire.Heat = 14; fire.Color = 
 local campLight = Instance.new("PointLight"); campLight.Range = 44; campLight.Brightness = 3; campLight.Color = Color3.fromRGB(255, 172, 96); campLight.Parent = flame
 label3d(flame, "Campfire (safe zone)", 5, Color3.fromRGB(255, 192, 112))
 local campfirePos = Vector3.new(0, 3, 0)
+task.spawn(function() while flame and flame.Parent do campLight.Brightness = 2.6 + math.random() * 1.3; task.wait(0.12) end end)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "SurvivalSpawn"; spawnLoc.Size = Vector3.new(16, 1, 16); spawnLoc.Position = Vector3.new(0, 2, 24); spawnLoc.Anchored = true; spawnLoc.Color = Color3.fromRGB(240, 200, 130); spawnLoc.Material = Enum.Material.Neon; spawnLoc.Transparency = 0.4; spawnLoc.Parent = world
 
 -- Decorative nature scatter for a lush, full world (non-harvestable).
@@ -11213,6 +11250,8 @@ local function spawnNode(kind, pos)
         if not prompt.Enabled then return end
         addResource(player, kind, isWood and 2 or 1)
         SvEvent:FireClient(player, {kind="toast", text="+" .. (isWood and 2 or 1) .. " " .. kind})
+        vfxBurst(main.Position + Vector3.new(0, 3, 0), isWood and theme.leaf or theme.rock, 14)
+        floatText(main.Position + Vector3.new(0, isWood and 13 or 6, 0), "+" .. (isWood and 2 or 1) .. " " .. kind, isWood and Color3.fromRGB(150, 255, 150) or Color3.fromRGB(205, 205, 215))
         prompt.Enabled = false
         for _, pt in ipairs(model:GetDescendants()) do if pt:IsA("BasePart") then pt.Transparency = 0.75 end end
         task.delay(8, function() if model and model.Parent then prompt.Enabled = true; for _, pt in ipairs(model:GetDescendants()) do if pt:IsA("BasePart") then pt.Transparency = 0 end end end end)
@@ -11261,6 +11300,8 @@ craftPrompt.Triggered:Connect(function(player)
             local wallPos = root.Position + fp.Unit * 7
             local wall = part("Wall", Vector3.new(12, 9, 1.6), Vector3.new(wallPos.X, 4.5, wallPos.Z), theme.rock, Enum.Material.Brick)
             wall.CanCollide = true; wall.CFrame = CFrame.lookAt(Vector3.new(wallPos.X, 4.5, wallPos.Z), Vector3.new(root.Position.X, 4.5, root.Position.Z))
+            vfxBurst(wall.Position, theme.rock, 24)
+            floatText(wall.Position + Vector3.new(0, 7, 0), "Wall built!", Color3.fromRGB(255, 235, 170))
         end
         SvEvent:FireClient(player, {kind="toast", text="Built a defensive wall!"})
     else
@@ -11286,11 +11327,12 @@ RunService.Heartbeat:Connect(function(dt)
             if nearest and nroot then
                 local dir = Vector3.new(nroot.Position.X - epos.X, 0, nroot.Position.Z - epos.Z)
                 if dir.Magnitude > 0.1 then
+                    local bob = math.sin(os.clock() * 8 + idx) * 0.5
                     local newPos = epos + dir.Unit * math.min(enemySpeed * dt, dir.Magnitude)
-                    e.model:PivotTo(CFrame.lookAt(newPos, Vector3.new(nroot.Position.X, newPos.Y, nroot.Position.Z)))
+                    e.model:PivotTo(CFrame.lookAt(Vector3.new(newPos.X, newPos.Y + bob, newPos.Z), Vector3.new(nroot.Position.X, newPos.Y + bob, nroot.Position.Z)))
                 end
                 e.cd = math.max(0, e.cd - dt)
-                if nd and nd < 6 and e.cd <= 0 then local hum = nearest.Character:FindFirstChildOfClass("Humanoid"); if hum then hum:TakeDamage(enemyDmg); e.cd = 1.2 end end
+                if nd and nd < 6 and e.cd <= 0 then local hum = nearest.Character:FindFirstChildOfClass("Humanoid"); if hum then hum:TakeDamage(enemyDmg); floatText(nroot.Position + Vector3.new(0, 4, 0), "-" .. enemyDmg, Color3.fromRGB(255, 90, 80)); e.cd = 1.2 end end
             end
         end
     end
@@ -11584,7 +11626,7 @@ end
 
 local ring = part("Ring", Vector3.new(64, 2, 64), Vector3.new(0, 20, 0), theme.floor, theme.floorMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 1.6})
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 1.6, fx = "embers"})
 label3d(ring, Config.Title, 18, theme.accent)
 local kerbs = {{Vector3.new(64, 3, 3), Vector3.new(0, 22, 32)}, {Vector3.new(64, 3, 3), Vector3.new(0, 22, -32)}, {Vector3.new(3, 3, 64), Vector3.new(32, 22, 0)}, {Vector3.new(3, 3, 64), Vector3.new(-32, 22, 0)}}
 for i, k in ipairs(kerbs) do part("Kerb_" .. i, k[1], k[2], theme.kerb, Enum.Material.Metal) end
