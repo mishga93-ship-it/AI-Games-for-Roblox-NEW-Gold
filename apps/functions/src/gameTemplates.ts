@@ -9947,6 +9947,12 @@ local function part(name, size, pos, color, mat, parent)
 end
 
 part("TdGround", Vector3.new(280, 1, 210), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.6), tint = Color3.fromRGB(252, 250, 248), haze = 1.5})
+for i = 1, 16 do
+    local a = math.rad(i * 22.5); local p = Vector3.new(math.cos(a) * (96 + (i % 3) * 10), 0.5, math.sin(a) * (74 + (i % 3) * 8))
+    if i % 4 == 0 then makeRock(world, p, 0.7, theme.path) else makeTree(world, p, 0.9, "round", Color3.fromRGB(112, 80, 52), Color3.fromRGB(78, 142, 70)) end
+end
 
 local waypoints = {
     Vector3.new(-120, 3, -45), Vector3.new(-40, 3, -45), Vector3.new(-40, 3, 38),
@@ -10289,6 +10295,13 @@ local function label3d(adornee, text, offsetY, color)
 end
 
 part("TownGround", Vector3.new(380, 1, 380), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.62), tint = Color3.fromRGB(252, 250, 248), haze = 1.5})
+for i = 1, 20 do
+    local a = math.rad(i * 18); local r = 150 + (i % 3) * 18
+    local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
+    if i % 4 == 0 then makeRock(world, p, 0.7, theme.roof) else makeTree(world, p, 0.95, "round", Color3.fromRGB(112, 80, 52), Color3.fromRGB(80, 148, 74)) end
+end
 part("Plaza", Vector3.new(86, 1, 86), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
 part("RoadNS", Vector3.new(20, 1, 380), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
 part("RoadEW", Vector3.new(380, 1, 20), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
@@ -10534,6 +10547,13 @@ local function part(name, size, pos, color, mat, parent)
 end
 
 part("RaceGround", Vector3.new(420, 1, 320), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.6), tint = Color3.fromRGB(252, 250, 248), haze = 1.5})
+for i = 1, 14 do
+    local a = math.rad(i * 26); local r = 20 + (i % 3) * 14
+    local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r * 0.7)
+    if i % 4 == 0 then makeRock(world, p, 0.7, Color3.fromRGB(132, 128, 120)) else makeTree(world, p, 0.9, "pine", Color3.fromRGB(96, 66, 42), Color3.fromRGB(64, 124, 64)) end
+end
 
 local waypoints = {}
 local rx, rz = 155, 100
@@ -10729,6 +10749,8 @@ local function label3d(adornee, text, offsetY, color)
 end
 
 local floor = part("VoidFloor", Vector3.new(440, 1, 440), Vector3.new(0, 0, 0), theme.void, theme.voidMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.checkpoint:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 2.0, cloudCover = 0.7})
 
 local radius = 38
 local startPos = Vector3.new(radius, 6, 0)
@@ -10901,6 +10923,8 @@ end
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "StorySpawn"; spawnLoc.Size = Vector3.new(20, 1, 16); spawnLoc.Position = Vector3.new(0, 1, -8); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 label3d(spawnLoc, Config.Title, 7, theme.accent)
 part("PathStart", Vector3.new(40, 1, 24), Vector3.new(0, 0, -8), theme.floor, theme.floorMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(150, 150, 160), 0.45), tint = Color3.fromRGB(250, 248, 246), brightness = 2.0, haze = 2.2})
 
 local function buildChapter(i)
     local z = i * 60
@@ -11008,7 +11032,6 @@ local function setupAtmosphere(opts)
     local bloom = ensure("BloomEffect"); bloom.Intensity = opts.bloom or 0.6; bloom.Size = 24; bloom.Threshold = 0.85
     local cc = ensure("ColorCorrectionEffect"); cc.Brightness = 0; cc.Contrast = opts.contrast or 0.14; cc.Saturation = opts.saturation or 0.2; cc.TintColor = opts.tint or Color3.fromRGB(255, 250, 244)
     local sun = ensure("SunRaysEffect"); sun.Intensity = 0.16; sun.Spread = 0.82
-    local sky = ensure("Sky"); sky.SunAngularSize = 13; sky.StarCount = 4000
     if _Terrain then
         local clouds = _Terrain:FindFirstChildOfClass("Clouds"); if not clouds then clouds = Instance.new("Clouds"); clouds.Parent = _Terrain end
         clouds.Cover = opts.cloudCover or 0.6; clouds.Density = opts.cloudDensity or 0.45; clouds.Color = Color3.fromRGB(245, 248, 255)
@@ -11362,6 +11385,8 @@ local function label3d(adornee, text, offsetY, color)
 end
 
 local lobby = part("Lobby", Vector3.new(90, 2, 90), Vector3.new(0, 0, 0), theme.lobby, theme.lobbyMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(208, 208, 214), 0.55), tint = Color3.fromRGB(253, 251, 250), haze = 1.4, bloom = 0.8})
 label3d(lobby, Config.Title, 9, theme.accent)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "HubSpawn"; spawnLoc.Size = Vector3.new(20, 1, 20); spawnLoc.Position = Vector3.new(0, 1.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 local lobbyPos = Vector3.new(0, 5, 0)
@@ -11543,6 +11568,8 @@ local function label3d(adornee, text, offsetY, color)
 end
 
 local ring = part("Ring", Vector3.new(64, 2, 64), Vector3.new(0, 20, 0), theme.floor, theme.floorMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 1.6})
 label3d(ring, Config.Title, 18, theme.accent)
 local kerbs = {{Vector3.new(64, 3, 3), Vector3.new(0, 22, 32)}, {Vector3.new(64, 3, 3), Vector3.new(0, 22, -32)}, {Vector3.new(3, 3, 64), Vector3.new(32, 22, 0)}, {Vector3.new(3, 3, 64), Vector3.new(-32, 22, 0)}}
 for i, k in ipairs(kerbs) do part("Kerb_" .. i, k[1], k[2], theme.kerb, Enum.Material.Metal) end
@@ -11728,6 +11755,13 @@ local function label3d(adornee, text, offsetY, color, width)
 end
 
 part("CustomGround", Vector3.new(320, 1, 320), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(206, 206, 212), 0.58), tint = Color3.fromRGB(253, 251, 249), haze = 1.5})
+for i = 1, 16 do
+    local a = math.rad(i * 22.5 + 11); local r = 104 + (i % 3) * 12
+    local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
+    if i % 4 == 0 then makeRock(world, p, 0.7, theme.plaza) else makeTree(world, p, 0.9, "round", Color3.fromRGB(112, 80, 52), Color3.fromRGB(82, 150, 76)) end
+end
 part("Plaza", Vector3.new(90, 1, 90), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
 local monument = part("Monument", Vector3.new(8, 30, 8), Vector3.new(0, 15, -36), theme.accent, Enum.Material.Neon)
 label3d(monument, Config.Title, 18, theme.accent, 280)
