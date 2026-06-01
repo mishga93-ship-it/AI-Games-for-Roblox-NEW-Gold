@@ -355,16 +355,49 @@ struct GenerationPreviewView: View {
                         .font(.appHeadline)
                         .foregroundColor(.textPrimary)
                     Spacer()
-                    BlockyPetBadge(text: "\(spec.parts.count) parts", tint: .blue)
+                    BlockyPetBadge(
+                        text: (spec.meshThumbnailUrl?.isEmpty == false) ? "AI Mesh" : "\(spec.parts.count) parts",
+                        tint: .blue
+                    )
                 }
-                BlockyFurniture3DSceneView(spec: spec)
+                // Session 402: mesh-mode props ship a concept render URL because the
+                // real rbxassetid mesh can't be drawn in SceneKit. Show the picture
+                // when present; otherwise fall back to the blocky scene reconstruction.
+                if let thumb = spec.meshThumbnailUrl, let meshThumbURL = URL(string: thumb) {
+                    AsyncImage(url: meshThumbURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        case .failure:
+                            Image(systemName: "cube.transparent")
+                                .font(.system(size: 56))
+                                .foregroundColor(.textSecondary)
+                                .frame(maxWidth: .infinity, minHeight: 220)
+                        default:
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 220)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                     .frame(height: 360)
                     .background(Color.black.opacity(0.3))
                     .clipShape(RoundedRectangle(cornerRadius: 18))
-                Text("Drag to rotate · pinch to zoom · this is the actual .rbxm geometry, not a render.")
-                    .font(.appCaption)
-                    .foregroundColor(.textSecondary)
-                    .multilineTextAlignment(.leading)
+                    Text("Rendered preview of your AI mesh. The .rbxm drops the real 3D mesh into Studio.")
+                        .font(.appCaption)
+                        .foregroundColor(.textSecondary)
+                        .multilineTextAlignment(.leading)
+                } else {
+                    BlockyFurniture3DSceneView(spec: spec)
+                        .frame(height: 360)
+                        .background(Color.black.opacity(0.3))
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                    Text("Drag to rotate · pinch to zoom · this is the actual .rbxm geometry, not a render.")
+                        .font(.appCaption)
+                        .foregroundColor(.textSecondary)
+                        .multilineTextAlignment(.leading)
+                }
                 ForEach(notes, id: \.self) { note in
                     Text(note)
                         .font(.appCallout)

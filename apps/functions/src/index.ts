@@ -30604,8 +30604,29 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           ? (currentJob.metadata as Record<string, unknown>).furnitureType as string
           : undefined;
         const furnitureTypeForArtifact = furnitureTypeFromManifest ?? furnitureTypeFromJob ?? 'decor';
-        const previewPartsJSON = (isFurniture && Array.isArray(previewPartsAny) && previewPartsAny.length > 0)
-          ? JSON.stringify({ parts: previewPartsAny, furnitureType: furnitureTypeForArtifact })
+        // Session 402 — mesh-mode furniture bakes a MeshPart that references an
+        // rbxassetid:// mesh which iOS SceneKit cannot load, and its fallback
+        // skeleton ships transparent (so it doesn't overlap the real mesh in
+        // Studio). The iOS blocky-furniture preview therefore rendered an empty
+        // viewport. Surface the concept render image (the image-to-3d SOURCE,
+        // already saved as an artifact in the concept_image stage) so iOS shows a
+        // real picture of the prop instead of a blank box. It rides inside the
+        // existing furnitureSpecJSON, so no new artifact field/decoder is needed.
+        const jobMetaForThumb = (currentJob.metadata as Record<string, unknown> | undefined) ?? {};
+        const furnitureMeshThumbUrl = (isFurniture && furnitureBuildMode !== 'parts')
+          ? (typeof jobMetaForThumb.conceptPreviewUrl === 'string' && jobMetaForThumb.conceptPreviewUrl
+              ? jobMetaForThumb.conceptPreviewUrl as string
+              : typeof jobMetaForThumb.previewImageUrl === 'string' && jobMetaForThumb.previewImageUrl
+                ? jobMetaForThumb.previewImageUrl as string
+                : undefined)
+          : undefined;
+        const hasPreviewParts = isFurniture && Array.isArray(previewPartsAny) && previewPartsAny.length > 0;
+        const previewPartsJSON = (hasPreviewParts || furnitureMeshThumbUrl)
+          ? JSON.stringify({
+              parts: hasPreviewParts ? previewPartsAny : [],
+              furnitureType: furnitureTypeForArtifact,
+              meshThumbnailUrl: furnitureMeshThumbUrl,
+            })
           : undefined;
         const blockyFurnitureExtras = (isFurniture && previewPartsJSON)
           ? {

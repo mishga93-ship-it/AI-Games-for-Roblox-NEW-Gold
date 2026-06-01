@@ -9,6 +9,11 @@ import UIKit
 struct FurnitureSpecPayload: Decodable {
     let furnitureType: String?
     let parts: [Part]
+    /// Session 402: for mesh-mode furniture the real geometry is an rbxassetid
+    /// MeshPart that SceneKit can't load, so the backend ships the concept
+    /// render URL here. When set, the preview shows this image instead of the
+    /// (empty/transparent) blocky scene.
+    let meshThumbnailUrl: String?
 
     struct Part: Decodable {
         let name: String?
