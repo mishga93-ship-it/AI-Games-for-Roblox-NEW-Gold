@@ -28,6 +28,7 @@ struct HomeView: View {
     @State private var isLoadingDropbox = true
     @State private var hasFinishedDropboxLoad = false
     @State private var activeChallenge: AIWorkspaceAPI.Challenge?
+    @State private var remixTarget: AIWorkspaceAPI.SocialPost?
 
     private let preferredSectionOrder = ["Skins", "Codes", "Mods", "Categories Cover"]
 
@@ -113,7 +114,7 @@ struct HomeView: View {
                     if loading {
                         FeedSectionPlaceholder(title: section.rawValue)
                     } else if !posts.isEmpty {
-                        FeedSection(title: section.rawValue, posts: posts)
+                        FeedSection(title: section.rawValue, posts: posts, onRemix: { remixTarget = $0 })
                     }
                 }
 
@@ -168,6 +169,17 @@ struct HomeView: View {
         .task(id: store.selectedTab) { await store.loadIfNeeded() }
         .task { await loadActiveChallenge() }
         .dismissKeyboardOnTap()
+        .fullScreenCover(item: $remixTarget) { post in
+            NavigationStack {
+                ChatView(
+                    projectKind: .clone,
+                    preferredFlow: .smartInterview,
+                    entryMode: .text,
+                    welcomeContext: "'\(post.title)' by \(post.authorName)" + (post.description.isEmpty ? "" : " — \(post.description.prefix(240))"),
+                    title: "Remix: \(post.title)"
+                )
+            }
+        }
     }
 
     // MARK: - Tab Picker
@@ -323,6 +335,7 @@ private struct FeaturedBannerCard: View {
 private struct FeedSection: View {
     let title: String
     let posts: [AIWorkspaceAPI.SocialPost]
+    let onRemix: (AIWorkspaceAPI.SocialPost) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -333,10 +346,32 @@ private struct FeedSection: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
                     ForEach(posts) { post in
-                        NavigationLink(destination: CommunityPostDetailView(post: post, onRefresh: {})) {
-                            FeedPostCard(post: post)
+                        ZStack(alignment: .topTrailing) {
+                            NavigationLink(destination: CommunityPostDetailView(post: post, onRefresh: {})) {
+                                FeedPostCard(post: post)
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                onRemix(post)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "shuffle")
+                                    Text("Remix")
+                                }
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    LinearGradient(colors: [.accentTeal, .brandElectricBlue], startPoint: .leading, endPoint: .trailing)
+                                )
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(8)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }

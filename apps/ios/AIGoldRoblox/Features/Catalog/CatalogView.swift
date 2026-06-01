@@ -42,6 +42,7 @@ struct CatalogView: View {
     @State private var errorText: String?
     @State private var feedMode = "new"
     @State private var selectedPost: AIWorkspaceAPI.SocialPost?
+    @State private var remixTarget: AIWorkspaceAPI.SocialPost?
     @State private var searchText = ""
     @State private var selectedTag: String?
     @State private var contentSegment: ContentSegment = .all
@@ -133,6 +134,17 @@ struct CatalogView: View {
                 CommunityPostDetailView(post: post) { }
             }
             .presentationDetents([.large])
+        }
+        .fullScreenCover(item: $remixTarget) { post in
+            NavigationStack {
+                ChatView(
+                    projectKind: .clone,
+                    preferredFlow: .smartInterview,
+                    entryMode: .text,
+                    welcomeContext: "'\(post.title)' by \(post.authorName)" + (post.description.isEmpty ? "" : " — \(post.description.prefix(240))"),
+                    title: "Remix: \(post.title)"
+                )
+            }
         }
         .sheet(isPresented: $showLiveTrendsSheet) {
             NavigationStack {
@@ -377,6 +389,8 @@ struct CatalogView: View {
                     Task {
                         _ = try? await AIWorkspaceAPI.reportPost(postId: post.id, reason: "User report from app")
                     }
+                }, onRemix: {
+                    remixTarget = post
                 })
                 .onAppear {
                     if post.id == posts.last?.id {
@@ -469,6 +483,7 @@ private struct CommunityPostCard: View {
     let onDislike: () -> Void
     let onSave: () -> Void
     let onReport: () -> Void
+    let onRemix: () -> Void
 
     @State private var image: UIImage?
 
@@ -586,6 +601,25 @@ private struct CommunityPostCard: View {
                     .foregroundColor(.textSecondary)
 
                     Spacer()
+
+                    Button {
+                        onRemix()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "shuffle")
+                            Text("Remix")
+                        }
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            LinearGradient(colors: [.accentTeal, .brandElectricBlue], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.trailing, 4)
 
                     Button {
                         onSave()

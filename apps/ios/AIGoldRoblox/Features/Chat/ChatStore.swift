@@ -991,6 +991,13 @@ final class ChatStore: ObservableObject {
             messages = [welcomeMessage()]
             return
         }
+        // AI Remix / Fork — `context` carries the original ("'<title>' by <author>"); keep the original author credited.
+        if projectKind == .clone {
+            let modeHint = isVoice ? "Tap the mic and tell me what to change." : "Type what to change or add below."
+            let remixContent = "🔀 Remixing \(context). Tell me what to change or add — I'll generate a fresh variation and keep the original author credited. \(modeHint)"
+            messages = [ChatMessage(id: "welcome", role: .assistant, content: remixContent, quickReplies: ["Change the theme", "Add new mechanics", "Different mode", "Make it harder"], gddRows: nil, createdAt: Date())]
+            return
+        }
         let content: String
         if contentSubcategory == "audio" {
             let modeHint = isVoice
