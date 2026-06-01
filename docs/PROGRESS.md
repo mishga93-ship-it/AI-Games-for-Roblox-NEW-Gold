@@ -18,6 +18,26 @@
 
 ## Выполненные задачи
 
+### 🎮 [Генерация игр — жанры] Остальные 8 жанров: полные детерминированные билдеры (2026-06-01, сессия 399)
+- **Задача**: после Tower Defense реализовать оставшиеся жанры — Roleplay/Town, Racing, Parkour, Story Game, Mini-games Hub, Survival, Fighting, Custom. Подход «по одному, полный билдер» (каждый = качественный детерминированный билдер как у RPG/Horror/PvP).
+- **Что сделано** (каждый жанр — полный 5-слойный паттерн):
+  - [gameTemplates.ts](apps/functions/src/gameTemplates.ts): 8 новых билдеров + dispatch + showcase-cases + поля `GameTemplateParams` (jobCount/lapCount/chapterCount/roundCount/dayLength/roundTime):
+    - **Roleplay/Town** (`roleplay_town`): 6 зданий + плаза, job-пады с зарплатой, шоп ролей (Citizen/VIP/Tycoon/Legend), NPC, день/ночь, leaderstats Cash+Role, DataStore.
+    - **Racing** (`racing`): замкнутая овальная трасса, чекпоинты по порядку (Touched), круги, таймер, раунд-луп countdown→race→results, Best Time.
+    - **Parkour** (`parkour`): восходящая спираль платформ, чекпоинты каждые 5, void-floor → респ на чекпоинт, финиш + Best Time.
+    - **Story Game** (`story_game`): главы-зоны вдоль пути, нарратив-биты (детерминированы по теме fantasy/scifi/mystery/horror), нарратор-NPC.
+    - **Mini-games Hub** (`minigame_hub`): лобби + tile-арена, 3 ротации (Tile Drop/Color Call/Edge Collapse), элиминация через death-plane, Points+Wins.
+    - **Survival** (`survival`): ноды дерево/камень, костёр-хил, день/ночь, ночные враги-преследователи (Heartbeat), Humanoid health, Days+Wood+Stone.
+    - **Fighting** (`fighting_arena`): поднятый ринг, ближний бой (server-authoritative урон + knockback через AssemblyLinearVelocity), ring-out, KO, раунды, Wins+KOs.
+    - **Custom** (`custom_game`): playable-сэндбокс — монумент с названием/описанием, сбор монет, апгрейды Speed/Jump, платформы, guide-NPC.
+  - [index.ts](apps/functions/src/index.ts): 8 subcategory-веток (парс GDD → `buildGameplayScript`) + все 8 добавлены в `RUNTIME_PLAYABLE_SUBCATEGORIES`.
+  - [promptCatalog.ts](apps/functions/src/promptCatalog.ts) + [types.ts](apps/functions/src/types.ts): 16 промптов (interview+GDD на жанр), 9 точек intent-роутинга × 8 жанров, 8 registry-записей приведены к реальным билдерам, `PromptIntent` += 16 значений.
+  - iOS: [ForgeView](apps/ios/AIGoldRoblox/Features/Forge/ForgeView.swift) 8 picker-опций (id == backend subcategory), [ChatPresets](apps/ios/AIGoldRoblox/Features/Chat/ChatPresets.swift) 8 массивов + switch, [ChatStore](apps/ios/AIGoldRoblox/Features/Chat/ChatStore.swift) intent ×2 + welcome + starter-replies + helpers + Set + RU-labels, [ChatView](apps/ios/AIGoldRoblox/Features/Chat/ChatView.swift) nav-titles, [AIWorkspaceAPI](apps/ios/AIGoldRoblox/Core/API/AIWorkspaceAPI.swift) иконки.
+- **Проверка**: backend `npm run build --workspace apps/functions` ✅ (прогонял 4× по ходу); iOS `xcodebuild ... -derivedDataPath /tmp/aigold-claude-399b build` → **`** BUILD SUCCEEDED **`** (изолированный DerivedData, Xcode пользователя открыт — §0.7).
+- **Commit/Deploy**: commit **`6f2dce3`** (4 файла `apps/functions/src/*`, 1971 insertions). Deploy через `safe-deploy-functions.sh`: **первый запуск упал** `Timeout after 10000 — User code failed to load` (CPU-контеншен с параллельным `xcodebuild` во время 10-сек init-анализа Firebase). **Перезапуск после завершения xcodebuild** ✅ → `functions[api(us-central1)] Successful update operation` → health `/api/health` `{"ok":true}`. Все 8 жанров в проде.
+- **⚠️ Урок**: не запускать тяжёлый `xcodebuild` параллельно с `firebase deploy` — init-анализ Firebase (10с таймаут) голодает по CPU и деплой падает транзиентно. Деплоить с свободным CPU.
+- **Статус**: 8 жанров готовы и задеплоены. **iOS-файлы не закоммичены** (ChatStore/ForgeView parallel-dirty — partial-stage; push по §0.5 п.7 по команде). С учётом Tower Defense — **ВСЕ 9 запрошенных жанров реализованы**.
+
 ### 🏰 [Генерация игр — жанры] Tower Defense: полный детерминированный билдер (2026-06-01, сессия 399)
 - **Задача**: реализовать оставшиеся жанры генерации игр (Roleplay/Town, Tower Defense, Racing, Parkour, Story Game, Mini-games Hub, Survival, Fighting, Custom). Подтверждённый подход — «по одному, полный билдер» (каждый жанр = свой качественный детерминированный билдер как у RPG/Horror/PvP, с проверкой сборки). **Старт — Tower Defense.**
 - **Что сделано** (5 слоёв, как у rpg/horror/pvp):

@@ -101,18 +101,18 @@
 - [x] Simulator
 - [x] RPG
 - [x] Horror
-- [ ] Roleplay / Town
+- [x] Roleplay / Town
 - [x] PvP Arena
 - [x] Tower Defense
-- [ ] Racing
-- [ ] Parkour
-- [ ] Story Game
-- [ ] Mini-games Hub
-- [ ] Survival
-- [ ] Fighting
-- [ ] Custom (любой жанр по описанию)
+- [x] Racing
+- [x] Parkour
+- [x] Story Game
+- [x] Mini-games Hub
+- [x] Survival
+- [x] Fighting
+- [x] Custom (любой жанр по описанию)
 
-> **Статус билдеров (2026-06-01, сессия 399)**: выделенный детерминированный playable-билдер есть у Obby, Tycoon, Simulator (+ sim-семейство: clicker/mining/muscle/fighting/brainrot), RPG, Horror, PvP Arena, **Tower Defense** (новый). Roleplay/Town, Racing, Parkour, Story Game, Mini-games Hub, Survival, Fighting, Custom — пока БЕЗ собственного билдера (флаг `[ ]`); реализуются по очереди тем же 5-слойным паттерном по согласованному плану «по одному, полный билдер».
+> **Статус билдеров (2026-06-01, сессия 399)**: ВСЕ перечисленные жанры теперь имеют выделенный детерминированный playable-билдер с полным 5-слойным роутингом (builder+dispatch+showcase / index subcategory-ветка + RUNTIME_PLAYABLE_SUBCATEGORIES / promptCatalog interview+GDD+intent+registry / PromptIntent / iOS picker+presets+intent+welcome+nav+icon). Tower Defense задеплоен коммитом `c9641a1`; остальные 8 (Roleplay/Town, Racing, Parkour, Story Game, Mini-games Hub, Survival, Fighting, Custom) — коммитом `6f2dce3`. Все в проде (`firebase deploy --only functions:api`). gameKind'ы: roleplay_town, racing, parkour, story_game, minigame_hub, survival, fighting_arena, custom_game.
 
 ### 3.2 Контент — отдельные ассеты
 
