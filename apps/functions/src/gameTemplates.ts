@@ -11114,6 +11114,53 @@ local function makeGrassTuft(parent, pos, color)
     end
 end
 
+-- Real Roblox character NPC: a proper R15 Humanoid rig via the engine
+-- (CreateHumanoidModelFromDescription) so it actually WALKS/RUNS with the
+-- default Roblox animation and can chase + attack via Humanoid:MoveTo.
+-- Asset-safe (engine rig + Roblox's own free default animation, no Toolbox IDs).
+-- Returns model, humanoid, rootPart (or nil on failure -> caller can skip).
+local function makeHumanoidNpc(parent, cframe, opts)
+    opts = opts or {}
+    local ok, npc = pcall(function()
+        return game:GetService("Players"):CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
+    end)
+    if not ok or not npc then return nil end
+    npc.Name = opts.name or "NPC"
+    local hum = npc:FindFirstChildOfClass("Humanoid")
+    local hrp = npc:FindFirstChild("HumanoidRootPart")
+    for _, pt in ipairs(npc:GetDescendants()) do
+        if pt:IsA("Shirt") or pt:IsA("Pants") or pt:IsA("ShirtGraphic") or pt:IsA("Decal") or pt:IsA("Accessory") or pt:IsA("BodyColors") then pt:Destroy()
+        elseif pt:IsA("BasePart") and opts.color then pt.Color = opts.color; pt.Material = opts.material or Enum.Material.SmoothPlastic end
+    end
+    if hum then
+        hum.WalkSpeed = opts.walkSpeed or 12
+        hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+        if opts.health then hum.MaxHealth = opts.health; hum.Health = opts.health end
+        local animate = npc:FindFirstChild("Animate"); if animate then animate:Destroy() end
+        local animator = hum:FindFirstChildOfClass("Animator"); if not animator then animator = Instance.new("Animator"); animator.Parent = hum end
+        local anim = Instance.new("Animation"); anim.AnimationId = "rbxassetid://" .. (opts.walkAnim or 2510202577)
+        local ok2, track = pcall(function() return animator:LoadAnimation(anim) end)
+        if ok2 and track then
+            track.Looped = true
+            hum.Running:Connect(function(spd)
+                if spd > 0.5 then if not track.IsPlaying then track:Play(0.1) end; track:AdjustSpeed(math.clamp(spd / 11, 0.7, 1.9)) else track:Stop(0.1) end
+            end)
+        end
+    end
+    if opts.eyes and npc:FindFirstChild("Head") then
+        local head = npc.Head
+        for _, sx in ipairs({-0.32, 0.32}) do
+            local eye = Instance.new("Part"); eye.Size = Vector3.new(0.26, 0.26, 0.18); eye.Color = Color3.fromRGB(255, 60, 40); eye.Material = Enum.Material.Neon; eye.CanCollide = false; eye.Massless = true
+            local w = Instance.new("Weld"); w.Part0 = head; w.Part1 = eye; w.C0 = CFrame.new(sx, 0.15, -0.58); w.Parent = eye
+            eye.Parent = npc
+        end
+    end
+    if cframe then npc:PivotTo(cframe) end
+    npc.Parent = parent or workspace
+    return npc, hum, hrp
+end
+
 -- Flat island plateau (top ~y=1) with optional surrounding Terrain water + beach.
 local function buildTerrainGround(opts)
     opts = opts or {}
@@ -11271,24 +11318,34 @@ end
 
 local enemies = {}
 local isNight = false
-local function makeEnemyModel(spawnPos)
-    local m = Instance.new("Model"); m.Name = "Enemy"; m.Parent = world
-    local body = part("EBody", Vector3.new(3.4, 5, 2.2), spawnPos + Vector3.new(0, 3, 0), theme.enemy, Enum.Material.SmoothPlastic, m); body.CanCollide = false
-    m.PrimaryPart = body
-    part("EHead", Vector3.new(2.4, 2.4, 2.4), spawnPos + Vector3.new(0, 6.4, 0), theme.enemy:Lerp(Color3.new(0, 0, 0), 0.18), Enum.Material.SmoothPlastic, m).CanCollide = false
-    part("EEyeL", Vector3.new(0.5, 0.5, 0.4), spawnPos + Vector3.new(-0.6, 6.6, 1.1), Color3.fromRGB(255, 60, 40), Enum.Material.Neon, m).CanCollide = false
-    part("EEyeR", Vector3.new(0.5, 0.5, 0.4), spawnPos + Vector3.new(0.6, 6.6, 1.1), Color3.fromRGB(255, 60, 40), Enum.Material.Neon, m).CanCollide = false
-    part("EArmL", Vector3.new(0.9, 3.4, 0.9), spawnPos + Vector3.new(-2.2, 3.2, 0), theme.enemy, Enum.Material.SmoothPlastic, m).CanCollide = false
-    part("EArmR", Vector3.new(0.9, 3.4, 0.9), spawnPos + Vector3.new(2.2, 3.2, 0), theme.enemy, Enum.Material.SmoothPlastic, m).CanCollide = false
-    return m
-end
 local function spawnEnemy()
     local a = math.random() * math.pi * 2
-    local m = makeEnemyModel(Vector3.new(math.cos(a) * 150, 1, math.sin(a) * 150))
-    table.insert(enemies, {model = m, cd = 0})
+    local pos = Vector3.new(math.cos(a) * 150, 5, math.sin(a) * 150)
+    local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(pos), {name = "Enemy", color = theme.enemy, walkSpeed = enemySpeed, eyes = true, health = math.floor(60 * diffMult)})
+    if not npc or not hum or not hrp then if npc then npc:Destroy() end return end
+    local e = {npc = npc, hum = hum, hrp = hrp}
+    table.insert(enemies, e)
+    -- per-enemy AI: chase the nearest player (real walking via Humanoid:MoveTo) and bite when close.
+    task.spawn(function()
+        while e.npc and e.npc.Parent and e.hum and e.hum.Health > 0 do
+            local nearest, nd, nroot
+            for _, p in Players:GetPlayers() do
+                local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+                if root then local d = (root.Position - e.hrp.Position).Magnitude; if not nd or d < nd then nearest, nd, nroot = p, d, root end end
+            end
+            if nroot then
+                e.hum:MoveTo(nroot.Position)
+                if nd and nd < 6 then
+                    local h = nearest.Character:FindFirstChildOfClass("Humanoid")
+                    if h and h.Health > 0 then h:TakeDamage(enemyDmg); floatText(nroot.Position + Vector3.new(0, 4, 0), "-" .. enemyDmg, Color3.fromRGB(255, 90, 80)) end
+                end
+            end
+            task.wait(0.4)
+        end
+    end)
 end
 local function clearEnemies()
-    for _, e in ipairs(enemies) do if e.model then e.model:Destroy() end end
+    for _, e in ipairs(enemies) do if e.npc then e.npc:Destroy() end end
     table.clear(enemies)
 end
 
@@ -11320,28 +11377,6 @@ RunService.Heartbeat:Connect(function(dt)
     for _, p in Players:GetPlayers() do
         local char = p.Character; local root = char and char:FindFirstChild("HumanoidRootPart"); local hum = char and char:FindFirstChildOfClass("Humanoid")
         if root and hum and (root.Position - campfirePos).Magnitude < 22 then hum.Health = math.min(hum.MaxHealth, hum.Health + 14 * dt) end
-    end
-    for idx = #enemies, 1, -1 do
-        local e = enemies[idx]
-        if not e.model or not e.model.Parent or not e.model.PrimaryPart then table.remove(enemies, idx)
-        else
-            local epos = e.model:GetPivot().Position
-            local nearest, nd, nroot
-            for _, p in Players:GetPlayers() do
-                local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
-                if root then local d = (root.Position - epos).Magnitude; if not nd or d < nd then nearest, nd, nroot = p, d, root end end
-            end
-            if nearest and nroot then
-                local dir = Vector3.new(nroot.Position.X - epos.X, 0, nroot.Position.Z - epos.Z)
-                if dir.Magnitude > 0.1 then
-                    local bob = math.sin(os.clock() * 8 + idx) * 0.5
-                    local newPos = epos + dir.Unit * math.min(enemySpeed * dt, dir.Magnitude)
-                    e.model:PivotTo(CFrame.lookAt(Vector3.new(newPos.X, newPos.Y + bob, newPos.Z), Vector3.new(nroot.Position.X, newPos.Y + bob, nroot.Position.Z)))
-                end
-                e.cd = math.max(0, e.cd - dt)
-                if nd and nd < 6 and e.cd <= 0 then local hum = nearest.Character:FindFirstChildOfClass("Humanoid"); if hum then hum:TakeDamage(enemyDmg); floatText(nroot.Position + Vector3.new(0, 4, 0), "-" .. enemyDmg, Color3.fromRGB(255, 90, 80)); e.cd = 1.2 end end
-            end
-        end
     end
 end)
 
