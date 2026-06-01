@@ -108,7 +108,9 @@ export type PromptIntent =
   | 'pvp_arena_interview'
   | 'pvp_arena_generation'
   | 'simulator_interview'
-  | 'simulator_generation';
+  | 'simulator_generation'
+  | 'tower_defense_interview'
+  | 'tower_defense_generation';
 
 export interface PromptContextMetadata {
   projectKind?: ProjectKind;

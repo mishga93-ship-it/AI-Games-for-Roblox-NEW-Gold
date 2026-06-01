@@ -78,6 +78,13 @@ export interface GameTemplateParams {
   spawnCount?: number;
   zoneTheme?: string;
   rebirthPace?: 'slow' | 'balanced' | 'fast' | string;
+  /** Session 399: tower_defense — wave-based deterministic builder */
+  waveCount?: number;
+  towerSlots?: number;
+  mapTheme?: string;
+  startingCash?: number;
+  baseHealth?: number;
+  difficulty?: 'casual' | 'normal' | 'hard' | string;
   hasObbyShop?: boolean;
   obbyDescription?: string;
   /** Master Plan Phase 0+A (session 219): live Roblox catalog items welded
@@ -9881,6 +9888,349 @@ end)
   };
 }
 
+function buildTowerDefenseScript(params: GameTemplateParams): MultiScriptResult {
+  const titleLua = safeLuaString(params.title, 'Tower Defense');
+  const waveCount = Math.max(5, Math.min(40, Math.round(Number(params.waveCount) || 15)));
+  const towerSlots = Math.max(4, Math.min(10, Math.round(Number(params.towerSlots) || 8)));
+  const startingCash = Math.max(50, Math.min(500, Math.round(Number(params.startingCash) || 150)));
+  const baseHealth = Math.max(5, Math.min(60, Math.round(Number(params.baseHealth) || 20)));
+  const themeRaw = String(params.mapTheme || '').toLowerCase();
+  const mapTheme = ['meadow', 'desert', 'candy', 'scifi'].find((t) => themeRaw.includes(t))
+    || (/grass|forest|green|meadow|farm/.test(themeRaw) ? 'meadow'
+      : /sand|desert|egypt|dune/.test(themeRaw) ? 'desert'
+      : /candy|sweet|sugar|dessert/.test(themeRaw) ? 'candy'
+      : /space|neon|cyber|sci|tech|robot/.test(themeRaw) ? 'scifi'
+      : 'meadow');
+  const diffRaw = String(params.difficulty || '').toLowerCase();
+  const difficulty = /hard|insane|brutal|nightmare/.test(diffRaw) ? 'hard'
+    : /casual|easy|chill|relax/.test(diffRaw) ? 'casual'
+    : 'normal';
+  const mapThemeLua = safeLuaString(mapTheme, 'meadow');
+  const difficultyLua = safeLuaString(difficulty, 'normal');
+
+  const serverScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+
+local Config = {Title=${titleLua}, WaveCount=${waveCount}, TowerSlots=${towerSlots}, MapTheme=${mapThemeLua}, StartingCash=${startingCash}, BaseHealth=${baseHealth}, Difficulty=${difficultyLua}}
+
+local THEMES = {
+    meadow = {ground=Color3.fromRGB(86,150,70), groundMat=Enum.Material.Grass, path=Color3.fromRGB(150,120,80), pathMat=Enum.Material.Ground, base=Color3.fromRGB(70,130,220), accent=Color3.fromRGB(240,230,120)},
+    desert = {ground=Color3.fromRGB(214,184,120), groundMat=Enum.Material.Sand, path=Color3.fromRGB(170,140,95), pathMat=Enum.Material.Slate, base=Color3.fromRGB(200,110,60), accent=Color3.fromRGB(120,190,210)},
+    candy = {ground=Color3.fromRGB(245,170,205), groundMat=Enum.Material.SmoothPlastic, path=Color3.fromRGB(150,90,200), pathMat=Enum.Material.SmoothPlastic, base=Color3.fromRGB(120,210,255), accent=Color3.fromRGB(255,245,120)},
+    scifi = {ground=Color3.fromRGB(40,46,60), groundMat=Enum.Material.Metal, path=Color3.fromRGB(60,70,90), pathMat=Enum.Material.DiamondPlate, base=Color3.fromRGB(60,220,200), accent=Color3.fromRGB(120,160,255)},
+}
+local theme = THEMES[Config.MapTheme] or THEMES.meadow
+local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.7 or 1.0)
+
+local dataStore
+local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("TowerDefenseStats_v1") end)
+if not okStore then warn("[TowerDefense] DataStore unavailable: " .. tostring(storeErr)) end
+
+local remotes = Instance.new("Folder"); remotes.Name = "TdRemotes"; remotes.Parent = ReplicatedStorage
+local TdEvent = Instance.new("RemoteEvent"); TdEvent.Name = "TdEvent"; TdEvent.Parent = remotes
+local TdBuild = Instance.new("RemoteEvent"); TdBuild.Name = "TdBuild"; TdBuild.Parent = remotes
+local world = Instance.new("Folder"); world.Name = "GeneratedTowerDefense"; world.Parent = workspace
+
+local function part(name, size, pos, color, mat, parent)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+end
+
+part("TdGround", Vector3.new(280, 1, 210), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+
+local waypoints = {
+    Vector3.new(-120, 3, -45), Vector3.new(-40, 3, -45), Vector3.new(-40, 3, 38),
+    Vector3.new(38, 3, 38), Vector3.new(38, 3, -25), Vector3.new(118, 3, -25),
+}
+for i = 1, #waypoints - 1 do
+    local a = Vector3.new(waypoints[i].X, 1.5, waypoints[i].Z)
+    local b = Vector3.new(waypoints[i + 1].X, 1.5, waypoints[i + 1].Z)
+    local seg = Instance.new("Part"); seg.Name = "Road_" .. i; seg.Anchored = true; seg.Color = theme.path; seg.Material = theme.pathMat
+    seg.Size = Vector3.new(11, 1, (b - a).Magnitude + 9)
+    seg.CFrame = CFrame.lookAt((a + b) / 2, b)
+    seg.Parent = world
+end
+
+local baseCenter = waypoints[#waypoints]
+local baseCore = part("BaseCore", Vector3.new(18, 18, 18), Vector3.new(baseCenter.X, 9, baseCenter.Z), theme.base, Enum.Material.Neon)
+local baseBb = Instance.new("BillboardGui"); baseBb.Size = UDim2.new(0, 170, 0, 42); baseBb.StudsOffset = Vector3.new(0, 13, 0); baseBb.AlwaysOnTop = true; baseBb.Parent = baseCore
+local baseLabel = Instance.new("TextLabel"); baseLabel.Size = UDim2.new(1, 0, 1, 0); baseLabel.BackgroundTransparency = 1; baseLabel.TextColor3 = Color3.fromRGB(255, 255, 255); baseLabel.TextStrokeTransparency = 0.3; baseLabel.TextScaled = true; baseLabel.Font = Enum.Font.GothamBlack; baseLabel.Text = "BASE"; baseLabel.Parent = baseBb
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "TdSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = Vector3.new(baseCenter.X, 1, baseCenter.Z + 28); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+
+local baseHealth = Config.BaseHealth
+local currentWave = 0
+local phase = "idle"
+local gameOver = false
+local enemies = {}
+local towers = {}
+local slots = {}
+local selectedType = {}
+local TOWER_TYPES = {
+    cannon = {cost=50, damage=12, range=28, fireRate=0.7, color=Color3.fromRGB(90,150,230), label="Cannon"},
+    sniper = {cost=120, damage=42, range=64, fireRate=1.6, color=Color3.fromRGB(80,210,140), label="Sniper"},
+    splash = {cost=200, damage=18, range=30, fireRate=1.1, splash=12, color=Color3.fromRGB(240,150,70), label="Splash"},
+}
+
+local function getCash(player)
+    local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); return c and c.Value or 0
+end
+local function addCash(player, amount)
+    local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); if c then c.Value = math.max(0, c.Value + amount) end
+end
+local function fireBeam(from, to, color)
+    local b = Instance.new("Part"); b.Anchored = true; b.CanCollide = false; b.Material = Enum.Material.Neon; b.Color = color
+    b.Size = Vector3.new(0.4, 0.4, (to - from).Magnitude); b.CFrame = CFrame.lookAt((from + to) / 2, to); b.Parent = world
+    Debris:AddItem(b, 0.08)
+end
+local function buildTowerVisual(slot, def)
+    local base = part("TowerBase_" .. slot.index, Vector3.new(5, 6, 5), slot.part.Position + Vector3.new(0, 3.5, 0), def.color, Enum.Material.Metal)
+    local turret = part("TowerGun_" .. slot.index, Vector3.new(2, 2, 6), base.Position + Vector3.new(0, 4, 0), def.color:Lerp(Color3.new(1, 1, 1), 0.35), Enum.Material.Neon)
+    turret.CanCollide = false
+    return base, turret
+end
+local function handleSlotTrigger(player, slot)
+    if gameOver then return end
+    if slot.tower then
+        local t = slot.tower
+        local upCost = t.def.cost * (t.level + 1)
+        if getCash(player) >= upCost then
+            addCash(player, -upCost)
+            t.level += 1
+            t.damage = t.def.damage * (1 + 0.6 * (t.level - 1))
+            t.range = t.def.range * (1 + 0.1 * (t.level - 1))
+            slot.prompt.ActionText = "Upgrade Lv" .. (t.level + 1)
+            slot.prompt.ObjectText = t.def.label .. " Lv" .. t.level
+        else
+            TdEvent:FireClient(player, {kind="toast", text="Need $" .. upCost .. " to upgrade"})
+        end
+        return
+    end
+    local typeName = selectedType[player] or "cannon"
+    local def = TOWER_TYPES[typeName]
+    if not def then return end
+    if getCash(player) < def.cost then
+        TdEvent:FireClient(player, {kind="toast", text="Not enough cash for " .. def.label})
+        return
+    end
+    addCash(player, -def.cost)
+    local base, turret = buildTowerVisual(slot, def)
+    slot.tower = {def=def, type=typeName, level=1, damage=def.damage, range=def.range, fireRate=def.fireRate, splash=def.splash, cooldown=0, owner=player, base=base, turret=turret}
+    table.insert(towers, slot.tower)
+    slot.prompt.ActionText = "Upgrade Lv2"
+    slot.prompt.ObjectText = def.label .. " Lv1"
+end
+
+local slotDefs = {
+    Vector3.new(-90, 3.5, -58), Vector3.new(-66, 3.5, -32), Vector3.new(-54, 3.5, -8),
+    Vector3.new(-26, 3.5, 4), Vector3.new(-4, 3.5, 51), Vector3.new(14, 3.5, 24),
+    Vector3.new(51, 3.5, 8), Vector3.new(24, 3.5, -6), Vector3.new(72, 3.5, -40), Vector3.new(94, 3.5, -10),
+}
+for i = 1, math.min(Config.TowerSlots, #slotDefs) do
+    local pad = part("TowerSlot_" .. i, Vector3.new(8, 1, 8), slotDefs[i], theme.accent, Enum.Material.Metal)
+    pad.Transparency = 0.35
+    local ring = Instance.new("SelectionBox"); ring.Adornee = pad; ring.Color3 = theme.accent; ring.LineThickness = 0.05; ring.Parent = pad
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Build Tower"; prompt.ObjectText = "Empty Slot"; prompt.HoldDuration = 0.15; prompt.MaxActivationDistance = 16; prompt.RequiresLineOfSight = false; prompt.Parent = pad
+    local slot = {part=pad, prompt=prompt, tower=nil, index=i}
+    slots[i] = slot
+    prompt.Triggered:Connect(function(player) handleSlotTrigger(player, slot) end)
+end
+
+TdBuild.OnServerEvent:Connect(function(player, payload)
+    if typeof(payload) ~= "table" then return end
+    if payload.action == "select" and TOWER_TYPES[payload.tower] then selectedType[player] = payload.tower end
+end)
+
+local function killEnemy(e, idx, killer)
+    if killer then addCash(killer, e.reward) end
+    if e.part then e.part:Destroy() end
+    table.remove(enemies, idx)
+end
+local function spawnEnemy(wave, isBoss)
+    local hp = math.floor((38 + wave * 14) * diffMult * (isBoss and 6 or 1))
+    local speed = math.min(26, 13 + wave * 0.4) * (isBoss and 0.6 or 1)
+    local reward = math.floor((10 + wave * 1.5) * (isBoss and 8 or 1))
+    local dmg = isBoss and 5 or 1
+    local sz = isBoss and 9 or 4
+    local body = part("Enemy", Vector3.new(sz, sz, sz), waypoints[1] + Vector3.new(0, 1, 0), isBoss and Color3.fromRGB(180, 40, 60) or Color3.fromRGB(220, 90, 80), Enum.Material.SmoothPlastic)
+    body.CanCollide = false
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 56, 0, 7); bb.StudsOffset = Vector3.new(0, sz * 0.8, 0); bb.AlwaysOnTop = true; bb.Parent = body
+    local bg = Instance.new("Frame"); bg.Size = UDim2.new(1, 0, 1, 0); bg.BackgroundColor3 = Color3.fromRGB(25, 25, 30); bg.BorderSizePixel = 0; bg.Parent = bb
+    local fill = Instance.new("Frame"); fill.Size = UDim2.new(1, 0, 1, 0); fill.BackgroundColor3 = Color3.fromRGB(90, 220, 90); fill.BorderSizePixel = 0; fill.Parent = bg
+    table.insert(enemies, {part=body, health=hp, maxHealth=hp, segment=1, t=0, speed=speed, reward=reward, damage=dmg, fill=fill, boss=isBoss})
+end
+
+local function broadcast(phaseName, timeLeft)
+    baseLabel.Text = "BASE " .. math.max(0, baseHealth) .. "/" .. Config.BaseHealth
+    TdEvent:FireAllClients({kind="state", wave=currentWave, total=Config.WaveCount, baseHp=math.max(0, baseHealth), baseMax=Config.BaseHealth, phase=phaseName, time=timeLeft or 0, title=Config.Title})
+end
+
+local function saveBest(player)
+    local ls = player:FindFirstChild("leaderstats"); local bw = ls and ls:FindFirstChild("Best Wave")
+    if dataStore and bw then pcall(function() dataStore:SetAsync("td_" .. player.UserId, bw.Value) end) end
+end
+local function setupPlayer(player)
+    selectedType[player] = "cannon"
+    local best = 0
+    if dataStore then pcall(function() local v = dataStore:GetAsync("td_" .. player.UserId); if typeof(v) == "number" then best = v end end) end
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+    local cash = Instance.new("IntValue"); cash.Name = "Cash"; cash.Value = Config.StartingCash; cash.Parent = ls
+    local bw = Instance.new("IntValue"); bw.Name = "Best Wave"; bw.Value = best; bw.Parent = ls
+end
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(function(player) saveBest(player); selectedType[player] = nil end)
+for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+RunService.Heartbeat:Connect(function(dt)
+    for i = #enemies, 1, -1 do
+        local e = enemies[i]
+        local a = waypoints[e.segment]
+        local b = waypoints[e.segment + 1]
+        if not b then
+            baseHealth = math.max(0, baseHealth - e.damage)
+            if e.part then e.part:Destroy() end
+            table.remove(enemies, i)
+        else
+            e.t += (dt * e.speed) / math.max(1, (b - a).Magnitude)
+            if e.t >= 1 then e.segment += 1; e.t = 0 end
+            if e.part then e.part.Position = a:Lerp(b, math.clamp(e.t, 0, 1)) + Vector3.new(0, 1, 0) end
+        end
+    end
+    for _, t in ipairs(towers) do
+        t.cooldown = math.max(0, t.cooldown - dt)
+        if t.cooldown <= 0 and #enemies > 0 then
+            local target, tIdx, bestDist
+            local origin = t.base.Position
+            for i, e in ipairs(enemies) do
+                if e.part then
+                    local d = (e.part.Position - origin).Magnitude
+                    if d <= t.range and (not bestDist or d < bestDist) then target, tIdx, bestDist = e, i, d end
+                end
+            end
+            if target then
+                t.cooldown = t.fireRate
+                t.turret.CFrame = CFrame.lookAt(t.turret.Position, target.part.Position)
+                fireBeam(origin + Vector3.new(0, 4, 0), target.part.Position, t.def.color)
+                local function applyHit(e2, i2)
+                    e2.health -= t.damage
+                    e2.fill.Size = UDim2.new(math.clamp(e2.health / e2.maxHealth, 0, 1), 0, 1, 0)
+                    if e2.health <= 0 then killEnemy(e2, i2, t.owner) end
+                end
+                if t.splash then
+                    local center = target.part.Position
+                    applyHit(target, tIdx)
+                    for i = #enemies, 1, -1 do
+                        local e2 = enemies[i]
+                        if e2 ~= target and e2.part and (e2.part.Position - center).Magnitude <= t.splash then applyHit(e2, i) end
+                    end
+                else
+                    applyHit(target, tIdx)
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        baseHealth = Config.BaseHealth; currentWave = 0; gameOver = false
+        for _, e in ipairs(enemies) do if e.part then e.part:Destroy() end end
+        table.clear(enemies)
+        for _, t in ipairs(towers) do if t.base then t.base:Destroy() end; if t.turret then t.turret:Destroy() end end
+        table.clear(towers)
+        for _, s in ipairs(slots) do s.tower = nil; s.prompt.ActionText = "Build Tower"; s.prompt.ObjectText = "Empty Slot" end
+        for _, p in Players:GetPlayers() do local ls = p:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); if c then c.Value = Config.StartingCash end end
+        phase = "intermission"; broadcast("intermission", 3); task.wait(3)
+        while currentWave < Config.WaveCount and not gameOver do
+            currentWave += 1
+            phase = "intermission"
+            for t = 8, 1, -1 do if gameOver then break end; broadcast("intermission", t); task.wait(1) end
+            phase = "wave"; broadcast("wave", 0)
+            local isBossWave = (currentWave % 5 == 0)
+            local count = 6 + currentWave * 2
+            for n = 1, count do
+                if gameOver or baseHealth <= 0 then break end
+                spawnEnemy(currentWave, false)
+                task.wait(math.max(0.32, 1.1 - currentWave * 0.03))
+            end
+            if isBossWave and not gameOver and baseHealth > 0 then spawnEnemy(currentWave, true) end
+            while #enemies > 0 and baseHealth > 0 do broadcast("wave", 0); task.wait(0.4) end
+            if baseHealth <= 0 then gameOver = true; break end
+            for _, p in Players:GetPlayers() do
+                addCash(p, 40 + currentWave * 5)
+                local ls = p:FindFirstChild("leaderstats"); local bw = ls and ls:FindFirstChild("Best Wave")
+                if bw and currentWave > bw.Value then bw.Value = currentWave end
+            end
+        end
+        if not gameOver and baseHealth > 0 then
+            phase = "victory"; broadcast("victory", 0)
+            for _, p in Players:GetPlayers() do local ls = p:FindFirstChild("leaderstats"); local bw = ls and ls:FindFirstChild("Best Wave"); if bw and Config.WaveCount > bw.Value then bw.Value = Config.WaveCount end; saveBest(p) end
+            task.wait(10)
+        else
+            phase = "gameover"; broadcast("gameover", 0)
+            for _, p in Players:GetPlayers() do saveBest(p) end
+            task.wait(8)
+        end
+    end
+end)
+print("[TowerDefense] " .. Config.Title .. " ready: " .. Config.WaveCount .. " waves, " .. Config.TowerSlots .. " tower slots, theme=" .. Config.MapTheme)
+`;
+  const clientScript = `local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("TdRemotes")
+local TdEvent = remotes:WaitForChild("TdEvent")
+local TdBuild = remotes:WaitForChild("TdBuild")
+
+local gui = Instance.new("ScreenGui"); gui.Name = "TowerDefenseHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 460, 0, 54); top.Position = UDim2.new(0.5, -230, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.1; top.TextColor3 = Color3.fromRGB(225, 240, 255); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Tower Defense"; top.Parent = gui
+local topCorner = Instance.new("UICorner"); topCorner.CornerRadius = UDim.new(0, 10); topCorner.Parent = top
+local cashLabel = Instance.new("TextLabel"); cashLabel.Size = UDim2.new(0, 170, 0, 40); cashLabel.Position = UDim2.new(1, -186, 0, 12); cashLabel.BackgroundColor3 = Color3.fromRGB(20, 40, 28); cashLabel.BackgroundTransparency = 0.1; cashLabel.TextColor3 = Color3.fromRGB(140, 255, 170); cashLabel.TextScaled = true; cashLabel.Font = Enum.Font.GothamBold; cashLabel.Text = "$0"; cashLabel.Parent = gui
+local cashCorner = Instance.new("UICorner"); cashCorner.CornerRadius = UDim.new(0, 10); cashCorner.Parent = cashLabel
+local toast = Instance.new("TextLabel"); toast.Size = UDim2.new(0, 380, 0, 36); toast.Position = UDim2.new(0.5, -190, 0, 74); toast.BackgroundColor3 = Color3.fromRGB(60, 22, 22); toast.BackgroundTransparency = 0.12; toast.TextColor3 = Color3.fromRGB(255, 205, 205); toast.TextScaled = true; toast.Font = Enum.Font.GothamBold; toast.Visible = false; toast.Parent = gui
+local toastCorner = Instance.new("UICorner"); toastCorner.CornerRadius = UDim.new(0, 8); toastCorner.Parent = toast
+
+local towerDefs = {{id="cannon", label="Cannon $50", color=Color3.fromRGB(90,150,230)}, {id="sniper", label="Sniper $120", color=Color3.fromRGB(80,210,140)}, {id="splash", label="Splash $200", color=Color3.fromRGB(240,150,70)}}
+local strokes = {}
+for i, def in ipairs(towerDefs) do
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(0, 152, 0, 50); b.Position = UDim2.new(0.5, -240 + (i - 1) * 162, 1, -66); b.BackgroundColor3 = def.color; b.TextColor3 = Color3.fromRGB(18, 20, 30); b.TextScaled = true; b.Font = Enum.Font.GothamBold; b.Text = def.label; b.Parent = gui
+    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 8); bc.Parent = b
+    local stroke = Instance.new("UIStroke"); stroke.Thickness = (def.id == "cannon") and 3 or 0; stroke.Color = Color3.fromRGB(255, 255, 255); stroke.Parent = b
+    strokes[def.id] = stroke
+    b.Activated:Connect(function()
+        TdBuild:FireServer({action="select", tower=def.id})
+        for id, s in pairs(strokes) do s.Thickness = (id == def.id) and 3 or 0 end
+    end)
+end
+local hint = Instance.new("TextLabel"); hint.Size = UDim2.new(0, 500, 0, 22); hint.Position = UDim2.new(0.5, -250, 1, -92); hint.BackgroundTransparency = 1; hint.TextColor3 = Color3.fromRGB(205, 218, 235); hint.TextScaled = true; hint.Font = Enum.Font.Gotham; hint.Text = "Pick a tower, walk to a glowing slot, hold the prompt. Re-trigger to upgrade."; hint.Parent = gui
+TdBuild:FireServer({action="select", tower="cannon"})
+
+task.spawn(function()
+    while not player:FindFirstChild("leaderstats") do task.wait(0.2) end
+    local c = player.leaderstats:WaitForChild("Cash")
+    local function render() cashLabel.Text = "$" .. c.Value end
+    render(); c.Changed:Connect(render)
+end)
+
+TdEvent.OnClientEvent:Connect(function(p)
+    if p.kind == "state" then
+        if p.phase == "intermission" then top.Text = "Wave " .. p.wave .. "/" .. p.total .. " | Build! " .. p.time .. "s | Base " .. p.baseHp .. "/" .. p.baseMax
+        elseif p.phase == "wave" then top.Text = "Wave " .. p.wave .. "/" .. p.total .. " | Base HP " .. p.baseHp .. "/" .. p.baseMax
+        elseif p.phase == "victory" then top.Text = "VICTORY! Defended all " .. p.total .. " waves!"
+        elseif p.phase == "gameover" then top.Text = "BASE DESTROYED - reached wave " .. p.wave .. ". Restarting..." end
+    elseif p.kind == "toast" then
+        toast.Text = p.text; toast.Visible = true
+        task.delay(2, function() toast.Visible = false end)
+    end
+end)
+`;
+  return {
+    serverScript,
+    additionalScripts: [{ name: 'TowerDefenseHudClient', scriptType: 'LocalScript', container: 'StarterPlayerScripts', source: clientScript }],
+  };
+}
+
 function buildTrainingSimulatorScript(params: GameTemplateParams): MultiScriptResult {
   const simulatorKind = ['mining', 'fighting', 'muscle', 'clicker'].includes(String(params.simulatorKind)) ? String(params.simulatorKind) : 'mining';
   const titleLua = safeLuaString(params.title, simulatorKind === 'fighting' ? 'Fighting Simulator' : simulatorKind === 'muscle' ? 'Muscle Simulator' : simulatorKind === 'clicker' ? 'Clicker Simulator' : 'Mining Simulator');
@@ -12784,6 +13134,8 @@ function trendingShowcaseOptsFor(genreKey: string): TrendingShowcaseOpts {
       return { heading: '📰 NEWS BOARD', origin: { x: -30, y: 8, z: 0 }, layout: 'wall', marker: 'TrendingShowcase_horror_v1', accentColor: [200, 50, 60], category: 'Decals' };
     case 'pvp_arena':
       return { heading: '🏆 SPONSOR BANNERS', origin: { x: 0, y: 28, z: -45 }, layout: 'arc', marker: 'TrendingShowcase_pvp_v1', category: 'Animations' };
+    case 'tower_defense':
+      return { heading: '🏰 TOP DEFENSE GAMES', origin: { x: 118, y: 22, z: 12 }, layout: 'arc', marker: 'TrendingShowcase_td_v1', category: 'Featured' };
     case 'brainrot_sim':
       return { heading: '💯 LIVE TRENDS', origin: { x: 0, y: 14, z: -55 }, layout: 'wall', marker: 'TrendingShowcase_brainrot_v1', accentColor: [255, 220, 80], category: 'Decals' };
     default:
@@ -12817,6 +13169,10 @@ export function buildGameplayScript(params: GameTemplateParams): string | MultiS
   }
   if (params.gameKind === 'pvp_arena') {
     return withCinematicCamera(withTrendingShowcase(buildPvpArenaScript(params), params, trendingShowcaseOptsFor('pvp_arena')));
+  }
+  // Session 399: tower_defense — runtime-owned wave/tower world (like rpg/pvp).
+  if (params.gameKind === 'tower_defense') {
+    return withCinematicCamera(withTrendingShowcase(buildTowerDefenseScript(params), params, trendingShowcaseOptsFor('tower_defense')));
   }
   const simulatorKind = String(params.simulatorKind || '').toLowerCase();
   if (

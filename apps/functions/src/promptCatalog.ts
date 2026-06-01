@@ -99,12 +99,12 @@ export const GAME_GENRE_BRANCHES: GameGenreBranch[] = [
   {
     name: 'Tower Defense',
     aliases: ['tower defense', 'td', 'defense'],
-    turnCount: 5,
-    generationIntent: 'game_generation',
-    requiredRows: ['enemy path', 'towers', 'waves', 'enemy families', 'tower upgrades'],
-    questionFlow: ['theme + defense fantasy', 'path shape + wave count', 'tower roster + upgrades', 'boss/enemy families', 'name + monetization'],
-    quickReplies: ['Castle defense', 'Sci-fi lanes', '15 waves', '4 tower types', 'Boss wave', 'Decide for me'],
-    defaults: ['single winding path', '10 waves', 'basic/splash/slow/sniper towers', 'cash per enemy'],
+    turnCount: 3,
+    generationIntent: 'tower_defense_generation',
+    requiredRows: ['map theme', 'wave count', 'tower slots', 'difficulty', 'base health'],
+    questionFlow: ['map theme + defense fantasy', 'difficulty + wave count', 'name + monetization'],
+    quickReplies: ['Meadow', 'Sci-fi lanes', '15 waves', 'Hard mode', 'Boss waves', 'Decide for me'],
+    defaults: ['single winding path', '15 waves', 'Cannon/Sniper/Splash upgradeable towers', 'cash per kill + boss every 5th wave'],
   },
   {
     name: 'Racing',
@@ -4131,6 +4131,47 @@ Schema:
 }
 If the transcript clearly asks mining, fighting, muscle, or clicker, set simulatorKind accordingly. Otherwise default to pet.
 `.trim(),
+
+  smartInterviewTowerDefense: `
+You are a Roblox tower defense designer. The output must become a playable same-server wave defense game where players place and upgrade towers along a fixed path to stop enemy waves from reaching the base.
+
+FLOW:
+Turn 1: Ask map theme. quickReplies: ["Meadow","Desert","Candy","Sci-fi","Decide for me"]
+Turn 2: Ask difficulty and length. quickReplies: ["Casual","Normal","Hard","15 waves","25 waves","More tower slots","Decide for me"]
+Turn 3: Ask name/monetization, then present GDD and quickReplies ["Generate!","Change theme","Harder waves","Start over"].
+
+GDD fields: title, genre "tower defense", gameKind "tower_defense", mapTheme, waveCount, towerSlots, startingCash, baseHealth, difficulty, summary.
+Also fill the full GDD table fields for chat display: targetPlayer, coreLoop, mapStructure, levels, progression, economy, winCondition, loseCondition, uiHud, audioVfx, socialSystems, dataStore, robloxServices, technicalNotes, safetyNotes, visualStyle, expertiseLevel.
+Only set action "generating" after explicit confirmation.
+`.trim(),
+
+  generateTowerDefenseGdd: `
+Output ONLY valid JSON for a playable same-server Roblox tower defense runtime builder.
+Schema:
+{
+  "title": "<2-5 word tower defense name>",
+  "genre": "tower defense",
+  "gameKind": "tower_defense",
+  "mapTheme": "meadow" | "desert" | "candy" | "scifi",
+  "waveCount": 10 | 15 | 20 | 25,
+  "towerSlots": 6 | 8 | 10,
+  "startingCash": 100 | 150 | 200,
+  "baseHealth": 15 | 20 | 30,
+  "difficulty": "casual" | "normal" | "hard",
+  "systems": ["wave_manager","tower_placement","tower_upgrade","enemy_pathing","base_health","economy","leaderstats"],
+  "coreLoop": "intermission -> place/upgrade towers with cash -> survive enemy wave -> earn cash + bonus -> next wave (boss every 5th)",
+  "progression": ["Cash from kills", "Tower upgrades", "Best Wave record", "Boss waves"],
+  "economy": ["Cash earned per kill", "Tower build/upgrade costs", "End-of-wave bonus"],
+  "uiHud": ["Wave + base HP banner", "Cash counter", "Tower type build buttons"],
+  "dataStore": ["Best Wave"],
+  "robloxServices": ["DataStoreService", "RunService", "ReplicatedStorage RemoteEvents", "ServerScriptService"],
+  "technicalNotes": ["Server-authoritative cash, tower damage, and pathing; enemies are server-moved anchored parts (no client trust)"],
+  "safetyNotes": ["Co-op friendly, Roblox-safe combat", "No gambling rewards"],
+  "monetization": {"gamepasses":[{"name":"Starter Cash","robux":99,"effect":"Larger starting cash"}],"devProducts":[{"name":"Cash Pack","robux":49,"effect":"One-time cash top-up"}]},
+  "summary": "<2 sentence implementation-ready pitch>"
+}
+Three tower types exist (Cannon, Sniper, Splash) — do not invent extra tower types. Boss enemies appear every 5th wave automatically.
+`.trim(),
 } as const;
 
 function metadataSummary(metadata?: PromptContextMetadata): string {
@@ -4176,6 +4217,7 @@ function explicitCategoryIntentFromMetadata(
     case 'pvp':
     case 'pvp_arena': return useGenerationIntent ? 'pvp_arena_generation' : 'pvp_arena_interview';
     case 'simulator': return useGenerationIntent ? 'simulator_generation' : 'simulator_interview';
+    case 'tower_defense': return useGenerationIntent ? 'tower_defense_generation' : 'tower_defense_interview';
     case 'weapons': return useGenerationIntent ? 'weapon_generation' : 'weapon_interview';
     case 'vehicles': return useGenerationIntent ? 'vehicle_generation' : 'vehicle_interview';
     case 'items': return useGenerationIntent ? 'item_generation' : 'item_interview';
@@ -4216,6 +4258,7 @@ function promptIntentFamily(intent: PromptIntent): string {
   if (intent.startsWith('brainrot_sim_')) return 'brainrot_sim';
   if (intent.startsWith('obby_troll_')) return 'obby_troll';
   if (intent.startsWith('pvp_arena_')) return 'pvp_arena';
+  if (intent.startsWith('tower_defense_')) return 'tower_defense';
   if (intent.startsWith('audio_')) return 'audio';
   if (intent.startsWith('animation_')) return 'animation';
   if (intent.startsWith('script_') || intent === 'script_doctor') return 'script';
@@ -4263,6 +4306,7 @@ function chatIntentFromMetadata(metadata?: PromptContextMetadata): PromptIntent 
   if ((metadata as Record<string, unknown>)?.contentSubcategory === 'horror') return 'horror_interview';
   if ((metadata as Record<string, unknown>)?.contentSubcategory === 'pvp' || (metadata as Record<string, unknown>)?.contentSubcategory === 'pvp_arena') return 'pvp_arena_interview';
   if ((metadata as Record<string, unknown>)?.contentSubcategory === 'simulator') return 'simulator_interview';
+  if ((metadata as Record<string, unknown>)?.contentSubcategory === 'tower_defense') return 'tower_defense_interview';
   if (metadata?.contentCategory === 'audio') return 'audio_interview';
   if (metadata?.contentCategory === 'animation') return 'animation_interview';
   if (metadata?.contentCategory === 'script') return 'script_interview';
@@ -4333,6 +4377,7 @@ function generationIntentFromRequest(request: ContentGenerateRequest): PromptInt
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'horror') return 'horror_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp' || (request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp_arena') return 'pvp_arena_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'simulator') return 'simulator_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'tower_defense') return 'tower_defense_generation';
       return request.metadata?.projectKind === 'clone' ? 'remix' : 'game_generation';
     case 'image':
       if (request.metadata?.contentCategory === 'decal_texture') {
@@ -4351,6 +4396,7 @@ function generationIntentFromRequest(request: ContentGenerateRequest): PromptInt
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'horror') return 'horror_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp' || (request.metadata as Record<string, unknown>)?.contentSubcategory === 'pvp_arena') return 'pvp_arena_generation';
       if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'simulator') return 'simulator_generation';
+      if ((request.metadata as Record<string, unknown>)?.contentSubcategory === 'tower_defense') return 'tower_defense_generation';
       return request.metadata?.projectKind === 'clone' ? 'remix' : 'game_generation';
   }
 }
@@ -4373,6 +4419,9 @@ function generationPromptBody(kind: GenerationKind | undefined, intent: PromptIn
   }
   if (intent === 'pvp_arena_generation') {
     return PROMPT_CATALOG.generatePvpArenaGdd;
+  }
+  if (intent === 'tower_defense_generation') {
+    return PROMPT_CATALOG.generateTowerDefenseGdd;
   }
   if (intent === 'simulator_generation') {
     return PROMPT_CATALOG.generateSimulatorVariantGdd;
@@ -4573,6 +4622,10 @@ export function buildChatPrompt(args: {
         return PROMPT_CATALOG.smartInterviewPvpArena;
       case 'pvp_arena_generation':
         return PROMPT_CATALOG.generatePvpArenaGdd;
+      case 'tower_defense_interview':
+        return PROMPT_CATALOG.smartInterviewTowerDefense;
+      case 'tower_defense_generation':
+        return PROMPT_CATALOG.generateTowerDefenseGdd;
       case 'simulator_interview':
         return PROMPT_CATALOG.smartInterviewSimulatorVariant;
       case 'simulator_generation':
@@ -4651,7 +4704,8 @@ You are also a full Roblox expert. If the user asks questions (about development
     intent === 'rpg_interview' || intent === 'rpg_generation'
     || intent === 'horror_interview' || intent === 'horror_generation'
     || intent === 'pvp_arena_interview' || intent === 'pvp_arena_generation'
-    || intent === 'simulator_interview' || intent === 'simulator_generation';
+    || intent === 'simulator_interview' || intent === 'simulator_generation'
+    || intent === 'tower_defense_interview' || intent === 'tower_defense_generation';
   const interviewStateFlags: InterviewStateFlags = {
     isGameInterview,
     isContentInterview,

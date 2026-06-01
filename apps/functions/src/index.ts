@@ -31738,7 +31738,7 @@ async function continueGamePackagePhase2(jobId: string, job: GenerationJob): Pro
   };
 }
 
-const RUNTIME_PLAYABLE_SUBCATEGORIES = new Set(['rpg', 'horror', 'pvp', 'pvp_arena']);
+const RUNTIME_PLAYABLE_SUBCATEGORIES = new Set(['rpg', 'horror', 'pvp', 'pvp_arena', 'tower_defense']);
 const TRAINING_SIMULATOR_KINDS = new Set(['mining', 'fighting', 'muscle', 'clicker']);
 
 function parsePlayableGddJson(text: string, context: string, jobId?: string): Record<string, unknown> {
@@ -33825,6 +33825,27 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       weaponSet: gddEnum(parsedGdd, 'weaponSet', ['sword_bow', 'sword_blaster', 'magic'] as const, 'sword_bow'),
       roundSeconds: gddInt(parsedGdd, 'roundSeconds', 180, 120, 300),
       spawnCount: gddInt(parsedGdd, 'spawnCount', 8, 8, 12),
+      heroAssets: heroAssets ?? [],
+      trendingItems,
+      jobId: job.id,
+    });
+  }
+
+  if (subcategoryForKind === 'tower_defense') {
+    const parsedGdd = parsePlayableGddJson(gameBrief, 'tower_defense', job.id);
+    const titleFromGdd = gddString(parsedGdd, 'title', displayTitle);
+    return buildGameplayScript({
+      title: titleFromGdd,
+      genre: 'tower defense',
+      gameKind: 'tower_defense',
+      systems: ['wave_manager', 'tower_placement', 'tower_upgrade', 'enemy_pathing', 'base_health', 'economy', 'leaderstats', 'datastore'],
+      summary: gddString(parsedGdd, 'summary', gameBrief.slice(0, 300), 300),
+      mapTheme: gddEnum(parsedGdd, 'mapTheme', ['meadow', 'desert', 'candy', 'scifi'] as const, 'meadow'),
+      waveCount: gddInt(parsedGdd, 'waveCount', 15, 5, 40),
+      towerSlots: gddInt(parsedGdd, 'towerSlots', 8, 4, 10),
+      startingCash: gddInt(parsedGdd, 'startingCash', 150, 50, 500),
+      baseHealth: gddInt(parsedGdd, 'baseHealth', 20, 5, 60),
+      difficulty: gddEnum(parsedGdd, 'difficulty', ['casual', 'normal', 'hard'] as const, 'normal'),
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
