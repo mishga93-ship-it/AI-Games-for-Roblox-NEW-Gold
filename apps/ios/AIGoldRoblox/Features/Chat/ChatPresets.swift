@@ -185,6 +185,121 @@ enum ChatPresetsData {
         ChatPreset(title: "12 Spawn Tournament", subtitle: "Larger spawn ring, round manager, server damage", emoji: "🏆"),
     ]
 
+    // MARK: Tower Defense
+
+    static let towerDefense: [ChatPreset] = [
+        ChatPreset(title: "Build a Brainrot Defense", subtitle: "Stop the meme invasion", emoji: "🧠"),
+        ChatPreset(title: "Defend Against Prototype", subtitle: "The experiment escaped", emoji: "🧪"),
+        ChatPreset(title: "Build a FNAF Defense", subtitle: "Survive the animatronic attack", emoji: "🐻"),
+        ChatPreset(title: "Create a Titan War TD", subtitle: "Giants are attacking", emoji: "🗿"),
+        ChatPreset(title: "Generate a 99 Nights Defense", subtitle: "Survive until sunrise", emoji: "🌙"),
+        ChatPreset(title: "Build a Tralalero Defense", subtitle: "Stop the brainrot army", emoji: "🦈"),
+        ChatPreset(title: "Create a Bananita Defense", subtitle: "Tropical chaos is coming", emoji: "🍌"),
+        ChatPreset(title: "Generate an Orangutini TD", subtitle: "Defend the pineapple kingdom", emoji: "🍍"),
+        ChatPreset(title: "Build a Monster School TD", subtitle: "Escape the creature academy", emoji: "🏫"),
+        ChatPreset(title: "Defend MrBeast Island", subtitle: "Win every challenge wave", emoji: "💰"),
+    ]
+
+    // MARK: Roleplay / Town
+
+    static let roleplayTown: [ChatPreset] = [
+        ChatPreset(title: "Build a MrBeast City", subtitle: "Every house wins money", emoji: "🏙️"),
+        ChatPreset(title: "Create a Brainrot Town", subtitle: "Chaos took over everything", emoji: "🤪"),
+        ChatPreset(title: "Build a Millionaire School", subtitle: "Rich kids only allowed", emoji: "🤑"),
+        ChatPreset(title: "Spawn a Monster Neighborhood", subtitle: "Your neighbors aren't human", emoji: "👹"),
+        ChatPreset(title: "Create a Tralalero Kingdom", subtitle: "Rule the brainrot empire", emoji: "🦈"),
+        ChatPreset(title: "Build a Superhero School", subtitle: "Train the next legend", emoji: "🦸"),
+        ChatPreset(title: "Generate a 99 Nights Town", subtitle: "Survive the endless night", emoji: "🌙"),
+        ChatPreset(title: "Create a Secret Agent City", subtitle: "Everyone hides a secret", emoji: "🕵️"),
+        ChatPreset(title: "Build a Giant Pet World", subtitle: "Pets run the town", emoji: "🐾"),
+        ChatPreset(title: "Create a Bananita Island", subtitle: "Tropical brainrot paradise", emoji: "🍌"),
+    ]
+
+    // MARK: Racing (race-themed half of the user's Racing/Parkour list)
+
+    static let racing: [ChatPreset] = [
+        ChatPreset(title: "Race Through Brainrot", subtitle: "Pure meme speed chaos", emoji: "🏎️"),
+        ChatPreset(title: "Race for a Billion Dollars", subtitle: "Every checkpoint gets richer", emoji: "💰"),
+        ChatPreset(title: "Drive the Dragon Highway", subtitle: "Race above the clouds", emoji: "🐉"),
+        ChatPreset(title: "Race Across Lava City", subtitle: "One mistake and you're done", emoji: "🌋"),
+    ]
+
+    // MARK: Parkour (run/climb half of the user's Racing/Parkour list)
+
+    static let parkour: [ChatPreset] = [
+        ChatPreset(title: "Escape the Prototype", subtitle: "Run before it catches you", emoji: "🧪"),
+        ChatPreset(title: "Survive 99 Nights Run", subtitle: "Don't stop moving", emoji: "🌙"),
+        ChatPreset(title: "Escape Freddy's Factory", subtitle: "Animatronics are hunting you", emoji: "🐻"),
+        ChatPreset(title: "Climb the Giant Titan", subtitle: "Parkour on a living monster", emoji: "🗿"),
+        ChatPreset(title: "Escape the Brainrot School", subtitle: "Every class is cursed", emoji: "🏫"),
+        ChatPreset(title: "Parkour in MrBeast Tower", subtitle: "Reach the top, get rich", emoji: "🗼"),
+    ]
+
+    // MARK: Story Game
+
+    static let storyGame: [ChatPreset] = [
+        ChatPreset(title: "Trapped With Prototype", subtitle: "Escape before it's too late", emoji: "🧪"),
+        ChatPreset(title: "The Last Night Guard", subtitle: "Survive until 6 AM", emoji: "🔦"),
+        ChatPreset(title: "Lost in 99 Nights", subtitle: "Nobody survived before", emoji: "🌲"),
+        ChatPreset(title: "Brainrot Apocalypse", subtitle: "The memes became real", emoji: "🧠"),
+        ChatPreset(title: "MrBeast's Final Challenge", subtitle: "Only one player wins", emoji: "💰"),
+        ChatPreset(title: "The Secret Rich Kid School", subtitle: "Something is hidden here", emoji: "🎓"),
+        ChatPreset(title: "Escape Bananita Island", subtitle: "Paradise turned dangerous", emoji: "🍌"),
+        ChatPreset(title: "Orangutini's Kingdom", subtitle: "Save the pineapple throne", emoji: "🍍"),
+        ChatPreset(title: "Monster School Detention", subtitle: "Never stay after class", emoji: "👹"),
+        ChatPreset(title: "The Haunted Sleepover", subtitle: "Your friends vanished overnight", emoji: "👻"),
+    ]
+
+    // MARK: Mini-games Hub
+
+    static let minigameHub: [ChatPreset] = [
+        ChatPreset(title: "MrBeast Challenge Hub", subtitle: "Win or get eliminated", emoji: "💰"),
+        ChatPreset(title: "Brainrot Battle Games", subtitle: "Chaos every single round", emoji: "🤪"),
+        ChatPreset(title: "Survive 99 Nights Arena", subtitle: "Every round gets harder", emoji: "🌙"),
+        ChatPreset(title: "Prototype's Game Show", subtitle: "Escape or get caught", emoji: "🧪"),
+        ChatPreset(title: "FNAF Party Games", subtitle: "Animatronics choose winners", emoji: "🐻"),
+        ChatPreset(title: "No Rules Challenge", subtitle: "Anything can happen", emoji: "🎲"),
+        ChatPreset(title: "Rich Kid Competitions", subtitle: "Only the richest survive", emoji: "🤑"),
+        ChatPreset(title: "Monster School Olympics", subtitle: "Train like a creature", emoji: "🏅"),
+        ChatPreset(title: "Bananita Island Games", subtitle: "Tropical meme tournament", emoji: "🍌"),
+        ChatPreset(title: "Ultimate Obby Showdown", subtitle: "100 mini-games in one", emoji: "🎮"),
+    ]
+
+    // MARK: Survival (survival-themed half of the user's Survival/Fighting list)
+
+    static let survival: [ChatPreset] = [
+        ChatPreset(title: "Survive the Prototype", subtitle: "It learns from every kill", emoji: "🧪"),
+        ChatPreset(title: "99 Nights Survival", subtitle: "The darkness never ends", emoji: "🌙"),
+        ChatPreset(title: "Monster School Survival", subtitle: "Students vs creatures", emoji: "🏫"),
+        ChatPreset(title: "Bananita Island Survival", subtitle: "Paradise became dangerous", emoji: "🍌"),
+        ChatPreset(title: "The Hungry Worm Hunt", subtitle: "Run before it grows", emoji: "🪱"),
+    ]
+
+    // MARK: Fighting (combat-themed half of the user's Survival/Fighting list)
+
+    static let fighting: [ChatPreset] = [
+        ChatPreset(title: "Brainrot Wars", subtitle: "Meme factions at war", emoji: "⚔️"),
+        ChatPreset(title: "Fight the Animatronics", subtitle: "Every night gets worse", emoji: "🐻"),
+        ChatPreset(title: "MrBeast Battle Royale", subtitle: "Last player gets everything", emoji: "💰"),
+        ChatPreset(title: "Titan Arena", subtitle: "Giants want you dead", emoji: "🗿"),
+        ChatPreset(title: "Tralalero Boss Fight", subtitle: "Save the kingdom", emoji: "🦈"),
+    ]
+
+    // MARK: Custom
+
+    static let customGame: [ChatPreset] = [
+        ChatPreset(title: "Mix Everything Together", subtitle: "AI chooses complete chaos", emoji: "🎲"),
+        ChatPreset(title: "Generate a Viral Hit", subtitle: "Build the next Roblox trend", emoji: "🔥"),
+        ChatPreset(title: "Create My Dream Game", subtitle: "Anything you imagine", emoji: "✨"),
+        ChatPreset(title: "Random Madness Generator", subtitle: "Nothing makes sense here", emoji: "🌀"),
+        ChatPreset(title: "Build a Brainrot Universe", subtitle: "Memes control reality", emoji: "🧠"),
+        ChatPreset(title: "Generate a MrBeast Challenge", subtitle: "Bigger than ever before", emoji: "💰"),
+        ChatPreset(title: "Create a Prototype World", subtitle: "Horror meets adventure", emoji: "🧪"),
+        ChatPreset(title: "Build a No Rules Game", subtitle: "Anything can happen", emoji: "🎮"),
+        ChatPreset(title: "Generate Infinite Modes", subtitle: "New gameplay every round", emoji: "♾️"),
+        ChatPreset(title: "Create a Roblox Legend", subtitle: "The next big thing", emoji: "👑"),
+    ]
+
     // MARK: Simulator
 
     static let simulator: [ChatPreset] = [
@@ -546,19 +661,83 @@ enum ChatPresetsData {
 
     // MARK: Furniture & Props
 
+    // Release 3 prop-pack themes (source: "AI Games for Roblox - Presets.md"
+    // → "# 3 релиз" / Furniture & Props). Each chip is a themed decor set for
+    // filling buildings & maps. NOTE: the furniture pipeline generates ONE prop
+    // per run (furnitureType chair/table/lamp/…), so a "pack" chip seeds a
+    // themed single prop — true multi-prop set generation is a separate feature.
+
     static let furniture: [ChatPreset] = [
-        ChatPreset(title: "Craft Cozy Café Chair", subtitle: "Bentwood seat, warm oak, tiny cushion", emoji: "☕"),
-        ChatPreset(title: "Make Brainrot Meme Sign", subtitle: "Cursed slogan board with neon trim", emoji: "🤪"),
-        ChatPreset(title: "Build Y2K Desk Lamp", subtitle: "Chrome base, pink shade, soft glow", emoji: "💿"),
-        ChatPreset(title: "Spawn Anime Idol Plush", subtitle: "Cute shelf decor with pastel fabric", emoji: "🩷"),
-        ChatPreset(title: "Forge Royal Throne", subtitle: "Gold frame, velvet seat, crown details", emoji: "👑"),
-        ChatPreset(title: "Build Admin Server Rack", subtitle: "Black tower with glowing status lights", emoji: "🖥️"),
-        ChatPreset(title: "Make VIP Velvet Sofa", subtitle: "Single luxury couch with gold legs", emoji: "🍾"),
-        ChatPreset(title: "Create Cursed Noob TV", subtitle: "Glitched screen, green casing, troll vibe", emoji: "🟢"),
-        ChatPreset(title: "Build Skibidi Toilet Throne", subtitle: "Single chaotic prop with ceramic shine", emoji: "🚽"),
-        ChatPreset(title: "Generate AAA Living Room Sofa", subtitle: "Clean PBR fabric, modern silhouette", emoji: "🛋️"),
-        ChatPreset(title: "Craft Luxury Mall Showcase", subtitle: "Glass display case with premium glow", emoji: "🛍️"),
-        ChatPreset(title: "Build Cinematic Studio Light", subtitle: "Tripod lamp, barn doors, warm beam", emoji: "🎬"),
+        ChatPreset(title: "Prototype Lab Props", subtitle: "Abandoned experiment furniture", emoji: "🧪"),
+        ChatPreset(title: "Freddy's Pizza Pack", subtitle: "Animatronic restaurant decor", emoji: "🍕"),
+        ChatPreset(title: "Brainrot Furniture Pack", subtitle: "Meme decor from another universe", emoji: "🤪"),
+        ChatPreset(title: "Bananita Decor Set", subtitle: "Tropical meme furniture", emoji: "🍌"),
+        ChatPreset(title: "Orangutini Collection", subtitle: "Pineapple kingdom essentials", emoji: "🍍"),
+        ChatPreset(title: "99 Nights Camp Pack", subtitle: "Survival base essentials", emoji: "🏕️"),
+        ChatPreset(title: "MrBeast Challenge Props", subtitle: "Viral challenge decorations", emoji: "💰"),
+        ChatPreset(title: "Cyberpunk Street Props", subtitle: "Neon city decorations", emoji: "🌃"),
+        ChatPreset(title: "Monster School Furniture", subtitle: "Classroom for creatures", emoji: "🏫"),
+        ChatPreset(title: "Rich Kid Decor Pack", subtitle: "Luxury lifestyle assets", emoji: "💎"),
+        ChatPreset(title: "Horror Motel Props", subtitle: "Creepy abandoned furniture", emoji: "🛏️"),
+        ChatPreset(title: "Gamer Room Assets", subtitle: "Ultimate streaming setup", emoji: "🎮"),
+    ]
+
+    // MARK: Clothing & Outfits (Release 3)
+    //
+    // Classic 2D clothing + layered outfits for the Roblox Marketplace.
+    // Source: "AI Games for Roblox - Presets.md" → "# 3 релиз" / Clothing.
+
+    static let clothing: [ChatPreset] = [
+        ChatPreset(title: "Dress Like Prototype", subtitle: "Poppy Playtime final evolution", emoji: "🧪"),
+        ChatPreset(title: "Wear Tung Tung Style", subtitle: "Viral brainrot meme outfit", emoji: "🪵"),
+        ChatPreset(title: "Become Homelander", subtitle: "Ultimate supervillain drip", emoji: "🦸"),
+        ChatPreset(title: "Join Freddy Crew", subtitle: "Animatronic horror fashion", emoji: "🐻"),
+        ChatPreset(title: "Go Skibidi Mode", subtitle: "Brainrot outfit collection", emoji: "🚽"),
+        ChatPreset(title: "Wear Bananita Dolfinita", subtitle: "Tropical meme fashion pack", emoji: "🍌"),
+        ChatPreset(title: "Dress Like MrBeast", subtitle: "Viral creator luxury fit", emoji: "💸"),
+        ChatPreset(title: "Wear Dark Academia", subtitle: "Elite aesthetic wardrobe", emoji: "📚"),
+        ChatPreset(title: "Wear Orangutini Ananasini", subtitle: "Legendary fruit monkey drip", emoji: "🍍"),
+        ChatPreset(title: "Create Rich Girl Fits", subtitle: "Luxury TikTok fashion pack", emoji: "💅"),
+    ]
+
+    // MARK: Vehicles (Release 3)
+    //
+    // Cars, bikes, boats, planes, tanks — drive script + passengers + sounds.
+    // Source: "AI Games for Roblox - Presets.md" → "# 3 релиз" / Vehicles.
+
+    static let vehicles: [ChatPreset] = [
+        ChatPreset(title: "Build a Flying Supercar", subtitle: "Impossible future transport", emoji: "🏎️"),
+        ChatPreset(title: "Generate a Brainrot Car", subtitle: "Absolute meme transportation", emoji: "🤪"),
+        ChatPreset(title: "Drive a Bugatti Empire", subtitle: "Billionaire lifestyle unlocked", emoji: "💎"),
+        ChatPreset(title: "Build a Titan Mech", subtitle: "Giant robot battle machine", emoji: "🤖"),
+        ChatPreset(title: "Create a MrBeast Challenge Bus", subtitle: "Viral creator mega vehicle", emoji: "🚌"),
+        ChatPreset(title: "Spawn a Skibidi Tank", subtitle: "Meme warfare unleashed", emoji: "🚽"),
+        ChatPreset(title: "Build a Batmobile X", subtitle: "Dark hero super vehicle", emoji: "🦇"),
+        ChatPreset(title: "Create a Shark Submarine", subtitle: "Ocean predator machine", emoji: "🦈"),
+        ChatPreset(title: "Generate a Dragon Bike", subtitle: "Ride the legendary beast", emoji: "🐉"),
+        ChatPreset(title: "Build a Cyber Drift Beast", subtitle: "Neon racing domination", emoji: "💠"),
+        ChatPreset(title: "Create a Billionaire Yacht", subtitle: "Floating luxury kingdom", emoji: "🛥️"),
+        ChatPreset(title: "Spawn a Monster Crocodile Truck", subtitle: "Chaos on giant wheels", emoji: "🐊"),
+    ]
+
+    // MARK: Pets (Release 3)
+    //
+    // Standalone pet assets — model + follow animation + leveling + rarity.
+    // Source: "AI Games for Roblox - Presets.md" → "# 3 релиз" / Pets.
+
+    static let pets: [ChatPreset] = [
+        ChatPreset(title: "Hatch a Brainrot Pet", subtitle: "Viral companion from chaos", emoji: "🧠"),
+        ChatPreset(title: "Summon Tralalero Tralala", subtitle: "Legendary Italian brainrot pet", emoji: "🦈"),
+        ChatPreset(title: "Hatch Bananita Dolfinita", subtitle: "Chaos from the deep sea", emoji: "🍌"),
+        ChatPreset(title: "Summon Orangutini Ananasini", subtitle: "Tropical meme evolution", emoji: "🍍"),
+        ChatPreset(title: "Create a Hungry Worm", subtitle: "Always hungry, always growing", emoji: "🪱"),
+        ChatPreset(title: "Spawn a 99 Nights Owl", subtitle: "Survivor's legendary companion", emoji: "🦉"),
+        ChatPreset(title: "Summon a Galaxy Dragon", subtitle: "Cosmic legendary companion", emoji: "🐉"),
+        ChatPreset(title: "Spawn a Shadow Wolf", subtitle: "Ultimate dark companion", emoji: "🐺"),
+        ChatPreset(title: "Create a MrBeast Beast", subtitle: "Viral challenge companion", emoji: "💸"),
+        ChatPreset(title: "Summon a Meme Raptor", subtitle: "Internet chaos unleashed", emoji: "🦖"),
+        ChatPreset(title: "Spawn a Mecha T-Rex", subtitle: "Robotic dinosaur evolution", emoji: "🦾"),
+        ChatPreset(title: "Hatch a God Pet", subtitle: "Beyond mythical rarity", emoji: "👑"),
     ]
 
     // MARK: - Lookup
@@ -577,6 +756,15 @@ enum ChatPresetsData {
         case "rpg": return rpg
         case "horror": return horrorGame
         case "pvp": return pvpArena
+        case "tower_defense": return towerDefense
+        case "roleplay_town": return roleplayTown
+        case "racing": return racing
+        case "parkour": return parkour
+        case "story_game": return storyGame
+        case "minigame_hub": return minigameHub
+        case "survival": return survival
+        case "fighting": return fighting
+        case "custom": return customGame
         case "brainrot_sim": return brainrotSim
         case "disaster_spawner": return disasterSpawner
         case "voice_aura": return voiceAura
@@ -594,6 +782,9 @@ enum ChatPresetsData {
         case "items": return items
         case "scripts": return scripts
         case "furniture": return furniture
+        case "clothing": return clothing
+        case "vehicles": return vehicles
+        case "pets": return pets
         default: break
         }
         // For games without a specific subcategory, show Obby presets as the most popular game type

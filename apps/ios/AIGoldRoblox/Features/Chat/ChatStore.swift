@@ -140,11 +140,9 @@ final class ChatStore: ObservableObject {
     /// Rich preset cards shown on welcome message. Nil if no presets for this category.
     var welcomePresets: [ChatPreset]? {
         guard presetsVisible else { return nil }
-        // Smart Interview must start as a natural chat, not as a category card menu.
-        // Presets remain available in Quick Generate, where choosing a template is expected.
-        if preferredFlow == .smartInterview {
-            return nil
-        }
+        // Presets show in Smart Interview too: Forge launches every category in this
+        // flow, so gating them out here would hide presets almost everywhere. Tapping
+        // a preset still hands the turn back to the step-by-step interview.
         return ChatPresetsData.presets(forSubcategory: contentSubcategory, projectKind: projectKind.rawValue)
     }
 

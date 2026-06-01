@@ -18,6 +18,16 @@
 
 ## Выполненные задачи
 
+### 🎴 [Пресеты «3 релиз» + жанровые пресеты + видимость пресетов в Smart Interview] (2026-06-01, сессия 401)
+- **Задача**: добавить пресеты из «AI Games for Roblox - Presets.md» (раздел «# 3 релиз») в функционал; затем пользователь спросил, почему пресеты не видны на экранах жанров, и прислал полные жанровые списки (по 10).
+- **Что сделано** ([ChatPresets.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatPresets.swift)):
+  - Добавлены массивы `clothing` (10), `vehicles` (12), `pets` (12) + lookup-case'ы — раньше падали в `nil`.
+  - `furniture` заменён на исправленный пользователем список из 12 prop-pack'ов (Prototype Lab Props … Gamer Room Assets). Ограничение: пайплайн single-prop, «pack»-чип = один тематический пропс.
+  - **Жанровые пресеты**: 9 массивов (towerDefense/roleplayTown/racing/parkour/storyGame/minigameHub/survival/fighting/customGame) — placeholder'ы сессии 399 (по 4) заменены на 70 чипов пользователя (вирусные темы). Combined-списки «Racing,Parkour» и «Survival,Fighting» разложены по теме (Racing 4 / Parkour 6 / Survival 5 / Fighting 5), остальные по 10.
+- **Видимость пресетов (вариант A пользователя)** ([ChatStore.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatStore.swift) `welcomePresets`): убран guard `preferredFlow == .smartInterview → nil`. Forge открывает ВСЕ категории в Smart Interview, поэтому guard прятал пресеты почти везде (и жанры 399, и 3-релиз). **Это повтор решения сессии 287** (см. ниже, line ~1049) — guard вернулся как регрессия, флип-флоп 276↔287. Теперь пресеты видны в обоих флоу; тап по-прежнему передаёт ход в пошаговое интервью; бэкенд не тронут.
+- **Проверка**: `swiftc -parse` exit 0 (оба файла). iOS build не гонял через CLI — Xcode пользователя открыт (§0.7, `build.db` lock).
+- **Статус**: закоммичено хирургически (§0.7). Закоммичены: `ChatPresets.swift` (целиком), `docs/PROGRESS.md`, и из `ChatStore.swift` — ТОЛЬКО hunk `welcomePresets` (первый из 12; остальные 11 — параллельная работа сессий 391/396/399, оставлены в working tree нетронутыми). Push в origin — отдельной командой пользователя (§0.5 п.7).
+
 ### 🎮 [Генерация игр — жанры] Остальные 8 жанров: полные детерминированные билдеры (2026-06-01, сессия 399)
 - **Задача**: после Tower Defense реализовать оставшиеся жанры — Roleplay/Town, Racing, Parkour, Story Game, Mini-games Hub, Survival, Fighting, Custom. Подход «по одному, полный билдер» (каждый = качественный детерминированный билдер как у RPG/Horror/PvP).
 - **Что сделано** (каждый жанр — полный 5-слойный паттерн):
