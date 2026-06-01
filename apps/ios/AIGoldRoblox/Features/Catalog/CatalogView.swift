@@ -736,6 +736,7 @@ struct CommunityPostDetailView: View {
     // CommunityPostDetailView.body (hero gallery + engagement + actions + downloads
     // + tags + comment tree).
     @State private var shouldFocusComposer: Bool = false
+    @State private var showRemixChat = false
 
     var body: some View {
         // ScrollViewReader wraps the ScrollView so that when the composer's
@@ -827,6 +828,15 @@ struct CommunityPostDetailView: View {
                                     tint: .accentPrimary
                                 ) {
                                     toggleSaveOptimistic()
+                                }
+
+                                actionButton(
+                                    icon: "shuffle",
+                                    label: "Remix",
+                                    isActive: false,
+                                    tint: .accentTeal
+                                ) {
+                                    showRemixChat = true
                                 }
 
                                 if let author = detail.author, author.id != detail.authorId {
@@ -958,6 +968,17 @@ struct CommunityPostDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
+            }
+        }
+        .fullScreenCover(isPresented: $showRemixChat) {
+            NavigationStack {
+                ChatView(
+                    projectKind: .clone,
+                    preferredFlow: .smartInterview,
+                    entryMode: .text,
+                    welcomeContext: "'\(post.title)' by \(post.authorName)" + (post.description.isEmpty ? "" : " — \(post.description.prefix(240))"),
+                    title: "Remix: \(post.title)"
+                )
             }
         }
         .task {
