@@ -11062,27 +11062,34 @@ local function makeTree(parent, pos, scale, kind, trunkColor, leafColor)
     leafColor = leafColor or Color3.fromRGB(74, 134, 70)
     local m = Instance.new("Model"); m.Name = "Tree"; m.Parent = parent
     local th = 12 * scale
-    local trunk = _vpart(m, "Trunk", Enum.PartType.Cylinder, Vector3.new(2.2 * scale, th, 2.2 * scale), CFrame.new(pos + Vector3.new(0, th / 2, 0)) * CFrame.Angles(0, 0, math.rad(90)), trunkColor, Enum.Material.Wood, true)
+    -- Roblox Cylinder length runs along its LOCAL X axis, so we size X = height
+    -- and rotate X->Y (Z by 90deg) to stand the trunk upright. (Bug fix: trunk
+    -- was a flat disc, leaving foliage floating above a stump.)
+    local trunk = _vpart(m, "Trunk", Enum.PartType.Cylinder, Vector3.new(th, 2.6 * scale, 2.6 * scale), CFrame.new(pos + Vector3.new(0, th / 2, 0)) * CFrame.Angles(0, 0, math.rad(90)), trunkColor, Enum.Material.Wood, true)
     if kind == "palm" then
-        for i = 1, 6 do
-            local a = math.rad(i * 60)
-            _vpart(m, "Frond", nil, Vector3.new(11 * scale, 0.7 * scale, 3.2 * scale), CFrame.new(pos + Vector3.new(0, th, 0)) * CFrame.Angles(0, a, math.rad(-20)) * CFrame.new(5.2 * scale, 0, 0), leafColor, Enum.Material.Grass)
+        for i = 1, 7 do
+            local a = math.rad(i * (360 / 7))
+            _vpart(m, "Frond" .. i, nil, Vector3.new(12 * scale, 0.8 * scale, 3.4 * scale), CFrame.new(pos + Vector3.new(0, th, 0)) * CFrame.Angles(0, a, math.rad(-26)) * CFrame.new(5.6 * scale, 0, 0), leafColor, Enum.Material.Grass)
         end
-        _vpart(m, "Coco", Enum.PartType.Ball, Vector3.new(2 * scale, 2 * scale, 2 * scale), CFrame.new(pos + Vector3.new(0, th - 1, 0)), Color3.fromRGB(110, 80, 50), Enum.Material.SmoothPlastic)
+        for i = 1, 3 do
+            _vpart(m, "Coco" .. i, Enum.PartType.Ball, Vector3.new(1.8 * scale, 1.8 * scale, 1.8 * scale), CFrame.new(pos + Vector3.new(math.cos(i * 2.1) * 1.4 * scale, th - 1.6 * scale, math.sin(i * 2.1) * 1.4 * scale)), Color3.fromRGB(96, 64, 40), Enum.Material.SmoothPlastic)
+        end
     elseif kind == "pine" then
-        for i = 0, 2 do
-            local s = (10 - i * 2.4) * scale
-            _vpart(m, "Canopy" .. i, nil, Vector3.new(s, 5 * scale, s), CFrame.new(pos + Vector3.new(0, th - 1 + i * 3.6 * scale, 0)) * CFrame.Angles(0, math.rad(45), 0), leafColor, Enum.Material.Grass)
+        for i = 0, 3 do
+            local s = (11 - i * 2.3) * scale
+            _vpart(m, "Canopy" .. i, nil, Vector3.new(s, 4.6 * scale, s), CFrame.new(pos + Vector3.new(0, th - 2 * scale + i * 3 * scale, 0)) * CFrame.Angles(0, math.rad(45), 0), leafColor:Lerp(Color3.new(0, 0, 0), i * 0.05), Enum.Material.Grass)
         end
     elseif kind == "dead" then
-        for i = 1, 3 do
-            _vpart(m, "Branch" .. i, Enum.PartType.Cylinder, Vector3.new(0.8 * scale, 6 * scale, 0.8 * scale), CFrame.new(pos + Vector3.new(0, th, 0)) * CFrame.Angles(0, math.rad(i * 120), math.rad(40)) * CFrame.new(0, 3 * scale, 0), trunkColor, Enum.Material.Wood)
+        for i = 1, 4 do
+            _vpart(m, "Branch" .. i, Enum.PartType.Cylinder, Vector3.new(6 * scale, 0.9 * scale, 0.9 * scale), CFrame.new(pos + Vector3.new(0, th - 1.5 * scale - i * 0.8, 0)) * CFrame.Angles(0, math.rad(i * 95), math.rad(46)) * CFrame.new(3 * scale, 0, 0), trunkColor, Enum.Material.Wood)
         end
     else
-        for i = 1, 3 do
-            local off = Vector3.new(math.random(-3, 3) * scale, th + math.random(-1, 3) * scale, math.random(-3, 3) * scale)
-            _vpart(m, "Leaf" .. i, Enum.PartType.Ball, Vector3.new(9 * scale, 8 * scale, 9 * scale), CFrame.new(pos + off), leafColor, Enum.Material.Grass)
+        for i = 1, 5 do
+            local a = math.rad(i * 72)
+            local off = Vector3.new(math.cos(a) * 3 * scale, th + math.sin(i) * 2 * scale, math.sin(a) * 3 * scale)
+            _vpart(m, "Leaf" .. i, Enum.PartType.Ball, Vector3.new(8.6 * scale, 8 * scale, 8.6 * scale), CFrame.new(pos + off), leafColor:Lerp(Color3.new(1, 1, 1), (i % 2) * 0.06), Enum.Material.Grass)
         end
+        _vpart(m, "LeafTop", Enum.PartType.Ball, Vector3.new(7 * scale, 7 * scale, 7 * scale), CFrame.new(pos + Vector3.new(0, th + 4 * scale, 0)), leafColor, Enum.Material.Grass)
     end
     return m, trunk
 end
