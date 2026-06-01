@@ -1455,6 +1455,15 @@ private extension ForgeView {
                     : "Upload your .lua (📎) or paste code and describe the problem by voice/text. AI finds the root cause, rewrites the script, and suggests what to add or remove.",
                 kind: .fix,
                 tags: ["new", "ai"]
+            ),
+            ProjectOption(
+                id: "game_analyst",
+                title: "AI Game Analyst",
+                details: isRussianInterface
+                    ? "Загрузи описание игры (📎) или опиши её голосом/текстом — AI разберёт ретеншн, луп, монетизацию, онбординг и предложит конкретные улучшения."
+                    : "Upload a game description (📎) or describe it by voice/text — AI audits retention, loop, monetization, onboarding, and suggests concrete improvements.",
+                kind: .analyze,
+                tags: ["new", "ai"]
             )
         ]
     }
