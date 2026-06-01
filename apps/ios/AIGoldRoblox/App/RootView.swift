@@ -51,6 +51,8 @@ struct RootView: View {
         // Bug 22: attach a window-level tap gesture that dismisses the keyboard on
         // every screen/sheet/modal. Idempotent — no duplicate recognizers.
         .installGlobalKeyboardDismiss()
+        // App palette is light-only — force light so system text doesn't go white + vanish in dark mode.
+        .preferredColorScheme(.light)
         .task {
             ChallengeRetentionNotifications.recordAppOpened()
             appState.startLaunchFlowIfNeeded()
