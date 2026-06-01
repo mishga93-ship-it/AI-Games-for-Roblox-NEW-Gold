@@ -9504,6 +9504,16 @@ local spawn = Instance.new("SpawnLocation")
 spawn.Name = "RPGSpawn"; spawn.Size = Vector3.new(14, 1, 14); spawn.Position = Vector3.new(0, 2, -32); spawn.Anchored = true
 spawn.Color = Color3.fromRGB(90, 180, 255); spawn.Material = Enum.Material.Neon; spawn.Parent = world
 
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = Color3.fromRGB(196, 184, 150), tint = Color3.fromRGB(252, 250, 244), haze = 1.6})
+for i = 1, 16 do
+    local a = math.rad(i * 22.5 + 11); local r = 52 + (i % 3) * 10
+    local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
+    if p.Z < 16 then
+        if i % 4 == 0 then makeRock(world, p, 0.7, Color3.fromRGB(128, 124, 120)) else makeTree(world, p, 0.9, "round", Color3.fromRGB(110, 78, 50), Color3.fromRGB(78, 140, 70)) end
+    end
+end
+
 local questNpc = makePart("QuestGiver", Vector3.new(4, 7, 4), Vector3.new(-15, 4, -18), Color3.fromRGB(245, 210, 120), Enum.Material.SmoothPlastic, world)
 local questPrompt = Instance.new("ProximityPrompt")
 questPrompt.ActionText = "Talk"; questPrompt.ObjectText = "Quest Giver"; questPrompt.MaxActivationDistance = 14; questPrompt.Parent = questNpc
@@ -9658,6 +9668,9 @@ local function part(name, size, pos, color, mat, collide)
     local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat; p.CanCollide = collide ~= false; p.Parent = world; return p
 end
 part("HorrorGround", Vector3.new(170, 1, 170), Vector3.new(0, 0, 20), Color3.fromRGB(28, 25, 32), Enum.Material.Slate)
+${worldVisualsLua()}
+setupAtmosphere({clockTime = 0, brightness = 0.9, ambient = Color3.fromRGB(30, 30, 40), outdoor = Color3.fromRGB(34, 36, 48), atmoColor = Color3.fromRGB(44, 46, 60), tint = Color3.fromRGB(152, 164, 190), haze = 3.5, density = 0.5, bloom = 0.35, cloudCover = 0.85})
+do local _L = game:GetService("Lighting"); _L.FogEnd = 175; _L.FogColor = Color3.fromRGB(20, 20, 28) end
 for i = 1, Config.DoorCount do
     part("Hall_" .. i, Vector3.new(26, 1, 38), Vector3.new((i - 3) * 30, 1, i * 24 - 45), Color3.fromRGB(45, 42, 50), Enum.Material.Concrete)
     part("WallA_" .. i, Vector3.new(28, 14, 2), Vector3.new((i - 3) * 30, 7, i * 24 - 26), Color3.fromRGB(25, 23, 28), Enum.Material.Brick)
@@ -9788,6 +9801,8 @@ local function part(name, size, pos, color, mat)
     local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat; p.Parent = world; return p
 end
 part("ArenaFloor", Vector3.new(130, 1, 130), Vector3.new(0, 0, 0), Color3.fromRGB(55, 58, 66), Enum.Material.Slate)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = Color3.fromRGB(150, 158, 178), tint = Color3.fromRGB(250, 250, 252), haze = 1.5, bloom = 0.7})
 for i = 1, 12 do
     local a = i / 12 * math.pi * 2
     part("ArenaPillar_" .. i, Vector3.new(4, 18, 4), Vector3.new(math.cos(a) * 58, 9, math.sin(a) * 58), Color3.fromRGB(110, 105, 95), Enum.Material.Concrete)
@@ -11898,6 +11913,12 @@ local function part(name, size, pos, color, mat)
     local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat; p.Parent = world; return p
 end
 part("SimulatorBase", Vector3.new(170, 1, 130), Vector3.new(0, 0, 10), Color3.fromRGB(60, 90, 75), Enum.Material.Grass)
+${worldVisualsLua()}
+setupAtmosphere({atmoColor = Color3.fromRGB(198, 188, 158), tint = Color3.fromRGB(252, 250, 246), haze = 1.5})
+for i = 1, 12 do
+    local a = math.rad(i * 30 + 15); local p = Vector3.new(math.cos(a) * (74 + (i % 2) * 8), 0.5, 10 + math.sin(a) * (58 + (i % 2) * 6))
+    if i % 4 == 0 then makeRock(world, p, 0.7, Color3.fromRGB(126, 122, 118)) else makeTree(world, p, 0.85, "round", Color3.fromRGB(110, 78, 50), Color3.fromRGB(78, 140, 70)) end
+end
 local spawn = Instance.new("SpawnLocation"); spawn.Name = "SimulatorSpawn"; spawn.Size = Vector3.new(14, 1, 14); spawn.Position = Vector3.new(0, 2, -48); spawn.Anchored = true; spawn.Color = Color3.fromRGB(80, 180, 255); spawn.Material = Enum.Material.Neon; spawn.Parent = world
 for i = 1, 4 do
     local z = -10 + i * 24
