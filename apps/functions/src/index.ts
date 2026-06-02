@@ -2856,7 +2856,23 @@ app.post('/api/content/jobs/:jobId/approve-concept', async (req: AuthedRequest, 
         // Pet regen also uses the sculpted-realism 'pet' context so the
         // new image matches the look of the original Stage-1 concept (and
         // doesn't suddenly snap back to the Roblox-toon cartoon style).
-        const regenContext: 'character' | 'pet' = isPetJob ? 'pet' : 'character';
+        // 2026-06-02: layered clothing regen must ALSO use the garment-only
+        // 'garment' context. The FIRST concept is garment-only, but Regenerate was
+        // hardcoded to 'character' → every regenerated outfit came back on a
+        // person/mannequin. Mirror the isLayeredClothing detection from
+        // processCharacter3DJob so regen matches the first concept.
+        const explicitClothingTypeRegen = typeof job.metadata?.clothingType === 'string'
+          ? job.metadata.clothingType
+          : undefined;
+        const isLayeredClothingRegen =
+          (job.kind === 'clothing_3d' && explicitClothingTypeRegen !== 't_shirt'
+            && !(typeof explicitClothingTypeRegen === 'string' && explicitClothingTypeRegen.startsWith('classic_')))
+          || (typeof job.metadata?.clothingMode === 'string' && job.metadata.clothingMode === 'layered_3d'
+            && explicitClothingTypeRegen !== 't_shirt'
+            && !(typeof explicitClothingTypeRegen === 'string' && explicitClothingTypeRegen.startsWith('classic_')));
+        const regenContext: 'character' | 'pet' | 'garment' = isPetJob
+          ? 'pet'
+          : isLayeredClothingRegen ? 'garment' : 'character';
         newConceptUrl = await generatePreviewTexture(alignedPrompt, previewStyle, regenContext);
       } catch (err) {
         logger.warn('Concept regeneration failed', { error: errorMessage(err) });
