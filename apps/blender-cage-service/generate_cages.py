@@ -148,42 +148,44 @@ def _import_garment(glb_path: str, target_name: str) -> bpy.types.Object:
     # sits at the cage's chest height (Y ≈ +1.0, the cage spans Y=-3..+2.5).
     bbox = [garment.matrix_world @ mathutils.Vector(corner) for corner in garment.bound_box]
     xs = [v.x for v in bbox]; ys = [v.y for v in bbox]; zs = [v.z for v in bbox]
-    cur_y_dim = max(ys) - min(ys)
-    # 2026-05-22 (session 377) — user reported "она ему немного высока":
-    # the shirt's collar reached the chin and the hem hung below the hips
-    # on a stock R15 Mannequin. Root cause: we were scaling by LONGEST
-    # dimension (2.6 studs) and aligning to a "chest" Y=+1.0 estimate that
-    # didn't match the actual cage template's torso center.
+    x_dim = max(xs) - min(xs)
+    y_dim = max(ys) - min(ys)
+    z_dim = max(zs) - min(zs)
+    cur_max_dim = max(x_dim, y_dim, z_dim)
+    # 2026-06-02 (session 403) — scale by the LONGEST axis, NOT by Y.
     #
-    # New strategy:
-    #   1. Scale by HEIGHT (Y axis) specifically — every clothing item is
-    #      authored body-upright (after the -90°X rotation), so Y is always
-    #      the vertical span and the X/Z proportions scale naturally with it.
-    #   2. Target = TORSO_TARGET_Y studs, sized to R15 UpperTorso (≈1.6 studs)
-    #      with a small overshoot so the collar reaches the neck seam without
-    #      clipping above it.
-    #   3. Position so the TOP edge of the garment sits at GARMENT_TOP_Y in
-    #      the cage template's local Y. That keeps the collar at neck height
-    #      regardless of garment proportions (long jacket vs cropped tee).
-    TORSO_TARGET_Y = 1.8   # studs — R15 UpperTorso 1.6 + 0.2 collar/seam slack
-    GARMENT_TOP_Y = 1.5    # studs — Y of cage neck-seam in template space
-    if cur_y_dim > 0.001:
-        scale = TORSO_TARGET_Y / cur_y_dim
-        scale_mat = mathutils.Matrix.Scale(scale, 4)
-        garment.data.transform(scale_mat)
-        print(f"[generate_cages] auto-rescale: Y dim {cur_y_dim:.3f} → "
-              f"{cur_y_dim * scale:.3f} studs (scale ×{scale:.4f})")
-    # Recompute bbox AFTER scale and align the TOP edge to the cage neck Y.
+    # Session 377 scaled by the Y (height) axis on the assumption that every
+    # garment is upright (Y-tall) after the glTF import + -90°X rotation. But
+    # Meshy/Tripo output orientation is NOT guaranteed: a real export
+    # ("Fruit_Monkey_Drip") came out LYING ON ITS SIDE, so its true height was
+    # along Z, the Y-scale missed it entirely, and the garment exported ~4.5
+    # studs tall — huge, and it failed the Accessory Fitting Tool bounds check
+    # ("doesn't fit, scale till it fits the blue bounding box"). Measured from
+    # the actual .fbx: garment was 3.68 × 4.54 × 1.80 studs (UnitScaleFactor 1.0,
+    # so not a unit bug — the Y-scale simply targeted the wrong axis).
+    #
+    # Scaling by the longest dimension is orientation-independent: the garment
+    # can never exceed TARGET_LONGEST in ANY axis, so it always fits inside the
+    # AFT blue box and is never "huge", regardless of how Meshy oriented it.
+    # (Exact collar/hem alignment is handled in Studio's AFT / by the user, and
+    # is secondary to "not huge".)
+    TARGET_LONGEST = 2.6   # studs — torso-ish; well under the 8-stud UGC cap
+    CHEST_Y = 1.0          # studs — cage chest height in template space
+    if cur_max_dim > 0.001:
+        scale = TARGET_LONGEST / cur_max_dim
+        garment.data.transform(mathutils.Matrix.Scale(scale, 4))
+        print(f"[generate_cages] auto-rescale: longest dim {cur_max_dim:.3f} → "
+              f"{cur_max_dim * scale:.3f} studs (scale ×{scale:.4f})")
+    # Center the garment's bbox at the cage chest so it sits in the upper body
+    # for the shrinkwrap — orientation-independent (center, not top-edge-in-Y,
+    # which assumed an upright garment).
     bbox2 = [mathutils.Vector(corner) for corner in garment.bound_box]
-    top_y = max(v.y for v in bbox2)
     cx = (max(v.x for v in bbox2) + min(v.x for v in bbox2)) / 2
+    cy = (max(v.y for v in bbox2) + min(v.y for v in bbox2)) / 2
     cz = (max(v.z for v in bbox2) + min(v.z for v in bbox2)) / 2
-    ty = GARMENT_TOP_Y - top_y
-    translate = mathutils.Matrix.Translation((-cx, ty, -cz))
-    garment.data.transform(translate)
+    garment.data.transform(mathutils.Matrix.Translation((-cx, CHEST_Y - cy, -cz)))
     garment.data.update()
-    print(f"[generate_cages] aligned top edge to Y={GARMENT_TOP_Y} "
-          f"(delta Y {ty:+.3f})")
+    print(f"[generate_cages] centered garment bbox at chest Y={CHEST_Y}")
     return garment
 
 
