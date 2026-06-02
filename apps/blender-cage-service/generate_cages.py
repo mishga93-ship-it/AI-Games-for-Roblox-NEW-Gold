@@ -114,54 +114,73 @@ def _import_garment(glb_path: str, target_name: str, target_size: float = 4.0) -
         bpy.ops.object.join()
     garment = bpy.context.view_layer.objects.active
     garment.name = target_name
-    # Apply transforms so the mesh data carries its final coordinates before we
-    # measure / rescale it.
+    # Apply transforms so the mesh data carries its final coordinates.
     bpy.ops.object.select_all(action="DESELECT")
     garment.select_set(True)
     bpy.context.view_layer.objects.active = garment
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
+    import math as _math
     import mathutils  # type: ignore
 
-    # 2026-06-02 (session 403): the pipeline ships a clean GARMENT-ONLY GLB that
-    # keeps Meshy's colour/textures; the user fits it in Studio's Accessory
-    # Fitting Tool. Two jobs here: (1) rescale to a sane stud size, (2) recenter.
-    #
-    # Scale by the LONGEST axis (orientation-independent — Meshy output
-    # orientation is not guaranteed). `target_size` is passed by the backend and
-    # depends on the garment type: full outfit ~5 studs (covers the body), single
-    # top ~2.5. Raw Meshy meshes are only ~1-2 units and import tiny next to a
-    # ~5-stud avatar, so this rescale is what makes the clothing the right size.
-    # No more -90°X rotation / cage alignment — keep Meshy's own upright
-    # orientation and let glTF export handle Z-up -> Y-up.
-    bbox = [mathutils.Vector(corner) for corner in garment.bound_box]
-    xs = [v.x for v in bbox]; ys = [v.y for v in bbox]; zs = [v.z for v in bbox]
-    x_dim = max(xs) - min(xs); y_dim = max(ys) - min(ys); z_dim = max(zs) - min(zs)
-    cur_max_dim = max(x_dim, y_dim, z_dim)
-    # glTF import leaves the model Z-up in Blender, so Z is the vertical axis.
-    # A TALL figure (Z clearly dominant) is a full outfit / dress / pants that
-    # should span most of the avatar body (~4.6 studs). A COMPACT mesh is a
-    # single top → torso-sized (`target_size`, default ~2.6). This mesh-shape
-    # test is more reliable than the clothingType label — a full outfit is often
-    # tagged "layered_shirt" by the interview, so we can't trust the label.
-    horiz_max = max(x_dim, y_dim)
-    is_tall_figure = (z_dim > 1.3 * horiz_max) if horiz_max > 0.001 else False
-    effective_target = 4.6 if is_tall_figure else target_size
-    if cur_max_dim > 0.001:
-        scale = effective_target / cur_max_dim
-        garment.data.transform(mathutils.Matrix.Scale(scale, 4))
-        print(f"[generate_cages] rescale: longest {cur_max_dim:.3f} -> {cur_max_dim * scale:.3f} "
-              f"studs (tall_figure={is_tall_figure}, target {effective_target}, x{scale:.4f})")
-    # Recenter the bbox on the origin — neutral; the user positions it on the
-    # avatar in the Accessory Fitting Tool.
-    bbox2 = [mathutils.Vector(corner) for corner in garment.bound_box]
-    cx = (max(v.x for v in bbox2) + min(v.x for v in bbox2)) / 2
-    cy = (max(v.y for v in bbox2) + min(v.y for v in bbox2)) / 2
-    cz = (max(v.z for v in bbox2) + min(v.z for v in bbox2)) / 2
+    # 2026-06-02 (session 403, round 2): we SHIP THE CAGES again. Roblox layered
+    # clothing wraps the body via the cage system (WrapLayer), not bone-skinning,
+    # so a clean garment-only mesh just glues flat to the front. The template
+    # cages are authored Maya Y-up (they stand tall along Blender Y), but a glTF
+    # import puts the garment Z-up (tall along Blender Z). Rotate the garment
+    # -90° about X so it stands along Y, matching the cages, so the shrinkwrap and
+    # the resulting WrapLayer line up. Final scale/position is done in
+    # `_fit_to_cage` once the body cage is loaded (the garment must sit on the
+    # standard body the inner cage represents). glTF export converts Y-up -> the
+    # Roblox-expected orientation.
+    garment.data.transform(mathutils.Matrix.Rotation(_math.radians(-90.0), 4, "X"))
+    bb = [mathutils.Vector(c) for c in garment.bound_box]
+    cx = (max(v.x for v in bb) + min(v.x for v in bb)) / 2
+    cy = (max(v.y for v in bb) + min(v.y for v in bb)) / 2
+    cz = (max(v.z for v in bb) + min(v.z for v in bb)) / 2
     garment.data.transform(mathutils.Matrix.Translation((-cx, -cy, -cz)))
     garment.data.update()
-    print("[generate_cages] centered garment at origin")
+    print("[generate_cages] garment imported, oriented Y-up, centered")
     return garment
+
+
+def _fit_to_cage(garment: bpy.types.Object, inner_cage: bpy.types.Object) -> None:
+    """Scale + position the garment so it sits on the standard body that the
+    inner cage represents, so the WrapLayer maps it onto any avatar correctly."""
+    import mathutils  # type: ignore
+
+    def world_bb(o: bpy.types.Object):
+        pts = [o.matrix_world @ mathutils.Vector(c) for c in o.bound_box]
+        return pts
+
+    ipts = world_bb(inner_cage)
+    iy0 = min(v.y for v in ipts); iy1 = max(v.y for v in ipts)
+    icx = (max(v.x for v in ipts) + min(v.x for v in ipts)) / 2
+    icz = (max(v.z for v in ipts) + min(v.z for v in ipts)) / 2
+    inner_h = iy1 - iy0
+
+    gpts = world_bb(garment)
+    gx0 = min(v.x for v in gpts); gx1 = max(v.x for v in gpts)
+    gy0 = min(v.y for v in gpts); gy1 = max(v.y for v in gpts)
+    gz0 = min(v.z for v in gpts); gz1 = max(v.z for v in gpts)
+    g_h = gy1 - gy0
+    g_horiz = max(gx1 - gx0, gz1 - gz0)
+    # A tall garment (height dominant) is a full outfit / dress / pants → cover
+    # most of the body; a compact one is a single top → upper-torso region.
+    is_tall = g_h > 1.3 * g_horiz if g_horiz > 0.001 else False
+    frac = 0.86 if is_tall else 0.42
+    if g_h > 0.001:
+        garment.data.transform(mathutils.Matrix.Scale((inner_h * frac) / g_h, 4))
+        garment.data.update()
+
+    gpts = [mathutils.Vector(c) for c in garment.bound_box]  # mesh-local == world (identity xform)
+    gcx = (max(v.x for v in gpts) + min(v.x for v in gpts)) / 2
+    gcz = (max(v.z for v in gpts) + min(v.z for v in gpts)) / 2
+    gtop = max(v.y for v in gpts)
+    top_target = iy1 - inner_h * 0.08  # just below the neck
+    garment.data.transform(mathutils.Matrix.Translation((icx - gcx, top_target - gtop, icz - gcz)))
+    garment.data.update()
+    print(f"[generate_cages] fit_to_cage: inner_h={inner_h:.2f} is_tall={is_tall} frac={frac}")
 
 
 def _append_cages(template_path: str) -> tuple[bpy.types.Object, bpy.types.Object]:
@@ -191,8 +210,23 @@ def _append_cages(template_path: str) -> tuple[bpy.types.Object, bpy.types.Objec
     # empty save for the garment.
     inner = bpy.data.objects[inner_name]
     outer = bpy.data.objects[outer_name]
-    bpy.context.collection.objects.link(inner)
-    bpy.context.collection.objects.link(outer)
+    # Link into the SCENE MASTER collection. Linking to bpy.context.collection in
+    # --background put the cages in a collection the glTF exporter didn't walk, so
+    # only the garment exported. The scene master collection is always traversed.
+    scene_coll = bpy.context.scene.collection
+    for c in (inner, outer):
+        for coll in list(c.users_collection):
+            coll.objects.unlink(c)
+        scene_coll.objects.link(c)
+        # In the template the cages are parented to a 'Cage' empty that we do NOT
+        # append. The glTF exporter only walks objects reachable from a root, so a
+        # cage whose parent is missing from the scene gets silently dropped (only
+        # the garment exported). Clear the parent (keep world transform) so each
+        # cage is a root node the exporter sees. (The FBX exporter tolerated this;
+        # glTF does not.)
+        mw = c.matrix_world.copy()
+        c.parent = None
+        c.matrix_world = mw
     return inner, outer
 
 
@@ -334,6 +368,15 @@ def _make_cages_transparent(inner: bpy.types.Object, outer: bpy.types.Object) ->
 def _select_only(objects: list[bpy.types.Object]) -> None:
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
+        # The template's cage meshes are hidden; a hidden object can't be
+        # select_set(True), so use_selection export silently dropped them
+        # (only the garment made it into the GLB). Unhide first.
+        try:
+            obj.hide_set(False)
+        except Exception:  # noqa: BLE001 — object may not be in the view layer
+            pass
+        obj.hide_viewport = False
+        obj.hide_render = False
         obj.select_set(True)
     if objects:
         bpy.context.view_layer.objects.active = objects[0]
@@ -348,11 +391,19 @@ def _export_glb(output_path: str, objects: list[bpy.types.Object]) -> None:
     Y-up that Roblox expects.
     """
     os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+    # _select_only also UNHIDES the objects (the template cages ship hidden).
     _select_only(objects)
+    print(f"[generate_cages] scene objects at export: {[o.name for o in bpy.context.scene.objects]}")
+    # 2026-06-02: export the WHOLE scene (use_selection=False), NOT the selection.
+    # The glTF exporter's use_selection didn't pick up the cage meshes in headless
+    # Blender (only the garment exported). The scene is clean here — _wipe_scene
+    # left nothing, so the scene is exactly garment + inner cage + outer cage —
+    # so exporting everything gives precisely the three meshes we want.
     bpy.ops.export_scene.gltf(
         filepath=output_path,
         export_format="GLB",
-        use_selection=True,
+        use_selection=False,
+        use_visible=False,
         export_yup=True,
         export_apply=True,
         export_materials="EXPORT",
@@ -374,16 +425,22 @@ def main() -> int:
     print(f"[generate_cages] imported garment: {garment.name} "
           f"({len(garment.data.vertices)} verts, {len(garment.data.polygons)} polys)")
 
-    # 2026-06-02 (session 403): export a clean GARMENT-ONLY GLB — keeps Meshy's
-    # colour/textures (FBX lost them) and is rescaled to target_size. No bundled
-    # body cages: they rendered as huge white blobs on a raw drag and only become
-    # invisible cage-data when wired by the Accessory Fitting Tool. The user fits
-    # this clean mesh in the AFT, which generates its own cages.
-    # (_append_cages / _shrinkwrap_outer_cage stay above for reference / a
-    # possible future auto-wrap path.)
-    _export_glb(args.output, [garment])
+    # 2026-06-02 (session 403, round 2): ship garment + inner/outer cages as a
+    # colour-preserving GLB. Roblox layered clothing WRAPS via the cage system
+    # (WrapLayer), so a garment-only mesh just glues flat — we need the cages.
+    # The user imports this via Avatar -> Import 3D (NOT a raw drag): the 3D
+    # Importer recognises the <name>_InnerCage / <name>_OuterCage meshes and
+    # builds the WrapLayer so the clothing wraps the body, like a real UGC item.
+    inner, outer = _append_cages(args.template)
+    print(f"[generate_cages] appended cages: {inner.name}, {outer.name}")
+    _fit_to_cage(garment, inner)
+    _shrinkwrap_outer_cage(outer, garment, args.offset)
+    _name_cages(inner, outer, args.name)
+    _make_cages_transparent(inner, outer)
+    _export_glb(args.output, [garment, inner, outer])
     size_bytes = os.path.getsize(args.output)
-    print(f"[generate_cages] exported {args.output} ({size_bytes:,} bytes)")
+    print(f"[generate_cages] exported {args.output} ({size_bytes:,} bytes) "
+          f"with cages {inner.name}/{outer.name}")
     return 0
 
 

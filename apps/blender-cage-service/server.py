@@ -28,6 +28,7 @@ PORT = int(os.environ.get("PORT", "8080"))
 SCRIPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generate_cages.py")
 TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Clothing_Cage_Template.blend")
 VEHICLE_FIX_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vehicle_fix.py")
+INSPECT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inspect_template.py")
 BLENDER_BIN = os.environ.get("BLENDER_BIN", "/usr/local/blender/blender")
 
 
@@ -102,6 +103,34 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler API)
         if self.path == "/healthz" or self.path == "/":
             self._send_json(200, {"ok": True, "service": "blender-cage-service"})
+            return
+        if self.path == "/inspect":
+            # One-off diagnostic: dump the cage template contents (armature?
+            # rigged body? cages?) so we know how to skin generated garments.
+            # Inline --python-expr so we don't depend on a Dockerfile COPY.
+            code = (
+                "import bpy\n"
+                f"bpy.ops.wm.open_mainfile(filepath={TEMPLATE_PATH!r})\n"
+                "print('=== OBJECTS ===')\n"
+                "for o in bpy.data.objects:\n"
+                "    s='OBJ '+repr(o.name)+' '+o.type\n"
+                "    if o.parent: s+=' parent='+repr(o.parent.name)+'('+o.parent.type+')'\n"
+                "    if o.type=='MESH':\n"
+                "        s+=' verts='+str(len(o.data.vertices))+' vg='+repr([g.name for g in o.vertex_groups])+' mods='+repr([m.type for m in o.modifiers])\n"
+                "    if o.type=='ARMATURE':\n"
+                "        s+=' bones='+repr([b.name for b in o.data.bones])\n"
+                "    print(s)\n"
+                "print('=== ARMATURES ==='); [print('ARM',repr(a.name),[b.name for b in a.bones]) for a in bpy.data.armatures]\n"
+                "print('=== END ===')\n"
+            )
+            try:
+                proc = subprocess.run(
+                    [BLENDER_BIN, "--background", "--python-expr", code],
+                    capture_output=True, text=True, timeout=120,
+                )
+                self._send_json(200, {"code": proc.returncode, "out": (proc.stdout + "\n" + proc.stderr)[-8000:]})
+            except Exception as err:  # noqa: BLE001
+                self._send_json(500, {"error": str(err)})
             return
         self._send_json(404, {"error": "not found"})
 
