@@ -18,6 +18,27 @@
 
 ## Выполненные задачи
 
+### 🗑️ [Удаление чатов теперь постоянное — серверный DELETE thread] (2026-06-02, сессия 404)
+- **Задача** (пользователь): «удалил все чаты, после переустановки они вернулись».
+- **Root cause**: удаление чата было чисто локальным (`ChatHistoryStore.delete` чистил UserDefaults + файлы сообщений), но серверного DELETE-роута для threads не было вообще, и iOS-клиент не имел метода удаления. После реинсталла (или любого обнуления локального стора) `syncFromRemote()` → `fetchThreads()` тянул всё ещё живые серверные threads обратно → «удалённые» чаты возвращались.
+- **Фикс (3 части)**:
+  - **Backend** ([index.ts](apps/functions/src/index.ts), задеплоено): новый `DELETE /api/chat/threads/:threadId` — проверка владельца (`userId` → 404) + `db.recursiveDelete(threadRef)` (удаляет thread + подколлекцию `messages`). Чисто аддитивный роут, нулевой риск для GET/PUT/POST.
+  - **iOS** ([AIWorkspaceAPI.swift](apps/ios/AIGoldRoblox/Core/API/AIWorkspaceAPI.swift)): новый `deleteThread(threadId:)` (паттерн `toggleLike`).
+  - **iOS** ([ChatHistoryStore.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatHistoryStore.swift)): `delete(_:)` и `delete(ids:)` после локального удаления зовут fire-and-forget `deleteRemote(ids:)`; 404 для несинканного локального id игнорируется (`try?`). Проверено: `session.id` == серверный `threadId`, поэтому удаление попадает в нужный документ.
+- **Проверка**: backend `npm run build` ✅ tsc clean, роут в `dist/index.js`; iOS `swiftc -parse` ✅ на обоих файлах (полный build — Xcode пользователя, §0.7).
+- **Git**: backend закоммичен + задеплоен (§0.6). iOS (`AIWorkspaceAPI.swift`, `ChatHistoryStore.swift`) — parallel-dirty (чужой WIP в тех же файлах), мои hunk'и НЕзакоммичены для rebuild в Xcode (§0.7). Push — отдельной командой (§0.5 п.7).
+- **Статус**: ✅ backend в проде; iOS ждёт rebuild в Xcode. После rebuild удаление чата постоянно; старые серверные threads удалятся при следующем удалении в приложении.
+
+### 👕 [3D-одежда: garment-only концепт + выбор 2D/3D для всех типов + правильный импорт в Studio] (2026-06-02, сессия 403)
+- **Задача** (пользователь): доработать генерацию 3D-одежды — (1) на апруве 2D-картинки одежда всегда с персонажем; (2) нет выбора 2D/3D; (3) в Studio должна нормально садиться на персонажа.
+- **Пункт 1 (backend, задеплоено `9b701cd`)** ([providers.ts](apps/functions/src/providers.ts) `generatePreviewTexture` + [index.ts](apps/functions/src/index.ts) concept_image): новый контекст `'garment'`. Концепт слоистой одежды шёл через общий `'prop'` (negative без person/mannequin банов) → Flux рисовал носителя. Теперь garment-only ghost-mannequin позитив-промпт (Flux игнорит negative — WebSearch §1.5) + `GARMENT_NEGATIVE` + провайдеры pro/dev первыми (negative применяется при guidance 3.5). `isLayeredClothing` → `'garment'`.
+- **Пункт 2 (iOS)** ([ChatStore.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatStore.swift) `needsClothingModeChoice`): выбор 2D/3D появлялся только для classic_shirt/pants/outfit; Jacket/Sweater/Dress молча шли в 3D, хотя welcome ОБЕЩАЛ выбор. Теперь плашка «2D Classic / 3D Layered» для всех типов кроме T-Shirt (2D-only по Roblox). «Decide for me» дефолтит layered_*→3D, иначе 2D.
+- **Пункт 3 (iOS + backend `17e1763`)**: root cause — инструкции экспорта `.fbx` ([ExportView.swift](apps/ios/AIGoldRoblox/Features/Export/ExportView.swift)) для layered-одежды были как для ПОЛНОГО АВАТАРА («Auto Rigging/Skinning, Rig Type R15, auto-create skeleton») → Studio импортировал вещь как кривое тело. Добавлен флаг `isLayeredClothing` (новый `ChatStore.isLayeredClothingResult` → `ExportGuide` → `ExportView`); для layered показывается корректный Accessory-flow (импорт `.fbx` → Accessory с WrapLayer → перетащить на R15 → обворачивает; RBXM = рантайм-обёртка). Backend: стадия `generate_cages` переименована «Cages (Studio AFT)» → «Bake wrap cages» + чистка устаревшего «no-op» коммента (кейджи реально бейкаются на бэке через blender-cage-service, сервис жив — HTTP 200).
+- **Проверка**: backend `npm run build` ✅ tsc clean, оба deploy через `safe-deploy-functions.sh`, `/api/health → {"ok":true}`. iOS `swiftc -parse` ✅ на ChatStore/ChatView/ExportView (полный build — Xcode пользователя открыт, §0.7).
+- **Ограничение (честно)**: правка инструкций — необходима, но если после правильного импорта вещь всё ещё сидит криво (воротник/подол) — это тюнинг кейджа в `blender-cage-service/generate_cages.py` (сессия 377), нужен скрин из Studio; сам Studio запустить не могу.
+- **Git**: backend закоммичен (`9b701cd`, `17e1763`) и задеплоен (§0.6). iOS (ChatStore/ChatView/ExportView) — parallel-dirty, мои hunk'и НЕзакоммичены для теста в Xcode (§0.5 п.5, §0.7). Push — отдельной командой (§0.5 п.7).
+- **Статус**: ✅ #1 в проде; #2/#3 iOS — ждут rebuild в Xcode; #3 backend в проде.
+
 ### 🎴 [Пресеты «3 релиз» + жанровые пресеты + видимость пресетов в Smart Interview] (2026-06-01, сессия 401)
 - **Задача**: добавить пресеты из «AI Games for Roblox - Presets.md» (раздел «# 3 релиз») в функционал; затем пользователь спросил, почему пресеты не видны на экранах жанров, и прислал полные жанровые списки (по 10).
 - **Что сделано** ([ChatPresets.swift](apps/ios/AIGoldRoblox/Features/Chat/ChatPresets.swift)):
