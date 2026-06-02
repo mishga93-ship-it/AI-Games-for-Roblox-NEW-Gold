@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", "8080"))
 SCRIPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generate_cages.py")
-TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Clothing_Cage_Template.blend")
+TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Combined-Template.blend")
 VEHICLE_FIX_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vehicle_fix.py")
 INSPECT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inspect_template.py")
 BLENDER_BIN = os.environ.get("BLENDER_BIN", "/usr/local/blender/blender")

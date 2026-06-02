@@ -3,30 +3,47 @@ generate_cages.py
 =================
 
 Blender headless script that converts a Meshy/Tripo garment .glb into a
-Roblox-ready layered-clothing .fbx with inner and outer wrap cages.
+Roblox-ready **layered clothing** .glb: a garment mesh SKINNED to the R15
+armature, plus an inner + outer wrap cage, so Studio's 3D Importer builds a
+proper `WrapLayer` (clothing that wraps and deforms with the avatar) — NOT a
+flat mesh glued to the body.
 
 Usage (locally, after installing Blender 4.x):
 
     blender --background --python generate_cages.py -- \\
         --garment /path/to/input.glb \\
-        --output  /path/to/output.fbx \\
+        --output  /path/to/output.glb \\
         --name    MyJacket \\
-        [--template /path/to/Clothing_Cage_Template.blend]
-        [--offset 0.005]
+        [--template /path/to/Combined-Template.blend] \\
+        [--offset 0.02]
 
-The output .fbx contains three objects under one root:
-  - <name>             (the garment mesh, scaled/positioned over the body)
-  - <name>_InnerCage   (Roblox standard inner cage, untouched)
-  - <name>_OuterCage   (the template's outer cage, shrink-wrapped to the garment)
+Why this shape (verified against Roblox's own reference Long_Sleeve_Export.fbx
+and the official "create clothing" tutorial, 2026-06):
 
-Workflow mirrors Roblox's official Studio Accessory Fitting Tool (AFT):
-  https://create.roblox.com/docs/art/accessories/rig-and-cage-existing-models
+  Roblox layered clothing deforms via TWO mechanisms working together:
+    1. SKINNING — the garment mesh is rigged to the R15 skeleton (bones
+       LowerTorso/UpperTorso/Head/…Arm/…Leg) so it moves with the body. The
+       cage alone does NOT deform the mesh; a non-skinned mesh just stays rigid
+       / glues flat (this was the old bug: exported GLB had skins:0).
+    2. CAGING — an inner cage (standard body surface, untouched) + an outer
+       cage (inflated to cover the garment) let Studio layer the item over the
+       body and other clothing. Cages MUST keep the template's 1358-vert
+       topology + UVs (only vertex POSITIONS may move — never add/delete verts).
 
-The OuterCage MUST NOT have vertices added/deleted or UV layout changed —
-only vertex positions are pushed outward. We use Blender's SHRINKWRAP
-modifier in 'TARGET_PROJECT' mode with a small positive offset so each
-OuterCage vertex projects to the nearest garment surface and sits just
-above it. This is the documented manual workflow done programmatically.
+  The official Blender workflow skins clothing with "Parent → With Automatic
+  Weights" (bone-heat), which needs only the armature — no body mesh. That's
+  why Roblox's Combined-Template ships an armature + cages but no skinned body.
+
+Output GLB contains exactly four objects:
+  - Armature            (R15 skeleton, bones named for Roblox auto-mapping)
+  - <name>              (garment, skinned to the armature)
+  - <name>_InnerCage    (1358-vert standard body inner cage, untouched)
+  - <name>_OuterCage    (1358-vert cage inflated to cover the garment)
+
+GLB (not FBX) is used because it reliably carries Meshy's textures/colour into
+Roblox and imports at 1 unit = 1 stud, so the template's native ~5.5-unit
+avatar scale is automatically correct. glTF fully supports skins + the
+`_InnerCage`/`_OuterCage` node-name convention the importer keys on.
 """
 
 from __future__ import annotations
@@ -35,382 +52,353 @@ import argparse
 import math
 import os
 import sys
-from typing import Optional
 
 import bpy  # type: ignore
+import mathutils  # type: ignore
 
 
+# --------------------------------------------------------------------------- #
+# args
+# --------------------------------------------------------------------------- #
 def _strip_argv_before_doubledash() -> list[str]:
-    """Blender swallows everything before ' -- ' as its own args. Strip it."""
     if "--" not in sys.argv:
         return []
     return sys.argv[sys.argv.index("--") + 1:]
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate Roblox layered-clothing cages")
+    parser = argparse.ArgumentParser(description="Generate Roblox layered-clothing GLB")
     parser.add_argument("--garment", required=True, help="Input garment .glb path")
     parser.add_argument("--output", required=True, help="Output .glb path")
-    parser.add_argument(
-        "--name",
-        required=True,
-        help="Asset name used as prefix: <name>, <name>_InnerCage, <name>_OuterCage",
-    )
+    parser.add_argument("--name", required=True, help="Asset name (object + cage prefix)")
     parser.add_argument(
         "--template",
         default=os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            "Clothing_Cage_Template.blend",
+            "Combined-Template.blend",
         ),
-        help="Path to Roblox's Clothing_Cage_Template.blend",
+        help="Roblox Combined-Template.blend (R15 armature + clothing cages)",
     )
     parser.add_argument(
         "--offset",
         type=float,
-        default=0.005,
-        help="Shrinkwrap offset in Blender units (0.005 = thin air gap over garment)",
+        default=0.02,
+        help="Outer-cage clearance over the garment, in template units (~studs)",
     )
-    parser.add_argument(
-        "--target-size",
-        type=float,
-        default=4.0,
-        help="Longest-dimension target in studs (full outfit ~5, single garment ~2.5)",
-    )
+    # Accepted for backward-compat with server.py; size now comes from fitting
+    # the garment onto the template body, so this is advisory only.
+    parser.add_argument("--target-size", type=float, default=4.0, help=argparse.SUPPRESS)
     return parser.parse_args(_strip_argv_before_doubledash())
 
 
-def _wipe_scene() -> None:
-    """Empty the default Blender scene so we start clean."""
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.object.delete(use_global=False, confirm=False)
-    for block in (
-        bpy.data.meshes,
-        bpy.data.materials,
-        bpy.data.textures,
-        bpy.data.images,
-        bpy.data.armatures,
-    ):
-        for item in list(block):
-            block.remove(item)
+# --------------------------------------------------------------------------- #
+# helpers
+# --------------------------------------------------------------------------- #
+def _world_bbox(obj: bpy.types.Object):
+    """Return (min_vec, max_vec, center_vec, dims_vec) in world space.
+
+    Computed from actual mesh vertices (not obj.bound_box) because bound_box is
+    lazily cached and goes stale right after we edit mesh data with
+    `mesh.transform(...)`, which silently broke fit/scale calculations."""
+    mw = obj.matrix_world
+    if obj.type == "MESH" and obj.data and len(obj.data.vertices):
+        pts = [mw @ v.co for v in obj.data.vertices]
+    else:
+        pts = [mw @ mathutils.Vector(c) for c in obj.bound_box]
+    mn = mathutils.Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
+    mx = mathutils.Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+    return mn, mx, (mn + mx) / 2.0, (mx - mn)
 
 
-def _import_garment(glb_path: str, target_name: str, target_size: float = 4.0) -> bpy.types.Object:
-    """Load the .glb, return the merged main mesh object."""
+def _open_template(template_path: str):
+    """Open Combined-Template.blend and locate the armature + clothing cages."""
+    if not os.path.exists(template_path):
+        raise FileNotFoundError(f"Combined template not found: {template_path}")
+    bpy.ops.wm.open_mainfile(filepath=template_path)
+
+    armature = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
+    if armature is None:
+        raise RuntimeError("Template has no armature object")
+
+    # Clothing cages are the pair parented under the 'Clothing Cages' empty
+    # (named YourClothingName_InnerCage / _OuterCage). Find them by suffix; an
+    # InnerCage exists ONLY for the clothing pair (body cages are *_OuterCage).
+    inner = next((o for o in bpy.data.objects
+                  if o.type == "MESH" and o.name.endswith("InnerCage")), None)
+    if inner is None:
+        raise RuntimeError("Template has no clothing InnerCage")
+    outer_name = inner.name.replace("InnerCage", "OuterCage")
+    outer = bpy.data.objects.get(outer_name)
+    if outer is None:
+        raise RuntimeError(f"Template missing matching {outer_name}")
+
+    # Unhide everything we keep so the exporter & ops can touch it.
+    for o in (armature, inner, outer):
+        o.hide_set(False)
+        o.hide_viewport = False
+        o.hide_render = False
+    print(f"[generate_cages] template opened: armature={armature.name!r} "
+          f"inner={inner.name!r} outer={outer.name!r} "
+          f"(cages {len(inner.data.vertices)}/{len(outer.data.vertices)} verts)")
+    return armature, inner, outer
+
+
+def _import_garment(glb_path: str, target_name: str) -> bpy.types.Object:
+    """Import the garment .glb, join parts into one mesh, apply transforms.
+
+    No manual axis rotation: Blender's glTF importer already converts the
+    garment's Y-up source to Blender Z-up, so it stands tall along Z just like
+    the template cages. (The old pipeline's hard -90deg X rotation is what made
+    the shirt lie flat.)"""
     if not os.path.exists(glb_path):
         raise FileNotFoundError(f"Garment glb not found: {glb_path}")
-    pre_objects = set(bpy.data.objects)
+    pre = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=glb_path)
-    new_objects = [o for o in bpy.data.objects if o not in pre_objects]
-    mesh_objects = [o for o in new_objects if o.type == "MESH"]
-    if not mesh_objects:
+    new = [o for o in bpy.data.objects if o not in pre]
+    meshes = [o for o in new if o.type == "MESH"]
+    if not meshes:
         raise RuntimeError("Imported glb contained no mesh objects")
-    # If the .glb has multiple mesh parts, join them into one so the
-    # Shrinkwrap target is a single closed surface.
+
     bpy.ops.object.select_all(action="DESELECT")
-    for obj in mesh_objects:
-        obj.select_set(True)
-    bpy.context.view_layer.objects.active = mesh_objects[0]
-    if len(mesh_objects) > 1:
+    for o in meshes:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    if len(meshes) > 1:
         bpy.ops.object.join()
     garment = bpy.context.view_layer.objects.active
+
+    # Drop any non-mesh helpers the importer added (empties/lights/cameras).
+    for o in new:
+        if o is not garment and o.name in bpy.data.objects and o.type != "MESH":
+            bpy.data.objects.remove(o, do_unlink=True)
+
     garment.name = target_name
-    # Apply transforms so the mesh data carries its final coordinates.
+    if garment.data:
+        garment.data.name = target_name
     bpy.ops.object.select_all(action="DESELECT")
     garment.select_set(True)
     bpy.context.view_layer.objects.active = garment
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-
-    import math as _math
-    import mathutils  # type: ignore
-
-    # 2026-06-02 (session 403, round 2): we SHIP THE CAGES again. Roblox layered
-    # clothing wraps the body via the cage system (WrapLayer), not bone-skinning,
-    # so a clean garment-only mesh just glues flat to the front. The template
-    # cages are authored Maya Y-up (they stand tall along Blender Y), but a glTF
-    # import puts the garment Z-up (tall along Blender Z). Rotate the garment
-    # -90° about X so it stands along Y, matching the cages, so the shrinkwrap and
-    # the resulting WrapLayer line up. Final scale/position is done in
-    # `_fit_to_cage` once the body cage is loaded (the garment must sit on the
-    # standard body the inner cage represents). glTF export converts Y-up -> the
-    # Roblox-expected orientation.
-    garment.data.transform(mathutils.Matrix.Rotation(_math.radians(-90.0), 4, "X"))
-    bb = [mathutils.Vector(c) for c in garment.bound_box]
-    cx = (max(v.x for v in bb) + min(v.x for v in bb)) / 2
-    cy = (max(v.y for v in bb) + min(v.y for v in bb)) / 2
-    cz = (max(v.z for v in bb) + min(v.z for v in bb)) / 2
-    garment.data.transform(mathutils.Matrix.Translation((-cx, -cy, -cz)))
-    garment.data.update()
-    print("[generate_cages] garment imported, oriented Y-up, centered")
+    print(f"[generate_cages] garment imported: {len(garment.data.vertices)} verts, "
+          f"{len(garment.data.polygons)} polys")
     return garment
 
 
-def _fit_to_cage(garment: bpy.types.Object, inner_cage: bpy.types.Object) -> None:
-    """Scale + position the garment so it sits on the standard body that the
-    inner cage represents, so the WrapLayer maps it onto any avatar correctly."""
-    import mathutils  # type: ignore
+def _fit_garment_to_body(garment: bpy.types.Object, inner_cage: bpy.types.Object) -> None:
+    """Scale + position the garment so it covers the body region the inner cage
+    represents. Uniform scale (preserves the garment's proportions); compact
+    items map to the upper torso, tall items (full outfits/dresses) cover most
+    of the body."""
+    _, _, icenter, idims = _world_bbox(inner_cage)
+    inner_h = idims.z  # cages stand tall along Z
+    inner_top = icenter.z + inner_h / 2.0
 
-    def world_bb(o: bpy.types.Object):
-        pts = [o.matrix_world @ mathutils.Vector(c) for c in o.bound_box]
-        return pts
+    _, _, _, gdims = _world_bbox(garment)
+    g_h = gdims.z
+    g_horiz = max(gdims.x, gdims.y)
+    is_tall = (g_h > 1.3 * g_horiz) if g_horiz > 1e-4 else False
+    frac = 0.88 if is_tall else 0.46
 
-    ipts = world_bb(inner_cage)
-    iy0 = min(v.y for v in ipts); iy1 = max(v.y for v in ipts)
-    icx = (max(v.x for v in ipts) + min(v.x for v in ipts)) / 2
-    icz = (max(v.z for v in ipts) + min(v.z for v in ipts)) / 2
-    inner_h = iy1 - iy0
-
-    gpts = world_bb(garment)
-    gx0 = min(v.x for v in gpts); gx1 = max(v.x for v in gpts)
-    gy0 = min(v.y for v in gpts); gy1 = max(v.y for v in gpts)
-    gz0 = min(v.z for v in gpts); gz1 = max(v.z for v in gpts)
-    g_h = gy1 - gy0
-    g_horiz = max(gx1 - gx0, gz1 - gz0)
-    # A tall garment (height dominant) is a full outfit / dress / pants → cover
-    # most of the body; a compact one is a single top → upper-torso region.
-    is_tall = g_h > 1.3 * g_horiz if g_horiz > 0.001 else False
-    frac = 0.86 if is_tall else 0.42
-    if g_h > 0.001:
-        garment.data.transform(mathutils.Matrix.Scale((inner_h * frac) / g_h, 4))
+    if g_h > 1e-4:
+        s = (inner_h * frac) / g_h
+        garment.data.transform(mathutils.Matrix.Scale(s, 4))
         garment.data.update()
 
-    gpts = [mathutils.Vector(c) for c in garment.bound_box]  # mesh-local == world (identity xform)
-    gcx = (max(v.x for v in gpts) + min(v.x for v in gpts)) / 2
-    gcz = (max(v.z for v in gpts) + min(v.z for v in gpts)) / 2
-    gtop = max(v.y for v in gpts)
-    top_target = iy1 - inner_h * 0.08  # just below the neck
-    garment.data.transform(mathutils.Matrix.Translation((icx - gcx, top_target - gtop, icz - gcz)))
+    # Re-measure after scaling, then translate: centre on the body X/Y and hang
+    # from just below the neck (compact) or centre vertically (tall).
+    _, _, gcenter, gdims2 = _world_bbox(garment)
+    g_top = gcenter.z + gdims2.z / 2.0
+    if is_tall:
+        target_top = inner_top - inner_h * 0.06
+    else:
+        target_top = inner_top - inner_h * 0.10  # leave the neck/collar clear
+    delta = mathutils.Vector((icenter.x - gcenter.x,
+                              icenter.y - gcenter.y,
+                              target_top - g_top))
+    garment.data.transform(mathutils.Matrix.Translation(delta))
     garment.data.update()
-    print(f"[generate_cages] fit_to_cage: inner_h={inner_h:.2f} is_tall={is_tall} frac={frac}")
+    print(f"[generate_cages] fit garment: inner_h={inner_h:.2f} is_tall={is_tall} "
+          f"frac={frac} scale_applied -> garment dims now "
+          f"{[round(v, 2) for v in _world_bbox(garment)[3]]}")
 
 
-def _append_cages(template_path: str) -> tuple[bpy.types.Object, bpy.types.Object]:
-    """Append InnerCage + OuterCage objects from the Roblox template."""
-    if not os.path.exists(template_path):
-        raise FileNotFoundError(f"Cage template not found: {template_path}")
-    # Find the actual object names inside the template — Roblox has used
-    # several conventions over the years ("InnerCage", "_InnerCage",
-    # "Clothing_InnerCage"). Discover dynamically.
-    with bpy.data.libraries.load(template_path, link=False) as (src, dst):
-        candidates = [n for n in src.objects if "cage" in n.lower()]
-        if len(candidates) < 2:
-            raise RuntimeError(
-                f"Template {template_path} doesn't contain two cage meshes. "
-                f"Found: {list(src.objects)}"
-            )
-        inner_name = next((n for n in candidates if "inner" in n.lower()), None)
-        outer_name = next((n for n in candidates if "outer" in n.lower()), None)
-        if not inner_name or not outer_name:
-            raise RuntimeError(
-                f"Couldn't identify inner/outer cages by name. "
-                f"Candidates: {candidates}"
-            )
-        dst.objects = [inner_name, outer_name]
-    # Re-fetch after append — Blender renames duplicates with .001 suffix
-    # if they already exist in the scene, but at this point the scene is
-    # empty save for the garment.
-    inner = bpy.data.objects[inner_name]
-    outer = bpy.data.objects[outer_name]
-    # Link into the SCENE MASTER collection. Linking to bpy.context.collection in
-    # --background put the cages in a collection the glTF exporter didn't walk, so
-    # only the garment exported. The scene master collection is always traversed.
-    scene_coll = bpy.context.scene.collection
-    for c in (inner, outer):
-        for coll in list(c.users_collection):
-            coll.objects.unlink(c)
-        scene_coll.objects.link(c)
-        # In the template the cages are parented to a 'Cage' empty that we do NOT
-        # append. The glTF exporter only walks objects reachable from a root, so a
-        # cage whose parent is missing from the scene gets silently dropped (only
-        # the garment exported). Clear the parent (keep world transform) so each
-        # cage is a root node the exporter sees. (The FBX exporter tolerated this;
-        # glTF does not.)
-        mw = c.matrix_world.copy()
-        c.parent = None
-        c.matrix_world = mw
-    return inner, outer
+def _decimate_garment(garment: bpy.types.Object, target_tris: int = 9000) -> None:
+    """Reduce the garment to <= target_tris triangles. Meshy meshes are dense
+    (~20-40k tris); Roblox's clothing limit is 10k tris/MeshPart, and a high
+    count trips an import warning + slows the asset upload. Decimate BEFORE
+    skinning so the bone-heat solve runs on the final, lighter topology."""
+    tris = sum(max(0, len(p.vertices) - 2) for p in garment.data.polygons)
+    if tris <= target_tris:
+        print(f"[generate_cages] decimate skipped: {tris} tris already <= {target_tris}")
+        return
+    ratio = max(0.05, min(1.0, target_tris / float(tris)))
+    bpy.ops.object.select_all(action="DESELECT")
+    garment.select_set(True)
+    bpy.context.view_layer.objects.active = garment
+    mod = garment.modifiers.new(name="Decimate", type="DECIMATE")
+    mod.decimate_type = "COLLAPSE"
+    mod.ratio = ratio
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    new_tris = sum(max(0, len(p.vertices) - 2) for p in garment.data.polygons)
+    print(f"[generate_cages] decimated garment: {tris} -> {new_tris} tris (ratio={ratio:.3f})")
 
 
-def _shrinkwrap_outer_cage(
-    outer: bpy.types.Object,
-    garment: bpy.types.Object,
-    offset: float,
-) -> None:
-    """
-    Push each OuterCage vertex outward to sit just above the garment
-    surface — but only the vertices that are actually NEAR the garment.
-    Vertices far from the garment retain their body-template position.
+def _skin_garment(garment: bpy.types.Object, armature: bpy.types.Object) -> None:
+    """Skin the garment to the R15 armature with automatic (bone-heat) weights —
+    the official 'Parent → With Automatic Weights' workflow. Falls back to
+    envelope weights if bone-heat fails (Meshy meshes can be non-manifold), then
+    guarantees every vertex has at least one weight, capped at 4 influences."""
+    bpy.ops.object.select_all(action="DESELECT")
+    garment.select_set(True)
+    armature.select_set(True)
+    bpy.context.view_layer.objects.active = armature
 
-    Why we abandoned the Shrinkwrap modifier:
-      - TARGET_PROJECT pulled EVERY vertex (including legs/feet) toward
-        the garment, crushing the cage when the accessory only covered
-        the upper body.
-      - PROJECT mode only displaces vertices whose normal ray hits the
-        target, BUT it relies on a closed/manifold target mesh — Meshy
-        outputs often have open surfaces and non-manifold topology, and
-        the unbounded ray length sent vertices flying tens of studs away.
+    skinned = False
+    try:
+        bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+        skinned = any(len(v.groups) > 0 for v in garment.data.vertices)
+        print(f"[generate_cages] auto (bone-heat) weights: skinned={skinned}")
+    except RuntimeError as err:
+        print(f"[generate_cages] bone-heat failed ({err}); trying envelope")
 
-    Manual algorithm with explicit distance threshold:
-      1. Build a BVH spatial tree over the garment mesh.
-      2. For each OuterCage vertex find the nearest garment surface point.
-      3. If distance ≤ threshold → push vertex to that surface point plus
-         a small outward offset along the garment's surface normal.
-      4. Otherwise → leave the vertex at its template position.
+    if not skinned:
+        # Clear any partial parenting/groups, then envelope weights.
+        bpy.ops.object.select_all(action="DESELECT")
+        garment.select_set(True)
+        armature.select_set(True)
+        bpy.context.view_layer.objects.active = armature
+        try:
+            bpy.ops.object.parent_set(type="ARMATURE_ENVELOPE")
+            skinned = any(len(v.groups) > 0 for v in garment.data.vertices)
+            print(f"[generate_cages] envelope weights: skinned={skinned}")
+        except RuntimeError as err:
+            print(f"[generate_cages] envelope failed ({err})")
 
-    Topology and UVs are untouched (only coordinates move), so the
-    Roblox "do not delete vertices or alter UVs" rule is respected.
-    """
-    import mathutils  # type: ignore
+    # Ensure an Armature modifier exists and points at the rig (parent_set adds
+    # one, but be defensive).
+    if not any(m.type == "ARMATURE" for m in garment.modifiers):
+        mod = garment.modifiers.new(name="Armature", type="ARMATURE")
+        mod.object = armature
+
+    # Guarantee no orphan (unweighted) vertices: assign them to UpperTorso so
+    # the importer never sees a vertex with zero influences.
+    fallback_bone = "UpperTorso"
+    if fallback_bone in [b.name for b in armature.data.bones]:
+        vg = garment.vertex_groups.get(fallback_bone) or garment.vertex_groups.new(name=fallback_bone)
+        orphans = [v.index for v in garment.data.vertices if len(v.groups) == 0]
+        if orphans:
+            vg.add(orphans, 1.0, "REPLACE")
+            print(f"[generate_cages] assigned {len(orphans)} orphan verts -> {fallback_bone}")
+
+    # Cap at 4 influences/vertex (Roblox limit) and renormalize.
+    bpy.context.view_layer.objects.active = garment
+    bpy.ops.object.select_all(action="DESELECT")
+    garment.select_set(True)
+    try:
+        bpy.ops.object.vertex_group_limit_total(limit=4)
+        bpy.ops.object.vertex_group_normalize_all()
+    except RuntimeError as err:
+        print(f"[generate_cages] weight cleanup warning: {err}")
+    n_groups = len(garment.vertex_groups)
+    weighted = sum(1 for v in garment.data.vertices if len(v.groups) > 0)
+    print(f"[generate_cages] skinned: {weighted}/{len(garment.data.vertices)} verts, "
+          f"{n_groups} vertex groups")
+
+
+def _inflate_outer_cage(outer: bpy.types.Object, garment: bpy.types.Object, offset: float) -> None:
+    """Push outer-cage vertices outward to just COVER the garment surface,
+    leaving vertices far from the garment at their standard body position.
+    Only vertex positions move — topology and UVs are untouched (Roblox: 'do
+    not delete vertices or faces of the cages')."""
     from mathutils.bvhtree import BVHTree  # type: ignore
 
-    # Build a BVH over the garment in world space. World coordinates so
-    # we can compare directly with OuterCage's world-space vertex
-    # positions; both objects are at the origin with identity transforms
-    # after we apply transforms in _import_garment / _append_cages, but
-    # multiplying by matrix_world keeps the math defensive against any
-    # future stray translation/rotation.
-    garment_world_verts = [
-        garment.matrix_world @ v.co for v in garment.data.vertices
-    ]
-    garment_polys = [list(p.vertices) for p in garment.data.polygons]
-    bvh = BVHTree.FromPolygons(garment_world_verts, garment_polys, all_triangles=False)
+    gw_verts = [garment.matrix_world @ v.co for v in garment.data.vertices]
+    gw_polys = [list(p.vertices) for p in garment.data.polygons]
+    bvh = BVHTree.FromPolygons(gw_verts, gw_polys, all_triangles=False)
 
-    # Tunable distance threshold. The cage template is ≈3.2 × 5.5 × 0.8
-    # studs (Roblox blocky body). A garment sits ≤0.3-0.5 studs outside
-    # the body surface. Anything farther is "elsewhere on the body" and
-    # the cage should keep its template position.
-    threshold = 0.5  # studs
+    # Vertical axis (Z) of the body, for "outward" = away from the central axis.
+    _, _, icenter, idims = _world_bbox(outer)
+    axis_xy = mathutils.Vector((icenter.x, icenter.y))
+    # Catch garment within ~20% of body height of each cage vertex.
+    threshold = max(idims.x, idims.z) * 0.22
 
     outer_inv = outer.matrix_world.inverted()
     moved = 0
     for v in outer.data.vertices:
-        world_pos = outer.matrix_world @ v.co
-        hit = bvh.find_nearest(world_pos)
+        wp = outer.matrix_world @ v.co
+        hit = bvh.find_nearest(wp)
         if not hit:
             continue
-        location, normal, _face_idx, dist = hit
-        if location is None or dist > threshold:
+        loc, normal, _idx, dist = hit
+        if loc is None or dist > threshold:
             continue
-        # Push outward along garment's surface normal at that point so
-        # the cage sits just OUTSIDE the garment (Roblox layered clothing
-        # requires inner cage < garment < outer cage in offset stack).
-        if normal is None:
-            normal = mathutils.Vector((0, 0, 1))
-        new_world = location + normal * offset
-        v.co = outer_inv @ new_world
-        moved += 1
-
+        # Outward radial direction from the body's vertical axis.
+        radial = mathutils.Vector((wp.x - axis_xy.x, wp.y - axis_xy.y, 0.0))
+        if radial.length < 1e-5:
+            radial = (normal or mathutils.Vector((0, 1, 0)))
+        radial.normalize()
+        new_wp = loc + radial * offset
+        # Only expand coverage: keep whichever is farther from the axis so the
+        # cage never gets pulled inside the garment.
+        cur_r = (wp - mathutils.Vector((axis_xy.x, axis_xy.y, wp.z))).length
+        new_r = (new_wp - mathutils.Vector((axis_xy.x, axis_xy.y, new_wp.z))).length
+        if new_r >= cur_r:
+            v.co = outer_inv @ new_wp
+            moved += 1
     outer.data.update()
-    print(f"[generate_cages] moved {moved}/{len(outer.data.vertices)} outer-cage vertices "
-          f"(threshold={threshold} studs, offset={offset})")
+    print(f"[generate_cages] inflated outer cage: moved {moved}/{len(outer.data.vertices)} "
+          f"verts (threshold={threshold:.2f}, offset={offset})")
 
 
-def _name_cages(
-    inner: bpy.types.Object,
-    outer: bpy.types.Object,
-    prefix: str,
-) -> None:
-    """Rename per Roblox spec: <Name>_InnerCage, <Name>_OuterCage."""
-    inner.name = f"{prefix}_InnerCage"
-    outer.name = f"{prefix}_OuterCage"
-    # The mesh datablock must also carry the matching name; Studio's importer
-    # uses object name, but some Blender→FBX pipelines emit the mesh-data name
-    # too, so syncing them avoids subtle Studio import warnings.
+def _finalize(armature, garment, inner, outer, name: str) -> None:
+    """Rename per Roblox spec, free the cages (root nodes), and delete every
+    other template object so the export contains exactly the four we want."""
+    inner.name = f"{name}_InnerCage"
+    outer.name = f"{name}_OuterCage"
     if inner.data:
         inner.data.name = inner.name
     if outer.data:
         outer.data.name = outer.name
 
+    # Cages export as free root nodes (like the reference FBX) — clear their
+    # 'Clothing Cages' parent while keeping world position.
+    for c in (inner, outer):
+        mw = c.matrix_world.copy()
+        c.parent = None
+        c.matrix_world = mw
 
-def _make_cages_transparent(inner: bpy.types.Object, outer: bpy.types.Object) -> None:
-    """Attach an alpha=0 material to inner/outer cage meshes.
-
-    2026-05-22 (session 381) — user reported the FBX appears as a huge
-    white blob in Workspace because Studio renders the cage meshes
-    (which are full-body avatar shapes, ~5.5 studs tall) as opaque
-    geometry. The actual ~1.8 stud garment is inside but obscured.
-
-    Studio's layered-clothing system identifies cages by the
-    `_InnerCage` / `_OuterCage` name suffix (not by visibility), so
-    making the cages transparent only affects the standalone-drop
-    scenario where the user drags the FBX into Workspace. When the FBX
-    goes through Avatar Setup or is dropped onto a Rig, Studio still
-    detects the cages and wires WrapLayer/WrapTarget — the deformation
-    machinery is unaffected. The garment mesh keeps its own materials
-    untouched.
-    """
-    trans_mat = bpy.data.materials.get("AIGold_CageTransparent")
-    if trans_mat is None:
-        trans_mat = bpy.data.materials.new(name="AIGold_CageTransparent")
-        trans_mat.use_nodes = True
-        bsdf = trans_mat.node_tree.nodes.get("Principled BSDF")
-        if bsdf is not None:
-            # Alpha=0 → fully transparent. Roblox FBX importer reads the
-            # baseColor.A channel and maps it to MeshPart.Transparency.
-            bsdf.inputs["Alpha"].default_value = 0.0
-            # Also zero out the base colour alpha-channel so legacy
-            # exporters that ignore the principled-BSDF Alpha input still
-            # carry the transparency through.
-            base = bsdf.inputs.get("Base Color")
-            if base is not None and hasattr(base, "default_value"):
-                base.default_value = (1.0, 1.0, 1.0, 0.0)
-        trans_mat.blend_method = "BLEND"
-        # Mark as the material the entire mesh uses (no mixed-material
-        # rendering); single material slot → single MeshPart in Roblox.
-        trans_mat.diffuse_color = (1.0, 1.0, 1.0, 0.0)
-
-    for cage in (inner, outer):
-        if cage.data is None:
-            continue
-        cage.data.materials.clear()
-        cage.data.materials.append(trans_mat)
+    keep = {armature, garment, inner, outer}
+    for o in list(bpy.data.objects):
+        if o not in keep:
+            bpy.data.objects.remove(o, do_unlink=True)
+    print(f"[generate_cages] finalized scene -> {[o.name for o in bpy.data.objects]}")
 
 
-def _select_only(objects: list[bpy.types.Object]) -> None:
-    bpy.ops.object.select_all(action="DESELECT")
-    for obj in objects:
-        # The template's cage meshes are hidden; a hidden object can't be
-        # select_set(True), so use_selection export silently dropped them
-        # (only the garment made it into the GLB). Unhide first.
-        try:
-            obj.hide_set(False)
-        except Exception:  # noqa: BLE001 — object may not be in the view layer
-            pass
-        obj.hide_viewport = False
-        obj.hide_render = False
-        obj.select_set(True)
-    if objects:
-        bpy.context.view_layer.objects.active = objects[0]
+def _export_glb(output_path: str) -> None:
+    """Export the whole (now 4-object) scene as a Roblox-ready GLB.
 
-
-def _export_glb(output_path: str, objects: list[bpy.types.Object]) -> None:
-    """Export selected objects as a Roblox-compatible GLB.
-
-    GLB (glTF binary) is used instead of FBX because it reliably carries Meshy's
-    textures/colour through to Roblox's 3D importer — the FBX path imported as a
-    plain white mesh (lost colour). export_yup converts Blender Z-up to the glTF
-    Y-up that Roblox expects.
+    export_apply=False: the garment's Armature modifier MUST survive (applying
+    it would bake the rest pose and strip the skinning). The glTF exporter keeps
+    skins via export_skins. export_yup converts Blender Z-up to glTF Y-up.
     """
     os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
-    # _select_only also UNHIDES the objects (the template cages ship hidden).
-    _select_only(objects)
     print(f"[generate_cages] scene objects at export: {[o.name for o in bpy.context.scene.objects]}")
-    # 2026-06-02: export the WHOLE scene (use_selection=False), NOT the selection.
-    # The glTF exporter's use_selection didn't pick up the cage meshes in headless
-    # Blender (only the garment exported). The scene is clean here — _wipe_scene
-    # left nothing, so the scene is exactly garment + inner cage + outer cage —
-    # so exporting everything gives precisely the three meshes we want.
     bpy.ops.export_scene.gltf(
         filepath=output_path,
         export_format="GLB",
         use_selection=False,
         use_visible=False,
         export_yup=True,
-        export_apply=True,
+        export_apply=False,
+        export_skins=True,
         export_materials="EXPORT",
         export_image_format="AUTO",
     )
 
 
+# --------------------------------------------------------------------------- #
+# main
+# --------------------------------------------------------------------------- #
 def main() -> int:
     args = _parse_args()
     print(f"[generate_cages] garment={args.garment}")
@@ -418,29 +406,19 @@ def main() -> int:
     print(f"[generate_cages] name={args.name}")
     print(f"[generate_cages] template={args.template}")
     print(f"[generate_cages] offset={args.offset}")
-    print(f"[generate_cages] target_size={args.target_size}")
 
-    _wipe_scene()
-    garment = _import_garment(args.garment, target_name=args.name, target_size=args.target_size)
-    print(f"[generate_cages] imported garment: {garment.name} "
-          f"({len(garment.data.vertices)} verts, {len(garment.data.polygons)} polys)")
+    armature, inner, outer = _open_template(args.template)
+    garment = _import_garment(args.garment, target_name=args.name)
+    _fit_garment_to_body(garment, inner)
+    _decimate_garment(garment)
+    _skin_garment(garment, armature)
+    _inflate_outer_cage(outer, garment, args.offset)
+    _finalize(armature, garment, inner, outer, args.name)
+    _export_glb(args.output)
 
-    # 2026-06-02 (session 403, round 2): ship garment + inner/outer cages as a
-    # colour-preserving GLB. Roblox layered clothing WRAPS via the cage system
-    # (WrapLayer), so a garment-only mesh just glues flat — we need the cages.
-    # The user imports this via Avatar -> Import 3D (NOT a raw drag): the 3D
-    # Importer recognises the <name>_InnerCage / <name>_OuterCage meshes and
-    # builds the WrapLayer so the clothing wraps the body, like a real UGC item.
-    inner, outer = _append_cages(args.template)
-    print(f"[generate_cages] appended cages: {inner.name}, {outer.name}")
-    _fit_to_cage(garment, inner)
-    _shrinkwrap_outer_cage(outer, garment, args.offset)
-    _name_cages(inner, outer, args.name)
-    _make_cages_transparent(inner, outer)
-    _export_glb(args.output, [garment, inner, outer])
     size_bytes = os.path.getsize(args.output)
-    print(f"[generate_cages] exported {args.output} ({size_bytes:,} bytes) "
-          f"with cages {inner.name}/{outer.name}")
+    print(f"[generate_cages] exported {args.output} ({size_bytes:,} bytes): "
+          f"skinned garment + {inner.name}/{outer.name} + {armature.name}")
     return 0
 
 
@@ -448,8 +426,6 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as exc:  # noqa: BLE001
-        # Surface the error to Blender's stderr so the HTTP wrapper can
-        # bubble it to the caller as a 500.
         import traceback
         traceback.print_exc()
         print(f"[generate_cages] FAILED: {exc}", file=sys.stderr)

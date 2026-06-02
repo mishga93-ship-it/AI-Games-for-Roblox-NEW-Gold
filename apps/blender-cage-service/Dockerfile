@@ -51,6 +51,11 @@ WORKDIR /app
 COPY generate_cages.py /app/generate_cages.py
 COPY vehicle_fix.py /app/vehicle_fix.py
 COPY Clothing_Cage_Template.blend /app/Clothing_Cage_Template.blend
+# Combined-Template.blend ships Roblox's R15 armature + the official 1358-vert
+# clothing inner/outer cages. generate_cages.py opens it to skin the garment to
+# the rig (auto bone-heat weights) and shrink the outer cage over it — producing
+# a real layered-clothing WrapLayer on import (verified in Studio 2026-06-02).
+COPY Combined-Template.blend /app/Combined-Template.blend
 COPY server.py /app/server.py
 
 ENV BLENDER_BIN=/usr/local/blender/blender
