@@ -50,7 +50,7 @@ def _strip_argv_before_doubledash() -> list[str]:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate Roblox layered-clothing cages")
     parser.add_argument("--garment", required=True, help="Input garment .glb path")
-    parser.add_argument("--output", required=True, help="Output .fbx path")
+    parser.add_argument("--output", required=True, help="Output .glb path")
     parser.add_argument(
         "--name",
         required=True,
@@ -70,6 +70,12 @@ def _parse_args() -> argparse.Namespace:
         default=0.005,
         help="Shrinkwrap offset in Blender units (0.005 = thin air gap over garment)",
     )
+    parser.add_argument(
+        "--target-size",
+        type=float,
+        default=4.0,
+        help="Longest-dimension target in studs (full outfit ~5, single garment ~2.5)",
+    )
     return parser.parse_args(_strip_argv_before_doubledash())
 
 
@@ -88,7 +94,7 @@ def _wipe_scene() -> None:
             block.remove(item)
 
 
-def _import_garment(glb_path: str, target_name: str) -> bpy.types.Object:
+def _import_garment(glb_path: str, target_name: str, target_size: float = 4.0) -> bpy.types.Object:
     """Load the .glb, return the merged main mesh object."""
     if not os.path.exists(glb_path):
         raise FileNotFoundError(f"Garment glb not found: {glb_path}")
@@ -108,84 +114,53 @@ def _import_garment(glb_path: str, target_name: str) -> bpy.types.Object:
         bpy.ops.object.join()
     garment = bpy.context.view_layer.objects.active
     garment.name = target_name
-    # Roblox layered clothing uses meters; Meshy/Tripo output is usually
-    # already in meters, but we still apply scale/rotation/location so the
-    # transform doesn't drift into the cage mesh as offset.
+    # Apply transforms so the mesh data carries its final coordinates before we
+    # measure / rescale it.
     bpy.ops.object.select_all(action="DESELECT")
     garment.select_set(True)
     bpy.context.view_layer.objects.active = garment
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-    # Coordinate-system alignment: Roblox's Clothing_Cage_Template.blend was
-    # authored in Maya (Y-up). Blender stores those vertex coordinates as-is,
-    # so inside Blender's Z-up world the InnerCage stands tall along Y. A
-    # glTF import, however, converts the asset to Blender's native Z-up.
-    # To make the shrinkwrap see aligned geometry we rotate the garment's
-    # MESH DATA directly (-90° around X) instead of using rotation_euler +
-    # transform_apply — the operator-based path is brittle under
-    # --background mode contexts when the active object was just set.
-    # Manual mesh-vertex rotation avoids the issue entirely.
-    import math as _math
-    import mathutils  # type: ignore
-    rot = mathutils.Matrix.Rotation(_math.radians(-90.0), 4, "X")
-    garment.data.transform(rot)
-    garment.data.update()
 
-    # 2026-05-22 — auto-rescale to Roblox stud scale and reposition over the
-    # cage body. Meshy/Tripo outputs are in raw model units which Studio
-    # interprets at huge stud scale on FBX import — the user reported the
-    # imported accessory failed UGC bounds check ("doesn't fit in required
-    # bounds, scale till it fits into the blue bounding box") because the
-    # garment was 5-10× the target chest size.
+    import mathutils  # type: ignore
+
+    # 2026-06-02 (session 403): the pipeline ships a clean GARMENT-ONLY GLB that
+    # keeps Meshy's colour/textures; the user fits it in Studio's Accessory
+    # Fitting Tool. Two jobs here: (1) rescale to a sane stud size, (2) recenter.
     #
-    # Roblox layered-clothing UGC bounds (per docs): ≤8 studs in any
-    # dimension. A torso-chest garment typically sits at ~2.5-3 studs tall.
-    # Roblox's body cage template (which we already loaded) is ~5.5 studs
-    # tall (Y) — we use it as the reference: garment should fit inside
-    # roughly the upper half of that cage (chest area).
-    #
-    # Strategy: scale the garment uniformly so its longest dimension equals
-    # TARGET_GARMENT_LONGEST_DIM studs, then translate it so its centre
-    # sits at the cage's chest height (Y ≈ +1.0, the cage spans Y=-3..+2.5).
-    bbox = [garment.matrix_world @ mathutils.Vector(corner) for corner in garment.bound_box]
+    # Scale by the LONGEST axis (orientation-independent — Meshy output
+    # orientation is not guaranteed). `target_size` is passed by the backend and
+    # depends on the garment type: full outfit ~5 studs (covers the body), single
+    # top ~2.5. Raw Meshy meshes are only ~1-2 units and import tiny next to a
+    # ~5-stud avatar, so this rescale is what makes the clothing the right size.
+    # No more -90°X rotation / cage alignment — keep Meshy's own upright
+    # orientation and let glTF export handle Z-up -> Y-up.
+    bbox = [mathutils.Vector(corner) for corner in garment.bound_box]
     xs = [v.x for v in bbox]; ys = [v.y for v in bbox]; zs = [v.z for v in bbox]
-    x_dim = max(xs) - min(xs)
-    y_dim = max(ys) - min(ys)
-    z_dim = max(zs) - min(zs)
+    x_dim = max(xs) - min(xs); y_dim = max(ys) - min(ys); z_dim = max(zs) - min(zs)
     cur_max_dim = max(x_dim, y_dim, z_dim)
-    # 2026-06-02 (session 403) — scale by the LONGEST axis, NOT by Y.
-    #
-    # Session 377 scaled by the Y (height) axis on the assumption that every
-    # garment is upright (Y-tall) after the glTF import + -90°X rotation. But
-    # Meshy/Tripo output orientation is NOT guaranteed: a real export
-    # ("Fruit_Monkey_Drip") came out LYING ON ITS SIDE, so its true height was
-    # along Z, the Y-scale missed it entirely, and the garment exported ~4.5
-    # studs tall — huge, and it failed the Accessory Fitting Tool bounds check
-    # ("doesn't fit, scale till it fits the blue bounding box"). Measured from
-    # the actual .fbx: garment was 3.68 × 4.54 × 1.80 studs (UnitScaleFactor 1.0,
-    # so not a unit bug — the Y-scale simply targeted the wrong axis).
-    #
-    # Scaling by the longest dimension is orientation-independent: the garment
-    # can never exceed TARGET_LONGEST in ANY axis, so it always fits inside the
-    # AFT blue box and is never "huge", regardless of how Meshy oriented it.
-    # (Exact collar/hem alignment is handled in Studio's AFT / by the user, and
-    # is secondary to "not huge".)
-    TARGET_LONGEST = 2.6   # studs — torso-ish; well under the 8-stud UGC cap
-    CHEST_Y = 1.0          # studs — cage chest height in template space
+    # glTF import leaves the model Z-up in Blender, so Z is the vertical axis.
+    # A TALL figure (Z clearly dominant) is a full outfit / dress / pants that
+    # should span most of the avatar body (~4.6 studs). A COMPACT mesh is a
+    # single top → torso-sized (`target_size`, default ~2.6). This mesh-shape
+    # test is more reliable than the clothingType label — a full outfit is often
+    # tagged "layered_shirt" by the interview, so we can't trust the label.
+    horiz_max = max(x_dim, y_dim)
+    is_tall_figure = (z_dim > 1.3 * horiz_max) if horiz_max > 0.001 else False
+    effective_target = 4.6 if is_tall_figure else target_size
     if cur_max_dim > 0.001:
-        scale = TARGET_LONGEST / cur_max_dim
+        scale = effective_target / cur_max_dim
         garment.data.transform(mathutils.Matrix.Scale(scale, 4))
-        print(f"[generate_cages] auto-rescale: longest dim {cur_max_dim:.3f} → "
-              f"{cur_max_dim * scale:.3f} studs (scale ×{scale:.4f})")
-    # Center the garment's bbox at the cage chest so it sits in the upper body
-    # for the shrinkwrap — orientation-independent (center, not top-edge-in-Y,
-    # which assumed an upright garment).
+        print(f"[generate_cages] rescale: longest {cur_max_dim:.3f} -> {cur_max_dim * scale:.3f} "
+              f"studs (tall_figure={is_tall_figure}, target {effective_target}, x{scale:.4f})")
+    # Recenter the bbox on the origin — neutral; the user positions it on the
+    # avatar in the Accessory Fitting Tool.
     bbox2 = [mathutils.Vector(corner) for corner in garment.bound_box]
     cx = (max(v.x for v in bbox2) + min(v.x for v in bbox2)) / 2
     cy = (max(v.y for v in bbox2) + min(v.y for v in bbox2)) / 2
     cz = (max(v.z for v in bbox2) + min(v.z for v in bbox2)) / 2
-    garment.data.transform(mathutils.Matrix.Translation((-cx, CHEST_Y - cy, -cz)))
+    garment.data.transform(mathutils.Matrix.Translation((-cx, -cy, -cz)))
     garment.data.update()
-    print(f"[generate_cages] centered garment bbox at chest Y={CHEST_Y}")
+    print("[generate_cages] centered garment at origin")
     return garment
 
 
@@ -364,29 +339,24 @@ def _select_only(objects: list[bpy.types.Object]) -> None:
         bpy.context.view_layer.objects.active = objects[0]
 
 
-def _export_fbx(output_path: str, objects: list[bpy.types.Object]) -> None:
-    """Export selected objects as a Roblox-compatible FBX 7.4 ASCII/binary."""
+def _export_glb(output_path: str, objects: list[bpy.types.Object]) -> None:
+    """Export selected objects as a Roblox-compatible GLB.
+
+    GLB (glTF binary) is used instead of FBX because it reliably carries Meshy's
+    textures/colour through to Roblox's 3D importer — the FBX path imported as a
+    plain white mesh (lost colour). export_yup converts Blender Z-up to the glTF
+    Y-up that Roblox expects.
+    """
     os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
     _select_only(objects)
-    # Settings tuned to match Roblox Studio's FBX importer expectations
-    # (Y-up, scale 1.0, ASCII path so we can grep/troubleshoot if needed).
-    bpy.ops.export_scene.fbx(
+    bpy.ops.export_scene.gltf(
         filepath=output_path,
+        export_format="GLB",
         use_selection=True,
-        global_scale=1.0,
-        apply_unit_scale=True,
-        apply_scale_options="FBX_SCALE_NONE",
-        axis_forward="-Z",
-        axis_up="Y",
-        bake_space_transform=False,
-        object_types={"MESH"},
-        use_mesh_modifiers=True,
-        mesh_smooth_type="OFF",
-        use_subsurf=False,
-        use_mesh_edges=False,
-        use_tspace=False,
-        path_mode="COPY",
-        embed_textures=True,
+        export_yup=True,
+        export_apply=True,
+        export_materials="EXPORT",
+        export_image_format="AUTO",
     )
 
 
@@ -397,30 +367,21 @@ def main() -> int:
     print(f"[generate_cages] name={args.name}")
     print(f"[generate_cages] template={args.template}")
     print(f"[generate_cages] offset={args.offset}")
+    print(f"[generate_cages] target_size={args.target_size}")
 
     _wipe_scene()
-    garment = _import_garment(args.garment, target_name=args.name)
+    garment = _import_garment(args.garment, target_name=args.name, target_size=args.target_size)
     print(f"[generate_cages] imported garment: {garment.name} "
           f"({len(garment.data.vertices)} verts, {len(garment.data.polygons)} polys)")
 
-    # 2026-06-02 (session 403): export GARMENT-ONLY — do NOT bundle the Roblox
-    # body cage shells in the FBX.
-    #
-    # The baked-cage approach kept failing for the user: the InnerCage/OuterCage
-    # are full-body avatar shells (~5.5 studs) and they render as huge white
-    # blobs whenever the raw .fbx is dragged into Workspace. The session-381
-    # transparency does NOT survive Roblox's FBX import, and the cages only turn
-    # into invisible cage-data when wired by Avatar Import 3D / the Accessory
-    # Fitting Tool — not on a plain drag. Measured from a real export: the
-    # garment itself is now correctly sized (~2.6 studs after the longest-axis
-    # rescale), but the 5.5-stud cages dominated the scene ("всё равно огромные").
-    #
-    # The reliable, user-proof workflow is a CLEAN garment mesh → Accessory
-    # Fitting Tool: the AFT generates its own cages and lets the user scale and
-    # position the garment inside the blue bounding box on a preview avatar. So
-    # we ship only the rescaled garment. (_append_cages / _shrinkwrap_outer_cage
-    # are kept above for reference / a possible future auto-wrap path.)
-    _export_fbx(args.output, [garment])
+    # 2026-06-02 (session 403): export a clean GARMENT-ONLY GLB — keeps Meshy's
+    # colour/textures (FBX lost them) and is rescaled to target_size. No bundled
+    # body cages: they rendered as huge white blobs on a raw drag and only become
+    # invisible cage-data when wired by the Accessory Fitting Tool. The user fits
+    # this clean mesh in the AFT, which generates its own cages.
+    # (_append_cages / _shrinkwrap_outer_cage stay above for reference / a
+    # possible future auto-wrap path.)
+    _export_glb(args.output, [garment])
     size_bytes = os.path.getsize(args.output)
     print(f"[generate_cages] exported {args.output} ({size_bytes:,} bytes)")
     return 0

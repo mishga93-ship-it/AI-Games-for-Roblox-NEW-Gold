@@ -38,7 +38,7 @@ def _download(url: str, dest: str) -> None:
         shutil.copyfileobj(resp, out)
 
 
-def _run_blender(garment_path: str, output_path: str, name: str, offset: float) -> tuple[int, str]:
+def _run_blender(garment_path: str, output_path: str, name: str, offset: float, target_size: float = 4.0) -> tuple[int, str]:
     """Invoke Blender headless. Returns (exit_code, combined_stdout_stderr)."""
     cmd = [
         BLENDER_BIN,
@@ -50,6 +50,7 @@ def _run_blender(garment_path: str, output_path: str, name: str, offset: float) 
         "--name", name,
         "--template", TEMPLATE_PATH,
         "--offset", str(offset),
+        "--target-size", str(target_size),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     combined = proc.stdout + "\n" + proc.stderr
@@ -121,20 +122,23 @@ class Handler(BaseHTTPRequestHandler):
         garment_url = body.get("garmentUrl")
         name = body.get("name") or "Garment"
         offset = float(body.get("offset", 0.005))
+        target_size = float(body.get("targetSize", 4.0))
         if not garment_url:
             self._send_json(400, {"error": "garmentUrl is required"})
             return
 
-        # Sanitise name → alpha-numeric + underscore so Studio FBX import
-        # doesn't choke on weird object names (Roblox spec: ASCII identifier).
+        # Sanitise name → alpha-numeric + underscore so Studio import doesn't
+        # choke on weird object names (Roblox spec: ASCII identifier).
         safe_name = "".join(c if c.isalnum() else "_" for c in name).strip("_") or "Garment"
 
         workdir = tempfile.mkdtemp(prefix="cage-")
         garment_path = os.path.join(workdir, "garment.glb")
-        output_path = os.path.join(workdir, f"{safe_name}.fbx")
+        # 2026-06-02: output is now a colour-preserving GLB (was FBX, which lost
+        # the texture), rescaled to target_size studs.
+        output_path = os.path.join(workdir, f"{safe_name}.glb")
         try:
             _download(garment_url, garment_path)
-            code, logs = _run_blender(garment_path, output_path, safe_name, offset)
+            code, logs = _run_blender(garment_path, output_path, safe_name, offset, target_size)
             if code != 0 or not os.path.exists(output_path):
                 self._send_json(500, {
                     "error": f"blender exit code {code}",
@@ -142,10 +146,10 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 return
             with open(output_path, "rb") as f:
-                fbx_b64 = base64.b64encode(f.read()).decode("ascii")
+                glb_b64 = base64.b64encode(f.read()).decode("ascii")
             self._send_json(200, {
-                "fbxBase64": fbx_b64,
-                "fbxBytes": os.path.getsize(output_path),
+                "glbBase64": glb_b64,
+                "glbBytes": os.path.getsize(output_path),
                 "logs": logs[-2000:],
             })
         except Exception as err:  # noqa: BLE001
