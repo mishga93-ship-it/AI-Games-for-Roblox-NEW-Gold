@@ -1802,6 +1802,31 @@ app.put('/api/chat/threads/:threadId', async (req: AuthedRequest, res) => {
   }
 });
 
+// Permanently delete a thread (and its `messages` subcollection). Without this
+// route the iOS client could only forget chats locally, so a reinstall — or any
+// time the local store emptied and `syncFromRemote()` ran — re-fetched the
+// still-present server threads and the "deleted" chats reappeared.
+app.delete('/api/chat/threads/:threadId', async (req: AuthedRequest, res) => {
+  try {
+    const threadId = req.params.threadId;
+    const threadRef = db.collection('threads').doc(threadId);
+    const threadDoc = await threadRef.get();
+
+    if (!threadDoc.exists || threadDoc.data()?.userId !== req.userId) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+
+    // recursiveDelete removes the doc plus the `messages` subcollection in one
+    // pass (a plain doc delete would orphan the subcollection in Firestore).
+    await db.recursiveDelete(threadRef);
+
+    res.json({ id: threadId, deleted: true });
+  } catch (error) {
+    logger.error('Delete thread failed', error);
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
 app.get('/api/chat/threads/:threadId/messages', async (req: AuthedRequest, res) => {
   try {
     const threadId = req.params.threadId;
