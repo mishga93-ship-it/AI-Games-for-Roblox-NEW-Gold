@@ -902,7 +902,7 @@ async function translateForImageGen(text: string): Promise<string> {
 export async function generatePreviewTexture(
   description: string,
   _style: string = 'roblox',
-  context: 'character' | 'game' | 'prop' | 'pet' = 'character',
+  context: 'character' | 'game' | 'prop' | 'pet' | 'garment' = 'character',
 ): Promise<string | undefined> {
   const englishDescription = await translateForImageGen(description);
   // Session 231 (Roblox suspension fix): every prompt suffixes a Roblox-friendly safety clause
@@ -918,6 +918,13 @@ export async function generatePreviewTexture(
   const CHARACTER_COLOR_DIRECTIVE = 'Premium colorful NPC concept art direction: use at least three distinct visible color accents, readable outfit panels, colored accessories, expressive face details, strong silhouette, and a clean bright background. If the brief asks for black or dark clothing, keep the dark base but add vivid cyan, violet, lime, or red accent graphics so the character is not black-on-gray.';
   const prompt = context === 'game'
     ? `3D game level screenshot: ${englishDescription}. Colorful platforming world, obstacle course environment, floating platforms, bright neon colors, top-down isometric camera angle. NO characters, NO people, NO avatars. Only the game world and level geometry. Do NOT include any text or watermarks.${SAFETY_SUFFIX}`
+    : context === 'garment'
+      // Layered-clothing approval concept. Flux mostly ignores negative_prompt
+      // (CFG≈1), so the wearer-suppression lives here in the positive prompt:
+      // explicit ghost-mannequin / flat-lay framing + a long "nobody is wearing
+      // it" clause. Without this the model renders the garment on an implied
+      // body/mannequin and Meshy then reconstructs a whole avatar.
+      ? `${englishDescription}. Professional flat product shot of a single clothing garment ONLY, ghost-mannequin style: the empty garment laid flat or floating in empty space on a plain white background, front view. Show just the fabric, cut, colour, pattern, stitching and trim of the garment by itself. There is NO person, NO human, NO mannequin, NO body, NO torso, NO head, NO arms, NO legs — nobody is wearing it. Clean stylized render, bright saturated colours, game-ready clothing reference. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`
     : context === 'prop'
       ? `${englishDescription}. Single 3D object centered on white background, front view. Clean stylized render, bright saturated colors, game-ready prop. Do NOT include any text, watermarks, logos, people, or characters.${SAFETY_SUFFIX}`
       : context === 'pet'
@@ -979,11 +986,18 @@ export async function generatePreviewTexture(
   // recurring cartoon defaults — flat cel-shading, eyes too big, chibi
   // proportions — that don't survive the Tripo image-to-3d step nicely.
   const PET_NEGATIVE = `${CHARACTER_NEGATIVE}, flat shading, cel shading, chibi, super-deformed proportions, oversized head, dot eyes, plush toy, stuffed animal, knitted, crochet, felt material, low-poly toy, plastic figurine, action figure box, multiple animals, two of, group, pack, two heads`;
+  // 2026-06-02: garment concept (layered clothing approval) must show the garment
+  // ALONE. Flux mostly ignores negative_prompt (CFG≈1) — the positive prompt does
+  // the heavy lifting — but this still bites on flux-pro/dev (guidance_scale 3.5)
+  // as a second line of defence against a leaked wearer/mannequin.
+  const GARMENT_NEGATIVE = `${NEGATIVE_PROMPT}, person, people, human, character, avatar, mannequin, dummy, doll, model wearing, body, torso, chest, head, face, neck, arms, hands, legs, feet, figure`;
   const negPrompt = context === 'character'
     ? CHARACTER_NEGATIVE
     : context === 'pet'
       ? PET_NEGATIVE
-      : NEGATIVE_PROMPT;
+      : context === 'garment'
+        ? GARMENT_NEGATIVE
+        : NEGATIVE_PROMPT;
   const ultraConfig = {
     name: 'flux-pro/v1.1-ultra',
     config: {
@@ -1035,7 +1049,12 @@ export async function generatePreviewTexture(
   // with toon characters. game/prop contexts keep schnell first (cheap + good enough).
   const falProviders: Array<{ name: string; config: Parameters<typeof runFal>[1] }> = context === 'character'
     ? [ultraConfig, proConfig, schnellConfig, devConfig]
-    : [schnellConfig, proConfig, devConfig];
+    // Garment: pro/dev first so the "no body / no mannequin" negative_prompt
+    // actually applies (guidance_scale 3.5). schnell ignores negatives, so it's
+    // only the last-resort fallback here.
+    : context === 'garment'
+      ? [proConfig, devConfig, schnellConfig]
+      : [schnellConfig, proConfig, devConfig];
 
   for (const provider of falProviders) {
     try {

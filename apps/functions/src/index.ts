@@ -26219,7 +26219,13 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       // garment silhouette, not a full Roblox avatar wearing the jacket. Without
       // this, the concept generator produces a Mishu-style mannequin with the
       // jacket on, and Meshy reconstructs the whole avatar mesh.
-      const conceptContext: 'character' | 'prop' = (isWeapon || isVehicle || isItem || isFurniture || isLayeredClothing) ? 'prop' : 'character';
+      // 2026-06-02: layered clothing gets its own 'garment' context — a garment-only
+      // ghost-mannequin concept (no wearer). The generic 'prop' prompt was too weak at
+      // suppressing the body, so the approval image (and the Meshy input it becomes)
+      // kept showing a mannequin/character wearing the garment.
+      const conceptContext: 'character' | 'prop' | 'garment' = isLayeredClothing
+        ? 'garment'
+        : (isWeapon || isVehicle || isItem || isFurniture) ? 'prop' : 'character';
       logger.info('concept_image: generating', {
         jobId,
         isWeapon, isVehicle, isItem, isFurniture, isLayeredClothing,
