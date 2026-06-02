@@ -403,21 +403,24 @@ def main() -> int:
     print(f"[generate_cages] imported garment: {garment.name} "
           f"({len(garment.data.vertices)} verts, {len(garment.data.polygons)} polys)")
 
-    inner, outer = _append_cages(args.template)
-    print(f"[generate_cages] appended cages: {inner.name} "
-          f"({len(inner.data.vertices)} verts), {outer.name} "
-          f"({len(outer.data.vertices)} verts)")
-
-    _shrinkwrap_outer_cage(outer, garment, args.offset)
-    print(f"[generate_cages] shrinkwrap applied to {outer.name}")
-
-    _name_cages(inner, outer, args.name)
-    print(f"[generate_cages] renamed: {inner.name}, {outer.name}")
-
-    _make_cages_transparent(inner, outer)
-    print(f"[generate_cages] cages set to transparent (FBX-drag visibility off)")
-
-    _export_fbx(args.output, [garment, inner, outer])
+    # 2026-06-02 (session 403): export GARMENT-ONLY — do NOT bundle the Roblox
+    # body cage shells in the FBX.
+    #
+    # The baked-cage approach kept failing for the user: the InnerCage/OuterCage
+    # are full-body avatar shells (~5.5 studs) and they render as huge white
+    # blobs whenever the raw .fbx is dragged into Workspace. The session-381
+    # transparency does NOT survive Roblox's FBX import, and the cages only turn
+    # into invisible cage-data when wired by Avatar Import 3D / the Accessory
+    # Fitting Tool — not on a plain drag. Measured from a real export: the
+    # garment itself is now correctly sized (~2.6 studs after the longest-axis
+    # rescale), but the 5.5-stud cages dominated the scene ("всё равно огромные").
+    #
+    # The reliable, user-proof workflow is a CLEAN garment mesh → Accessory
+    # Fitting Tool: the AFT generates its own cages and lets the user scale and
+    # position the garment inside the blue bounding box on a preview avatar. So
+    # we ship only the rescaled garment. (_append_cages / _shrinkwrap_outer_cage
+    # are kept above for reference / a possible future auto-wrap path.)
+    _export_fbx(args.output, [garment])
     size_bytes = os.path.getsize(args.output)
     print(f"[generate_cages] exported {args.output} ({size_bytes:,} bytes)")
     return 0
