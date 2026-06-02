@@ -27103,14 +27103,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
       let cagedFbxSafeName: string = 'Garment';
 
       await beginStage('generate_cages', 'Generating inner/outer wrap cages via Blender headless service');
-      // 2026-05-22 Phase C: call blender-cage-service on Cloud Run.
-      // Replaces the previous no-op marker and the never-fully-wired
-      // generateClothingCages() helper. The service appends Roblox's
-      // canonical Clothing_Cage_Template (InnerCage + OuterCage, 1358v
-      // each), runs BVH-based shrinkwrap on OuterCage targeting the
-      // garment mesh from Meshy/Tripo, and returns a single .fbx
-      // containing all three named meshes ready for Studio drag-and-drop
-      // (no manual AFT step).
+      // 2026-06-02 (session 403): blender-cage-service now RESCALES the Meshy
+      // garment to a sane stud size and returns a clean, colour-preserving GLB
+      // (was a cage-bundled FBX, which imported huge + colourless). The user
+      // fits this GLB in Studio's Accessory Fitting Tool. `targetSize` is the
+      // compact-top target; the service auto-bumps a tall full-figure mesh
+      // (full outfit / dress / pants) to ~4.6 studs so it covers the body.
       try {
         const glbUrl = rawMeshArtifact.downloadUrl ?? rawMeshArtifact.url ?? '';
         if (!glbUrl) throw new Error('No garment glb URL to send to cage service');
@@ -27121,34 +27119,34 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         const cageResp = await fetch(`${cageServiceUrl}/cage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ garmentUrl: glbUrl, name: safeName, offset: 0.005 }),
+          body: JSON.stringify({ garmentUrl: glbUrl, name: safeName, offset: 0.005, targetSize: 2.6 }),
         });
         if (!cageResp.ok) {
           const errBody = await cageResp.text();
           throw new Error(`blender-cage-service ${cageResp.status}: ${errBody.slice(0, 400)}`);
         }
-        const cageJson = await cageResp.json() as { fbxBase64?: string; fbxBytes?: number; logs?: string; error?: string };
-        if (cageJson.error || !cageJson.fbxBase64) {
-          throw new Error(`blender-cage-service returned no fbx: ${cageJson.error ?? 'unknown'}`);
+        const cageJson = await cageResp.json() as { glbBase64?: string; glbBytes?: number; logs?: string; error?: string };
+        if (cageJson.error || !cageJson.glbBase64) {
+          throw new Error(`blender-cage-service returned no glb: ${cageJson.error ?? 'unknown'}`);
         }
-        logger.info('[generate_cages] cage service produced FBX', {
+        logger.info('[generate_cages] cage service produced rescaled GLB', {
           jobId,
-          fbxBytes: cageJson.fbxBytes,
+          glbBytes: cageJson.glbBytes,
           logsTail: (cageJson.logs ?? '').slice(-300),
         });
-        const cagedFbxBuf = Buffer.from(cageJson.fbxBase64, 'base64');
-        // Stash for use by the next stage's Open Cloud upload (session 378).
+        const cagedFbxBuf = Buffer.from(cageJson.glbBase64, 'base64');
+        // Stash for the next stage's Open Cloud upload attempt (now a GLB).
         cagedFbxBuffer = cagedFbxBuf;
         cagedFbxSafeName = safeName;
         const cagedFbxArtifact = await uploadBinaryArtifact(job, cagedFbxBuf, {
-          type: 'fbx',
-          extension: 'fbx',
-          mimeType: 'model/fbx',
-          name: `${safeName}-with-cages.fbx`,
-          previewText: 'Garment + inner/outer cages — drag into Studio as Accessory (no AFT needed)',
+          type: 'glb',
+          extension: 'glb',
+          mimeType: 'model/gltf-binary',
+          name: `${safeName}.glb`,
+          previewText: "Garment mesh (rescaled, with colour) — import into Studio's Accessory Fitting Tool to fit it on the avatar",
           stageId: 'generate_cages',
           artifactRole: 'export_binary',
-          metadata: { is3DModel: true, isLayeredClothingFbx: true, hasCages: true },
+          metadata: { is3DModel: true, isLayeredClothingFbx: true, hasCages: false },
         });
         currentJob.artifacts = [...currentJob.artifacts, cagedFbxArtifact];
         currentJob = {
@@ -27156,12 +27154,12 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
           metadata: {
             ...(currentJob.metadata ?? {}),
             cagedFbxUrl: cagedFbxArtifact.downloadUrl ?? cagedFbxArtifact.url,
-            cagedFbxBytes: cageJson.fbxBytes,
-            cagesGenerated: true,
+            cagedFbxBytes: cageJson.glbBytes,
+            cagesGenerated: false,
           },
         };
         await finishStage('generate_cages', 'completed', [cagedFbxArtifact.id], [
-          `Inner + outer cages generated (FBX ${(cageJson.fbxBytes ?? 0)} bytes). Drag the .fbx into Studio Workspace — no AFT step required.`,
+          `Garment mesh rescaled to fit (GLB ${(cageJson.glbBytes ?? 0)} bytes, colour preserved). Import into Studio's Accessory Fitting Tool (Avatar tab) and fit it on the avatar.`,
         ]);
       } catch (cageErr) {
         logger.warn('[generate_cages] blender-cage-service call failed', { jobId, error: errorMessage(cageErr) });
