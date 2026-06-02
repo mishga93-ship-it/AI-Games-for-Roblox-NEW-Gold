@@ -7082,18 +7082,19 @@ function createTShirtPipelineStages(): GenerationStageProgress[] {
 }
 
 function createLayeredClothingPipelineStages(): GenerationStageProgress[] {
-  // Session 001 (Track 2 Phase 3): added convert_fbx + validate_layered stages.
-  // FBX is what Studio's Accessory Fitting Tool prefers; validate_layered checks
-  // bounding box / triangle count / texture resolution against Roblox UGC limits
-  // (≤8³ studs, ≤4k triangles, ≤2048² texture) before handing to the user.
-  // generate_cages is kept but treated as a no-op marker — Path B (Studio AFT)
-  // generates cages in Studio, not on backend.
+  // Track 2 Phase 3: garment-only concept → Meshy mesh → FBX → validate UGC
+  // limits (≤8³ studs, ≤4k triangles, ≤2048² texture) → bake inner/outer wrap
+  // cages ON THE BACKEND (blender-cage-service: BVH shrinkwrap onto Roblox's
+  // Clothing_Cage_Template) → package + export. The caged FBX imports straight
+  // into Studio as an Accessory with a WrapLayer — no manual Accessory Fitting
+  // Tool step. (The old "no-op / Studio AFT" note was stale: generate_cages now
+  // actually runs the cage service — see processCharacter3DJob layered block.)
   return [
     { id: 'concept_image', title: 'Concept image', status: 'pending' },
     { id: 'mesh_3d', title: '3D clothing mesh', status: 'pending' },
     { id: 'convert_fbx', title: 'Convert to FBX', status: 'pending' },
     { id: 'validate_layered', title: 'Validate Roblox limits', status: 'pending' },
-    { id: 'generate_cages', title: 'Cages (Studio AFT)', status: 'pending' },
+    { id: 'generate_cages', title: 'Bake wrap cages', status: 'pending' },
     { id: 'package_accessory', title: 'Package accessory', status: 'pending' },
     { id: 'export_rbxm', title: 'Export RBXM', status: 'pending' },
   ];
