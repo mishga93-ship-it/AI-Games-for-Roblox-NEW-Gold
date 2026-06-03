@@ -278,16 +278,15 @@ async function buildPreviewPNG(
   }
 
   // Fallback to text-to-image: generate a fresh vibe avatar from scratch.
+  // NOTE (marketing 2026-06-03): flux returns a vibrant *multicolored* body here
+  // — cyan/orange arms, purple hands, rainbow shoes. For 'character' context the
+  // first provider is flux-pro-ultra with enhance_prompt:true (providers.ts),
+  // whose prompt-rewriter re-adds Roblox default limb colors and ignores any
+  // "single uniform color" instruction we put in the prompt. So the "stylish
+  // single-color R15" requirement is enforced DETERMINISTICALLY below (grayscale
+  // + vibe tint), not via the prompt — see the !fitOnUser block before overlays.
   if (!baseImage) {
-    // Marketing 2026-06-03: the generic (no-username) preview rendered a Roblox
-    // DEFAULT rainbow body — cyan/purple arms, green hands — which read as a
-    // cheap "multicolored dummy". The vibe prompt only constrained the OUTFIT
-    // (e.g. all-black for headless), leaving the exposed skin (arms/hands/legs)
-    // to flux's default palette. Force a single uniform body color so the
-    // generic preview is a clean, stylish monochrome R15. Positive prompt does
-    // the work (flux ~ignores negatives at CFG≈1, see providers.ts).
-    const t2iPrompt = avatarRestylePromptFor(vibe, gender) +
-      ' Every body part — arms, hands, legs, torso, neck — is ONE single uniform matte color matching the outfit. Monochrome stylish R15 figure, all limbs the exact same color. NO multicolored arms, NO rainbow Roblox default body colors, NO mismatched limb colors, NO green hands, NO cyan or purple arms.';
+    const t2iPrompt = avatarRestylePromptFor(vibe, gender);
     const t2iUrl = await generatePreviewTexture(t2iPrompt, 'roblox', 'character')
       .catch((err: unknown) => { logger.warn('[glowupCompositor] t2i fallback failed', err); return undefined; });
     if (t2iUrl) {
@@ -324,6 +323,19 @@ async function buildPreviewPNG(
           .toBuffer();
       }
     }
+  }
+
+  // Marketing 2026-06-03: the generic (no-username) preview must be a "stylish
+  // single-color R15", not the multicolored flux dummy (rainbow arms/hands/
+  // shoes). A prompt constraint did NOT hold (flux-pro-ultra enhance_prompt
+  // overrides it). Enforce it deterministically: collapse the figure to ONE
+  // muted vibe-tone — grayscale removes every hue, tint reapplies a single hue
+  // from the vibe palette while preserving luminance, so the 3D shading/form
+  // stays intact and the limbs can no longer be different colors. Generic
+  // preview only — a real restyled user avatar (fitOnUser) keeps its own colors.
+  if (!fitOnUser) {
+    const { r, g, b } = hexToRgba(vibe.palette.skinHex);
+    baseImage = await sharp(baseImage).grayscale().tint({ r, g, b }).png().toBuffer();
   }
 
   // Title banner + watermark overlays (always added).
