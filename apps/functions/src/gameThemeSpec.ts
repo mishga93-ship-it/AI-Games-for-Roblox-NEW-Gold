@@ -61,6 +61,17 @@ export interface GameAtmosphere {
   treeTrunk: Rgb;
 }
 
+/** A themed NPC/enemy character. `decalId` is a real public Roblox catalog
+ * decal id (the actual meme face — Tralalero shark, Skibidi, etc.) rendered via
+ * `rbxthumb://type=Asset&id=<id>&w=420&h=420`; when 0/undefined the builder uses
+ * a coloured composite character instead. */
+export interface GameCharacter {
+  name: string;
+  decalId?: number;
+  color: Rgb;
+  line: string;
+}
+
 export interface GameVisualSpec {
   /** Cleaned display title used for in-world signage. */
   themeName: string;
@@ -71,6 +82,10 @@ export interface GameVisualSpec {
   palette: GamePalette;
   /** Time-of-day + foliage mood (night/dusk/day + tree kind/colour). */
   atmosphere: GameAtmosphere;
+  /** 3 themed NPC characters (real meme faces where available). */
+  characters: GameCharacter[];
+  /** Real catalog decal id for the plaza hero centerpiece (0 = coloured monument). */
+  heroDecalId: number;
   /** 6 themed buildings — town-like genres use name+sign; other genres ignore. */
   structures: GameStructure[];
   /** 6 themed jobs (roleplay). */
@@ -304,6 +319,78 @@ export function atmosphereOptsLua(spec: GameVisualSpec): string {
     + `bloom = ${night ? 0.3 : 0.6}, cloudCover = ${night ? 0.85 : 0.5}`;
 }
 
+// ─── Themed characters per vibe (real meme decal ids reused from the pool) ──
+
+// Real public Roblox catalog decal ids (mirrors the ASSET_* constants in
+// gameTemplates.ts brainrot pool — the actual meme faces).
+const DECAL_TRALALERO = 74641532426859;
+const DECAL_BOMBARDIRO = 98664340093672;
+const DECAL_SKIBIDI = 14595650130;
+const DECAL_TUNG = 77173967880518;
+
+const CHARACTERS_BY_VIBE: Record<string, GameCharacter[]> = {
+  brainrot: [
+    { name: 'Tralalero', decalId: DECAL_TRALALERO, color: [60, 120, 220], line: 'Tralalero Tralala! Get the bag, stay sigma.' },
+    { name: 'Bombardiro', decalId: DECAL_BOMBARDIRO, color: [90, 150, 80], line: 'Bombardiro Crocodilo, reporting for chaos.' },
+    { name: 'Skibidi', decalId: DECAL_SKIBIDI, color: [230, 230, 235], line: 'Skibidi dop dop yes yes.' },
+  ],
+  tropical: [
+    { name: 'Bananita', color: [255, 210, 60], line: 'Bananita Dolfinita! Welcome to paradise.' },
+    { name: 'Dolfinita', color: [90, 200, 230], line: 'Splash! The lagoon never sleeps.' },
+    { name: 'Tralalero', decalId: DECAL_TRALALERO, color: [60, 120, 220], line: 'Even sharks vacation here.' },
+  ],
+  money: [
+    { name: 'The Host', color: [60, 200, 90], line: 'Last one standing wins $1,000,000!' },
+    { name: 'Challenger', color: [255, 210, 70], line: "Touch the money pad and DON'T let go." },
+    { name: 'Prize Master', color: [120, 230, 160], line: 'Every house here pays out. Go!' },
+  ],
+  monster: [
+    { name: 'The Creature', decalId: DECAL_BOMBARDIRO, color: [150, 70, 200], line: 'You smell... fresh.' },
+    { name: 'Mutant', color: [110, 150, 80], line: "Don't scream. It makes them faster." },
+    { name: 'Ghoul', color: [90, 90, 110], line: 'Stay in the light, if you can find it.' },
+  ],
+  night: [
+    { name: 'Survivor', color: [120, 140, 170], line: 'Keep the fire alive. Dawn is far.' },
+    { name: 'Scout', color: [90, 110, 90], line: 'Wolves circle after midnight.' },
+    { name: 'Owl Keeper', color: [150, 120, 80], line: 'The owls warn us when they come.' },
+  ],
+  inferno: [
+    { name: 'Forgemaster', color: [255, 120, 40], line: 'Mind the lava. It bites.' },
+    { name: 'Ember', color: [255, 90, 60], line: 'The whole city runs on fire here.' },
+    { name: 'Magma', color: [120, 60, 50], line: "One wrong step and you're ash." },
+  ],
+  spy: [
+    { name: 'Agent', color: [220, 70, 70], line: 'Eyes open. Trust no one.' },
+    { name: 'Handler', color: [150, 160, 175], line: 'Your mission, should you accept it...' },
+    { name: 'Hacker', color: [90, 220, 140], line: "I'm in. Tunnels unlocked." },
+  ],
+  hero: [
+    { name: 'Captain', color: [255, 80, 90], line: 'Suit up, recruit. The city needs us.' },
+    { name: 'Recruit', color: [90, 150, 235], line: 'My powers are still... developing.' },
+    { name: 'Mentor', color: [255, 210, 90], line: 'Every legend trained here first.' },
+  ],
+  pets: [
+    { name: 'Drako', color: [90, 180, 120], line: 'Roar! Pets run this town now.' },
+    { name: 'Pup', color: [200, 150, 110], line: 'Wanna adopt me? Pick a job first!' },
+    { name: 'Trainer', color: [255, 150, 200], line: 'Feed, train, evolve. Easy.' },
+  ],
+  lab: [
+    { name: 'Subject 01', color: [230, 230, 235], line: 'I... I think I am changing.' },
+    { name: 'Scientist', color: [120, 255, 210], line: 'Do not feed the Prototype.' },
+    { name: 'Prototype', color: [120, 90, 110], line: '. . .' },
+  ],
+};
+
+const NEUTRAL_CHARACTERS: GameCharacter[] = [
+  { name: 'Mira', color: [230, 180, 150], line: 'Welcome! Grab a job pad to earn cash.' },
+  { name: 'Theo', color: [170, 200, 235], line: 'Buy a role at the Shop to flex your status.' },
+  { name: 'Ada', color: [210, 200, 160], line: 'The Mayor job pays the most. Good luck out there!' },
+];
+
+function charactersForVibe(vibeKey: string): GameCharacter[] {
+  return CHARACTERS_BY_VIBE[vibeKey] ?? NEUTRAL_CHARACTERS;
+}
+
 // ─── Derivation ──────────────────────────────────────────────────────────────
 
 function cleanTitle(title: string): string {
@@ -339,6 +426,8 @@ export function deriveGameVisualSpec(genre: string, brief: string, title: string
 
   const hubName = (vibe.adjective ? `${vibe.adjective} ${setting.hubNoun}` : setting.hubNoun).slice(0, 40);
   const heroPropKeyword = vibe.heroPropKeyword || strongTokenFromText(haystack);
+  const characters = charactersForVibe(vibe.key);
+  const heroDecalId = characters.find((c) => c.decalId)?.decalId ?? 0;
 
   return {
     themeName: cleanTitle(title),
@@ -346,6 +435,8 @@ export function deriveGameVisualSpec(genre: string, brief: string, title: string
     setting: setting.key,
     palette: vibe.palette,
     atmosphere: atmosphereForVibe(vibe.key),
+    characters,
+    heroDecalId,
     structures,
     jobs: setting.jobs,
     flavorLines: vibe.flavor,
@@ -474,10 +565,14 @@ export function healGameVisualSpec(spec: GameVisualSpec, reasons: string[]): Gam
     structures.push({ name: fill, sign: fill });
   }
 
+  const healedCharacters = charactersForVibe(vibeKey);
   return {
     ...spec,
     vibe: vibeKey,
     palette,
+    atmosphere: atmosphereForVibe(vibeKey),
+    characters: healedCharacters,
+    heroDecalId: healedCharacters.find((c) => c.decalId)?.decalId ?? 0,
     flavorLines: flavorLines.length >= 3 ? flavorLines : NEUTRAL_VIBE.flavor,
     heroPropKeyword: heroPropKeyword || 'trophy',
     structures: structures.slice(0, 6),

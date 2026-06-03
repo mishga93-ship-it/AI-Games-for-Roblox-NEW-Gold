@@ -10366,13 +10366,29 @@ function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult 
     { name: 'Ada', pos: 'Vector3.new(12, 0, -32)', color: 'Color3.fromRGB(210, 200, 160)' },
   ];
   const npcsLua = spec
-    ? spec.flavorLines
+    ? spec.characters
         .slice(0, 3)
-        .map((line, i) => `    {name=${safeLuaString(npcSlots[i].name, 'NPC')}, pos=${npcSlots[i].pos}, color=${npcSlots[i].color}, line=${safeLuaString(line, 'Welcome!')}},`)
+        .map((c, i) => `    {name=${safeLuaString(c.name, 'NPC')}, pos=${npcSlots[i].pos}, color=${rgbLua(c.color)}, line=${safeLuaString(c.line, 'Welcome!')}, face=${Math.max(0, Math.floor(Number(c.decalId) || 0))}},`)
         .join('\n')
     : `    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash."},
     {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status."},
     {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!"},`;
+
+  // Session 414d: themed hero centerpiece at the plaza — a lit pedestal showing
+  // the theme's signature meme face (decal) + the game title. This is the free
+  // "hero asset"; the Meshy 3D mesh upgrades the orb later.
+  const heroCenterLua = spec
+    ? `
+do
+    local hp = Vector3.new(28, 0, 28)
+    part("HeroPedestal", Vector3.new(16, 9, 16), hp + Vector3.new(0, 4.5, 0), theme.wall, Enum.Material.Marble)
+    local orb = part("HeroOrb", Vector3.new(8, 8, 8), hp + Vector3.new(0, 13, 0), theme.accent, Enum.Material.Neon); orb.Shape = Enum.PartType.Ball
+    local hpl = Instance.new("PointLight"); hpl.Color = theme.accent; hpl.Brightness = 2.4; hpl.Range = 30; hpl.Parent = orb
+    local hbb = Instance.new("BillboardGui"); hbb.Size = UDim2.new(0, 220, 0, 250); hbb.StudsOffset = Vector3.new(0, 10, 0); hbb.AlwaysOnTop = true; hbb.Parent = orb
+${spec.heroDecalId > 0 ? `    local hImg = Instance.new("ImageLabel"); hImg.Size = UDim2.new(1, 0, 0.78, 0); hImg.BackgroundTransparency = 1; hImg.Image = "rbxthumb://type=Asset&id=${Math.floor(spec.heroDecalId)}&w=420&h=420"; hImg.Parent = hbb
+` : ''}    local hTxt = Instance.new("TextLabel"); hTxt.Size = UDim2.new(1, 0, 0.22, 0); hTxt.Position = UDim2.new(0, 0, 0.78, 0); hTxt.BackgroundTransparency = 1; hTxt.TextColor3 = Color3.fromRGB(255, 255, 255); hTxt.TextStrokeTransparency = 0.3; hTxt.TextScaled = true; hTxt.Font = Enum.Font.GothamBlack; hTxt.Text = ${titleLua}; hTxt.Parent = hbb
+end`
+    : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10419,6 +10435,7 @@ for i = 1, 20 do
 end
 local plaza = part("Plaza", Vector3.new(86, 1, 86), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
 if Config.HubName and Config.HubName ~= "" then label3d(plaza, Config.HubName, 3, theme.accent) end
+${heroCenterLua}
 part("RoadNS", Vector3.new(20, 1, 380), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
 part("RoadEW", Vector3.new(380, 1, 20), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
 
@@ -10507,6 +10524,10 @@ for _, n in ipairs(NPCS) do
     local body = part("NPC_" .. n.name, Vector3.new(3, 7, 2), n.pos + Vector3.new(0, 4, 0), n.color, Enum.Material.SmoothPlastic)
     local head = part("NPCHead_" .. n.name, Vector3.new(2, 2, 2), n.pos + Vector3.new(0, 8.5, 0), n.color:Lerp(Color3.new(1, 1, 1), 0.2), Enum.Material.SmoothPlastic); head.CanCollide = false
     label3d(head, n.name, 2.2, Color3.fromRGB(255, 255, 255))
+    if n.face and n.face > 0 then
+        local fb = Instance.new("BillboardGui"); fb.Size = UDim2.new(0, 96, 0, 96); fb.StudsOffset = Vector3.new(0, 5.5, 0); fb.AlwaysOnTop = true; fb.Parent = head
+        local fi = Instance.new("ImageLabel"); fi.Size = UDim2.new(1, 0, 1, 0); fi.BackgroundTransparency = 1; fi.Image = "rbxthumb://type=Asset&id=" .. n.face .. "&w=420&h=420"; fi.Parent = fb
+    end
     local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 12; pr.RequiresLineOfSight = false; pr.Parent = body
     pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
 end
