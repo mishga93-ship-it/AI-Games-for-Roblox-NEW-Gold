@@ -10629,6 +10629,44 @@ function buildRacingScript(params: GameTemplateParams): MultiScriptResult {
     ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, road=${rgbLua(spec.palette.road)}, accent=${rgbLua(spec.palette.accent)}}`
     : 'nil';
   const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
+  // Session 414c: themed environmental CONTENT (not just colour). "Lava City" was
+  // missing lava + city — add glowing lava pools + a volcanic skyline for inferno,
+  // city towers for urban vibes, palms for tropical, themed trees otherwise.
+  const racingAtmo = (spec && spec.vibe !== 'neutral') ? spec.atmosphere : undefined;
+  const racingVibe = (spec && spec.vibe !== 'neutral') ? spec.vibe : '';
+  const racingTreeKindLua = safeLuaString(racingAtmo?.treeKind || 'pine', 'pine');
+  const racingTreeTrunkLua = racingAtmo ? rgbLua(racingAtmo.treeTrunk) : 'Color3.fromRGB(96, 66, 42)';
+  const racingTreeLeafLua = racingAtmo ? rgbLua(racingAtmo.treeLeaf) : 'Color3.fromRGB(64, 124, 64)';
+  const racingRockLua = (racingAtmo && spec) ? rgbLua(spec.palette.wall) : 'Color3.fromRGB(132, 128, 120)';
+  const racingDecorLua = racingVibe === 'inferno'
+    ? `
+for i = 1, 8 do
+    local a = math.rad(i * 45); local r = 30 + (i % 2) * 18
+    local lp = part("LavaPool_" .. i, Vector3.new(18 + (i % 3) * 6, 0.6, 14 + (i % 2) * 6), Vector3.new(math.cos(a) * r, 0.7, math.sin(a) * r * 0.6), Color3.fromRGB(255, 110, 30), Enum.Material.Neon)
+    lp.CanCollide = false
+    local ll = Instance.new("PointLight"); ll.Color = Color3.fromRGB(255, 120, 40); ll.Brightness = 2.6; ll.Range = 28; ll.Parent = lp
+end
+for i = 1, 10 do
+    local a = math.rad(i * 36); local hh = 34 + (i % 4) * 16
+    local bld = part("CityTower_" .. i, Vector3.new(20, hh, 20), Vector3.new(math.cos(a) * 198, hh / 2, math.sin(a) * 198 * 0.78), Color3.fromRGB(46, 38, 40), Enum.Material.Slate)
+    local win = part("CityWin_" .. i, Vector3.new(21, hh * 0.78, 21), bld.Position, Color3.fromRGB(255, 120, 50), Enum.Material.Neon)
+    win.Transparency = 0.72; win.CanCollide = false
+end`
+    : (racingVibe === 'money' || racingVibe === 'spy' || racingVibe === 'lab' || racingVibe === 'brainrot' || racingVibe === 'hero')
+      ? `
+for i = 1, 10 do
+    local a = math.rad(i * 36); local hh = 32 + (i % 4) * 16
+    local bld = part("CityTower_" .. i, Vector3.new(20, hh, 20), Vector3.new(math.cos(a) * 198, hh / 2, math.sin(a) * 198 * 0.78), theme.road, Enum.Material.Concrete)
+    local win = part("CityWin_" .. i, Vector3.new(21, hh * 0.78, 21), bld.Position, theme.accent, Enum.Material.Neon)
+    win.Transparency = 0.74; win.CanCollide = false
+end`
+      : racingVibe === 'tropical'
+        ? `
+for i = 1, 10 do
+    local a = math.rad(i * 36)
+    makeTree(world, Vector3.new(math.cos(a) * 188, 0.5, math.sin(a) * 188 * 0.78), 1.1, "palm", Color3.fromRGB(122, 86, 54), Color3.fromRGB(86, 170, 80))
+end`
+        : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10665,8 +10703,9 @@ setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(
 for i = 1, 14 do
     local a = math.rad(i * 26); local r = 20 + (i % 3) * 14
     local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r * 0.7)
-    if i % 4 == 0 then makeRock(world, p, 0.7, Color3.fromRGB(132, 128, 120)) else makeTree(world, p, 0.9, "pine", Color3.fromRGB(96, 66, 42), Color3.fromRGB(64, 124, 64)) end
+    if i % 4 == 0 then makeRock(world, p, 0.7, ${racingRockLua}) else makeTree(world, p, 0.9, ${racingTreeKindLua}, ${racingTreeTrunkLua}, ${racingTreeLeafLua}) end
 end
+${racingDecorLua}
 
 local waypoints = {}
 local rx, rz = 155, 100
