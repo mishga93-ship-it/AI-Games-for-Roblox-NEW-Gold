@@ -279,7 +279,15 @@ async function buildPreviewPNG(
 
   // Fallback to text-to-image: generate a fresh vibe avatar from scratch.
   if (!baseImage) {
-    const t2iPrompt = avatarRestylePromptFor(vibe, gender);
+    // Marketing 2026-06-03: the generic (no-username) preview rendered a Roblox
+    // DEFAULT rainbow body — cyan/purple arms, green hands — which read as a
+    // cheap "multicolored dummy". The vibe prompt only constrained the OUTFIT
+    // (e.g. all-black for headless), leaving the exposed skin (arms/hands/legs)
+    // to flux's default palette. Force a single uniform body color so the
+    // generic preview is a clean, stylish monochrome R15. Positive prompt does
+    // the work (flux ~ignores negatives at CFG≈1, see providers.ts).
+    const t2iPrompt = avatarRestylePromptFor(vibe, gender) +
+      ' Every body part — arms, hands, legs, torso, neck — is ONE single uniform matte color matching the outfit. Monochrome stylish R15 figure, all limbs the exact same color. NO multicolored arms, NO rainbow Roblox default body colors, NO mismatched limb colors, NO green hands, NO cyan or purple arms.';
     const t2iUrl = await generatePreviewTexture(t2iPrompt, 'roblox', 'character')
       .catch((err: unknown) => { logger.warn('[glowupCompositor] t2i fallback failed', err); return undefined; });
     if (t2iUrl) {
