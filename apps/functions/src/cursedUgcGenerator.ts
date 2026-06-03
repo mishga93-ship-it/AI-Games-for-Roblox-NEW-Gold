@@ -26,6 +26,7 @@ import {
   uploadAssetToRoblox,
   pollRobloxOperation,
   maybeBuildRobloxBinary,
+  convertToFbx,
 } from './robloxWorker.js';
 import {
   buildCursedUGCPrompt,
@@ -293,6 +294,52 @@ async function buildCursedItemRbxmUrl(args: {
   }
 }
 
+// ─── Real .fbx export (session 406) ─────────────────────────────
+//
+// The honest deliverable marketing asked for: a real .fbx the user imports
+// into Roblox Studio (Avatar → Import 3D) to publish as their own UGC item.
+//
+// Source = the Blender-OPTIMIZED GLB (textures embedded), NOT Meshy's raw FBX
+// (whose PBR maps live in separate files → imports textureless). We run it
+// through the worker's /convert-to-fbx (glb_to_fbx.py), which embeds textures
+// (embed_textures=True, path_mode='COPY') and clamps every map to ≤1024px —
+// the exact fix for Studio's "Material_0 — Upload failed" on FBX import.
+//
+// Non-fatal + degrades cleanly: if the worker is unreachable, convertToFbx's
+// fallback returns the GLB bytes unchanged (outputExtension='glb'); we only
+// ship a .fbx when the worker actually produced one, so the UI never offers a
+// GLB mislabeled as FBX — it falls back to .rbxm / .glb instead.
+async function buildCursedItemFbxUrl(args: {
+  glbUrl: string;
+  title: string;
+  firebaseUid: string;
+}): Promise<string | undefined> {
+  try {
+    const result = await convertToFbx({ sourceUrl: args.glbUrl, title: `Cursed ${args.title}`.slice(0, 50) });
+    if (result.outputExtension !== 'fbx' || !result.outputBase64) {
+      logger.warn('[cursedUgcGenerator] .fbx skipped — worker did not return FBX', {
+        ext: result.outputExtension,
+      });
+      return undefined;
+    }
+    const buf = Buffer.from(result.outputBase64, 'base64');
+    const url = await uploadSigned({
+      firebaseUid: args.firebaseUid,
+      filename: 'cursed-item.fbx',
+      buf,
+      contentType: result.outputMimeType || 'model/fbx',
+      useV4: false,
+    });
+    logger.info('[cursedUgcGenerator] .fbx built', { bytes: buf.length });
+    return url;
+  } catch (err) {
+    logger.warn('[cursedUgcGenerator] .fbx build failed (non-fatal)', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
+}
+
 // ─── AI metadata via Anthropic (single JSON call) ───────────────
 
 export interface CursedUGCMetadata {
@@ -424,6 +471,14 @@ export interface CursedUGCResult extends CursedUGCMetadata {
    * fails — the chat then ships the GLB alone (no regression).
    */
   rbxmUrl?: string;
+  /**
+   * Session 406 — real textured .fbx of the finished item, built from the
+   * Blender-optimized GLB via the worker's /convert-to-fbx (glb_to_fbx.py:
+   * embeds textures, clamps maps to ≤1024px). This is the format the user
+   * imports into Roblox Studio (Avatar → Import 3D) to publish their own UGC.
+   * Undefined when the FBX worker is unreachable → UI falls back to .rbxm/.glb.
+   */
+  fbxUrl?: string;
   variations: Array<{ label: string; imageUrl?: string }>;
   generationStatus: 'ready' | 'partial' | 'failed';
 }
@@ -636,12 +691,18 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
   const generationStatus: 'ready' | 'partial' | 'failed' =
     (mainImageUrl || mesh?.thumbnailUrl) ? (cuterUrl && cursedUrl ? 'ready' : 'partial') : 'failed';
 
-  // Session 396 — assemble a real .rbxm of the finished item from the
-  // optimized GLB (serial, since it needs the hosted mesh URL). Bounded +
-  // non-fatal: returns undefined on any failure so the GLB still ships.
-  const rbxmUrl = mesh?.meshUrl
-    ? await buildCursedItemRbxmUrl({ glbUrl: mesh.meshUrl, title: metadata.titleEN, firebaseUid: input.firebaseUid })
-    : undefined;
+  // Session 396 + 406 — assemble the finished-item exports from the optimized
+  // GLB: a real .rbxm (drop straight into Studio) AND a real textured .fbx
+  // (import via Avatar → Import 3D to publish as UGC). Run in parallel — both
+  // consume the same hosted GLB URL — so their latencies don't stack on top of
+  // Meshy inside the 300s function budget. Each is bounded + non-fatal:
+  // returns undefined on failure so the GLB still ships.
+  const [rbxmUrl, fbxUrl] = mesh?.meshUrl
+    ? await Promise.all([
+        buildCursedItemRbxmUrl({ glbUrl: mesh.meshUrl, title: metadata.titleEN, firebaseUid: input.firebaseUid }),
+        buildCursedItemFbxUrl({ glbUrl: mesh.meshUrl, title: metadata.titleEN, firebaseUid: input.firebaseUid }),
+      ])
+    : [undefined, undefined];
 
   // Session 390 round 9 — keep mainImageUrl as the flux concept again.
   // With USDZ working in RealModel3DPreview, iOS shows the rotatable
@@ -657,6 +718,7 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
     meshUrl: mesh?.meshUrl,
     meshThumbnailUrl: mesh?.thumbnailUrl,
     rbxmUrl,
+    fbxUrl,
     variations,
     generationStatus,
     ...metadata,

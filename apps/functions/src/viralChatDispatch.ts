@@ -919,6 +919,27 @@ async function handleCursedUGC(args: {
     });
   }
 
+  // Session 406 — real textured .fbx of the finished item (built from the
+  // optimized GLB via the worker's /convert-to-fbx). This is the format the
+  // user imports into Roblox Studio (Avatar → Import 3D) to publish their own
+  // UGC item on the Marketplace. Only present when the FBX worker produced one.
+  if (result.fbxUrl) {
+    artifacts.push({
+      id: uuidv4(),
+      type: 'rbxm',
+      extension: 'fbx',
+      name: `${baseName}.fbx`,
+      url: result.fbxUrl,
+      artifactRole: 'export_binary',
+      previewText: 'Real 3D item (.fbx). Import in Roblox Studio (Avatar → Import 3D) to publish as your UGC.',
+      metadata: {
+        generationId: result.generationId,
+        categoryId: result.categoryId,
+        kind: 'cursed_ugc',
+      },
+    });
+  }
+
   // Variation thumbnails (cuter / more_cursed) — still useful in chat as
   // smaller previews next to the main 3D mesh.
   for (const v of result.variations) {
@@ -998,6 +1019,10 @@ async function handleCursedUGC(args: {
       // re-hydrates from this payload via /api/viral-generations/:id.
       // Undefined when OC/Engine creds are absent → GLB-only fallback.
       rbxmUrl: result.rbxmUrl,
+      // Session 406 — persist the real .fbx URL so CursedUGCResultView shows an
+      // "Export .fbx for Roblox Marketplace" button. Undefined when the FBX
+      // worker is unreachable → UI falls back to .rbxm / .glb.
+      fbxUrl: result.fbxUrl,
       variations: result.variations,
       titleEN: result.titleEN,
       titleRU: result.titleRU,
