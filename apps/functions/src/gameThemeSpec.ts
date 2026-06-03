@@ -1,0 +1,428 @@
+// gameThemeSpec.ts — Session 414: deterministic per-preset visual recognizability
+// for the runtime game builders (roleplay_town, tower_defense, racing, parkour,
+// story_game, minigame_hub, survival, fighting_arena, custom_game).
+//
+// PROBLEM (user, session 414): when a user picks a viral preset chip ("Build a
+// Millionaire School", "Spawn a Monster Neighborhood", "Create a Bananita
+// Island") the generated game does NOT look like the preset. Root cause: each
+// builder only honours ~4 fixed `mapTheme` enums, and the LLM GDD almost never
+// emits `mapTheme`, so the DEFAULT enum wins → every preset in a genre produces
+// the same generic world. The specific preset TEXT never reaches the builder.
+//
+// FIX: derive a rich `GameVisualSpec` deterministically from the user's brief
+// (palette + themed building names/signs + themed jobs + flavor lines + a free
+// catalog hero-prop keyword). Builders honour the spec when present and fall
+// back to their existing enum behaviour when absent (zero regression).
+//
+// Pattern follows the project's "hybrid skeleton for unreliable LLM" lesson and
+// the existing ObbyVisualSpec (Phase G, session 230): deterministic skeleton,
+// LLM only an optional accent. This module has NO external dependencies and is
+// pure/synchronous so it is trivially unit-testable and free to run.
+
+export type Rgb = [number, number, number];
+
+/** Mirrors the `theme` table shape used by the town/racing builders so a spec
+ * palette can be dropped straight in. Genres that only need a subset (e.g.
+ * racing uses ground/road/accent) simply ignore the extra fields. */
+export interface GamePalette {
+  ground: Rgb;
+  groundMaterial: string; // Roblox Enum.Material name, e.g. "Grass"
+  road: Rgb;
+  plaza: Rgb;
+  wall: Rgb;
+  roof: Rgb;
+  accent: Rgb;
+}
+
+export interface GameStructure {
+  name: string;
+  sign: string;
+}
+
+export interface GameJobLabel {
+  name: string;
+  pay: number;
+}
+
+export interface GameVisualSpec {
+  /** Cleaned display title used for in-world signage. */
+  themeName: string;
+  /** Canonical vibe token (money/brainrot/monster/...). */
+  vibe: string;
+  /** Canonical setting token (town/school/island/lab/kingdom). */
+  setting: string;
+  palette: GamePalette;
+  /** 6 themed buildings — town-like genres use name+sign; other genres ignore. */
+  structures: GameStructure[];
+  /** 6 themed jobs (roleplay). */
+  jobs: GameJobLabel[];
+  /** NPC / narrator dialogue tuned to the vibe. */
+  flavorLines: string[];
+  /** Plaza / hub label. */
+  hubName: string;
+  /** Free catalog / `rbxthumb://` search keyword for a hero prop. */
+  heroPropKeyword: string;
+}
+
+/** Format an RGB triple as Lua. Builders AND the QA reviewer use this exact
+ * formatter so the QA "palette applied" check can string-match the emit. */
+export function rgbLua(rgb: Rgb): string {
+  return `Color3.fromRGB(${Math.round(rgb[0])}, ${Math.round(rgb[1])}, ${Math.round(rgb[2])})`;
+}
+
+// ─── Setting archetypes (drive building NAMES + jobs) ────────────────────────
+
+interface SettingDef {
+  key: string;
+  buildings: string[]; // exactly 6
+  jobs: GameJobLabel[]; // exactly 6
+  hubNoun: string;
+}
+
+const SETTINGS: SettingDef[] = [
+  {
+    key: 'school',
+    buildings: ['Main Hall', 'Cafeteria', 'Gymnasium', 'Library', 'Dorms', "Principal's Office"],
+    jobs: [
+      { name: 'Student', pay: 24 }, { name: 'Teacher', pay: 45 }, { name: 'Coach', pay: 40 },
+      { name: 'Librarian', pay: 34 }, { name: 'Janitor', pay: 26 }, { name: 'Principal', pay: 65 },
+    ],
+    hubNoun: 'Schoolyard',
+  },
+  {
+    key: 'island',
+    buildings: ['Beach Hut', 'Tiki Bar', 'Dock', 'Lifeguard Tower', 'Market Stall', 'Resort'],
+    jobs: [
+      { name: 'Lifeguard', pay: 40 }, { name: 'Bartender', pay: 32 }, { name: 'Fisher', pay: 36 },
+      { name: 'Vendor', pay: 30 }, { name: 'Captain', pay: 55 }, { name: 'Host', pay: 28 },
+    ],
+    hubNoun: 'Beach',
+  },
+  {
+    key: 'lab',
+    buildings: ['Containment Lab', 'Test Chamber', 'Control Room', 'Reactor', 'Med Bay', 'Exit Gate'],
+    jobs: [
+      { name: 'Scientist', pay: 50 }, { name: 'Technician', pay: 38 }, { name: 'Guard', pay: 44 },
+      { name: 'Subject', pay: 24 }, { name: 'Medic', pay: 40 }, { name: 'Director', pay: 65 },
+    ],
+    hubNoun: 'Atrium',
+  },
+  {
+    key: 'kingdom',
+    buildings: ['Castle Keep', 'Throne Hall', 'Market', 'Tavern', 'Barracks', 'Cottages'],
+    jobs: [
+      { name: 'Knight', pay: 48 }, { name: 'Merchant', pay: 36 }, { name: 'Guard', pay: 40 },
+      { name: 'Blacksmith', pay: 38 }, { name: 'Jester', pay: 28 }, { name: 'Monarch', pay: 65 },
+    ],
+    hubNoun: 'Courtyard',
+  },
+  {
+    key: 'town',
+    buildings: ['Town Hall', 'Bank', 'Market', 'Cafe', 'Police Station', 'Apartments'],
+    jobs: [
+      { name: 'Cashier', pay: 35 }, { name: 'Barista', pay: 30 }, { name: 'Officer', pay: 48 },
+      { name: 'Teller', pay: 42 }, { name: 'Mayor', pay: 65 }, { name: 'Janitor', pay: 26 },
+    ],
+    hubNoun: 'Town Square',
+  },
+];
+
+function detectSetting(brief: string): SettingDef {
+  const t = brief.toLowerCase();
+  if (/\b(school|academy|class|college|detention|student|campus)\b/.test(t)) return settingByKey('school');
+  if (/\b(island|beach|tropical|paradise|resort|lagoon|shore)\b/.test(t)) return settingByKey('island');
+  if (/\b(lab|prototype|experiment|facility|science|reactor|containment|test subject)\b/.test(t)) return settingByKey('lab');
+  if (/\b(kingdom|castle|throne|medieval|empire|royal|realm)\b/.test(t)) return settingByKey('kingdom');
+  return settingByKey('town');
+}
+
+function settingByKey(key: string): SettingDef {
+  return SETTINGS.find((s) => s.key === key) ?? SETTINGS[SETTINGS.length - 1];
+}
+
+// ─── Vibe overlays (drive PALETTE + flavor + hero prop + iconic landmark) ────
+
+interface VibeDef {
+  key: string;
+  match: RegExp;
+  palette: GamePalette;
+  flavor: string[]; // 3 lines
+  heroPropKeyword: string;
+  adjective: string; // prepended to hub noun
+  iconicBuilding: string; // replaces the last setting building
+}
+
+// Priority order = array order (first match on a tie wins).
+const VIBES: VibeDef[] = [
+  {
+    key: 'brainrot',
+    match: /\b(brainrot|skibidi|tralalero|bananita|orangutini|sigma|rizz|ohio|gyat|sahur|crocodilo|meme)\b/i,
+    palette: { ground: [96, 86, 140], groundMaterial: 'Concrete', road: [40, 36, 60], plaza: [150, 70, 190], wall: [90, 220, 230], roof: [255, 90, 200], accent: [170, 255, 90] },
+    flavor: ['Welcome to the chaos — nothing makes sense and that is the point.', 'Skibidi rule #1: get the bag.', 'Grab a role and go full sigma.'],
+    heroPropKeyword: 'skibidi', adjective: 'Brainrot', iconicBuilding: 'Skibidi HQ',
+  },
+  {
+    key: 'money',
+    match: /\b(mrbeast|mr beast|million|millionaire|billion|rich|money|cash|prize|reward|wealth|tycoon)\b|\$/i,
+    palette: { ground: [104, 150, 86], groundMaterial: 'Grass', road: [60, 62, 68], plaza: [210, 180, 90], wall: [240, 228, 180], roof: [60, 140, 90], accent: [255, 210, 70] },
+    flavor: ['Every shift here pays BIG — grab a job and stack cash!', 'Buy a VIP role to flex on everyone.', 'Top earner becomes the legend of the city.'],
+    heroPropKeyword: 'trophy', adjective: 'Millionaire', iconicBuilding: 'Money Vault',
+  },
+  {
+    key: 'monster',
+    match: /\b(monster|fnaf|freddy|animatronic|haunted|ghost|zombie|cursed|scary|horror|nightmare|creature|demon|evil|titan|titans|giant|colossus|kaiju|dragon|godzilla|kraken)\b/i,
+    palette: { ground: [54, 50, 64], groundMaterial: 'Slate', road: [34, 30, 40], plaza: [78, 60, 90], wall: [96, 86, 110], roof: [120, 40, 50], accent: [150, 70, 200] },
+    flavor: ['Do not wander after dark... they come out.', 'Lock your doors — the creatures are hungry.', 'Survive your shift and you might see morning.'],
+    heroPropKeyword: 'monster', adjective: 'Haunted', iconicBuilding: 'Haunted Manor',
+  },
+  {
+    key: 'inferno',
+    match: /\b(lava|volcano|volcanic|magma|inferno|molten|hellfire|ember|wildfire)\b/i,
+    palette: { ground: [62, 52, 50], groundMaterial: 'Basalt', road: [42, 34, 32], plaza: [96, 60, 48], wall: [120, 84, 72], roof: [168, 64, 40], accent: [255, 120, 40] },
+    flavor: ['Mind the lava — one slip and you are toast.', 'The ground runs molten here.', 'Keep moving before the floor melts.'],
+    heroPropKeyword: 'lava', adjective: 'Inferno', iconicBuilding: 'Volcano Forge',
+  },
+  {
+    key: 'spy',
+    match: /\b(spy|secret agent|agent|stealth|covert|espionage|undercover|classified)\b/i,
+    palette: { ground: [70, 74, 82], groundMaterial: 'Concrete', road: [40, 42, 48], plaza: [90, 96, 108], wall: [150, 160, 175], roof: [60, 66, 78], accent: [230, 70, 70] },
+    flavor: ['Keep it quiet, agent — eyes everywhere.', 'Take a job, blend in, complete the mission.', 'Trust no one. Even the Mayor has secrets.'],
+    heroPropKeyword: 'spy', adjective: 'Secret', iconicBuilding: 'Agency HQ',
+  },
+  {
+    key: 'tropical',
+    match: /\b(banana|island|tropical|beach|paradise|palm|coconut|lagoon|jungle)\b/i,
+    palette: { ground: [224, 206, 150], groundMaterial: 'Sand', road: [150, 120, 80], plaza: [210, 196, 150], wall: [240, 235, 210], roof: [60, 160, 150], accent: [255, 180, 60] },
+    flavor: ['Welcome to paradise — grab a drink and a job!', 'The waves are perfect today.', 'Mind the bananas... they multiply.'],
+    heroPropKeyword: 'banana', adjective: 'Island', iconicBuilding: 'Banana Stand',
+  },
+  {
+    key: 'night',
+    match: /\b(99 night|nights|midnight|darkness|blackout|survive the night|after dark)\b/i,
+    palette: { ground: [40, 52, 64], groundMaterial: 'Slate', road: [30, 38, 48], plaza: [60, 74, 90], wall: [90, 104, 120], roof: [50, 60, 76], accent: [120, 200, 255] },
+    flavor: ['Stay near the fire — the night is long.', 'Stock up before dark.', 'We have lasted this many nights. Do not break the streak.'],
+    heroPropKeyword: 'campfire', adjective: 'Midnight', iconicBuilding: 'Watchtower',
+  },
+  {
+    key: 'hero',
+    match: /\b(superhero|super hero|hero|heroes|legend|super power|powers|cape|villain|sidekick)\b/i,
+    palette: { ground: [96, 150, 110], groundMaterial: 'Grass', road: [60, 64, 72], plaza: [120, 150, 200], wall: [230, 235, 245], roof: [70, 120, 200], accent: [255, 80, 90] },
+    flavor: ['Train hard, recruit — the city needs you.', 'Pick a role and unlock your powers.', 'Every legend started with a first shift.'],
+    heroPropKeyword: 'superhero', adjective: 'Hero', iconicBuilding: 'Hero HQ',
+  },
+  {
+    key: 'pets',
+    match: /\b(pet|pets|puppy|kitten|adopt|companion|critter)\b/i,
+    palette: { ground: [150, 200, 140], groundMaterial: 'Grass', road: [120, 110, 120], plaza: [240, 200, 220], wall: [250, 240, 250], roof: [255, 170, 190], accent: [255, 150, 200] },
+    flavor: ['Adopt a buddy and explore the town!', 'The pets run things around here.', 'Grab a job to earn treats.'],
+    heroPropKeyword: 'pet', adjective: 'Pet', iconicBuilding: 'Pet Shop',
+  },
+  {
+    key: 'lab',
+    match: /\b(prototype|experiment|lab|science|reactor|containment|test subject|mutant|anomaly)\b/i,
+    palette: { ground: [70, 74, 82], groundMaterial: 'Slate', road: [44, 48, 56], plaza: [120, 130, 140], wall: [220, 228, 235], roof: [90, 150, 200], accent: [120, 255, 210] },
+    flavor: ['Stay inside the lines — the experiment is unstable.', 'Clock in, run your tests, do not touch the reactor.', 'Containment is everyone’s job.'],
+    heroPropKeyword: 'robot', adjective: 'Lab', iconicBuilding: 'Reactor Core',
+  },
+];
+
+const NEUTRAL_VIBE: VibeDef = {
+  key: 'neutral',
+  match: /$^/,
+  palette: { ground: [120, 170, 95], groundMaterial: 'Grass', road: [70, 72, 78], plaza: [180, 170, 150], wall: [225, 210, 180], roof: [170, 80, 70], accent: [250, 210, 90] },
+  flavor: ['Welcome! Grab a job pad to earn cash.', 'Buy a role at the Shop to flex your status.', 'The Mayor job pays the most. Good luck out there!'],
+  heroPropKeyword: '', adjective: '', iconicBuilding: '',
+};
+
+function detectVibe(brief: string): VibeDef {
+  let best: VibeDef | null = null;
+  let bestScore = 0;
+  for (const vibe of VIBES) {
+    const matches = brief.match(new RegExp(vibe.match.source, 'gi'));
+    const score = matches ? matches.length : 0;
+    if (score > bestScore) {
+      bestScore = score;
+      best = vibe;
+    }
+  }
+  return best ?? NEUTRAL_VIBE;
+}
+
+// ─── Derivation ──────────────────────────────────────────────────────────────
+
+function cleanTitle(title: string): string {
+  // Strip leading imperative verbs the preset chips use ("Build a", "Create a",
+  // "Generate a", "Spawn a") so the in-world sign reads as a place name.
+  return title
+    .replace(/^\s*(build|create|generate|make|spawn|design|start)\s+(a|an|the|my)?\s*/i, '')
+    .trim()
+    .slice(0, 48) || title.slice(0, 48);
+}
+
+function strongTokenFromText(text: string): string {
+  const stop = new Set(['build', 'create', 'generate', 'make', 'spawn', 'a', 'an', 'the', 'my', 'with', 'and', 'of', 'in', 'on', 'to', 'game', 'world', 'town', 'city', 'roblox']);
+  const words = (text.toLowerCase().match(/[a-z][a-z']{2,}/g) || []).filter((w) => !stop.has(w));
+  return words[0] ?? '';
+}
+
+/**
+ * Derive a deterministic visual spec from the user's brief + title.
+ * `genre` currently only influences which building/job archetype is the default
+ * (all genres share palette/vibe/flavor/hero). Always returns a fully-populated
+ * spec — never throws, never returns partials.
+ */
+export function deriveGameVisualSpec(genre: string, brief: string, title: string): GameVisualSpec {
+  const haystack = `${title} ${brief}`;
+  const setting = detectSetting(haystack);
+  const vibe = detectVibe(haystack);
+
+  const structures: GameStructure[] = setting.buildings.map((b) => ({ name: b, sign: b }));
+  if (vibe.iconicBuilding) {
+    structures[structures.length - 1] = { name: vibe.iconicBuilding, sign: vibe.iconicBuilding };
+  }
+
+  const hubName = (vibe.adjective ? `${vibe.adjective} ${setting.hubNoun}` : setting.hubNoun).slice(0, 40);
+  const heroPropKeyword = vibe.heroPropKeyword || strongTokenFromText(haystack);
+
+  return {
+    themeName: cleanTitle(title),
+    vibe: vibe.key,
+    setting: setting.key,
+    palette: vibe.palette,
+    structures,
+    jobs: setting.jobs,
+    flavorLines: vibe.flavor,
+    hubName,
+    heroPropKeyword,
+  };
+}
+
+// ─── QA reviewer + self-heal ─────────────────────────────────────────────────
+
+export type GameQaStatus = 'passed' | 'warning' | 'rejected';
+
+export interface GameQaReview {
+  status: GameQaStatus;
+  score: number; // 0-100
+  reasons: string[];
+  repairActions: string[];
+  partCount: number;
+}
+
+type BuildResultLike = string | { serverScript?: string };
+
+function serverSourceOf(result: BuildResultLike): string {
+  return typeof result === 'string' ? result : (result?.serverScript ?? '');
+}
+
+/**
+ * Deterministic recognizability QA on a generated game's server Lua. Mirrors the
+ * vehicle `vehicle_quality_review_retry` pattern (structural + theme checks → a
+ * status the caller can act on). Pure/synchronous, no LLM call.
+ */
+export function reviewGameQuality(result: BuildResultLike, spec: GameVisualSpec | undefined, genre: string): GameQaReview {
+  const src = serverSourceOf(result);
+  const reasons: string[] = [];
+  const repairActions: string[] = [];
+  let score = 100;
+
+  const partCount = (src.match(/\bpart\(/g) || []).length
+    + (src.match(/Instance\.new\("Part"\)/g) || []).length
+    + (src.match(/Instance\.new\('Part'\)/g) || []).length;
+
+  if (partCount < 8) {
+    reasons.push(`low_part_count:${partCount}`);
+    repairActions.push('increase world geometry / building count');
+    score -= 40;
+  } else if (partCount < 12) {
+    // Path/arena genres (racing track, fighting ring) are legitimately sparser
+    // than a town — a mild penalty, not a rejection.
+    reasons.push(`sparse_world:${partCount}`);
+    score -= 12;
+  }
+  if (!/leaderstats/.test(src)) {
+    reasons.push('no_leaderstats');
+    repairActions.push('add leaderstats progression');
+    score -= 20;
+  }
+  if (!/BillboardGui|Config\.Title|SurfaceGui/.test(src)) {
+    reasons.push('no_in_world_signage');
+    repairActions.push('add a titled signage billboard');
+    score -= 15;
+  }
+
+  if (spec) {
+    // Only town-like genres emit named building signs from the spec.structures
+    // list; path/arena genres (TD/racing/parkour/...) consume only the palette,
+    // so the themed-signage check would always (wrongly) flag them.
+    const townLikeGenres = new Set(['roleplay_town']);
+    if (townLikeGenres.has(genre)) {
+      const signHits = spec.structures.filter((s) => s.sign && src.includes(s.sign)).length;
+      const needed = Math.min(3, spec.structures.length);
+      if (signHits < needed) {
+        reasons.push(`weak_themed_signage:${signHits}/${spec.structures.length}`);
+        repairActions.push('inject themed building signs from the spec');
+        score -= 30;
+      }
+    }
+    if (spec.vibe !== 'neutral') {
+      const accent = rgbLua(spec.palette.accent);
+      const ground = rgbLua(spec.palette.ground);
+      if (!src.includes(accent) && !src.includes(ground)) {
+        reasons.push('palette_not_applied');
+        repairActions.push('apply the spec palette to ground/accent');
+        score -= 15;
+      }
+    }
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const status: GameQaStatus = score < 55 ? 'rejected' : score < 80 ? 'warning' : 'passed';
+  return { status, score, reasons, repairActions, partCount };
+}
+
+/**
+ * Produce a stronger spec for a retry. Builders are deterministic, so a retry
+ * only changes the output if its INPUT changes — heal guarantees a fully themed,
+ * non-neutral, fully-populated spec so the second build is at least as
+ * recognizable as the first. Never weakens a spec.
+ */
+export function healGameVisualSpec(spec: GameVisualSpec, reasons: string[]): GameVisualSpec {
+  let vibeKey = spec.vibe;
+  let palette = spec.palette;
+  let flavorLines = spec.flavorLines;
+  let heroPropKeyword = spec.heroPropKeyword;
+  const structures = [...spec.structures];
+
+  // Upgrade a neutral vibe to the app's signature "money/MrBeast" energy so a
+  // rejected generic world becomes themed on retry.
+  const weakTheme = reasons.some((r) => r.startsWith('weak_themed_signage') || r === 'palette_not_applied');
+  if (spec.vibe === 'neutral' && weakTheme) {
+    const money = VIBES.find((v) => v.key === 'money');
+    if (money) {
+      vibeKey = money.key;
+      palette = money.palette;
+      flavorLines = money.flavor;
+      heroPropKeyword = money.heroPropKeyword;
+      if (structures.length > 0) {
+        structures[structures.length - 1] = { name: money.iconicBuilding, sign: money.iconicBuilding };
+      }
+    }
+  }
+
+  // Guarantee 6 structures (pad from the town defaults).
+  const townBuildings = settingByKey('town').buildings;
+  while (structures.length < 6) {
+    const fill = townBuildings[structures.length] ?? `Building ${structures.length + 1}`;
+    structures.push({ name: fill, sign: fill });
+  }
+
+  return {
+    ...spec,
+    vibe: vibeKey,
+    palette,
+    flavorLines: flavorLines.length >= 3 ? flavorLines : NEUTRAL_VIBE.flavor,
+    heroPropKeyword: heroPropKeyword || 'trophy',
+    structures: structures.slice(0, 6),
+  };
+}

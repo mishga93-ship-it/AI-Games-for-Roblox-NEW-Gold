@@ -194,6 +194,7 @@ import { generateClothingPreviewImage } from './clothingCompositor.js';
 import type { DecalTextureSpec, VisionModerationResult, RobloxBodyColors, ClothingTextureUploadResult } from './providers.js';
 import { analyzeLuauSource, moderateLuaSource } from './scriptSafety.js';
 import { buildGameplayScript, getGenreSceneTemplate, buildDynamicSimulatorScene, validateSimulatorSpec, detectTycoonThemeKey, detectObbyThemeKey, detectMemeSubTheme, type MultiScriptResult } from './gameTemplates.js';
+import { deriveGameVisualSpec, reviewGameQuality, healGameVisualSpec } from './gameThemeSpec.js';
 import type { SimulatorSceneSpec, HeroAssetSpec, HeroAssetResult } from './types.js';
 import { buildUIScript, wrapUIScriptAsRbxmx, buildGamepassShopClient, buildGamepassServer, buildGamepassCombinedRbxmx, buildScriptSystemFromPrompt, parseScriptFiles, parseScriptFilesJSON, wrapGenericScriptAsRbxmx, buildInstallerRbxmx, inferScriptType, type ScriptFile } from './uiTemplates.js';
 import { parseAndValidateUiJson, convertUiJsonToSceneNodes, buildUiInstanceRbxmx, convertSceneNodesToLua, generateLeaderstatsScript, wrapServerScriptAsRbxmx } from './uiJsonPipeline.js';
@@ -33646,6 +33647,44 @@ function resolveStarterScript(result: string | MultiScriptResult): {
   return { starterScript: result.serverScript, additionalScripts: result.additionalScripts };
 }
 
+// Session 414: recognizability + QA wrapper for the deterministic playable
+// genre builders. Derives a per-preset visual spec from the brief, builds, runs
+// a deterministic recognizability QA pass, and on rejection re-derives a healed
+// (fully-themed) spec and rebuilds once — mirroring the vehicle
+// `vehicle_quality_review_retry` pattern. Builders are pure/deterministic so the
+// retry only differs when its INPUT (the healed spec) differs. Always returns
+// the higher-scoring build. `gameVisualSpec` is additive: absent → builder uses
+// its legacy enum behaviour, so non-genre code paths are unaffected.
+function buildPlayableWithQa(
+  genreKind: string,
+  baseParams: Parameters<typeof buildGameplayScript>[0],
+  brief: string,
+  title: string,
+): string | MultiScriptResult {
+  const spec = deriveGameVisualSpec(genreKind, brief, title);
+  const result = buildGameplayScript({ ...baseParams, gameVisualSpec: spec });
+  const review = reviewGameQuality(result, spec, genreKind);
+  if (review.status === 'rejected') {
+    const healed = healGameVisualSpec(spec, review.reasons);
+    const retried = buildGameplayScript({ ...baseParams, gameVisualSpec: healed });
+    const review2 = reviewGameQuality(retried, healed, genreKind);
+    logger.info('[gameQA] regenerated after rejection', {
+      genre: genreKind,
+      jobId: baseParams.jobId,
+      first: { status: review.status, score: review.score, parts: review.partCount },
+      second: { status: review2.status, score: review2.score, parts: review2.partCount },
+      reasons: review.reasons.slice(0, 8),
+    });
+    return review2.score >= review.score ? retried : result;
+  }
+  if (review.status === 'warning') {
+    logger.info('[gameQA] passed with warnings', {
+      genre: genreKind, jobId: baseParams.jobId, score: review.score, reasons: review.reasons.slice(0, 8),
+    });
+  }
+  return result;
+}
+
 function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: SimulatorSceneSpec | null, heroAssets?: HeroAssetResult[], platformTextureUrls?: string[], npcImageUrls?: string[]): string | MultiScriptResult {
   const displayTitle = summarizeGamePackageTitle(job, gameBrief);
   const latestUserIntent = latestUserIntentForJob(job);
@@ -33954,7 +33993,7 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
   if (subcategoryForKind === 'tower_defense') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'tower_defense', job.id);
     const titleFromGdd = gddString(parsedGdd, 'title', displayTitle);
-    return buildGameplayScript({
+    return buildPlayableWithQa('tower_defense', {
       title: titleFromGdd,
       genre: 'tower defense',
       gameKind: 'tower_defense',
@@ -33969,15 +34008,19 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${titleFromGdd} ${latestUserIntent ?? ''} ${gameBrief}`, titleFromGdd);
   }
 
   // Session 399 (cont.): remaining playable genres — each routes its subcategory
   // to a bespoke deterministic runtime builder via gameKind (like tower_defense).
   if (subcategoryForKind === 'roleplay_town') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'roleplay_town', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const rpTitle = gddString(parsedGdd, 'title', displayTitle);
+    // Derive recognizability from the richest text we have: title + the raw user
+    // intent (the preset chip text like "Spawn a Monster Neighborhood") + the GDD.
+    const rpBrief = `${rpTitle} ${latestUserIntent ?? ''} ${gameBrief}`;
+    return buildPlayableWithQa('roleplay_town', {
+      title: rpTitle,
       genre: 'roleplay',
       gameKind: 'roleplay_town',
       systems: ['jobs', 'economy', 'role_shop', 'npcs', 'day_night', 'leaderstats', 'datastore'],
@@ -33988,13 +34031,14 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, rpBrief, rpTitle);
   }
 
   if (subcategoryForKind === 'racing') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'racing', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const gTitle = gddString(parsedGdd, 'title', displayTitle);
+    return buildPlayableWithQa('racing', {
+      title: gTitle,
       genre: 'racing',
       gameKind: 'racing',
       systems: ['checkpoints', 'lap_counter', 'timer', 'round_loop', 'leaderstats', 'datastore'],
@@ -34005,13 +34049,14 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${gTitle} ${latestUserIntent ?? ''} ${gameBrief}`, gTitle);
   }
 
   if (subcategoryForKind === 'parkour') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'parkour', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const gTitle = gddString(parsedGdd, 'title', displayTitle);
+    return buildPlayableWithQa('parkour', {
+      title: gTitle,
       genre: 'parkour',
       gameKind: 'parkour',
       systems: ['platforms', 'checkpoints', 'void_respawn', 'timer', 'leaderstats', 'datastore'],
@@ -34022,13 +34067,14 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${gTitle} ${latestUserIntent ?? ''} ${gameBrief}`, gTitle);
   }
 
   if (subcategoryForKind === 'story_game') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'story_game', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const gTitle = gddString(parsedGdd, 'title', displayTitle);
+    return buildPlayableWithQa('story_game', {
+      title: gTitle,
       genre: 'story',
       gameKind: 'story_game',
       systems: ['chapter_zones', 'narrative_beats', 'narrator_npcs', 'progress_tracking', 'leaderstats'],
@@ -34038,13 +34084,14 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${gTitle} ${latestUserIntent ?? ''} ${gameBrief}`, gTitle);
   }
 
   if (subcategoryForKind === 'minigame_hub') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'minigame_hub', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const gTitle = gddString(parsedGdd, 'title', displayTitle);
+    return buildPlayableWithQa('minigame_hub', {
+      title: gTitle,
       genre: 'mini-games',
       gameKind: 'minigame_hub',
       systems: ['lobby', 'round_loop', 'tile_arena', 'elimination', 'scoring', 'leaderstats'],
@@ -34053,13 +34100,14 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${gTitle} ${latestUserIntent ?? ''} ${gameBrief}`, gTitle);
   }
 
   if (subcategoryForKind === 'survival') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'survival', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const gTitle = gddString(parsedGdd, 'title', displayTitle);
+    return buildPlayableWithQa('survival', {
+      title: gTitle,
       genre: 'survival',
       gameKind: 'survival',
       systems: ['resource_gathering', 'campfire_heal', 'day_night', 'night_enemies', 'health', 'leaderstats'],
@@ -34071,13 +34119,14 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${gTitle} ${latestUserIntent ?? ''} ${gameBrief}`, gTitle);
   }
 
   if (subcategoryForKind === 'fighting') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'fighting', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const gTitle = gddString(parsedGdd, 'title', displayTitle);
+    return buildPlayableWithQa('fighting_arena', {
+      title: gTitle,
       genre: 'fighting',
       gameKind: 'fighting_arena',
       systems: ['melee_combat', 'knockback', 'ring_out', 'round_loop', 'leaderstats'],
@@ -34088,13 +34137,14 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${gTitle} ${latestUserIntent ?? ''} ${gameBrief}`, gTitle);
   }
 
   if (subcategoryForKind === 'custom') {
     const parsedGdd = parsePlayableGddJson(gameBrief, 'custom_game', job.id);
-    return buildGameplayScript({
-      title: gddString(parsedGdd, 'title', displayTitle),
+    const gTitle = gddString(parsedGdd, 'title', displayTitle);
+    return buildPlayableWithQa('custom_game', {
+      title: gTitle,
       genre: 'custom',
       gameKind: 'custom_game',
       systems: ['coin_economy', 'upgrade_pads', 'platforms', 'npc_guide', 'leaderstats'],
@@ -34103,7 +34153,7 @@ function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: Simul
       heroAssets: heroAssets ?? [],
       trendingItems,
       jobId: job.id,
-    });
+    }, `${gTitle} ${latestUserIntent ?? ''} ${gameBrief}`, gTitle);
   }
 
   if (subcategoryForKind === 'simulator') {

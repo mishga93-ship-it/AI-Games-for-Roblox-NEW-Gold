@@ -1,6 +1,7 @@
 import type { SimulatorSceneSpec, HeroAssetResult } from './types.js';
 import { withCinematicCamera } from './cinematicCamera.js';
 import type { TrendingShowcaseItem } from './generationEnrichment.js';
+import { rgbLua, type GameVisualSpec } from './gameThemeSpec.js';
 
 export type MemeSubTheme = 'skibidi' | 'bombardir' | 'tralalero' | 'sigma' | 'generic';
 
@@ -121,6 +122,12 @@ export interface GameTemplateParams {
    * decoration stations fall back to BillboardGui rbxthumb live-decal stickers
    * from `obbyVisualSpec.liveDecalsByTerm` (variant A). */
   obbyDecorationPropImageUrls?: string[];
+  /** Session 414: deterministic per-preset recognizability spec derived from the
+   * user's brief (palette + themed building names/signs + themed jobs + flavor +
+   * hero-prop keyword). When present, runtime builders use it INSTEAD of the
+   * ~4-enum `mapTheme` collapse so every preset looks like its theme. `null`/
+   * missing → builders fall back to their existing enum behaviour (no regression). */
+  gameVisualSpec?: GameVisualSpec;
 }
 
 /** Phase G (session 230): structural copy of ObbyVisualSpec used by buildObbyScript.
@@ -9931,6 +9938,13 @@ function buildTowerDefenseScript(params: GameTemplateParams): MultiScriptResult 
   const mapThemeLua = safeLuaString(mapTheme, 'meadow');
   const difficultyLua = safeLuaString(difficulty, 'normal');
 
+  // Session 414: per-preset palette override for recognizability. Absent spec →
+  // the original meadow/desert/candy/scifi enum themes (no regression).
+  const spec = params.gameVisualSpec;
+  const specThemeLua = (spec && spec.vibe !== 'neutral')
+    ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, path=${rgbLua(spec.palette.road)}, pathMat=Enum.Material.Ground, base=${rgbLua(spec.palette.wall)}, accent=${rgbLua(spec.palette.accent)}}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
@@ -9946,6 +9960,8 @@ local THEMES = {
     scifi = {ground=Color3.fromRGB(40,46,60), groundMat=Enum.Material.Metal, path=Color3.fromRGB(60,70,90), pathMat=Enum.Material.DiamondPlate, base=Color3.fromRGB(60,220,200), accent=Color3.fromRGB(120,160,255)},
 }
 local theme = THEMES[Config.MapTheme] or THEMES.meadow
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.7 or 1.0)
 
 local dataStore
@@ -10276,12 +10292,68 @@ function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult 
       : 'suburb');
   const themeLua = safeLuaString(townTheme, 'suburb');
 
+  // Session 414: per-preset recognizability. When a derived visual spec is
+  // present, override palette + building names/signs + job names + NPC lines +
+  // hub label with theme-specific values so a "Millionaire School" no longer
+  // looks identical to a "Monster Neighborhood". Absent → original hardcoded
+  // suburb/city/medieval/modern behaviour (no regression).
+  const spec = params.gameVisualSpec;
+  const specThemeLua = spec
+    ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, road=${rgbLua(spec.palette.road)}, plaza=${rgbLua(spec.palette.plaza)}, wall=${rgbLua(spec.palette.wall)}, roof=${rgbLua(spec.palette.roof)}, accent=${rgbLua(spec.palette.accent)}}`
+    : 'nil';
+  const hubLua = safeLuaString(spec ? spec.hubName : '', '');
+
+  const buildingSlots = [
+    { pos: 'Vector3.new(0, 0, -130)', size: 'Vector3.new(56, 34, 44)' },
+    { pos: 'Vector3.new(-120, 0, -70)', size: 'Vector3.new(42, 26, 38)' },
+    { pos: 'Vector3.new(120, 0, -70)', size: 'Vector3.new(42, 24, 38)' },
+    { pos: 'Vector3.new(-120, 0, 70)', size: 'Vector3.new(40, 22, 36)' },
+    { pos: 'Vector3.new(120, 0, 70)', size: 'Vector3.new(42, 24, 38)' },
+    { pos: 'Vector3.new(0, 0, 130)', size: 'Vector3.new(46, 24, 40)' },
+  ];
+  const defaultBuildings = [
+    { name: 'TownHall', sign: 'Town Hall' }, { name: 'Bank', sign: 'Bank' },
+    { name: 'Shop', sign: 'Shop' }, { name: 'Cafe', sign: 'Cafe' },
+    { name: 'Police', sign: 'Police Station' }, { name: 'House', sign: 'Apartments' },
+  ];
+  const buildings = (spec ? spec.structures : defaultBuildings).slice(0, 6);
+  const buildingDefsLua = buildings
+    .map((b, i) => `    {name=${safeLuaString(b.name, 'Building' + (i + 1))}, pos=${buildingSlots[i].pos}, size=${buildingSlots[i].size}, sign=${safeLuaString(b.sign, b.name || 'Shop')}},`)
+    .join('\n');
+
+  const jobSlots = [
+    'Vector3.new(120, 1.2, -44)', 'Vector3.new(-120, 1.2, 44)', 'Vector3.new(120, 1.2, 44)',
+    'Vector3.new(-120, 1.2, -44)', 'Vector3.new(0, 1.2, -104)', 'Vector3.new(0, 1.2, 104)',
+  ];
+  const defaultJobs = [
+    { name: 'Cashier', pay: 35 }, { name: 'Barista', pay: 30 }, { name: 'Officer', pay: 48 },
+    { name: 'Teller', pay: 42 }, { name: 'Mayor', pay: 65 }, { name: 'Janitor', pay: 26 },
+  ];
+  const jobs = (spec ? spec.jobs : defaultJobs).slice(0, 6);
+  const jobsLua = jobs
+    .map((j, i) => `    {name=${safeLuaString(j.name, 'Worker')}, pay=${Math.max(5, Math.min(200, Math.round(Number(j.pay) || 25)))}, pos=${jobSlots[i]}},`)
+    .join('\n');
+
+  const npcSlots = [
+    { name: 'Mira', pos: 'Vector3.new(-28, 0, -16)', color: 'Color3.fromRGB(230, 180, 150)' },
+    { name: 'Theo', pos: 'Vector3.new(30, 0, 14)', color: 'Color3.fromRGB(170, 200, 235)' },
+    { name: 'Ada', pos: 'Vector3.new(12, 0, -32)', color: 'Color3.fromRGB(210, 200, 160)' },
+  ];
+  const npcsLua = spec
+    ? spec.flavorLines
+        .slice(0, 3)
+        .map((line, i) => `    {name=${safeLuaString(npcSlots[i].name, 'NPC')}, pos=${npcSlots[i].pos}, color=${npcSlots[i].color}, line=${safeLuaString(line, 'Welcome!')}},`)
+        .join('\n')
+    : `    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash."},
+    {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status."},
+    {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!"},`;
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local Lighting = game:GetService("Lighting")
 
-local Config = {Title=${titleLua}, Theme=${themeLua}, StartingCash=${startingCash}, JobCount=${jobCount}}
+local Config = {Title=${titleLua}, Theme=${themeLua}, StartingCash=${startingCash}, JobCount=${jobCount}, HubName=${hubLua}}
 
 local THEMES = {
     suburb = {ground=Color3.fromRGB(120,170,95), groundMat=Enum.Material.Grass, road=Color3.fromRGB(70,72,78), plaza=Color3.fromRGB(180,170,150), wall=Color3.fromRGB(225,210,180), roof=Color3.fromRGB(170,80,70), accent=Color3.fromRGB(250,210,90)},
@@ -10290,6 +10362,8 @@ local THEMES = {
     modern = {ground=Color3.fromRGB(70,74,82), groundMat=Enum.Material.Slate, road=Color3.fromRGB(40,42,48), plaza=Color3.fromRGB(120,130,140), wall=Color3.fromRGB(210,225,240), roof=Color3.fromRGB(90,150,200), accent=Color3.fromRGB(120,255,210)},
 }
 local theme = THEMES[Config.Theme] or THEMES.suburb
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 
 local dataStore
 local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("TownRpStats_v1") end)
@@ -10317,7 +10391,8 @@ for i = 1, 20 do
     local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
     if i % 4 == 0 then makeRock(world, p, 0.7, theme.roof) else makeTree(world, p, 0.95, "round", Color3.fromRGB(112, 80, 52), Color3.fromRGB(80, 148, 74)) end
 end
-part("Plaza", Vector3.new(86, 1, 86), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
+local plaza = part("Plaza", Vector3.new(86, 1, 86), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
+if Config.HubName and Config.HubName ~= "" then label3d(plaza, Config.HubName, 3, theme.accent) end
 part("RoadNS", Vector3.new(20, 1, 380), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
 part("RoadEW", Vector3.new(380, 1, 20), Vector3.new(0, 0.7, 0), theme.road, Enum.Material.Asphalt)
 
@@ -10333,12 +10408,7 @@ local function buildHouse(name, pos, size, color, sign)
 end
 
 local buildingDefs = {
-    {name="TownHall", pos=Vector3.new(0, 0, -130), size=Vector3.new(56, 34, 44), sign="Town Hall"},
-    {name="Bank", pos=Vector3.new(-120, 0, -70), size=Vector3.new(42, 26, 38), sign="Bank"},
-    {name="Shop", pos=Vector3.new(120, 0, -70), size=Vector3.new(42, 24, 38), sign="Shop"},
-    {name="Cafe", pos=Vector3.new(-120, 0, 70), size=Vector3.new(40, 22, 36), sign="Cafe"},
-    {name="Police", pos=Vector3.new(120, 0, 70), size=Vector3.new(42, 24, 38), sign="Police Station"},
-    {name="House", pos=Vector3.new(0, 0, 130), size=Vector3.new(46, 24, 40), sign="Apartments"},
+${buildingDefsLua}
 }
 for _, d in ipairs(buildingDefs) do buildHouse(d.name, d.pos, d.size, theme.wall, d.sign) end
 
@@ -10358,12 +10428,7 @@ local function setRole(player, roleName)
 end
 
 local JOBS = {
-    {name="Cashier", pay=35, pos=Vector3.new(120, 1.2, -44)},
-    {name="Barista", pay=30, pos=Vector3.new(-120, 1.2, 44)},
-    {name="Officer", pay=48, pos=Vector3.new(120, 1.2, 44)},
-    {name="Teller", pay=42, pos=Vector3.new(-120, 1.2, -44)},
-    {name="Mayor", pay=65, pos=Vector3.new(0, 1.2, -104)},
-    {name="Janitor", pay=26, pos=Vector3.new(0, 1.2, 104)},
+${jobsLua}
 }
 local working = {}
 local employed = {}
@@ -10410,9 +10475,7 @@ RpAction.OnServerEvent:Connect(function(player, payload)
 end)
 
 local NPCS = {
-    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash."},
-    {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status."},
-    {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!"},
+${npcsLua}
 }
 for _, n in ipairs(NPCS) do
     local body = part("NPC_" .. n.name, Vector3.new(3, 7, 2), n.pos + Vector3.new(0, 4, 0), n.color, Enum.Material.SmoothPlastic)
@@ -10534,6 +10597,12 @@ function buildRacingScript(params: GameTemplateParams): MultiScriptResult {
   const themeLua = safeLuaString(trackTheme, 'city');
   const difficultyLua = safeLuaString(difficulty, 'normal');
 
+  // Session 414: per-preset palette override for recognizability.
+  const spec = params.gameVisualSpec;
+  const specThemeLua = (spec && spec.vibe !== 'neutral')
+    ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, road=${rgbLua(spec.palette.road)}, accent=${rgbLua(spec.palette.accent)}}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
@@ -10547,6 +10616,8 @@ local THEMES = {
     space = {ground=Color3.fromRGB(30,34,48), groundMat=Enum.Material.Metal, road=Color3.fromRGB(46,52,72), accent=Color3.fromRGB(150,255,210)},
 }
 local theme = THEMES[Config.Theme] or THEMES.city
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 local boost = Config.Difficulty == "hard" and 42 or (Config.Difficulty == "casual" and 28 or 34)
 
 local dataStore
@@ -10730,6 +10801,12 @@ function buildParkourScript(params: GameTemplateParams): MultiScriptResult {
   const themeLua = safeLuaString(parkourTheme, 'neon');
   const difficultyLua = safeLuaString(difficulty, 'normal');
 
+  // Session 414: per-preset palette override for recognizability.
+  const spec = params.gameVisualSpec;
+  const specThemeLua = (spec && spec.vibe !== 'neutral')
+    ? `{platform=${rgbLua(spec.palette.wall)}, platMat=Enum.Material.SmoothPlastic, checkpoint=${rgbLua(spec.palette.accent)}, void=${rgbLua(spec.palette.road)}, voidMat=Enum.Material.Neon}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
@@ -10743,6 +10820,8 @@ local THEMES = {
     ice = {platform=Color3.fromRGB(205,228,246), platMat=Enum.Material.Ice, checkpoint=Color3.fromRGB(120,220,255), void=Color3.fromRGB(110,150,195), voidMat=Enum.Material.Glass},
 }
 local theme = THEMES[Config.Theme] or THEMES.neon
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 local angleStep = Config.Difficulty == "hard" and 0.63 or (Config.Difficulty == "casual" and 0.46 or 0.55)
 local platSize = Config.Difficulty == "hard" and 5.5 or (Config.Difficulty == "casual" and 9 or 7)
 
@@ -10900,6 +10979,14 @@ function buildStoryGameScript(params: GameTemplateParams): MultiScriptResult {
       : 'fantasy');
   const themeLua = safeLuaString(storyTheme, 'fantasy');
 
+  // Session 414: per-preset palette override for recognizability. clock follows
+  // the vibe so a monster/night story is dark, a lab story is dim.
+  const spec = params.gameVisualSpec;
+  const specClock = spec ? (spec.vibe === 'monster' || spec.vibe === 'night' ? 2 : spec.vibe === 'lab' ? 8 : 14) : 14;
+  const specThemeLua = (spec && spec.vibe !== 'neutral')
+    ? `{floor=${rgbLua(spec.palette.ground)}, floorMat=Enum.Material.${spec.palette.groundMaterial}, gate=${rgbLua(spec.palette.roof)}, decor=${rgbLua(spec.palette.accent)}, accent=${rgbLua(spec.palette.accent)}, clock=${specClock}}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
@@ -10913,6 +11000,8 @@ local THEMES = {
     horror = {floor=Color3.fromRGB(44,42,48), floorMat=Enum.Material.Concrete, gate=Color3.fromRGB(60,54,54), decor=Color3.fromRGB(150,40,50), accent=Color3.fromRGB(200,60,70), clock=0},
 }
 local theme = THEMES[Config.Theme] or THEMES.fantasy
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 Lighting.ClockTime = theme.clock
 
 local BEATS = {
@@ -11234,6 +11323,14 @@ function buildSurvivalScript(params: GameTemplateParams): MultiScriptResult {
   const themeLua = safeLuaString(survivalTheme, 'island');
   const difficultyLua = safeLuaString(difficulty, 'normal');
 
+  // Session 414: per-preset recognizability. Survival's theme table carries
+  // non-color fields (water/treeKind/clock), so merge ONLY the safe color fields
+  // (mood/atmosphere/ground) instead of a full replace.
+  const spec = params.gameVisualSpec;
+  const specMergeLua = (spec && spec.vibe !== 'neutral')
+    ? `{groundMat=Enum.Material.${spec.palette.groundMaterial}, atmo=${rgbLua(spec.palette.accent)}, ambient=${rgbLua(spec.palette.road)}, rock=${rgbLua(spec.palette.wall)}}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -11248,6 +11345,8 @@ local THEMES = {
     zombie = {groundMat=Enum.Material.Ground, water=false, treeKind="dead", trunk=Color3.fromRGB(70,60,48), leaf=Color3.fromRGB(86,96,64), rock=Color3.fromRGB(96,96,100), enemy=Color3.fromRGB(110,150,80), atmo=Color3.fromRGB(122,122,112), ambient=Color3.fromRGB(60,62,60), tint=Color3.fromRGB(228,226,214), clock=6},
 }
 local theme = THEMES[Config.Theme] or THEMES.island
+local SPEC_MERGE = ${specMergeLua}
+if SPEC_MERGE then local t = {} for k, v in pairs(theme) do t[k] = v end for k, v in pairs(SPEC_MERGE) do t[k] = v end theme = t end
 local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.6 or 1.0)
 local enemySpeed = 10 * (Config.Difficulty == "hard" and 1.25 or 1)
 local enemyDmg = math.floor(6 * diffMult)
@@ -11457,6 +11556,12 @@ function buildMinigameHubScript(params: GameTemplateParams): MultiScriptResult {
       : 'party');
   const themeLua = safeLuaString(hubTheme, 'party');
 
+  // Session 414: per-preset palette override for recognizability.
+  const spec = params.gameVisualSpec;
+  const specThemeLua = (spec && spec.vibe !== 'neutral')
+    ? `{lobby=${rgbLua(spec.palette.plaza)}, lobbyMat=Enum.Material.${spec.palette.groundMaterial}, accent=${rgbLua(spec.palette.accent)}}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -11468,6 +11573,8 @@ local THEMES = {
     classic = {lobby=Color3.fromRGB(120,170,95), lobbyMat=Enum.Material.Grass, accent=Color3.fromRGB(255,230,120)},
 }
 local theme = THEMES[Config.Theme] or THEMES.party
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 local COLORS = {Color3.fromRGB(235,90,90), Color3.fromRGB(90,150,235), Color3.fromRGB(110,210,120)}
 local CNAMES = {"RED", "BLUE", "GREEN"}
 
@@ -11639,6 +11746,12 @@ function buildFightingScript(params: GameTemplateParams): MultiScriptResult {
   const themeLua = safeLuaString(arenaTheme, 'arena');
   const difficultyLua = safeLuaString(difficulty, 'normal');
 
+  // Session 414: per-preset palette override for recognizability.
+  const spec = params.gameVisualSpec;
+  const specThemeLua = (spec && spec.vibe !== 'neutral')
+    ? `{floor=${rgbLua(spec.palette.ground)}, floorMat=Enum.Material.${spec.palette.groundMaterial}, kerb=${rgbLua(spec.palette.roof)}, accent=${rgbLua(spec.palette.accent)}}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -11651,6 +11764,8 @@ local THEMES = {
     space = {floor=Color3.fromRGB(36,40,58), floorMat=Enum.Material.Metal, kerb=Color3.fromRGB(60,68,96), accent=Color3.fromRGB(150,255,210)},
 }
 local theme = THEMES[Config.Theme] or THEMES.arena
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 local punchDmg = Config.Difficulty == "hard" and 24 or (Config.Difficulty == "casual" and 12 or 17)
 
 local remotes = Instance.new("Folder"); remotes.Name = "FtRemotes"; remotes.Parent = ReplicatedStorage
@@ -11829,6 +11944,12 @@ function buildCustomGameScript(params: GameTemplateParams): MultiScriptResult {
       : 'neon');
   const themeLua = safeLuaString(customTheme, 'neon');
 
+  // Session 414: per-preset palette override for recognizability.
+  const spec = params.gameVisualSpec;
+  const specThemeLua = (spec && spec.vibe !== 'neutral')
+    ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, plaza=${rgbLua(spec.palette.plaza)}, accent=${rgbLua(spec.palette.accent)}, coin=${rgbLua(spec.palette.accent)}}`
+    : 'nil';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -11840,6 +11961,8 @@ local THEMES = {
     space = {ground=Color3.fromRGB(24,26,40), groundMat=Enum.Material.Slate, plaza=Color3.fromRGB(44,50,76), accent=Color3.fromRGB(150,200,255), coin=Color3.fromRGB(180,230,255)},
 }
 local theme = THEMES[Config.Theme] or THEMES.neon
+local SPEC_THEME = ${specThemeLua}
+if SPEC_THEME then theme = SPEC_THEME end
 
 local remotes = Instance.new("Folder"); remotes.Name = "CtRemotes"; remotes.Parent = ReplicatedStorage
 local CtEvent = Instance.new("RemoteEvent"); CtEvent.Name = "CtEvent"; CtEvent.Parent = remotes
