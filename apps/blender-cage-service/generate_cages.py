@@ -196,8 +196,28 @@ def _fit_garment_to_body(garment: bpy.types.Object, inner_cage: bpy.types.Object
     _, _, _, gdims = _world_bbox(garment)
     g_h = gdims.z
     g_horiz = max(gdims.x, gdims.y)
-    is_tall = (g_h > 1.3 * g_horiz) if g_horiz > 1e-4 else False
+    # Classify: a compact top (hoodie/shirt/sweater/jacket) covers the upper
+    # body (~2.5 studs); a full outfit (dress/jumpsuit/overalls) covers most of
+    # it (~4.8 studs). Prefer the NAME — far more reliable than the mesh aspect
+    # ratio. A puffy hoodie's taller proportions (≈1.4:1) used to trip the old
+    # 1.3 aspect threshold → misread as a full outfit → scaled to ~4.8 studs =
+    # huge, then skinned head-to-toe → exploded mess on the avatar.
+    nm = (garment.name or "").lower()
+    TALL_WORDS = ("dress", "gown", "jumpsuit", "overall", "robe", "kimono",
+                  "cloak", "fullbody", "full_body", "fullsuit", "onesie", "romper")
+    COMPACT_WORDS = ("hoodie", "hood", "shirt", "tshirt", "t_shirt", "tee", "top",
+                     "sweater", "sweatshirt", "jacket", "crew", "polo", "vest",
+                     "blouse", "jersey", "crop", "pullover", "cardigan", "coat")
+    if any(w in nm for w in COMPACT_WORDS):
+        is_tall = False
+    elif any(w in nm for w in TALL_WORDS):
+        is_tall = True
+    else:
+        # Fallback: aspect ratio with a HIGH threshold so only genuinely tall
+        # garments (height ≫ width) count as full outfits.
+        is_tall = (g_h > 1.8 * g_horiz) if g_horiz > 1e-4 else False
     frac = 0.88 if is_tall else 0.46
+    print(f"[generate_cages] garment_type: name={nm!r} ratio={g_h / g_horiz if g_horiz > 1e-4 else 0:.2f} is_tall={is_tall} frac={frac}")
 
     if g_h > 1e-4:
         s = (inner_h * frac) / g_h
