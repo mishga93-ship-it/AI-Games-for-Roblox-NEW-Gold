@@ -305,22 +305,43 @@ async function buildCursedItemRbxmUrl(args: {
 // (embed_textures=True, path_mode='COPY') and clamps every map to ≤1024px —
 // the exact fix for Studio's "Material_0 — Upload failed" on FBX import.
 //
-// Non-fatal + degrades cleanly: if the worker is unreachable, convertToFbx's
-// fallback returns the GLB bytes unchanged (outputExtension='glb'); we only
-// ship a .fbx when the worker actually produced one, so the UI never offers a
-// GLB mislabeled as FBX — it falls back to .rbxm / .glb instead.
+// Primary source = the Blender-OPTIMIZED GLB (textures embedded), run through
+// the worker's /convert-to-fbx (glb_to_fbx.py), which embeds textures
+// (embed_textures=True, path_mode='COPY') and clamps every map to ≤1024px —
+// the exact fix for Studio's "Material_0 — Upload failed" on FBX import.
+//
+// Session 406 round 2 — FALLBACK: when the worker is unreachable (convertToFbx
+// returns the GLB unchanged, outputExtension!='fbx') we re-host Meshy's OWN
+// .fbx (`rawFbxUrl`) so the user still gets a real, importable .fbx. Its PBR
+// maps may live in separate files (can import textureless → re-texture in
+// Studio), but a real-geometry .fbx beats no export at all — which is exactly
+// what the user hit when the mesh was being discarded. Worker FBX (textured)
+// is always preferred; Meshy raw is only the safety net.
+// Non-fatal throughout: returns undefined only when BOTH paths fail.
 async function buildCursedItemFbxUrl(args: {
   glbUrl: string;
   title: string;
   firebaseUid: string;
+  rawFbxUrl?: string;
 }): Promise<string | undefined> {
+  const rawFbxFallback = async (): Promise<string | undefined> => {
+    if (!args.rawFbxUrl) return undefined;
+    const url = await rehostMeshBinary({
+      firebaseUid: args.firebaseUid,
+      url: args.rawFbxUrl,
+      filename: 'cursed-item.fbx',
+      contentType: 'model/fbx',
+    });
+    if (url) logger.info('[cursedUgcGenerator] .fbx via Meshy raw fbx (worker unavailable; may be textureless)');
+    return url;
+  };
   try {
     const result = await convertToFbx({ sourceUrl: args.glbUrl, title: `Cursed ${args.title}`.slice(0, 50) });
     if (result.outputExtension !== 'fbx' || !result.outputBase64) {
-      logger.warn('[cursedUgcGenerator] .fbx skipped — worker did not return FBX', {
+      logger.warn('[cursedUgcGenerator] .fbx worker returned no FBX — trying Meshy raw fbx', {
         ext: result.outputExtension,
       });
-      return undefined;
+      return await rawFbxFallback();
     }
     const buf = Buffer.from(result.outputBase64, 'base64');
     const url = await uploadSigned({
@@ -330,13 +351,13 @@ async function buildCursedItemFbxUrl(args: {
       contentType: result.outputMimeType || 'model/fbx',
       useV4: false,
     });
-    logger.info('[cursedUgcGenerator] .fbx built', { bytes: buf.length });
+    logger.info('[cursedUgcGenerator] .fbx built (worker, textured)', { bytes: buf.length });
     return url;
   } catch (err) {
-    logger.warn('[cursedUgcGenerator] .fbx build failed (non-fatal)', {
+    logger.warn('[cursedUgcGenerator] .fbx worker build failed — trying Meshy raw fbx (non-fatal)', {
       err: err instanceof Error ? err.message : String(err),
     });
-    return undefined;
+    return await rawFbxFallback();
   }
 }
 
@@ -493,14 +514,22 @@ export interface CursedUGCResult extends CursedUGCMetadata {
 // 2026-05-29T04:25:11 showed a 37-attempt poll completing at 04:28:12
 // (~181s wall-clock); the 180s timer fired 11s before COMPLETED, the
 // generator fell back to 2D, but the GLB was already paid for and arrived
-// 11s later — same wasted spend pattern as round 2. Cloud Run function
-// timeout is 300s, so 250s leaves ~50s headroom for the recordViralGen
-// Firestore write + push notification path.
+// 11s later — same wasted spend pattern as round 2.
+//
+// Round 8 (session 406) — bumped 250s → 480s. SAME wasted-spend bug again:
+// prod logs 2026-06-03T06:15:02 showed Meshy COMPLETED with BOTH glbUrl and
+// fbxUrl ready, but the 250s timer fired ~1s before the result propagated →
+// fell back to 2D → user saw "просто 2д картинка, нет .fbx" (no mesh ⇒ no
+// fbx/rbxm export). Crucially, the old "300s function timeout" assumption was
+// WRONG: the `api` function is configured timeoutSeconds:900 (index.ts:35131).
+// 250s left ~650s of budget UNUSED while discarding paid-for meshes. 480s
+// catches virtually all Meshy completions and still leaves ~420s for the
+// optimize + parallel fbx/rbxm build + Firestore write + push.
 async function meshyOnceFor(args: {
   prompt: string;
   contentSubcategory?: string;
   firebaseUid: string;
-}): Promise<{ meshUrl?: string; thumbnailUrl?: string } | undefined> {
+}): Promise<{ meshUrl?: string; thumbnailUrl?: string; rawFbxUrl?: string } | undefined> {
   try {
     const meshyPromise = runMeshy(args.prompt, {
       // Session 390 round 5 — switched from 'character' → 'item_tool'.
@@ -531,11 +560,11 @@ async function meshyOnceFor(args: {
       title: 'Cursed UGC Item',
     });
     const timeoutPromise = new Promise<undefined>((resolve) =>
-      setTimeout(() => resolve(undefined), 250_000),
+      setTimeout(() => resolve(undefined), 480_000),
     );
     const winner = await Promise.race([meshyPromise, timeoutPromise]);
     if (!winner) {
-      logger.warn('[cursedUgcGenerator] Meshy timed out at 250s — falling back to 2D-only result');
+      logger.warn('[cursedUgcGenerator] Meshy timed out at 480s — falling back to 2D-only result');
       return undefined;
     }
     const raw = winner.raw as Record<string, unknown> | undefined;
@@ -569,6 +598,9 @@ async function meshyOnceFor(args: {
     const thumbnailUrlRaw = typeof raw?.thumbnailUrl === 'string'
       ? (raw.thumbnailUrl as string)
       : undefined;
+    // Session 406 — keep Meshy's own .fbx URL as a fallback source for the
+    // .fbx export when the worker /convert-to-fbx (textured) path is down.
+    const rawFbxUrl = typeof raw?.fbxUrl === 'string' ? (raw.fbxUrl as string) : undefined;
 
     logger.info('[cursedUgcGenerator] Meshy v6 URLs available', {
       hasGlb: !!glbUrlRaw,
@@ -650,7 +682,7 @@ async function meshyOnceFor(args: {
         })) ?? thumbnailUrlRaw
       : undefined;
 
-    return { meshUrl, thumbnailUrl };
+    return { meshUrl, thumbnailUrl, rawFbxUrl };
   } catch (err) {
     logger.warn('[cursedUgcGenerator] Meshy 3D step failed (non-fatal)', {
       err: err instanceof Error ? err.message : String(err),
@@ -700,7 +732,7 @@ export async function generateCursedUGC(input: CursedUGCInput): Promise<CursedUG
   const [rbxmUrl, fbxUrl] = mesh?.meshUrl
     ? await Promise.all([
         buildCursedItemRbxmUrl({ glbUrl: mesh.meshUrl, title: metadata.titleEN, firebaseUid: input.firebaseUid }),
-        buildCursedItemFbxUrl({ glbUrl: mesh.meshUrl, title: metadata.titleEN, firebaseUid: input.firebaseUid }),
+        buildCursedItemFbxUrl({ glbUrl: mesh.meshUrl, title: metadata.titleEN, firebaseUid: input.firebaseUid, rawFbxUrl: mesh.rawFbxUrl }),
       ])
     : [undefined, undefined];
 
