@@ -93,9 +93,9 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
   headless_shadow: {
     id: 'headless_shadow',
     title: 'Headless Shadow',
-    pitchEN: 'A dark void where your head should be. Cheap, clean, looks like a 31k-Robux limited.',
-    pitchRU: 'Тёмный void на месте головы. Дёшево, чисто, выглядит как лимитка за 31к Robux.',
-    appStoreHook: 'OMG FREE HEADLESS',
+    pitchEN: 'A dark void where your head should be. Cheap, clean, a fully original void-head look.',
+    pitchRU: 'Тёмный void на месте головы. Дёшево, чисто, полностью свой void-образ.',
+    appStoreHook: 'VOID HEAD GLOW-UP',
     decalPrompt: 'A square dark void face accessory texture: pure black smooth gradient, faint dark blue cosmic dust, no facial features, no eyes, no mouth. Designed as a Roblox face accessory overlay. Transparent background, isolated, centered. NO text, NO logos. Family-friendly, no horror, no gore.',
     avatarRestylePrompt: 'Roblox blocky avatar, COMPLETELY HEADLESS — empty dark void where the head should be, NO face visible, NO eyes, NO mouth, just a tiny dark void blob in place of head. High black turtleneck collar covers the neck stump. All-black outfit: black shirt, black pants, black shoes. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon, no horror, no gore.',
     palette: {
@@ -129,8 +129,8 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
       'Equip face decal — auto-uploaded via OAuth OR upload Decal.png manually.',
       'Equip Black Turtleneck (15 R$) and Void Smooth Brain (free) from catalog.',
     ],
-    shareCaptionRU: 'Сделал FREE HEADLESS через Kami Gold AI за 0 Robux 🔥 #roblox #headless #freerobux',
-    shareCaptionEN: 'Got FREE HEADLESS via Kami Gold AI for 0 Robux 🔥 #roblox #headless #freerobux',
+    shareCaptionRU: 'Собрал void-head образ через Kami Gold AI 🔥 #roblox #robloxavatar #avatarglowup',
+    shareCaptionEN: 'Built a void-head avatar look via Kami Gold AI 🔥 #roblox #robloxavatar #avatarglowup',
     imitatedRetailRobux: 31_000,
   },
 
@@ -140,9 +140,9 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
   korblox_style: {
     id: 'korblox_style',
     title: 'Korblox Style',
-    pitchEN: 'Cyber skeleton leg. Mimic the 17k-Robux Korblox Deathspeaker without paying for it.',
-    pitchRU: 'Скелетная нога-кибер. Имитация Korblox Deathspeaker за 17к Robux — без переплаты.',
-    appStoreHook: 'FREE KORBLOX LEG',
+    pitchEN: 'Cyber skeleton leg. A budget skeleton-leg look you build yourself from cheap catalog items.',
+    pitchRU: 'Скелетная нога-кибер. Бюджетный скелет-образ, который собираешь сам из дешёвых айтемов.',
+    appStoreHook: 'CYBER SKELETON LEG',
     decalPrompt: 'A square dark bone/skeleton texture overlay: black background with subtle white-blue bone fragments, vertical bone segments resembling a leg skeleton in cyber-fantasy style. Designed as a Roblox right-leg decal overlay. Transparent edges, centered. NO text, NO horror, NO gore — stylized fantasy bone art only.',
     avatarRestylePrompt: 'Roblox blocky avatar, normal face and normal head. The RIGHT LEG is completely dark blue-black with glowing cyan-blue cyber-bone skeleton segments visible — looks like a Korblox Deathspeaker leg, magical-cyber-fantasy aesthetic. The LEFT LEG is regular skin tone. Dark tactical torso clothing, slim build. R15 blocky body, full body 3/4 view, plain white background, soft studio lighting. Family-friendly stylized cartoon.',
     palette: {
@@ -175,8 +175,8 @@ const VIBES: Record<GlowupVibeId, GlowupVibe> = {
       'Equip skeleton decal — auto-uploaded via OAuth or upload manually.',
       'Equip Pencil Body (free) and Skeleton Leg Accessory (25 R$).',
     ],
-    shareCaptionRU: 'Получил Korblox-стайл за 25 R$ вместо 17к через Kami Gold AI 💀 #roblox #korblox #freerobux',
-    shareCaptionEN: 'Got Korblox-style for 25 R$ instead of 17k via Kami Gold AI 💀 #roblox #korblox #freerobux',
+    shareCaptionRU: 'Собрал скелет-лук за пару десятков Robux через Kami Gold AI 💀 #roblox #robloxavatar #avatarglowup',
+    shareCaptionEN: 'Built a skeleton-leg look for a few Robux via Kami Gold AI 💀 #roblox #robloxavatar #avatarglowup',
     imitatedRetailRobux: 17_000,
   },
 

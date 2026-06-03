@@ -73,11 +73,11 @@ function buildLLMPolishPrompt(kind: FakeLimitedKind, items: FakeLimitedItem[]): 
   const total = summarizeRecipe(kind).totalCostRobux;
   const itemList = items.map((it) => `- ${it.name} (${it.assetId}, ${it.pricedRobux === 0 ? 'Free' : `${it.pricedRobux} R$`}) — ${it.notes}`).join('\n');
   return [
-    `You are writing a one-sentence marketing pitch (max 22 words) for an AI tool that recreates the Roblox "${kind}" limited look using free/cheap catalog items.`,
+    `You are writing a one-sentence marketing pitch (max 22 words) for an AI tool that recreates the Roblox "${kind}" limited look using low-cost catalog items.`,
     `Retail price of the real limited: ${retail} Robux. Recipe total: ${total} Robux.`,
     `The recipe uses these items:`,
     itemList,
-    `Constraints: NO claims of getting the real item for free. NO mention of exploits, hacks, or bypassing payments. Emphasize "looks like" / "illusion" / "for the cost of zero Robux". Output ONLY the sentence, no quotes, no preamble.`,
+    `Constraints: NO claims of getting the real item for free. NO mention of exploits, hacks, or bypassing payments. Emphasize "looks like" / "illusion" / "for just a few Robux". Output ONLY the sentence, no quotes, no preamble.`,
   ].join('\n');
 }
 
@@ -90,9 +90,9 @@ async function safePolishPitch(kind: FakeLimitedKind, items: FakeLimitedItem[]):
   } catch (err) {
     logger.warn('fake-limited pitch LLM polish failed; using fallback', err);
   }
-  if (kind === 'headless') return 'Get the headless illusion for 0 Robux — free catalog items only, no exploits.';
-  if (kind === 'korblox') return 'Skeleton-leg silhouette without the 17k Robux Korblox price tag.';
-  return 'Headless + Korblox combo illusion built entirely from free/cheap official catalog items.';
+  if (kind === 'headless') return 'A void-head illusion built from a few cheap official catalog items — no exploits.';
+  if (kind === 'korblox') return 'A budget skeleton-leg silhouette assembled from cheap official catalog items.';
+  return 'A combo void-head + skeleton-leg illusion built from low-cost official catalog items.';
 }
 
 function buildPreviewPrompt(kind: FakeLimitedKind): string {
@@ -122,7 +122,7 @@ export async function generateFakeLimitedRecipe(input: {
         }),
   ]);
   const title = input.kind === 'headless'
-    ? 'Fake Headless — 0 Robux look'
+    ? 'Headless-Style Look'
     : input.kind === 'korblox'
       ? 'Fake Korblox — skeleton-leg illusion'
       : 'Fake Headless + Korblox combo';

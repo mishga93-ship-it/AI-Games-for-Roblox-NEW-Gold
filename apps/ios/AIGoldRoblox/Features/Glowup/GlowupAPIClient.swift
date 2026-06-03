@@ -33,11 +33,11 @@ enum GlowupVibe: String, CaseIterable, Codable, Identifiable {
     var shortPitch: String {
         switch self {
         case .headlessShadow:
-            return loc(en: "Dark void where your head should be — for 0 R$",
-                       ru: "Тёмный void на месте головы — за 0 R$")
+            return loc(en: "Dark void where your head should be — budget look",
+                       ru: "Тёмный void на месте головы — бюджетный образ")
         case .korbloxStyle:
-            return loc(en: "Skeleton leg — 25 R$ instead of 17,000",
-                       ru: "Скелетная нога — за 25 R$ вместо 17 000")
+            return loc(en: "Skeleton leg — built from cheap catalog items",
+                       ru: "Скелетная нога — из дешёвых каталог-айтемов")
         case .void:
             return loc(en: "Pitch-black, faceless, cursed",
                        ru: "Полностью чёрный, безликий, cursed")
