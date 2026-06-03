@@ -920,11 +920,16 @@ export async function generatePreviewTexture(
     ? `3D game level screenshot: ${englishDescription}. Colorful platforming world, obstacle course environment, floating platforms, bright neon colors, top-down isometric camera angle. NO characters, NO people, NO avatars. Only the game world and level geometry. Do NOT include any text or watermarks.${SAFETY_SUFFIX}`
     : context === 'garment'
       // Layered-clothing approval concept. Flux mostly ignores negative_prompt
-      // (CFG≈1), so the wearer-suppression lives here in the positive prompt:
-      // explicit ghost-mannequin / flat-lay framing + a long "nobody is wearing
-      // it" clause. Without this the model renders the garment on an implied
-      // body/mannequin and Meshy then reconstructs a whole avatar.
-      ? `${englishDescription}. Professional flat product shot of a single clothing garment ONLY, ghost-mannequin style: the empty garment laid flat or floating in empty space on a plain white background, front view. Show just the fabric, cut, colour, pattern, stitching and trim of the garment by itself. There is NO person, NO human, NO mannequin, NO body, NO torso, NO head, NO arms, NO legs — nobody is wearing it. Clean stylized render, bright saturated colours, game-ready clothing reference. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`
+      // (CFG≈1), so both the wearer-suppression AND the all-important VOLUME cue
+      // live here in the positive prompt.
+      //
+      // 2026-06-03: the old prompt said "laid flat or floating" → Flux drew a
+      // FLAT-LAY with a sunken/caved-in front. Meshy reproduced that concavity,
+      // so the 3D garment's front dipped BEHIND the body surface → the avatar's
+      // skin showed through ("holes front/back"). Fix: demand a ghost-/invisible-
+      // mannequin shot where the garment is FILLED OUT with 3D body volume
+      // (convex, puffed chest/torso/sleeves) but the wearer stays invisible.
+      ? `${englishDescription}. Professional ghost-mannequin (invisible-mannequin / hollow-man) product photo of a single clothing garment ONLY: the garment is FULLY FILLED OUT with three-dimensional volume as if worn by an invisible person — the chest, torso and shoulders are rounded, convex and puffed outward, holding a complete natural worn body shape, the sleeves rounded and full. The garment floats upright on a plain white background, front view, keeping its full 3D worn form. The wearer is completely invisible: show ONLY the fabric, cut, colour, pattern, stitching and trim. The garment is NOT laid flat, NOT a flat-lay, NOT deflated, NOT sunken or caved-in, NOT collapsed or folded — it bulges with volume. There is NO visible person, NO skin, NO mannequin, NO doll, NO head, NO face, NO neck, NO hands, NO bare arms or legs. Clean stylized render, bright saturated colours, game-ready clothing reference. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`
     : context === 'prop'
       ? `${englishDescription}. Single 3D object centered on white background, front view. Clean stylized render, bright saturated colors, game-ready prop. Do NOT include any text, watermarks, logos, people, or characters.${SAFETY_SUFFIX}`
       : context === 'pet'
@@ -990,7 +995,11 @@ export async function generatePreviewTexture(
   // ALONE. Flux mostly ignores negative_prompt (CFG≈1) — the positive prompt does
   // the heavy lifting — but this still bites on flux-pro/dev (guidance_scale 3.5)
   // as a second line of defence against a leaked wearer/mannequin.
-  const GARMENT_NEGATIVE = `${NEGATIVE_PROMPT}, person, people, human, character, avatar, mannequin, dummy, doll, model wearing, body, torso, chest, head, face, neck, arms, hands, legs, feet, figure`;
+  // NOTE: do NOT ban "torso/chest/body" here — that made Flux DEFLATE the
+  // garment front (sunken concept → concave 3D → clips into the avatar). We ban
+  // the flat-lay/sunken look and the *visible wearer* (skin/face/limbs), but
+  // allow the garment itself to bulge with 3D volume (sleeves, rounded chest).
+  const GARMENT_NEGATIVE = `${NEGATIVE_PROMPT}, flat lay, flat-lay, laid flat, top-down flat, deflated, sunken, caved-in, concave front, collapsed, folded flat, crumpled, wrinkled flat, hollow empty shell, person, people, human, skin, character, avatar, mannequin, dummy, doll, model wearing, head, face, neck, hands, fingers, bare arms, bare legs, feet, figure`;
   const negPrompt = context === 'character'
     ? CHARACTER_NEGATIVE
     : context === 'pet'
