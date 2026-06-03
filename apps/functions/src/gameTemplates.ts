@@ -1,7 +1,7 @@
 import type { SimulatorSceneSpec, HeroAssetResult } from './types.js';
 import { withCinematicCamera } from './cinematicCamera.js';
 import type { TrendingShowcaseItem } from './generationEnrichment.js';
-import { rgbLua, type GameVisualSpec } from './gameThemeSpec.js';
+import { rgbLua, atmosphereOptsLua, type GameVisualSpec } from './gameThemeSpec.js';
 
 export type MemeSubTheme = 'skibidi' | 'bombardir' | 'tralalero' | 'sigma' | 'generic';
 
@@ -9944,6 +9944,30 @@ function buildTowerDefenseScript(params: GameTemplateParams): MultiScriptResult 
   const specThemeLua = (spec && spec.vibe !== 'neutral')
     ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, path=${rgbLua(spec.palette.road)}, pathMat=Enum.Material.Ground, base=${rgbLua(spec.palette.wall)}, accent=${rgbLua(spec.palette.accent)}}`
     : 'nil';
+  // Session 414b: sky/foliage/centerpiece so a themed preset reads as its theme
+  // (99 Nights = dark pine forest at night + campfire), not a sunny meadow.
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
+  const tdAtmo = (spec && spec.vibe !== 'neutral') ? spec.atmosphere : undefined;
+  const tdTreeKindLua = safeLuaString(tdAtmo?.treeKind || 'round', 'round');
+  const tdTreeTrunkLua = tdAtmo ? rgbLua(tdAtmo.treeTrunk) : 'Color3.fromRGB(112, 80, 52)';
+  const tdTreeLeafLua = tdAtmo ? rgbLua(tdAtmo.treeLeaf) : 'Color3.fromRGB(78, 142, 70)';
+  const tdCampfireLua = (tdAtmo && tdAtmo.mood === 'night')
+    ? `
+do
+    local cfPos = Vector3.new(baseCenter.X - 28, 0, baseCenter.Z + 4)
+    for i = 1, 5 do
+        local a = math.rad(i * 72)
+        local logp = part("CampLog_" .. i, Vector3.new(7, 1.5, 1.5), cfPos + Vector3.new(math.cos(a) * 2.6, 1, math.sin(a) * 2.6), Color3.fromRGB(86, 58, 38), Enum.Material.Wood)
+        logp.CFrame = CFrame.new(logp.Position) * CFrame.Angles(0, a, math.rad(22))
+    end
+    local embers = part("CampEmbers", Vector3.new(4.4, 2.4, 4.4), cfPos + Vector3.new(0, 1.7, 0), Color3.fromRGB(255, 130, 45), Enum.Material.Neon)
+    embers.Shape = Enum.PartType.Ball
+    local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 38; pl.Parent = embers
+    local fire = Instance.new("Fire"); fire.Heat = 10; fire.Size = 8; fire.Color = Color3.fromRGB(255, 150, 60); fire.SecondaryColor = Color3.fromRGB(255, 88, 30); fire.Parent = embers
+    local cbb = Instance.new("BillboardGui"); cbb.Size = UDim2.new(0, 120, 0, 28); cbb.StudsOffset = Vector3.new(0, 4.5, 0); cbb.AlwaysOnTop = true; cbb.Parent = embers
+    local ct = Instance.new("TextLabel"); ct.Size = UDim2.new(1, 0, 1, 0); ct.BackgroundTransparency = 1; ct.TextColor3 = Color3.fromRGB(255, 205, 140); ct.TextStrokeTransparency = 0.4; ct.TextScaled = true; ct.Font = Enum.Font.GothamBold; ct.Text = "Campfire"; ct.Parent = cbb
+end`
+    : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -9979,10 +10003,10 @@ end
 
 part("TdGround", Vector3.new(280, 1, 210), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.6), tint = Color3.fromRGB(252, 250, 248), haze = 1.5})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.6), tint = Color3.fromRGB(252, 250, 248), haze = 1.5`}})
 for i = 1, 16 do
     local a = math.rad(i * 22.5); local p = Vector3.new(math.cos(a) * (96 + (i % 3) * 10), 0.5, math.sin(a) * (74 + (i % 3) * 8))
-    if i % 4 == 0 then makeRock(world, p, 0.7, theme.path) else makeTree(world, p, 0.9, "round", Color3.fromRGB(112, 80, 52), Color3.fromRGB(78, 142, 70)) end
+    if i % 4 == 0 then makeRock(world, p, 0.7, theme.path) else makeTree(world, p, 0.9, ${tdTreeKindLua}, ${tdTreeTrunkLua}, ${tdTreeLeafLua}) end
 end
 
 local waypoints = {
@@ -10003,6 +10027,7 @@ local baseCore = part("BaseCore", Vector3.new(18, 18, 18), Vector3.new(baseCente
 local baseBb = Instance.new("BillboardGui"); baseBb.Size = UDim2.new(0, 170, 0, 42); baseBb.StudsOffset = Vector3.new(0, 13, 0); baseBb.AlwaysOnTop = true; baseBb.Parent = baseCore
 local baseLabel = Instance.new("TextLabel"); baseLabel.Size = UDim2.new(1, 0, 1, 0); baseLabel.BackgroundTransparency = 1; baseLabel.TextColor3 = Color3.fromRGB(255, 255, 255); baseLabel.TextStrokeTransparency = 0.3; baseLabel.TextScaled = true; baseLabel.Font = Enum.Font.GothamBlack; baseLabel.Text = "BASE"; baseLabel.Parent = baseBb
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "TdSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = Vector3.new(baseCenter.X, 1, baseCenter.Z + 28); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${tdCampfireLua}
 
 local baseHealth = Config.BaseHealth
 local currentWave = 0
@@ -10301,6 +10326,7 @@ function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult 
   const specThemeLua = spec
     ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, road=${rgbLua(spec.palette.road)}, plaza=${rgbLua(spec.palette.plaza)}, wall=${rgbLua(spec.palette.wall)}, roof=${rgbLua(spec.palette.roof)}, accent=${rgbLua(spec.palette.accent)}}`
     : 'nil';
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
   const hubLua = safeLuaString(spec ? spec.hubName : '', '');
 
   const buildingSlots = [
@@ -10385,7 +10411,7 @@ end
 
 part("TownGround", Vector3.new(380, 1, 380), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.62), tint = Color3.fromRGB(252, 250, 248), haze = 1.5})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.62), tint = Color3.fromRGB(252, 250, 248), haze = 1.5`}})
 for i = 1, 20 do
     local a = math.rad(i * 18); local r = 150 + (i % 3) * 18
     local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
@@ -10602,6 +10628,7 @@ function buildRacingScript(params: GameTemplateParams): MultiScriptResult {
   const specThemeLua = (spec && spec.vibe !== 'neutral')
     ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, road=${rgbLua(spec.palette.road)}, accent=${rgbLua(spec.palette.accent)}}`
     : 'nil';
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10634,7 +10661,7 @@ end
 
 part("RaceGround", Vector3.new(420, 1, 320), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.6), tint = Color3.fromRGB(252, 250, 248), haze = 1.5})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.6), tint = Color3.fromRGB(252, 250, 248), haze = 1.5`}})
 for i = 1, 14 do
     local a = math.rad(i * 26); local r = 20 + (i % 3) * 14
     local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r * 0.7)
@@ -10806,6 +10833,7 @@ function buildParkourScript(params: GameTemplateParams): MultiScriptResult {
   const specThemeLua = (spec && spec.vibe !== 'neutral')
     ? `{platform=${rgbLua(spec.palette.wall)}, platMat=Enum.Material.SmoothPlastic, checkpoint=${rgbLua(spec.palette.accent)}, void=${rgbLua(spec.palette.road)}, voidMat=Enum.Material.Neon}`
     : 'nil';
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10844,7 +10872,7 @@ end
 
 local floor = part("VoidFloor", Vector3.new(440, 1, 440), Vector3.new(0, 0, 0), theme.void, theme.voidMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.checkpoint:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 2.0, cloudCover = 0.7})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.checkpoint:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 2.0, cloudCover = 0.7`}})
 
 local radius = 38
 local startPos = Vector3.new(radius, 6, 0)
@@ -10986,6 +11014,7 @@ function buildStoryGameScript(params: GameTemplateParams): MultiScriptResult {
   const specThemeLua = (spec && spec.vibe !== 'neutral')
     ? `{floor=${rgbLua(spec.palette.ground)}, floorMat=Enum.Material.${spec.palette.groundMaterial}, gate=${rgbLua(spec.palette.roof)}, decor=${rgbLua(spec.palette.accent)}, accent=${rgbLua(spec.palette.accent)}, clock=${specClock}}`
     : 'nil';
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11028,7 +11057,7 @@ local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "StorySpawn"; sp
 label3d(spawnLoc, Config.Title, 7, theme.accent)
 part("PathStart", Vector3.new(40, 1, 24), Vector3.new(0, 0, -8), theme.floor, theme.floorMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(150, 150, 160), 0.45), tint = Color3.fromRGB(250, 248, 246), brightness = 2.0, haze = 2.2})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(150, 150, 160), 0.45), tint = Color3.fromRGB(250, 248, 246), brightness = 2.0, haze = 2.2`}})
 
 local function buildChapter(i)
     local z = i * 60
@@ -11561,6 +11590,7 @@ function buildMinigameHubScript(params: GameTemplateParams): MultiScriptResult {
   const specThemeLua = (spec && spec.vibe !== 'neutral')
     ? `{lobby=${rgbLua(spec.palette.plaza)}, lobbyMat=Enum.Material.${spec.palette.groundMaterial}, accent=${rgbLua(spec.palette.accent)}}`
     : 'nil';
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11592,7 +11622,7 @@ end
 
 local lobby = part("Lobby", Vector3.new(90, 2, 90), Vector3.new(0, 0, 0), theme.lobby, theme.lobbyMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(208, 208, 214), 0.55), tint = Color3.fromRGB(253, 251, 250), haze = 1.4, bloom = 0.8})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(208, 208, 214), 0.55), tint = Color3.fromRGB(253, 251, 250), haze = 1.4, bloom = 0.8`}})
 label3d(lobby, Config.Title, 9, theme.accent)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "HubSpawn"; spawnLoc.Size = Vector3.new(20, 1, 20); spawnLoc.Position = Vector3.new(0, 1.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 local lobbyPos = Vector3.new(0, 5, 0)
@@ -11751,6 +11781,7 @@ function buildFightingScript(params: GameTemplateParams): MultiScriptResult {
   const specThemeLua = (spec && spec.vibe !== 'neutral')
     ? `{floor=${rgbLua(spec.palette.ground)}, floorMat=Enum.Material.${spec.palette.groundMaterial}, kerb=${rgbLua(spec.palette.roof)}, accent=${rgbLua(spec.palette.accent)}}`
     : 'nil';
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11783,7 +11814,7 @@ end
 
 local ring = part("Ring", Vector3.new(64, 2, 64), Vector3.new(0, 20, 0), theme.floor, theme.floorMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 1.6, fx = "embers"})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 1.6, fx = "embers"`}})
 label3d(ring, Config.Title, 18, theme.accent)
 local kerbs = {{Vector3.new(64, 3, 3), Vector3.new(0, 22, 32)}, {Vector3.new(64, 3, 3), Vector3.new(0, 22, -32)}, {Vector3.new(3, 3, 64), Vector3.new(32, 22, 0)}, {Vector3.new(3, 3, 64), Vector3.new(-32, 22, 0)}}
 for i, k in ipairs(kerbs) do part("Kerb_" .. i, k[1], k[2], theme.kerb, Enum.Material.Metal) end
@@ -11949,6 +11980,7 @@ function buildCustomGameScript(params: GameTemplateParams): MultiScriptResult {
   const specThemeLua = (spec && spec.vibe !== 'neutral')
     ? `{ground=${rgbLua(spec.palette.ground)}, groundMat=Enum.Material.${spec.palette.groundMaterial}, plaza=${rgbLua(spec.palette.plaza)}, accent=${rgbLua(spec.palette.accent)}, coin=${rgbLua(spec.palette.accent)}}`
     : 'nil';
+  const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11978,7 +12010,7 @@ end
 
 part("CustomGround", Vector3.new(320, 1, 320), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
 ${worldVisualsLua()}
-setupAtmosphere({atmoColor = theme.accent:Lerp(Color3.fromRGB(206, 206, 212), 0.58), tint = Color3.fromRGB(253, 251, 249), haze = 1.5})
+setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(206, 206, 212), 0.58), tint = Color3.fromRGB(253, 251, 249), haze = 1.5`}})
 for i = 1, 16 do
     local a = math.rad(i * 22.5 + 11); local r = 104 + (i % 3) * 12
     local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)

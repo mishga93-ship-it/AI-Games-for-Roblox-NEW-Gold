@@ -44,6 +44,23 @@ export interface GameJobLabel {
   pay: number;
 }
 
+/** Time-of-day + foliage mood that drives Lighting/atmosphere/trees. This is
+ * what actually makes "99 Nights" read as a dark forest night vs a sunny meadow
+ * — palette alone (ground colour) is not enough because sky/trees were hardcoded
+ * bright. Consumed by builders that call setupAtmosphere/makeTree. */
+export interface GameAtmosphere {
+  mood: 'day' | 'night' | 'dusk';
+  clockTime: number;   // 0-24 for Lighting.ClockTime
+  brightness: number;  // Lighting.Brightness
+  ambient: Rgb;        // Lighting.OutdoorAmbient/Ambient
+  tint: Rgb;           // ColorCorrection TintColor
+  fogColor: Rgb;       // Atmosphere colour / atmoColor
+  haze: number;        // Atmosphere haze (fog thickness)
+  treeKind: 'round' | 'pine' | 'palm' | 'dead';
+  treeLeaf: Rgb;
+  treeTrunk: Rgb;
+}
+
 export interface GameVisualSpec {
   /** Cleaned display title used for in-world signage. */
   themeName: string;
@@ -52,6 +69,8 @@ export interface GameVisualSpec {
   /** Canonical setting token (town/school/island/lab/kingdom). */
   setting: string;
   palette: GamePalette;
+  /** Time-of-day + foliage mood (night/dusk/day + tree kind/colour). */
+  atmosphere: GameAtmosphere;
   /** 6 themed buildings — town-like genres use name+sign; other genres ignore. */
   structures: GameStructure[];
   /** 6 themed jobs (roleplay). */
@@ -248,6 +267,43 @@ function detectVibe(brief: string): VibeDef {
   return best ?? NEUTRAL_VIBE;
 }
 
+// ─── Atmosphere (time-of-day + foliage) per vibe ────────────────────────────
+
+const DAY_ATMOS: GameAtmosphere = {
+  mood: 'day', clockTime: 14, brightness: 2.7, ambient: [120, 128, 140], tint: [255, 250, 244],
+  fogColor: [199, 175, 130], haze: 1.6, treeKind: 'round', treeLeaf: [78, 142, 70], treeTrunk: [112, 80, 52],
+};
+
+const ATMOS_BY_VIBE: Record<string, GameAtmosphere> = {
+  // 99 Nights in the Forest = dark pine forest at night, campfire survival.
+  night: { mood: 'night', clockTime: 0, brightness: 0.55, ambient: [22, 28, 44], tint: [120, 140, 180], fogColor: [40, 52, 72], haze: 3.4, treeKind: 'pine', treeLeaf: [40, 72, 56], treeTrunk: [58, 46, 38] },
+  monster: { mood: 'night', clockTime: 2, brightness: 0.7, ambient: [40, 30, 50], tint: [160, 120, 180], fogColor: [60, 46, 74], haze: 3.0, treeKind: 'dead', treeLeaf: [92, 82, 104], treeTrunk: [54, 46, 52] },
+  inferno: { mood: 'dusk', clockTime: 17.6, brightness: 1.4, ambient: [74, 42, 34], tint: [255, 150, 110], fogColor: [128, 62, 40], haze: 2.6, treeKind: 'dead', treeLeaf: [128, 74, 52], treeTrunk: [70, 46, 40] },
+  spy: { mood: 'dusk', clockTime: 6, brightness: 1.5, ambient: [60, 66, 80], tint: [170, 182, 205], fogColor: [88, 98, 120], haze: 2.2, treeKind: 'round', treeLeaf: [70, 110, 84], treeTrunk: [90, 72, 54] },
+  tropical: { mood: 'day', clockTime: 14, brightness: 3.0, ambient: [128, 134, 138], tint: [255, 246, 224], fogColor: [212, 200, 168], haze: 1.5, treeKind: 'palm', treeLeaf: [86, 170, 80], treeTrunk: [122, 86, 54] },
+  lab: { mood: 'day', clockTime: 12, brightness: 2.4, ambient: [124, 132, 142], tint: [236, 246, 250], fogColor: [150, 170, 186], haze: 1.4, treeKind: 'round', treeLeaf: [92, 150, 112], treeTrunk: [100, 80, 60] },
+};
+
+function atmosphereForVibe(vibeKey: string): GameAtmosphere {
+  return ATMOS_BY_VIBE[vibeKey] ?? DAY_ATMOS;
+}
+
+/** Inner `setupAtmosphere({...})` opts Lua for a themed spec — drives Lighting
+ * time-of-day/brightness/fog so the sky matches the vibe (night for 99 Nights,
+ * dusk for lava, etc.). Returns '' for neutral vibe so builders keep their
+ * original atmosphere (no regression). Builders use it as:
+ *   `setupAtmosphere({${specAtmoLua || `<original opts>`}})`. */
+export function atmosphereOptsLua(spec: GameVisualSpec): string {
+  if (spec.vibe === 'neutral') return '';
+  const a = spec.atmosphere;
+  const night = a.mood === 'night';
+  return `clockTime = ${a.clockTime}, brightness = ${a.brightness}, `
+    + `ambient = ${rgbLua(a.ambient)}, outdoor = ${rgbLua(a.ambient)}, `
+    + `tint = ${rgbLua(a.tint)}, atmoColor = ${rgbLua(a.fogColor)}, `
+    + `haze = ${a.haze}, density = ${night ? 0.55 : 0.36}, `
+    + `bloom = ${night ? 0.3 : 0.6}, cloudCover = ${night ? 0.85 : 0.5}`;
+}
+
 // ─── Derivation ──────────────────────────────────────────────────────────────
 
 function cleanTitle(title: string): string {
@@ -289,6 +345,7 @@ export function deriveGameVisualSpec(genre: string, brief: string, title: string
     vibe: vibe.key,
     setting: setting.key,
     palette: vibe.palette,
+    atmosphere: atmosphereForVibe(vibe.key),
     structures,
     jobs: setting.jobs,
     flavorLines: vibe.flavor,
