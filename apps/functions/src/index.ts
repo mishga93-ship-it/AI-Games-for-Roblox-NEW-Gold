@@ -1828,6 +1828,47 @@ app.delete('/api/chat/threads/:threadId', async (req: AuthedRequest, res) => {
   }
 });
 
+// Bulk delete — one request removes many threads. "Delete all chats" on the
+// client used to fire one DELETE per thread; that burst tripped the
+// 30-requests/60s rate limiter (lines ~1428), so some deletes got 429 and the
+// threads silently survived and reappeared on reinstall. Folding the whole
+// batch into a single request consumes just one rate-limit token.
+app.post('/api/chat/threads/bulk-delete', async (req: AuthedRequest, res) => {
+  try {
+    const rawIds = (req.body as { ids?: unknown })?.ids;
+    if (!Array.isArray(rawIds)) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const ids = Array.from(
+      new Set(
+        rawIds
+          .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+          .map((v) => v.trim())
+      )
+    ).slice(0, 500);
+
+    const deleted: string[] = [];
+    const skipped: string[] = [];
+    for (const id of ids) {
+      const threadRef = db.collection('threads').doc(id);
+      const threadDoc = await threadRef.get();
+      // Skip silently (not 404) for ids the user doesn't own or that are
+      // already gone — a partial batch shouldn't fail the whole request.
+      if (!threadDoc.exists || threadDoc.data()?.userId !== req.userId) {
+        skipped.push(id);
+        continue;
+      }
+      await db.recursiveDelete(threadRef);
+      deleted.push(id);
+    }
+
+    res.json({ deleted, skipped, count: deleted.length });
+  } catch (error) {
+    logger.error('Bulk delete threads failed', error);
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
 app.get('/api/chat/threads/:threadId/messages', async (req: AuthedRequest, res) => {
   try {
     const threadId = req.params.threadId;
