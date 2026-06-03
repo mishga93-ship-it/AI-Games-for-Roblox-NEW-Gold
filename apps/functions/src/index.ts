@@ -823,6 +823,7 @@ app.post('/api/outfit/generate', async (req: AuthedRequest, res) => {
       style: parseOutfitStyle(body.style),
       remix: parseOutfitRemix(body.remix),
       seed: typeof body.seed === 'string' ? body.seed : undefined,
+      renderAvatar3D: true,   // session 411 — real Roblox composited 3D avatar
     });
 
     // Fire analytics event (re-using the glowup events collection — same

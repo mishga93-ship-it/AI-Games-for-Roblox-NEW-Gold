@@ -1070,7 +1070,8 @@ async function handleOutfit(args: {
       aestheticId: params.aestheticId,
       gender: params.gender,
       style: params.style,
-      firebaseUid,  // round 16 — enables 3D mesh bake of the outfit avatar
+      firebaseUid,
+      renderAvatar3D: true,   // session 411 — real Roblox composited 3D avatar (replaces Meshy GLB)
     });
   } catch (err) {
     logger.error('[viralChatDispatch] assembleOutfit failed', { jobId, err });

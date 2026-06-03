@@ -17,7 +17,7 @@ import { runChatProvider, generatePreviewTexture } from './providers.js';
 // Session 390 round 16 — optional 3D mesh of the outfit avatar, via the
 // shared bake helper (Meshy v6 → Blender re-export → hosted GLB). iOS
 // renders it with WebGLBViewer (<model-viewer>), same as Cursed UGC.
-import { bakeMeshFromPrompt } from './meshBake.js';
+import { renderOutfit3D, type RobloxOutfit3DUrls } from './robloxAvatar3D.js';
 
 // Static catalog pool — pre-fetched on dev machine via scripts/prefetch-outfit-pool.mjs.
 // Roblox catalog API is blocked from Cloud Run egress; this JSON is the source
@@ -65,11 +65,17 @@ export interface OutfitAssembleResult {
   rerollSeed: string;                   // pass back to /generate to get a different selection
   /** AI-rendered preview of an avatar wearing this outfit (~3-5s, optional). */
   heroPreviewUrl?: string;
-  /** Rotatable 3D GLB of the outfit avatar (Meshy v6 + Blender, ~200s,
-   *  optional). iOS renders via WebGLBViewer. nil when mesh baking is
-   *  skipped (no firebaseUid) or times out → client uses heroPreviewUrl. */
+  /** Session 411 — REAL Roblox-composited 3D avatar wearing the EXACT picked
+   *  catalog items (POST /v1/avatar/render → OBJ+MTL+textures, ~15-20s). This
+   *  is the definitive 3D: it matches the item list 1:1 (no AI guesswork).
+   *  Only rendered when input.renderAvatar3D is set. nil on render failure or
+   *  missing ROBLOX_SERVICE_COOKIE → client falls back to heroPreviewUrl. */
+  render3d?: RobloxOutfit3DUrls;
+  /** Deprecated (session 411): Meshy text-to-3D GLB no longer produced — it
+   *  invented its own avatar that didn't match the items. Field kept for wire
+   *  compatibility; always undefined now. iOS prefers render3d. */
   meshUrl?: string;
-  /** Meshy thumbnail render of the 3D mesh (fallback still for the 2D card). */
+  /** Deprecated (session 411) — always undefined now. */
   meshThumbnailUrl?: string;
 }
 
@@ -80,9 +86,13 @@ export interface OutfitAssembleInput {
   remix?: OutfitRemixMode;              // pushes selection toward variant
   /** Optional seed to deterministically vary live-search picks. */
   seed?: string;
-  /** Session 390 round 16 — when present, bake a 3D GLB of the outfit
-   *  avatar (hosted under this uid in Storage). Omit to skip 3D entirely. */
+  /** Carried for analytics/back-compat; no longer gates 3D (session 411). */
   firebaseUid?: string;
+  /** Session 411 — when true, render the REAL Roblox-composited 3D avatar
+   *  (renderOutfit3D) wearing the picked items. Set by /api/outfit/generate
+   *  and the chat-flow; left false by fittingRoomRenderer (which runs its own
+   *  renderOutfit3D / renderOutfitOnUser3D, so it must NOT double-render). */
+  renderAvatar3D?: boolean;
 }
 
 // ─── Blacklist & filters ─────────────────────────────────────────
@@ -461,23 +471,20 @@ export async function assembleOutfit(input: OutfitAssembleInput): Promise<Outfit
   const totalCostRobux = items.reduce((acc, it) => acc + (it.priceRobux ?? 0), 0);
   const savedRobux = Math.max(0, aesthetic.imitatedRetailRobux - totalCostRobux);
 
-  // Caption + hero + 3D mesh in parallel. Hero is flux (~3-5s); mesh is
-  // Meshy v6 + Blender (~200s) and only runs when a firebaseUid is given
-  // (so the GLB can be hosted). Both tolerate failure → client falls back
-  // to whatever's available (mesh → hero → item grid).
-  const heroPrompt = buildOutfitHeroPrompt({ aesthetic, items, gender: input.gender, style: input.style });
-  const [caption, heroPreviewUrl, bakedMesh] = await Promise.all([
+  // Caption + flux hero + REAL 3D render in parallel. Hero is flux (~3-5s,
+  // the 2D fallback). render3d (session 411) is the Roblox server-side
+  // composited avatar wearing the EXACT picked items (~15-20s) — it replaces
+  // the old Meshy text-to-3D GLB, which invented an avatar that didn't match
+  // the item list. renderOutfit3D needs ROBLOX_SERVICE_COOKIE (env), not a
+  // firebaseUid. Both tolerate failure → client falls back (render3d →
+  // heroPreviewUrl → item grid). Gated by renderAvatar3D so fittingRoomRenderer
+  // (which runs its own renderOutfit3D) doesn't double-render.
+  const [caption, heroPreviewUrl, render3d] = await Promise.all([
     pickCaption(aesthetic, input.remix),
     generateOutfitHeroPreview({ aesthetic, items, gender: input.gender, style: input.style }),
-    input.firebaseUid
-      ? bakeMeshFromPrompt({
-          prompt: heroPrompt,
-          firebaseUid: input.firebaseUid,
-          contentCategory: 'character',   // full avatar — keep T-pose framing
-          contentSubcategory: 'outfit',
-          title: `${aesthetic.title} Outfit`,
-        })
-      : Promise.resolve({ meshUrl: undefined, thumbnailUrl: undefined }),
+    input.renderAvatar3D
+      ? renderOutfit3D({ assetIds: items.map((it) => it.assetId) })
+      : Promise.resolve(null),
   ]);
 
   return {
@@ -499,7 +506,6 @@ export async function assembleOutfit(input: OutfitAssembleInput): Promise<Outfit
     savedRobux,
     rerollSeed: input.seed ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     heroPreviewUrl,
-    meshUrl: bakedMesh.meshUrl,
-    meshThumbnailUrl: bakedMesh.thumbnailUrl,
+    render3d: render3d ?? undefined,
   };
 }
