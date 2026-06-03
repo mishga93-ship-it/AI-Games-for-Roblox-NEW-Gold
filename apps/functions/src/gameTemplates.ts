@@ -10390,6 +10390,48 @@ ${spec.heroDecalId > 0 ? `    local hImg = Instance.new("ImageLabel"); hImg.Size
 end`
     : '';
 
+  // Session 414d: per-theme signature props at the plaza corners (PA/PB), matching
+  // the user's preset descriptions: MrBeast vault+challenge gate, 99 Nights camp,
+  // monster graveyard, spy antenna+tunnel, pet dragon egg, bananita stand, lab
+  // containment, brainrot meme statues. Placed off-roads/off-spawn. neutral → none.
+  const sigVibe = (spec && spec.vibe !== 'neutral') ? spec.vibe : '';
+  const PA = 'Vector3.new(-30, 0, -30)';
+  const PB = 'Vector3.new(30, 0, -30)';
+  const signaturePropsLua = sigVibe === 'money'
+    ? `
+do local v = part("MoneyVault", Vector3.new(15, 12, 11), ${PA} + Vector3.new(0, 6, 0), Color3.fromRGB(74, 84, 74), Enum.Material.DiamondPlate); part("VaultDial", Vector3.new(2, 5, 5), ${PA} + Vector3.new(8, 6, 0), Color3.fromRGB(225, 185, 70), Enum.Material.Metal); label3d(v, "Money Vault", 8, Color3.fromRGB(255, 220, 90)) end
+do local lp = part("ChalL", Vector3.new(3, 16, 3), ${PB} + Vector3.new(-8, 8, 0), Color3.fromRGB(60, 200, 90), Enum.Material.Neon); part("ChalR", Vector3.new(3, 16, 3), ${PB} + Vector3.new(8, 8, 0), Color3.fromRGB(60, 200, 90), Enum.Material.Neon); local bar = part("ChalBar", Vector3.new(19, 3, 3), ${PB} + Vector3.new(0, 16, 0), Color3.fromRGB(255, 210, 70), Enum.Material.Neon); label3d(bar, "CHALLENGE", 3, Color3.fromRGB(255, 255, 255)) end`
+    : sigVibe === 'night'
+    ? `
+do local cf = ${PA} for i = 1, 5 do local a = math.rad(i * 72); local lg = part("CampLog_" .. i, Vector3.new(6, 1.3, 1.3), cf + Vector3.new(math.cos(a) * 2.2, 1, math.sin(a) * 2.2), Color3.fromRGB(86, 58, 38), Enum.Material.Wood); lg.CFrame = CFrame.new(lg.Position) * CFrame.Angles(0, a, math.rad(22)) end local em = part("CampEmbers", Vector3.new(4, 2.2, 4), cf + Vector3.new(0, 1.6, 0), Color3.fromRGB(255, 130, 45), Enum.Material.Neon); em.Shape = Enum.PartType.Ball; local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 30; pl.Parent = em; local fr = Instance.new("Fire"); fr.Size = 7; fr.Parent = em end
+do local t = part("Tent", Vector3.new(14, 9, 11), ${PB} + Vector3.new(0, 4.5, 0), Color3.fromRGB(90, 110, 80), Enum.Material.Fabric); label3d(t, "Camp", 6, Color3.fromRGB(200, 220, 180)) end`
+    : sigVibe === 'monster'
+    ? `
+do for i = 1, 4 do local g = part("Grave_" .. i, Vector3.new(4, 6, 1.4), ${PA} + Vector3.new((i - 2) * 6, 3, 0), Color3.fromRGB(96, 96, 104), Enum.Material.Concrete); g.CFrame = CFrame.new(g.Position) * CFrame.Angles(math.rad(math.random(-6, 6)), 0, 0) end label3d(part("GraveSign", Vector3.new(2, 1, 2), ${PA} + Vector3.new(0, 8, -3), Color3.fromRGB(60, 54, 60), Enum.Material.Slate), "Graveyard", 2, Color3.fromRGB(190, 130, 200)) end`
+    : sigVibe === 'spy'
+    ? `
+do local dish = part("SatBase", Vector3.new(4, 12, 4), ${PA} + Vector3.new(0, 6, 0), Color3.fromRGB(80, 86, 96), Enum.Material.Metal); local d = part("SatDish", Vector3.new(12, 2, 12), ${PA} + Vector3.new(0, 13, 0), Color3.fromRGB(190, 196, 205), Enum.Material.DiamondPlate); d.Shape = Enum.PartType.Ball; d.CFrame = CFrame.new(d.Position) * CFrame.Angles(math.rad(40), 0, 0); label3d(dish, "HQ Antenna", 9, Color3.fromRGB(230, 70, 70)) end
+do local tun = part("Tunnel", Vector3.new(12, 8, 3), ${PB} + Vector3.new(0, 4, 0), Color3.fromRGB(40, 42, 48), Enum.Material.Slate); part("TunnelHole", Vector3.new(8, 6, 1), ${PB} + Vector3.new(0, 3.5, 1.5), Color3.fromRGB(8, 8, 10), Enum.Material.SmoothPlastic); label3d(tun, "Secret Tunnel", 6, Color3.fromRGB(230, 70, 70)) end`
+    : sigVibe === 'hero'
+    ? `
+do for i = 1, 3 do part("Dummy_" .. i, Vector3.new(3, 7, 2), ${PA} + Vector3.new((i - 2) * 7, 4, 0), Color3.fromRGB(180, 90, 90), Enum.Material.SmoothPlastic); part("DummyHead_" .. i, Vector3.new(2, 2, 2), ${PA} + Vector3.new((i - 2) * 7, 8.5, 0), Color3.fromRGB(210, 120, 120), Enum.Material.SmoothPlastic) end label3d(part("TrainSign", Vector3.new(2, 1, 2), ${PA} + Vector3.new(0, 11, 0), Color3.fromRGB(255, 80, 90), Enum.Material.Neon), "Training Arena", 2, Color3.fromRGB(255, 255, 255)) end`
+    : sigVibe === 'pets'
+    ? `
+do local egg = part("DragonEgg", Vector3.new(8, 11, 8), ${PA} + Vector3.new(0, 5.5, 0), Color3.fromRGB(120, 200, 140), Enum.Material.Marble); egg.Shape = Enum.PartType.Ball; for i = 1, 5 do part("Spot_" .. i, Vector3.new(2, 1, 2), ${PA} + Vector3.new(math.cos(i) * 3, 7 + i, math.sin(i) * 3), Color3.fromRGB(90, 160, 110), Enum.Material.SmoothPlastic) end label3d(egg, "Dragon Egg", 8, Color3.fromRGB(150, 255, 180)) end
+do local bone = part("GiantBone", Vector3.new(16, 2.4, 2.4), ${PB} + Vector3.new(0, 2, 0), Color3.fromRGB(240, 235, 220), Enum.Material.SmoothPlastic); label3d(bone, "Pet Park", 4, Color3.fromRGB(255, 200, 230)) end`
+    : sigVibe === 'tropical'
+    ? `
+do local bs = part("BananaStand", Vector3.new(12, 8, 9), ${PA} + Vector3.new(0, 4, 0), Color3.fromRGB(255, 210, 60), Enum.Material.SmoothPlastic); part("StandRoof", Vector3.new(15, 1.5, 12), ${PA} + Vector3.new(0, 8.5, 0), Color3.fromRGB(90, 170, 80), Enum.Material.Grass); label3d(bs, "Banana Stand", 7, Color3.fromRGB(255, 240, 120)) end
+do for i = 1, 2 do part("Tiki_" .. i, Vector3.new(2.4, 9, 2.4), ${PB} + Vector3.new((i - 1.5) * 8, 4.5, 0), Color3.fromRGB(120, 80, 50), Enum.Material.Wood); local fl = part("TikiFlame_" .. i, Vector3.new(2, 2, 2), ${PB} + Vector3.new((i - 1.5) * 8, 9.5, 0), Color3.fromRGB(255, 140, 50), Enum.Material.Neon); local f = Instance.new("Fire"); f.Size = 4; f.Parent = fl end end`
+    : sigVibe === 'lab'
+    ? `
+do for i = 1, 3 do local tube = part("Tube_" .. i, Vector3.new(12, 5, 5), ${PA} + Vector3.new((i - 2) * 8, 6, 0), Color3.fromRGB(150, 230, 220), Enum.Material.Glass); tube.Shape = Enum.PartType.Cylinder; tube.CFrame = CFrame.new(tube.Position) * CFrame.Angles(0, 0, math.rad(90)); tube.Transparency = 0.5; local g = part("Goo_" .. i, Vector3.new(4, 9, 4), ${PA} + Vector3.new((i - 2) * 8, 5, 0), Color3.fromRGB(120, 255, 160), Enum.Material.Neon); g.Transparency = 0.3 end label3d(part("LabSign", Vector3.new(2, 1, 2), ${PA} + Vector3.new(0, 14, 0), Color3.fromRGB(120, 255, 210), Enum.Material.Neon), "Containment", 2, Color3.fromRGB(255, 255, 255)) end`
+    : sigVibe === 'brainrot'
+    ? `
+do local p1 = part("MemePed1", Vector3.new(7, 6, 7), ${PA} + Vector3.new(0, 3, 0), Color3.fromRGB(150, 70, 190), Enum.Material.Marble); local b1 = Instance.new("BillboardGui"); b1.Size = UDim2.new(0, 130, 0, 130); b1.StudsOffset = Vector3.new(0, 7, 0); b1.AlwaysOnTop = true; b1.Parent = p1; local i1 = Instance.new("ImageLabel"); i1.Size = UDim2.new(1, 0, 1, 0); i1.BackgroundTransparency = 1; i1.Image = "rbxthumb://type=Asset&id=98664340093672&w=420&h=420"; i1.Parent = b1 end
+do local p2 = part("MemePed2", Vector3.new(7, 6, 7), ${PB} + Vector3.new(0, 3, 0), Color3.fromRGB(90, 220, 230), Enum.Material.Marble); local b2 = Instance.new("BillboardGui"); b2.Size = UDim2.new(0, 130, 0, 130); b2.StudsOffset = Vector3.new(0, 7, 0); b2.AlwaysOnTop = true; b2.Parent = p2; local i2 = Instance.new("ImageLabel"); i2.Size = UDim2.new(1, 0, 1, 0); i2.BackgroundTransparency = 1; i2.Image = "rbxthumb://type=Asset&id=14595650130&w=420&h=420"; i2.Parent = b2 end`
+    : '';
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
@@ -10454,6 +10496,7 @@ local buildingDefs = {
 ${buildingDefsLua}
 }
 for _, d in ipairs(buildingDefs) do buildHouse(d.name, d.pos, d.size, theme.wall, d.sign) end
+${signaturePropsLua}
 
 local function getCash(player) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); return c and c.Value or 0 end
 local function addCash(player, amount) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); if c then c.Value = math.max(0, c.Value + amount) end end

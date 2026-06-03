@@ -190,7 +190,7 @@ interface VibeDef {
 const VIBES: VibeDef[] = [
   {
     key: 'brainrot',
-    match: /\b(brainrot|skibidi|tralalero|bananita|orangutini|sigma|rizz|ohio|gyat|sahur|crocodilo|meme)\b/i,
+    match: /\b(brainrot|skibidi|tralalero|orangutini|sigma|rizz|ohio|gyat|sahur|crocodilo|meme)\b/i,
     palette: { ground: [96, 86, 140], groundMaterial: 'Concrete', road: [40, 36, 60], plaza: [150, 70, 190], wall: [90, 220, 230], roof: [255, 90, 200], accent: [170, 255, 90] },
     flavor: ['Welcome to the chaos — nothing makes sense and that is the point.', 'Skibidi rule #1: get the bag.', 'Grab a role and go full sigma.'],
     heroPropKeyword: 'skibidi', adjective: 'Brainrot', iconicBuilding: 'Skibidi HQ',
@@ -204,7 +204,7 @@ const VIBES: VibeDef[] = [
   },
   {
     key: 'monster',
-    match: /\b(monster|fnaf|freddy|animatronic|haunted|ghost|zombie|cursed|scary|horror|nightmare|creature|demon|evil|titan|titans|giant|colossus|kaiju|dragon|godzilla|kraken)\b/i,
+    match: /\b(monster|fnaf|freddy|animatronic|haunted|ghost|zombie|cursed|scary|horror|nightmare|creature|demon|evil|titan|titans|colossus|kaiju|godzilla|kraken)\b/i,
     palette: { ground: [54, 50, 64], groundMaterial: 'Slate', road: [34, 30, 40], plaza: [78, 60, 90], wall: [96, 86, 110], roof: [120, 40, 50], accent: [150, 70, 200] },
     flavor: ['Do not wander after dark... they come out.', 'Lock your doors — the creatures are hungry.', 'Survive your shift and you might see morning.'],
     heroPropKeyword: 'monster', adjective: 'Haunted', iconicBuilding: 'Haunted Manor',
@@ -225,7 +225,7 @@ const VIBES: VibeDef[] = [
   },
   {
     key: 'tropical',
-    match: /\b(banana|island|tropical|beach|paradise|palm|coconut|lagoon|jungle)\b/i,
+    match: /\b(banana|bananita|dolfinita|island|tropical|beach|paradise|palm|coconut|lagoon|jungle)\b/i,
     palette: { ground: [224, 206, 150], groundMaterial: 'Sand', road: [150, 120, 80], plaza: [210, 196, 150], wall: [240, 235, 210], roof: [60, 160, 150], accent: [255, 180, 60] },
     flavor: ['Welcome to paradise — grab a drink and a job!', 'The waves are perfect today.', 'Mind the bananas... they multiply.'],
     heroPropKeyword: 'banana', adjective: 'Island', iconicBuilding: 'Banana Stand',
