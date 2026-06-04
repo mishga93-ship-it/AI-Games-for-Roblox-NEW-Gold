@@ -10714,6 +10714,22 @@ ${buildingDefsLua}
 for _, d in ipairs(buildingDefs) do buildHouse(d.name, d.pos, d.size, theme.wall, d.sign) end
 ${signaturePropsLua}
 
+-- Session 414i: parked cars along the main street (RP "город с машинами").
+local function buildCar(cn, cp, cc)
+    part(cn, Vector3.new(8, 3, 16), cp + Vector3.new(0, 3, 0), cc, Enum.Material.SmoothPlastic)
+    part(cn .. "_Cab", Vector3.new(7, 3, 7.5), cp + Vector3.new(0, 6, -0.5), cc:Lerp(Color3.fromRGB(255, 255, 255), 0.12), Enum.Material.SmoothPlastic)
+    part(cn .. "_Glass", Vector3.new(7.3, 2.3, 6.8), cp + Vector3.new(0, 6.2, -0.5), Color3.fromRGB(120, 180, 220), Enum.Material.Glass)
+    for _, wx in ipairs({-4, 4}) do for _, wz in ipairs({-5, 5}) do
+        local w = part(cn .. "_W", Vector3.new(1.8, 3, 3), cp + Vector3.new(wx, 1.5, wz), Color3.fromRGB(28, 28, 32), Enum.Material.SmoothPlastic); w.Shape = Enum.PartType.Cylinder
+    end end
+    part(cn .. "_HL1", Vector3.new(1.3, 1, 0.4), cp + Vector3.new(-2.4, 3, 8), Color3.fromRGB(255, 248, 200), Enum.Material.Neon)
+    part(cn .. "_HL2", Vector3.new(1.3, 1, 0.4), cp + Vector3.new(2.4, 3, 8), Color3.fromRGB(255, 248, 200), Enum.Material.Neon)
+end
+buildCar("Car1", Vector3.new(20, 0, -62), Color3.fromRGB(210, 70, 70))
+buildCar("Car2", Vector3.new(-20, 0, 62), Color3.fromRGB(70, 120, 210))
+buildCar("Car3", Vector3.new(20, 0, 98), Color3.fromRGB(240, 200, 70))
+buildCar("Car4", Vector3.new(-20, 0, -98), Color3.fromRGB(90, 200, 130))
+
 local function getCash(player) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); return c and c.Value or 0 end
 local function addCash(player, amount) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); if c then c.Value = math.max(0, c.Value + amount) end end
 local roleColors = {Citizen=Color3.fromRGB(200,200,200), VIP=Color3.fromRGB(255,210,90), Tycoon=Color3.fromRGB(120,230,160), Legend=Color3.fromRGB(190,130,255)}
@@ -10796,6 +10812,44 @@ for idx, n in ipairs(NPCS) do
         local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 14; pr.RequiresLineOfSight = false; pr.Parent = anchor
         pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
     end
+end
+
+-- Session 414i: pet adoption — walk to the Pet Shop pad, adopt a pet that follows you.
+local petPad = part("PetPad", Vector3.new(11, 1, 11), Vector3.new(-50, 1.1, 50), theme.accent, Enum.Material.Neon); petPad.Transparency = 0.4
+label3d(petPad, "Adopt a Pet", 4, theme.accent)
+do
+    local petPrompt = Instance.new("ProximityPrompt"); petPrompt.ActionText = "Adopt a Pet"; petPrompt.ObjectText = "Pet Shop"; petPrompt.HoldDuration = 0.3; petPrompt.MaxActivationDistance = 14; petPrompt.RequiresLineOfSight = false; petPrompt.Parent = petPad
+    local PETS = {}
+    local petColors = {Color3.fromRGB(120, 200, 140), Color3.fromRGB(255, 170, 120), Color3.fromRGB(150, 180, 255)}
+    local petCount = 0
+    petPrompt.Triggered:Connect(function(player)
+        if PETS[player] then PETS[player]:Destroy(); PETS[player] = nil end
+        local char = player.Character; local root = char and char:FindFirstChild("HumanoidRootPart"); if not root then return end
+        petCount = petCount + 1
+        local pc = petColors[(petCount % 3) + 1]
+        local m = Instance.new("Model"); m.Name = "Pet_" .. player.Name
+        local pbody = part("PetBody", Vector3.new(3.4, 2.8, 4.4), root.Position + Vector3.new(4, -1, 4), pc, Enum.Material.SmoothPlastic, m); pbody.Shape = Enum.PartType.Ball; m.PrimaryPart = pbody
+        local ph = part("PetHead", Vector3.new(2.6, 2.6, 2.6), pbody.Position + Vector3.new(0, 1.4, 1.7), pc:Lerp(Color3.fromRGB(255, 255, 255), 0.15), Enum.Material.SmoothPlastic, m); ph.Shape = Enum.PartType.Ball
+        part("PetEarL", Vector3.new(0.8, 1.5, 0.6), pbody.Position + Vector3.new(-0.8, 2.7, 1.7), pc, Enum.Material.SmoothPlastic, m)
+        part("PetEarR", Vector3.new(0.8, 1.5, 0.6), pbody.Position + Vector3.new(0.8, 2.7, 1.7), pc, Enum.Material.SmoothPlastic, m)
+        local el = part("PetEyeL", Vector3.new(0.5, 0.5, 0.5), pbody.Position + Vector3.new(-0.55, 1.6, 2.9), Color3.fromRGB(20, 20, 25), Enum.Material.Neon, m); el.Shape = Enum.PartType.Ball
+        local er = part("PetEyeR", Vector3.new(0.5, 0.5, 0.5), pbody.Position + Vector3.new(0.55, 1.6, 2.9), Color3.fromRGB(20, 20, 25), Enum.Material.Neon, m); er.Shape = Enum.PartType.Ball
+        for _, d in ipairs(m:GetDescendants()) do
+            if d:IsA("BasePart") then d.CanCollide = false; if d ~= pbody then d.Anchored = false; local wd = Instance.new("WeldConstraint"); wd.Part0 = pbody; wd.Part1 = d; wd.Parent = pbody end end
+        end
+        pbody.Anchored = true
+        m.Parent = world
+        PETS[player] = m
+        RpEvent:FireClient(player, {kind="toast", text="You adopted a pet! It follows you."})
+        task.spawn(function()
+            while m.Parent and player.Parent and PETS[player] == m do
+                local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                if r then pbody.Position = pbody.Position:Lerp(r.Position + Vector3.new(4, -1.4, 4), 0.12) end
+                task.wait(0.06)
+            end
+        end)
+    end)
+    Players.PlayerRemoving:Connect(function(player) if PETS[player] then PETS[player]:Destroy(); PETS[player] = nil end end)
 end
 
 local function saveData(player)
