@@ -915,6 +915,22 @@ export async function generatePreviewTexture(
   // bans (Asset 99787426663910 — obby texture flagged for blood splatter on brick wall).
   const SAFETY_SUFFIX = ' Family-friendly, safe for kids, no blood, no gore, no violence, no weapons, no horror, clean and tidy.';
   const NEGATIVE_PROMPT = 'blood, gore, wounds, dark stains, blood splatter, violence, weapons, gun, knife, dead, corpse, body, scary, horror, nudity, graphic, mature, drug, alcohol, smoking, hate symbol, swastika';
+  // Session 423 (user wants a menacing "killer" cyborg boss like their reference,
+  // NOT a friendly toon): for the DETAILED character/boss concept allow a dark,
+  // intimidating villain mood. The hard Roblox-ban guards (no blood/gore/wounds/
+  // realistic firearms/nudity/hate) stay in BOTH the positive suffix AND the
+  // negative prompt, and the post-gen moderateImage gate still runs — only the
+  // "cheerful, no-horror, clean-and-tidy" *tone* is lifted. Roblox permits scary/
+  // menacing bosses; it bans gore. Gore stays banned (suspension fix, session 231).
+  const darkBoss = detail === 'detailed' && (
+    /\b(killer|assassin|murderer|slayer|villain|evil|grim|sinister|demon|monster|undead|zombie|skeleton|reaper|death|menacing|brutal|savage|warlord|tyrant|antihero|anti-hero|nightmare|cursed|wraith|fiend|destroyer|dark)\b/i.test(englishDescription)
+    || /убийц|злоде|мрачн|тёмн|темн|демон|монстр|жут|кошмар|зомби|нежить|череп|антигеро/i.test(description)
+  );
+  const BOSS_SAFETY_SUFFIX = ' Roblox-safe stylized concept: NO blood, NO gore, NO wounds, NO realistic firearms, NO nudity, NO hate symbols. A dark, scary, menacing villain-boss look IS allowed — intimidating antagonist, battle-worn armor, glowing eyes, ominous mood.';
+  // Like CHARACTER_NEGATIVE but keeps the hard bans + anti-monochrome while
+  // dropping the menace-killers (scary/horror/dark/violence/all-black-outfit) so
+  // a grim boss isn't flattened back into a cheerful character.
+  const BOSS_NEGATIVE = 'blood, gore, wounds, blood splatter, realistic gun, firearm, knife blade, corpse, nudity, naked, graphic, drug, alcohol, smoking, hate symbol, swastika, monochrome, grayscale, black and white, desaturated, washed out, low quality, low detail, blurry, sketch, lineart, plush toy, plastic figurine';
   // Character-specific negative prompt also bans monochrome/grayscale output. Flux/schnell at
   // 4 inference steps occasionally desaturates to grey when the visual brief is short or
   // contains a stylistic word like "luxury / sigma / chad" — explicit "no monochrome" plus a
@@ -960,7 +976,7 @@ export async function generatePreviewTexture(
         // rejections, and explicitly demands that back-mounted parts /
         // appendages (tentacles, wings, tails, extra arms) survive — the toon
         // template forced a clean humanoid silhouette and dropped them.
-        ? `FULLY COLORED, NOT monochrome, NOT grayscale. ${englishDescription}. ${CHARACTER_COLOR_DIRECTIVE} Detailed stylized 3D game character concept art in a modern AAA-stylized look (hero-shooter / action-game style, like a polished stylized 3D game — NOT a flat Saturday-morning cartoon, NOT a plain toy figure): crisp sculpted forms, defined proportions, layered armor panels, mechanical parts, fabric and material variety with soft shading, depth and rim light. IMPORTANT — keep EVERY distinctive feature from the description: accessories, back-mounted parts, and appendages such as tentacles, wings, tails or extra arms must be clearly visible and attached to the character. Full body, confident standing pose, wearing a fully closed long-sleeve outfit or full-body armor and long pants in distinct colors, plain white background, centered, 3/4 view. Original non-franchise design; do not imitate or resemble any existing cartoon, game, TV, movie, mascot, or copyrighted character. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`
+        ? `FULLY COLORED, NOT monochrome, NOT grayscale. ${englishDescription}. ${CHARACTER_COLOR_DIRECTIVE} ${darkBoss ? 'Dark, moody, menacing villain-boss mood: intimidating stylized antagonist, battle-worn detailed armor, glowing eyes, ominous color grading, powerful threatening stance (gore-free, Roblox-safe). ' : ''}Detailed stylized 3D game character concept art in a modern AAA-stylized look (hero-shooter / action-game style, like a polished stylized 3D game — NOT a flat Saturday-morning cartoon, NOT a plain toy figure): crisp sculpted forms, defined proportions, layered armor panels, mechanical parts, fabric and material variety with soft shading, depth and rim light. IMPORTANT — keep EVERY distinctive feature from the description: accessories, back-mounted parts, and appendages such as tentacles, wings, tails or extra arms must be clearly visible and attached to the character. Full body, confident standing pose, wearing a fully closed long-sleeve outfit or full-body armor and long pants in distinct colors, plain white background, centered, 3/4 view. Original non-franchise design; do not imitate or resemble any existing cartoon, game, TV, movie, mascot, or copyrighted character. Do NOT include any text, watermarks, or logos.${darkBoss ? BOSS_SAFETY_SUFFIX : SAFETY_SUFFIX}`
         : `FULLY COLORED, NOT monochrome, NOT grayscale. ${englishDescription}. ${CHARACTER_COLOR_DIRECTIVE} Stylized 3D cartoon character, bright primary palette, vibrant saturated colors, Saturday morning cartoon palette, rich material variety, clean Roblox-toon look, full body in confident A-pose, wearing a fully closed long-sleeve outfit and long pants in distinct colors, white background, centered, 3/4 view. Original non-franchise design; do not imitate or resemble any existing cartoon, game, TV, movie, mascot, or copyrighted character. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`;
   const imgW = context === 'game' ? 1024 : 768;
   const imgH = context === 'game' ? 768 : 1024;
@@ -1014,7 +1030,7 @@ export async function generatePreviewTexture(
   // allow the garment itself to bulge with 3D volume (sleeves, rounded chest).
   const GARMENT_NEGATIVE = `${NEGATIVE_PROMPT}, flat lay, flat-lay, laid flat, top-down flat, deflated, sunken, caved-in, concave front, collapsed, folded flat, crumpled, wrinkled flat, hollow empty shell, person, people, human, skin, character, avatar, mannequin, dummy, doll, model wearing, head, face, neck, hands, fingers, bare arms, bare legs, feet, figure`;
   const negPrompt = context === 'character'
-    ? CHARACTER_NEGATIVE
+    ? (darkBoss ? BOSS_NEGATIVE : CHARACTER_NEGATIVE)
     : context === 'pet'
       ? PET_NEGATIVE
       : context === 'garment'
@@ -2960,7 +2976,13 @@ export function buildConceptImagePrompt(rawPrompt: string, input: Record<string,
     .filter((line) => line.length > 0 && !noisePattern.test(line));
 
   const combinedUserLines = [...userLines, ...intentLines];
-  const userDescription = combinedUserLines.join('. ').slice(0, 300);
+  // Session 423: strip GDD/regeneration boilerplate that leaks from the chat's
+  // base prompt into the image brief (e.g. "Generate a complete new Roblox
+  // package version. Preserve the existing genre, theme, core GDD …"). Flux reads
+  // it as instructions and drops the real subject (e.g. "tentacles on the back").
+  // These phrases are trailing boilerplate → cut from the marker onward.
+  const GDD_NOISE = /(Generate a (complete new|real) Roblox|Preserve the existing genre|Output a textured)[\s\S]*$/i;
+  const userDescription = combinedUserLines.join('. ').replace(GDD_NOISE, '').trim().slice(0, 300);
   const allText = `${rawPrompt} ${userDescription} ${title}`;
 
   // Force clothing description into character prompts to prevent bare skin generation.
@@ -3011,6 +3033,8 @@ export function buildConceptImagePrompt(rawPrompt: string, input: Record<string,
   const cleaned = rawPrompt
     .replace(/Generate a real Roblox 3D.*?for /i, '')
     .replace(/\.?\s*Output a textured.*$/i, '')
+    .replace(/Generate a complete new Roblox package version[\s\S]*$/i, '')
+    .replace(/Preserve the existing genre[\s\S]*$/i, '')
     .replace(/Full conversation context[\s\S]*/i, '')
     .replace(/Latest user intent[\s\S]*/i, '')
     .replace(/Genre:.*$/i, '')
