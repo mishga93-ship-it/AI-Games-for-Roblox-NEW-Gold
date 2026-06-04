@@ -10130,6 +10130,13 @@ function buildTowerDefenseScript(params: GameTemplateParams): MultiScriptResult 
     `{name=${safeLuaString(e.name, 'Enemy')}, r=${Math.round(e.color[0])}, g=${Math.round(e.color[1])}, b=${Math.round(e.color[2])}, face=${Math.max(0, Math.floor(Number(e.decalId) || 0))}, fig=${safeLuaString(tdFigForName(e.name), '')}}`;
   const tdPackRosterLua = `{ ${tdPack.enemies.map(tdRosterEntryLua).join(', ')} }`;
   const tdBossLua = tdRosterEntryLua(tdPack.boss);
+  // Session 417c: optional real Creator Store brainrot model packs (third-party,
+  // public-domain). Used as the PRIMARY enemy source for meme presets when the
+  // experience setting "Allow Loading Third Party Assets" is enabled; the
+  // composite 3D figures remain the automatic fallback. Only emitted for `meme`.
+  const tdMemeAssetsLua = tdPack.kind === 'meme'
+    ? '{ 112586636995159, 122979917244614, 108399116162473, 107158060686382, 72466520546640, 84968460904245, 129736155547573, 131938063150331, 132474197060148 }'
+    : 'nil';
   // Themed base landmark — pure 3D geometry near `LM` (a point just behind the
   // base). Recognizable silhouette per preset; no floating labels.
   const tdLandmarkLua = ((key: string): string => {
@@ -10287,6 +10294,71 @@ end
 local container = world
 ${meme3dPreludeLua()}
 
+-- Session 417c: optional real Creator Store brainrot models (third-party,
+-- public-domain). Needs the experience setting "Allow Loading Third Party
+-- Assets". Loaded ONCE at startup into a server-side template pool; cloned per
+-- enemy. Scripts are stripped for safety. Falls back to composite 3D figures.
+local MEME_ASSET_IDS = ${tdMemeAssetsLua}
+local MEME_POOL = {}
+local MEME_POOL_BY_NAME = {}
+local memePoolReady = false
+local function _ensurePrimary(m)
+    if m.PrimaryPart and m.PrimaryPart.Parent then return m.PrimaryPart end
+    local hrp = m:FindFirstChild("HumanoidRootPart", true)
+    if hrp and hrp:IsA("BasePart") then m.PrimaryPart = hrp; return hrp end
+    local best, bestVol = nil, -1
+    for _, d in ipairs(m:GetDescendants()) do
+        if d:IsA("BasePart") then local v = d.Size.X * d.Size.Y * d.Size.Z; if v > bestVol then best, bestVol = d, v end end
+    end
+    if best then m.PrimaryPart = best end
+    return m.PrimaryPart
+end
+local function _pickMemeTemplate(figKey, ename, idx)
+    if #MEME_POOL == 0 then return nil end
+    if figKey ~= "" and MEME_POOL_BY_NAME[figKey] then return MEME_POOL_BY_NAME[figKey] end
+    local keys = {}
+    if figKey ~= "" then keys[#keys + 1] = figKey end
+    if ename and ename ~= "" then keys[#keys + 1] = string.lower(ename) end
+    for _, key in ipairs(keys) do
+        for _, e in ipairs(MEME_POOL) do
+            if string.find(e.name, key, 1, true) then return e.model end
+        end
+    end
+    return MEME_POOL[((idx - 1) % #MEME_POOL) + 1].model
+end
+if MEME_ASSET_IDS then
+    task.spawn(function()
+        local AssetService = game:GetService("AssetService")
+        local ServerStorage = game:GetService("ServerStorage")
+        local hold = Instance.new("Folder"); hold.Name = "TdMemeTemplates"; hold.Parent = ServerStorage
+        local CAP = 24
+        local function addTemplate(m)
+            if #MEME_POOL >= CAP or not m or not m:IsA("Model") then return end
+            if not _ensurePrimary(m) then return end
+            for _, d in ipairs(m:GetDescendants()) do if d:IsA("BaseScript") or d:IsA("ModuleScript") then d:Destroy() end end
+            m.Parent = hold
+            local nm = string.lower(m.Name)
+            MEME_POOL[#MEME_POOL + 1] = {name = nm, model = m}
+            if not MEME_POOL_BY_NAME[nm] then MEME_POOL_BY_NAME[nm] = m end
+        end
+        for _, id in ipairs(MEME_ASSET_IDS) do
+            if #MEME_POOL >= CAP then break end
+            local ok, container2 = pcall(function() return AssetService:LoadAssetAsync(id) end)
+            if ok and container2 then
+                local any = false
+                for _, k in ipairs(container2:GetChildren()) do if k:IsA("Model") then addTemplate(k); any = true end end
+                if not any then addTemplate(container2) end
+                if container2.Parent == nil then container2:Destroy() end
+            else
+                warn("[TowerDefense] LoadAssetAsync " .. tostring(id) .. " failed (third-party asset setting off or asset unavailable)")
+            end
+            task.wait()
+        end
+        memePoolReady = #MEME_POOL > 0
+        print("[TowerDefense] brainrot asset pool: " .. #MEME_POOL .. " models")
+    end)
+end
+
 -- Session 417: themed enemy assembly — a multi-part 3D silhouette per "kind".
 -- The meme face decal is WRAPPED on the body via a SurfaceGui (never a floating
 -- billboard, per user requirement). All parts anchored; the round loop pivots the
@@ -10307,7 +10379,7 @@ local function _eFace(core, faceId, faces)
         img.Image = "rbxthumb://type=Asset&id=" .. faceId .. "&w=420&h=420"; img.Parent = sg
     end
 end
-local function spawnEnemyAssembly(kind, color, faceId, scale, pos, figKey, idx)
+local function spawnEnemyAssembly(kind, color, faceId, scale, pos, figKey, idx, ename)
     scale = scale or 1
     local model = Instance.new("Model"); model.Name = "Enemy"
     local core = Instance.new("Part"); core.Anchored = true; core.CanCollide = false; core.CastShadow = false
@@ -11851,6 +11923,103 @@ end)
   };
 }
 
+// Session 419: real, user-verified "99 Nights in the Forest" catalog Models
+// (all confirmed renderable via the thumbnails API) keyed by spec vibe so only
+// the night/99-Nights parkour preset gets bears/owl/deer/ram + the Fire Morsel
+// campfire. Other vibes fall back to procedural trees. Every load is pcall'd and
+// runs in task.spawn, so a restricted/removed asset never breaks the course.
+const PARKOUR_VIBE_ASSETS: Record<string, { fire?: number; creatures: number[]; sign?: number }> = {
+  night: {
+    fire: 82051509034737, // 99 Nights — Initial Fire Morsel (campfire)
+    creatures: [
+      136689985623077, // Bear
+      112465932068951, // Polar bear
+      82325268253970,  // Owl
+      89097886898916,  // Ram Monster
+      105990008575555, // Deer rig
+      113480154894240, // forest creature
+    ],
+    sign: 136689985623077, // Bear thumbnail for the start banner
+  },
+};
+
+// Session 419: themed base environment spliced into the parkour serverScript
+// after the start banner. Builds (a) a dark forest ring of procedural trees
+// outside the jump radius, (b) a watchtower beacon flanking the start, (c) an
+// always-on part campfire at the clearing centre (guaranteed light), then (d)
+// async-loads the real 99 Nights Models around the clearing with a rbxthumb
+// totem fallback. Lua scope at the splice point already has world/part/makeTree/
+// theme/radius (worldVisualsLua + the course header run earlier).
+function parkourThemeEnvLua(spec: GameVisualSpec | undefined): string {
+  if (!spec || spec.vibe === 'neutral') return '';
+  const a = spec.atmosphere;
+  const treeKind = safeLuaString(a.treeKind || 'pine', 'pine');
+  const leaf = rgbLua(a.treeLeaf);
+  const trunk = rgbLua(a.treeTrunk);
+  const assets = PARKOUR_VIBE_ASSETS[spec.vibe];
+  const creaturesLua = assets ? `{${assets.creatures.join(', ')}}` : '{}';
+  const fireLua = assets && assets.fire ? String(assets.fire) : '0';
+  return `
+-- ===== Session 419: themed base environment (recognizability) =====
+do
+    -- (a) procedural dark forest ringing the base, outside the jump radius
+    for i = 1, 16 do
+        local ang = (i / 16) * math.pi * 2 + 0.4
+        local r = 58 + (i % 4) * 14
+        pcall(function() makeTree(world, Vector3.new(math.cos(ang) * r, 0.5, math.sin(ang) * r), 1.0 + (i % 3) * 0.35, "${treeKind}", ${trunk}, ${leaf}) end)
+    end
+    -- (b) watchtower silhouette flanking the start (iconic 99 Nights landmark)
+    do
+        local lp = Vector3.new(-radius - 8, 0, 0)
+        for _, o in ipairs({Vector3.new(-3, 0, -3), Vector3.new(3, 0, -3), Vector3.new(-3, 0, 3), Vector3.new(3, 0, 3)}) do
+            part("TowerLeg", Vector3.new(1.4, 30, 1.4), lp + o + Vector3.new(0, 15, 0), theme.platform, Enum.Material.Wood)
+        end
+        part("TowerDeck", Vector3.new(11, 1.2, 11), lp + Vector3.new(0, 30, 0), theme.platform, Enum.Material.WoodPlanks)
+        local beacon = part("TowerBeacon", Vector3.new(3.5, 3.5, 3.5), lp + Vector3.new(0, 33, 0), theme.checkpoint, Enum.Material.Neon); beacon.Shape = Enum.PartType.Ball
+        local bl = Instance.new("PointLight"); bl.Color = theme.checkpoint; bl.Brightness = 3; bl.Range = 60; bl.Parent = beacon
+    end
+    -- (c) always-on part campfire at the clearing centre (guaranteed light)
+    local function buildPartCampfire(pos)
+        for i = 1, 5 do local ang = math.rad(i * 72); local lg = part("CampLog_" .. i, Vector3.new(5, 1.2, 1.2), pos + Vector3.new(math.cos(ang) * 2, 0.6, math.sin(ang) * 2), Color3.fromRGB(86, 58, 38), Enum.Material.Wood); lg.CFrame = CFrame.new(lg.Position) * CFrame.Angles(0, ang, math.rad(24)) end
+        local em = part("CampEmbers", Vector3.new(3.4, 2, 3.4), pos + Vector3.new(0, 1.4, 0), Color3.fromRGB(255, 130, 45), Enum.Material.Neon); em.Shape = Enum.PartType.Ball
+        local fr = Instance.new("Fire"); fr.Size = 9; fr.Heat = 14; fr.Parent = em
+        local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4.5; pl.Range = 74; pl.Parent = em
+    end
+    buildPartCampfire(Vector3.new(0, 1, 0))
+    -- (d) real 99 Nights Models, async + non-blocking, with rbxthumb fallback
+    local CREATURES = ${creaturesLua}
+    local FIRE_ID = ${fireLua}
+    task.spawn(function()
+        local InsertService = game:GetService("InsertService")
+        local function loadModel(assetId, pos, targetH)
+            local ok, container = pcall(function() return InsertService:LoadAsset(assetId) end)
+            if not ok or not container then return nil end
+            local wrap = Instance.new("Model"); wrap.Name = "Asset_" .. assetId; wrap.Parent = world
+            for _, c in ipairs(container:GetChildren()) do c.Parent = wrap end
+            container:Destroy()
+            local hasPart = false
+            for _, d in ipairs(wrap:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; hasPart = true end end
+            if not hasPart then wrap:Destroy(); return nil end
+            local oks, sz = pcall(function() return wrap:GetExtentsSize() end)
+            if oks and sz and sz.Y > 0.1 then pcall(function() wrap:ScaleTo(math.clamp((targetH or 9) / sz.Y, 0.04, 16)) end) end
+            pcall(function() wrap:PivotTo(CFrame.new(pos) * CFrame.Angles(0, math.random() * 6.283, 0)) end)
+            return wrap
+        end
+        if FIRE_ID > 0 then loadModel(FIRE_ID, Vector3.new(0, 0.5, 0), 7) end
+        for idx, id in ipairs(CREATURES) do
+            local ang = (idx / math.max(1, #CREATURES)) * math.pi * 2
+            local r = 30 + (idx % 3) * 9
+            local pos = Vector3.new(math.cos(ang) * r, 1.5, math.sin(ang) * r)
+            if not loadModel(id, pos, 9) then
+                local post = part("CreaturePost", Vector3.new(1.5, 9, 1.5), pos + Vector3.new(0, 4.5, 0), theme.platform, Enum.Material.Wood)
+                local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 90, 0, 90); bb.StudsOffset = Vector3.new(0, 6, 0); bb.Adornee = post; bb.Parent = post
+                local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. id .. "&w=150&h=150"; img.Parent = bb
+            end
+        end
+    end)
+end`;
+}
+
 // Session 399 (cont.): Parkour — ascending spiral of floating platforms with
 // checkpoints every 5 stages, a void floor that respawns you at your last
 // checkpoint (no death), and a finish pad that records Best Time + Wins.
@@ -11892,7 +12061,7 @@ local theme = THEMES[Config.Theme] or THEMES.neon
 local SPEC_THEME = ${specThemeLua}
 if SPEC_THEME then theme = SPEC_THEME end
 local angleStep = Config.Difficulty == "hard" and 0.63 or (Config.Difficulty == "casual" and 0.46 or 0.55)
-local platSize = Config.Difficulty == "hard" and 5.5 or (Config.Difficulty == "casual" and 9 or 7)
+local platSize = Config.Difficulty == "hard" and 6.5 or (Config.Difficulty == "casual" and 10 or 8)
 
 local dataStore
 local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("ParkourStats_v1") end)
@@ -11914,17 +12083,31 @@ end
 local floor = part("VoidFloor", Vector3.new(440, 1, 440), Vector3.new(0, 0, 0), theme.void, theme.voidMat)
 ${worldVisualsLua()}
 setupAtmosphere({${specAtmoLua || `atmoColor = theme.checkpoint:Lerp(Color3.fromRGB(205, 205, 210), 0.55), tint = Color3.fromRGB(252, 250, 248), haze = 2.0, cloudCover = 0.7`}})
+-- Session 419: parkour visibility floor. The course is floating platforms high in
+-- the air, so a ground "night" mood (brightness 0.55) leaves the next jump
+-- invisible. Keep the dark/moody sky but lift the floor; glowing platforms + the
+-- campfire carry local visibility.
+do
+    local L = game:GetService("Lighting")
+    if L.Brightness < 1.55 then L.Brightness = 1.55 end
+    L.ExposureCompensation = math.max(L.ExposureCompensation, 0.35)
+    local function _lift(c, r, g, b) return Color3.new(math.max(c.R, r / 255), math.max(c.G, g / 255), math.max(c.B, b / 255)) end
+    L.Ambient = _lift(L.Ambient, 64, 70, 88)
+    L.OutdoorAmbient = _lift(L.OutdoorAmbient, 92, 100, 118)
+    local _atmo = L:FindFirstChildOfClass("Atmosphere"); if _atmo and _atmo.Haze > 2.0 then _atmo.Haze = 2.0 end
+end
 
-local radius = 38
+local radius = 26
 local startPos = Vector3.new(radius, 6, 0)
 local startPad = part("StartPad", Vector3.new(18, 1, 18), startPos, theme.checkpoint, Enum.Material.Neon)
+local _sl = Instance.new("PointLight"); _sl.Color = theme.checkpoint; _sl.Brightness = 3.2; _sl.Range = 32; _sl.Parent = startPad
 label3d(startPad, "START", 4, theme.checkpoint)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "ParkourSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = startPos + Vector3.new(0, 1, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.checkpoint; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 ${(() => {
   // Session 418: grounded start banner (posts + board) instead of a floating
   // AlwaysOnTop billboard — the hero decal/title wraps a real structure.
   if (!spec || spec.vibe === 'neutral') return '';
-  const d = Math.max(0, Math.floor(Number(spec.heroDecalId) || 0));
+  const d = Math.max(0, Math.floor(Number((PARKOUR_VIBE_ASSETS[spec.vibe] && PARKOUR_VIBE_ASSETS[spec.vibe].sign) || spec.heroDecalId) || 0));
   const img = d > 0
     ? `local img = Instance.new("ImageLabel"); img.Size = UDim2.new(0.3, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=${d}&w=420&h=420"; img.Parent = sg
         local tl = Instance.new("TextLabel"); tl.Size = UDim2.new(0.67, 0, 1, 0); tl.Position = UDim2.new(0.32, 0, 0, 0)`
@@ -11942,6 +12125,7 @@ do
     end
 end`;
 })()}
+${parkourThemeEnvLua(spec)}
 
 local checkpointPos = {}
 local runState = {}
@@ -11951,11 +12135,15 @@ local function fmt(t) return string.format("%.1f", t) end
 local lastPos = startPos
 for i = 1, Config.Stages do
     local ang = i * angleStep
-    local pos = Vector3.new(math.cos(ang) * radius, 6 + i * 3.6, math.sin(ang) * radius)
+    local pos = Vector3.new(math.cos(ang) * radius, 6 + i * 3.0, math.sin(ang) * radius)
     local isCp = (i % 5 == 0)
     local sz = isCp and Vector3.new(12, 1, 12) or Vector3.new(platSize, 1, platSize)
     local plat = part("Stage_" .. i, sz, pos, isCp and theme.checkpoint or theme.platform, isCp and Enum.Material.Neon or theme.platMat)
-    if isCp then label3d(plat, "Checkpoint " .. i, 4, theme.checkpoint) end
+    local gl = Instance.new("PointLight"); gl.Color = (isCp and theme.checkpoint or theme.platform):Lerp(Color3.fromRGB(255, 255, 255), 0.3); gl.Brightness = isCp and 3.4 or 1.7; gl.Range = isCp and 30 or 16; gl.Parent = plat
+    if isCp then
+        label3d(plat, "Checkpoint " .. i, 4, theme.checkpoint)
+        local beam = part("CpBeacon_" .. i, Vector3.new(1.6, 16, 1.6), pos + Vector3.new(0, 8.5, 0), theme.checkpoint, Enum.Material.Neon); beam.CanCollide = false
+    end
     local stageIndex = i
     plat.Touched:Connect(function(hit)
         local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
@@ -11967,8 +12155,9 @@ for i = 1, Config.Stages do
 end
 
 local fang = (Config.Stages + 1) * angleStep
-local finishPos = Vector3.new(math.cos(fang) * radius, 6 + (Config.Stages + 1) * 3.6, math.sin(fang) * radius)
+local finishPos = Vector3.new(math.cos(fang) * radius, 6 + (Config.Stages + 1) * 3.0, math.sin(fang) * radius)
 local finish = part("Finish", Vector3.new(20, 1, 20), finishPos, Color3.fromRGB(255, 215, 90), Enum.Material.Neon)
+local _fl = Instance.new("PointLight"); _fl.Color = Color3.fromRGB(255, 220, 120); _fl.Brightness = 3.6; _fl.Range = 34; _fl.Parent = finish
 label3d(finish, "FINISH", 5, Color3.fromRGB(255, 225, 120))
 finish.Touched:Connect(function(hit)
     local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
