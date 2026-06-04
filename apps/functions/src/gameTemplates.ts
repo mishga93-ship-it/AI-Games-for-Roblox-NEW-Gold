@@ -11370,6 +11370,30 @@ for _, wi in ipairs({2, 5, 8, 11}) do
     table.insert(boostPads, pad)
 end
 
+${(() => {
+  // Session 418b: recognizable roadside crowd — real 3D meme figures (Tralalero
+  // shark, Bombardiro croc, Skibidi, Sigma) on stands ringing the track, so a
+  // "Race Through Brainrot" actually shows brainrot. Meme vibes only; pure Lua.
+  const keys = (!spec || spec.vibe === 'neutral') ? []
+    : spec.vibe === 'brainrot' ? ['tralalero', 'bombardiro', 'skibidi']
+    : spec.vibe === 'monster' ? ['bombardiro', 'skibidi']
+    : (spec.vibe === 'money' || spec.vibe === 'hero') ? ['sigma']
+    : [];
+  if (!keys.length) return '';
+  return `-- ===== THEMED ROADSIDE CROWD (3D meme figures — per-preset recognizability) =====
+do
+    local container = world
+${meme3dPreludeLua()}
+    local crowdKeys = {${keys.map((k) => `"${k}"`).join(', ')}}
+    for i = 1, 8 do
+        local a = math.rad(i * 45)
+        local px, pz = math.cos(a) * (rx + 50), math.sin(a) * (rz + 50) * 0.9
+        part("CrowdStand_" .. i, Vector3.new(15, 6, 15), Vector3.new(px, 3, pz), theme.accent:Lerp(Color3.fromRGB(22, 22, 30), 0.35), Enum.Material.SmoothPlastic)
+        buildMeme3dFigure(crowdKeys[((i - 1) % #crowdKeys) + 1], Vector3.new(px, 9, pz), i)
+    end
+end
+`;
+})()}
 -- ===== ARCADE CAR BUILDER (pure parts, no upload — guaranteed visible) =====
 local function weld(a, b) local w = Instance.new("WeldConstraint"); w.Part0 = a; w.Part1 = b; w.Parent = a end
 local function buildRaceCar(cfg, cf)
@@ -11393,7 +11417,7 @@ local function buildRaceCar(cfg, cf)
     for _, wd in ipairs(wheelDefs) do
         local wpos = cf * CFrame.new(wd[1] * (bs.X * 0.5 - 0.2), -bs.Y * 0.5, wd[2] * (bs.Z * 0.34))
         local wheel = Instance.new("Part"); wheel.Name = "Wheel"; wheel.Shape = Enum.PartType.Cylinder; wheel.Size = Vector3.new(1.4, 3.2, 3.2)
-        wheel.CFrame = wpos * CFrame.Angles(0, 0, math.rad(90)); wheel.Color = tireColor; wheel.Material = Enum.Material.SmoothPlastic; wheel.CanCollide = false; wheel.Anchored = true; wheel.Parent = model
+        wheel.CFrame = wpos; wheel.Color = tireColor; wheel.Material = Enum.Material.SmoothPlastic; wheel.CanCollide = false; wheel.Anchored = true; wheel.Parent = model
         local rim = Instance.new("Part"); rim.Name = "Rim"; rim.Shape = Enum.PartType.Cylinder; rim.Size = Vector3.new(1.5, 1.5, 1.5); rim.CFrame = wheel.CFrame
         rim.Color = cfg.accent; rim.Material = Enum.Material.Metal; rim.CanCollide = false; rim.Anchored = true; rim.Parent = model
         if wd[2] > 0 then
@@ -11409,8 +11433,9 @@ local function buildRaceCar(cfg, cf)
     local att = Instance.new("Attachment"); att.Name = "Drive"; att.Parent = chassis
     local lv = Instance.new("LinearVelocity"); lv.Name = "DriveLV"; lv.Attachment0 = att; lv.RelativeTo = Enum.ActuatorRelativeTo.World; lv.MaxForce = 1e6; lv.VectorVelocity = Vector3.zero; lv.Parent = chassis
     local ao = Instance.new("AlignOrientation"); ao.Name = "DriveAO"; ao.Mode = Enum.OrientationAlignmentMode.OneAttachment; ao.Attachment0 = att; ao.RigidityEnabled = true; ao.CFrame = CFrame.Angles(0, startYaw, 0); ao.Parent = chassis
-    for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = false; if p ~= chassis then p.Massless = true end end end
-    for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") and p ~= chassis then weld(chassis, p) end end
+    -- Cosmetics stay anchored (welded to chassis); the car is released to physics
+    -- only at race start (releaseCar). This keeps seating rock-solid (no jitter-out).
+    for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") and p ~= chassis then p.Massless = true; weld(chassis, p) end end
     model:SetAttribute("OwnerUserId", cfg.userId)
     model.Parent = world
     return {model = model, seat = seat, chassis = chassis, lv = lv, ao = ao, flame = flame, smoke = rearSmoke, stat = stat}
@@ -11425,6 +11450,17 @@ local raceState = {}
 local raceActive = false
 local finishOrder = 0
 
+local function anchorCar(car)
+    if not (car and car.model and car.model.Parent) then return end
+    if car.chassis then car.chassis.AssemblyLinearVelocity = Vector3.zero; car.chassis.AssemblyAngularVelocity = Vector3.zero end
+    for _, p in ipairs(car.model:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = true end end
+end
+local function releaseCar(car)
+    if not (car and car.model and car.model.Parent and car.chassis) then return end
+    for _, p in ipairs(car.model:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = false end end
+    pcall(function() car.chassis:SetNetworkOwner(nil) end)
+end
+
 local function gridCFrame(slot)
     local row = math.floor(slot / 2)
     local col = (slot % 2 == 0) and 1 or -1
@@ -11436,12 +11472,13 @@ local function defPrefs() return {car = "cruiser", primary = theme.accent, accen
 
 local function seatPlayer(player, car)
     local char = player.Character; if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid"); if not (hum and car and car.seat and car.seat.Parent) then return end
-    char:PivotTo(car.seat.CFrame * CFrame.new(0, 2, 0))
+    local hum = char:FindFirstChildOfClass("Humanoid"); local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not (hum and hrp and car and car.seat and car.seat.Parent) then return end
+    if car.seat.Occupant then return end
+    -- car is anchored while seating (spawnCarFor/resetToGrid keep it anchored until
+    -- race start) so the player can't be jittered out; drop them on the seat + Sit.
+    char:PivotTo(car.seat.CFrame * CFrame.new(0, 2.6, 0))
     pcall(function() car.seat:Sit(hum) end)
-    -- re-assert server ownership: occupying a VehicleSeat would otherwise flip
-    -- network ownership to the client and fight the server drive controller.
-    task.defer(function() pcall(function() if car.chassis and car.chassis.Parent then car.chassis:SetNetworkOwner(nil) end end) end)
 end
 
 local function spawnCarFor(player)
@@ -11450,21 +11487,24 @@ local function spawnCarFor(player)
     local slot = slotOf[player.UserId]; if not slot then slot = nextSlot; slotOf[player.UserId] = slot; nextSlot = nextSlot + 1 end
     local cf = gridCFrame(slot)
     local car = buildRaceCar({userId = player.UserId, car = pref.car, primary = pref.primary, accent = pref.accent}, cf)
-    pcall(function() car.chassis:SetNetworkOwner(nil) end)
     car.yaw = startYaw; car.speed = 0; car.drift = 0; car.boost = 40; car.boostUntil = 0; car.player = player
     cars[player.UserId] = car
-    task.defer(function() seatPlayer(player, car) end)
+    -- manual-entry fallback prompt (auto-seat + native touch-to-sit are primary).
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Drive"; prompt.ObjectText = car.stat.label; prompt.HoldDuration = 0; prompt.MaxActivationDistance = 18; prompt.RequiresLineOfSight = false; prompt.Parent = car.chassis
+    prompt.Triggered:Connect(function(plr) if plr == player then seatPlayer(player, car) end end)
+    if raceActive then releaseCar(car) end
+    task.spawn(function() task.wait(0.25); seatPlayer(player, car) end)
     RaceEvent:FireClient(player, {kind = "car", name = car.stat.label, maxSpeed = car.stat.maxSpeed})
 end
 
 local function resetToGrid(player)
     local car = cars[player.UserId]; if not car or not car.model or not car.model.Parent then spawnCarFor(player); return end
     local slot = slotOf[player.UserId] or 0
+    car.lv.VectorVelocity = Vector3.zero; car.ao.CFrame = CFrame.Angles(0, startYaw, 0)
     car.model:PivotTo(gridCFrame(slot))
-    car.chassis.AssemblyLinearVelocity = Vector3.zero; car.chassis.AssemblyAngularVelocity = Vector3.zero
+    anchorCar(car)
     car.yaw = startYaw; car.speed = 0; car.drift = 0
-    car.ao.CFrame = CFrame.Angles(0, startYaw, 0); car.lv.VectorVelocity = Vector3.zero
-    seatPlayer(player, car)
+    task.spawn(function() task.wait(0.1); seatPlayer(player, car) end)
 end
 
 -- ===== REWARDS =====
@@ -11612,6 +11652,7 @@ task.spawn(function()
         raceActive = true
         for _, p in Players:GetPlayers() do
             local st = raceState[p]; if st then st.nextCp = 2; st.lap = 0; st.finished = false; st.startTime = os.clock() end
+            local car = cars[p.UserId]; if car then releaseCar(car) end
         end
         broadcast("race", 0)
         local elapsed = 0; local maxTime = 180
@@ -11656,8 +11697,8 @@ boostBtn.Activated:Connect(function() BoostEvent:FireServer() end)
 UserInputService.InputBegan:Connect(function(input, gp) if gp then return end if input.KeyCode == Enum.KeyCode.LeftShift then BoostEvent:FireServer() end end)
 
 -- garage panel
-local garage = Instance.new("Frame"); garage.Size = UDim2.new(0, 360, 0, 210); garage.Position = UDim2.new(0.5, -180, 1, -230); garage.BackgroundColor3 = Color3.fromRGB(18, 20, 30); garage.BackgroundTransparency = 0.06; garage.Parent = gui; corner(garage, 14)
-local gtitle = Instance.new("TextLabel"); gtitle.Size = UDim2.new(1, -20, 0, 30); gtitle.Position = UDim2.new(0, 10, 0, 8); gtitle.BackgroundTransparency = 1; gtitle.TextColor3 = Color3.fromRGB(230, 238, 255); gtitle.TextScaled = true; gtitle.Font = Enum.Font.GothamBold; gtitle.Text = "Garage — pick your ride"; gtitle.Parent = garage
+local garage = Instance.new("Frame"); garage.Size = UDim2.new(0, 380, 0, 220); garage.Position = UDim2.new(0.5, -190, 0.5, -130); garage.BackgroundColor3 = Color3.fromRGB(18, 20, 30); garage.BackgroundTransparency = 0.04; garage.Visible = false; garage.Parent = gui; corner(garage, 14)
+local gtitle = Instance.new("TextLabel"); gtitle.Size = UDim2.new(1, -56, 0, 30); gtitle.Position = UDim2.new(0, 10, 0, 8); gtitle.BackgroundTransparency = 1; gtitle.TextColor3 = Color3.fromRGB(230, 238, 255); gtitle.TextScaled = true; gtitle.Font = Enum.Font.GothamBold; gtitle.Text = "Garage — pick your ride"; gtitle.Parent = garage
 local cars3 = {{key = "cruiser", label = "Cruiser"}, {key = "bolt", label = "Bolt"}, {key = "drifter", label = "Drifter"}}
 for i, c in ipairs(cars3) do
     local b = Instance.new("TextButton"); b.Size = UDim2.new(0, 108, 0, 56); b.Position = UDim2.new(0, 8 + (i - 1) * 116, 0, 44); b.BackgroundColor3 = Color3.fromRGB(40, 46, 64); b.TextColor3 = Color3.fromRGB(235, 240, 255); b.TextScaled = true; b.Font = Enum.Font.GothamBold; b.Text = c.label; b.Parent = garage; corner(b, 10)
@@ -11668,7 +11709,13 @@ for i, col in ipairs(swatches) do
     local b = Instance.new("TextButton"); b.Size = UDim2.new(0, 48, 0, 48); b.Position = UDim2.new(0, 8 + (i - 1) * 56, 0, 110); b.BackgroundColor3 = col; b.Text = ""; b.Parent = garage; corner(b, 10)
     b.Activated:Connect(function() SelectCar:FireServer({color = col}) end)
 end
-local hint = Instance.new("TextLabel"); hint.Size = UDim2.new(1, -20, 0, 24); hint.Position = UDim2.new(0, 10, 0, 168); hint.BackgroundTransparency = 1; hint.TextColor3 = Color3.fromRGB(150, 160, 180); hint.TextScaled = true; hint.Font = Enum.Font.Gotham; hint.Text = "Drift hard turns to fill BOOST · hit yellow pads"; hint.Parent = garage
+local hint = Instance.new("TextLabel"); hint.Size = UDim2.new(1, -20, 0, 24); hint.Position = UDim2.new(0, 10, 0, 168); hint.BackgroundTransparency = 1; hint.TextColor3 = Color3.fromRGB(150, 160, 180); hint.TextScaled = true; hint.Font = Enum.Font.Gotham; hint.Text = "Pick a car + colour. Drift hard turns + yellow pads to BOOST."; hint.Parent = garage
+-- close button (top-right of the panel)
+local closeBtn = Instance.new("TextButton"); closeBtn.Size = UDim2.new(0, 34, 0, 30); closeBtn.Position = UDim2.new(1, -42, 0, 8); closeBtn.BackgroundColor3 = Color3.fromRGB(120, 44, 54); closeBtn.TextColor3 = Color3.fromRGB(255, 235, 235); closeBtn.TextScaled = true; closeBtn.Font = Enum.Font.GothamBold; closeBtn.Text = "X"; closeBtn.Parent = garage; corner(closeBtn, 8)
+closeBtn.Activated:Connect(function() garage.Visible = false end)
+-- always-visible GARAGE toggle so customization is reachable any time
+local garageBtn = Instance.new("TextButton"); garageBtn.Size = UDim2.new(0, 150, 0, 46); garageBtn.Position = UDim2.new(0, 14, 1, -62); garageBtn.BackgroundColor3 = Color3.fromRGB(54, 60, 86); garageBtn.TextColor3 = Color3.fromRGB(235, 240, 255); garageBtn.TextScaled = true; garageBtn.Font = Enum.Font.GothamBold; garageBtn.Text = "🔧 GARAGE"; garageBtn.Parent = gui; corner(garageBtn, 10)
+garageBtn.Activated:Connect(function() garage.Visible = not garage.Visible end)
 
 RunService.RenderStepped:Connect(function()
     local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid")
