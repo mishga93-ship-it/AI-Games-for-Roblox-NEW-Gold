@@ -10519,14 +10519,22 @@ function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult 
     { name: 'Theo', pos: 'Vector3.new(30, 0, 14)', color: 'Color3.fromRGB(170, 200, 235)' },
     { name: 'Ada', pos: 'Vector3.new(12, 0, -32)', color: 'Color3.fromRGB(210, 200, 160)' },
   ];
+  // Session 414h: NPCs whose character IS a meme become the actual 3D creature
+  // (Tralalero shark, Bombardiro croc, Skibidi) — not a humanoid with a floating
+  // face banner. Non-meme characters (The Host, Survivor...) stay R15 humanoids.
+  const memeFigForName = (name: string): string => {
+    const n = String(name).toLowerCase();
+    return n.includes('tralalero') ? 'tralalero' : n.includes('bombardiro') ? 'bombardiro' : n.includes('skibidi') ? 'skibidi' : n.includes('sigma') ? 'sigma' : '';
+  };
+  const npcFigs = spec ? spec.characters.slice(0, 3).map((c) => memeFigForName(c.name)) : [];
   const npcsLua = spec
     ? spec.characters
         .slice(0, 3)
-        .map((c, i) => `    {name=${safeLuaString(c.name, 'NPC')}, pos=${npcSlots[i].pos}, color=${rgbLua(c.color)}, line=${safeLuaString(c.line, 'Welcome!')}, face=${Math.max(0, Math.floor(Number(c.decalId) || 0))}},`)
+        .map((c, i) => `    {name=${safeLuaString(c.name, 'NPC')}, pos=${npcSlots[i].pos}, color=${rgbLua(c.color)}, line=${safeLuaString(c.line, 'Welcome!')}, fig=${safeLuaString(memeFigForName(c.name), '')}},`)
         .join('\n')
-    : `    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash."},
-    {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status."},
-    {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!"},`;
+    : `    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash.", fig=""},
+    {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status.", fig=""},
+    {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!", fig=""},`;
 
   // Session 414d: themed hero centerpiece at the plaza — a lit pedestal showing
   // the theme's signature meme face (decal) + the game title. This is the free
@@ -10539,14 +10547,20 @@ function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult 
     : spec.vibe === 'monster' ? 'bombardiro'
     : (spec.vibe === 'money' || spec.vibe === 'hero') ? 'sigma'
     : '';
+  // Emit the 3D meme prelude ONCE at top-level (not inside the hero do-block) so
+  // both the hero centerpiece AND the NPC loop can build meme figures.
+  const useMemePrelude = !!spec && (!!heroMemeKey || npcFigs.some((f) => f));
+  const memePreludeTopLua = useMemePrelude
+    ? `
+local container = world
+local RunService = game:GetService("RunService")
+${meme3dPreludeLua()}`
+    : '';
   const heroCenterLua = !spec
     ? ''
     : heroMemeKey
       ? `
 do
-    local container = world
-    local RunService = game:GetService("RunService")
-${meme3dPreludeLua()}
     local hp = Vector3.new(28, 0, 28)
     local ped = part("HeroPedestal", Vector3.new(16, 9, 16), hp + Vector3.new(0, 4.5, 0), theme.wall, Enum.Material.Marble)
     local hpl = Instance.new("PointLight"); hpl.Color = theme.accent; hpl.Brightness = 2.2; hpl.Range = 30; hpl.Parent = ped
@@ -10644,14 +10658,18 @@ local function label3d(adornee, text, offsetY, color)
     local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
     return t
 end
-
+${memePreludeTopLua}
 part("TownGround", Vector3.new(380, 1, 380), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
 ${worldVisualsLua()}
 setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.62), tint = Color3.fromRGB(252, 250, 248), haze = 1.5`}})
-for i = 1, 20 do
-    local a = math.rad(i * 18); local r = 150 + (i % 3) * 18
+-- Session 414h: trees only in the 4 diagonal corners (away from the building ring
+-- on the axes) so they never spawn inside/through houses.
+for i = 1, 12 do
+    local corner = math.rad(45 + math.floor((i - 1) / 3) * 90)
+    local a = corner + math.rad(((i - 1) % 3 - 1) * 11)
+    local r = 160 + ((i - 1) % 3) * 9
     local p = Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
-    if i % 4 == 0 then makeRock(world, p, 0.7, theme.roof) else makeTree(world, p, 0.95, "round", Color3.fromRGB(112, 80, 52), Color3.fromRGB(80, 148, 74)) end
+    if i % 4 == 0 then makeRock(world, p, 0.85, theme.roof) else makeTree(world, p, 1.0, "round", Color3.fromRGB(112, 80, 52), Color3.fromRGB(80, 148, 74)) end
 end
 local plaza = part("Plaza", Vector3.new(86, 1, 86), Vector3.new(0, 0.6, 0), theme.plaza, Enum.Material.Pavement)
 if Config.HubName and Config.HubName ~= "" then label3d(plaza, Config.HubName, 3, theme.accent) end
@@ -10681,6 +10699,10 @@ local function buildHouse(name, pos, size, color, sign)
     part(name .. "_Lintel", Vector3.new(doorW + 1, hy - doorH, wallT), Vector3.new(cx, base + doorH + (hy - doorH) / 2, cz + hz / 2), color, Enum.Material.Brick)
     local lamp = part(name .. "_Lamp", Vector3.new(2.2, 2.2, 2.2), Vector3.new(cx, base + hy - 4, cz), theme.accent, Enum.Material.Neon); lamp.Shape = Enum.PartType.Ball; lamp.CanCollide = false
     local pl = Instance.new("PointLight"); pl.Color = theme.accent; pl.Brightness = 1.6; pl.Range = math.max(hx, hz); pl.Parent = lamp
+    -- interior furniture so the house isn't empty
+    part(name .. "_Counter", Vector3.new(hx * 0.55, 4, 3.5), Vector3.new(cx, base + 2.5, cz - hz / 3.2), color:Lerp(Color3.fromRGB(0, 0, 0), 0.4), Enum.Material.Wood)
+    part(name .. "_Shelf", Vector3.new(hx * 0.6, 5, 2.5), Vector3.new(cx - hx / 4, base + hy * 0.42, cz - hz / 2 + 1.8), Color3.fromRGB(120, 86, 54), Enum.Material.Wood)
+    local rug = part(name .. "_Rug", Vector3.new(hx * 0.5, 0.2, hz * 0.45), Vector3.new(cx, base + 1.1, cz + hz / 6), theme.accent, Enum.Material.Fabric); rug.CanCollide = false
     local board = part(name .. "_Sign", Vector3.new(hx * 0.7, 4, 0.5), Vector3.new(cx, base + hy + 0.5, cz + hz / 2 + 0.4), theme.accent, Enum.Material.SmoothPlastic); board.CanCollide = false
     local sg = Instance.new("SurfaceGui"); sg.Face = Enum.NormalId.Back; sg.Adornee = board; sg.LightInfluence = 0; sg.PixelsPerStud = 50; sg.Parent = board
     local st = Instance.new("TextLabel"); st.Size = UDim2.new(1, 0, 1, 0); st.BackgroundTransparency = 1; st.TextColor3 = Color3.fromRGB(25, 25, 32); st.TextScaled = true; st.Font = Enum.Font.GothamBlack; st.Text = sign; st.Parent = sg
@@ -10758,20 +10780,20 @@ ${humanoidNpcPreludeLua()}
 local NPCS = {
 ${npcsLua}
 }
-for _, n in ipairs(NPCS) do
-    -- Session 414g: real R15 humanoid NPC (not a block stack). Anchored root so it
-    -- stands still; keeps name label + (meme) face + Talk prompt.
-    local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(n.pos + Vector3.new(0, 3.5, 0)), {name = n.name, color = n.color, health = 100})
-    if npc and hrp then
-        hrp.Anchored = true
-        local anchor = hrp
-        local head = npc:FindFirstChild("Head")
-        label3d(head or anchor, n.name, head and 2.4 or 4, Color3.fromRGB(255, 255, 255))
-        if n.face and n.face > 0 and head then
-            local fb = Instance.new("BillboardGui"); fb.Size = UDim2.new(0, 72, 0, 72); fb.StudsOffset = Vector3.new(0, 4.2, 0); fb.AlwaysOnTop = false; fb.MaxDistance = 70; fb.LightInfluence = 0; fb.Parent = head
-            local fi = Instance.new("ImageLabel"); fi.Size = UDim2.new(1, 0, 1, 0); fi.BackgroundTransparency = 1; fi.Image = "rbxthumb://type=Asset&id=" .. n.face .. "&w=420&h=420"; fi.Parent = fb
-        end
-        local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 12; pr.RequiresLineOfSight = false; pr.Parent = anchor
+for idx, n in ipairs(NPCS) do
+    -- Session 414h: meme characters spawn as the actual 3D creature (shark/croc/
+    -- skibidi); everyone else is a real R15 humanoid. No floating face banners.
+    local anchor
+    if n.fig and n.fig ~= "" then
+        local fig = buildMeme3dFigure(n.fig, n.pos + Vector3.new(0, 3.5, 0), idx)
+        anchor = fig and fig.PrimaryPart
+    else
+        local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(n.pos + Vector3.new(0, 3.5, 0)), {name = n.name, color = n.color, health = 100})
+        if npc and hrp then hrp.Anchored = true; anchor = npc:FindFirstChild("Head") or hrp end
+    end
+    if anchor then
+        label3d(anchor, n.name, 5, Color3.fromRGB(255, 255, 255))
+        local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 14; pr.RequiresLineOfSight = false; pr.Parent = anchor
         pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
     end
 end

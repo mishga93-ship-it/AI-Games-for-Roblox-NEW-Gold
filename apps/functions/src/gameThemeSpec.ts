@@ -154,10 +154,10 @@ const SETTINGS: SettingDef[] = [
   },
   {
     key: 'town',
-    buildings: ['Town Hall', 'Bank', 'Market', 'Cafe', 'Police Station', 'Apartments'],
+    buildings: ['Town Hall', 'Bank', 'Hospital', 'Diner', 'Police Station', 'Apartments'],
     jobs: [
-      { name: 'Cashier', pay: 35 }, { name: 'Barista', pay: 30 }, { name: 'Officer', pay: 48 },
-      { name: 'Teller', pay: 42 }, { name: 'Mayor', pay: 65 }, { name: 'Janitor', pay: 26 },
+      { name: 'Police Officer', pay: 48 }, { name: 'Doctor', pay: 55 }, { name: 'Chef', pay: 40 },
+      { name: 'Cashier', pay: 35 }, { name: 'Mayor', pay: 65 }, { name: 'Mechanic', pay: 38 },
     ],
     hubNoun: 'Town Square',
   },
