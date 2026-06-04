@@ -458,6 +458,207 @@ function enemiesForVibe(vibeKey: string): GameCharacter[] {
   return ENEMIES_BY_VIBE[vibeKey] ?? NEUTRAL_ENEMIES;
 }
 
+// ─── Tower Defense: per-preset enemy packs + map layouts (session 417) ────────
+// The vibe roster above is too generic for TD: FNAF, Titan-War and Monster-School
+// all collapse to vibe `monster` and would share one roster. TD presets reference
+// concrete IPs, so we resolve a tailored pack (3 mobs + 1 boss + a silhouette
+// `kind` + a base landmark) directly from the brief/title. `kind` tells the
+// builder which 3D body to assemble (no floating face billboards — the meme face
+// decal is wrapped onto the body's front Surface). Falls back to the vibe roster.
+
+export interface TdEnemy {
+  name: string;
+  color: Rgb;
+  /** Real meme face decal id (wrapped on the body Front via SurfaceGui, never floating). */
+  decalId?: number;
+}
+
+export interface TdPack {
+  /** Silhouette family the builder assembles: animatronic/titan/voxel/toy/wolf/fruit/challenger/meme/blob. */
+  kind: string;
+  /** 3 themed mobs cycled across waves. */
+  enemies: TdEnemy[];
+  /** The milestone boss (oversized, distinct). */
+  boss: TdEnemy;
+  /** Themed base landmark key: showstage/warhq/schoolhouse/factory/boardwalk/tikihut/pinethrone/campfire/vault/piazza. */
+  landmark: string;
+}
+
+interface TdPackRule { match: RegExp; pack: TdPack; }
+
+// Order matters: specific IPs first, generic brainrot last.
+const TD_PACKS: TdPackRule[] = [
+  { match: /\b(fnaf|freddy|animatronic|five nights|bonnie|chica|foxy|springtrap)\b/i, pack: {
+      kind: 'animatronic', landmark: 'showstage',
+      enemies: [
+        { name: 'Bonnie', color: [120, 96, 180] },
+        { name: 'Chica', color: [240, 218, 90] },
+        { name: 'Foxy', color: [172, 74, 52] },
+      ],
+      boss: { name: 'Springtrap', color: [118, 130, 72] },
+  } },
+  { match: /\b(titan|skibidi|cameraman|speakerman|tv man|colossus|kaiju|giants?)\b/i, pack: {
+      kind: 'titan', landmark: 'warhq',
+      enemies: [
+        { name: 'Cameraman', color: [120, 124, 134] },
+        { name: 'Speakerman', color: [42, 42, 50] },
+        { name: 'TV Man', color: [150, 156, 168] },
+      ],
+      boss: { name: 'Titan Cameraman', color: [92, 100, 116] },
+  } },
+  { match: /\b(monster school|minecraft|creeper|herobrine|voxel|zombie student)\b/i, pack: {
+      kind: 'voxel', landmark: 'schoolhouse',
+      enemies: [
+        { name: 'Zombie', color: [78, 150, 92] },
+        { name: 'Creeper', color: [92, 182, 92] },
+        { name: 'Skeleton', color: [216, 216, 210] },
+      ],
+      boss: { name: 'Herobrine', color: [92, 172, 178] },
+  } },
+  { match: /\b(prototype|poppy|huggy|catnap|mommy long legs|playtime|experiment)\b/i, pack: {
+      kind: 'toy', landmark: 'factory',
+      enemies: [
+        { name: 'Huggy', color: [42, 92, 222] },
+        { name: 'CatNap', color: [150, 92, 202] },
+        { name: 'Mommy', color: [255, 92, 182] },
+      ],
+      boss: { name: 'The Prototype', color: [120, 122, 132] },
+  } },
+  { match: /\btralalero\b/i, pack: {
+      kind: 'meme', landmark: 'boardwalk',
+      enemies: [
+        { name: 'Shark Scout', color: [150, 160, 172], decalId: DECAL_TRALALERO },
+        { name: 'Hammer Shark', color: [118, 130, 142] },
+        { name: 'Mega Maw', color: [80, 92, 104] },
+      ],
+      boss: { name: 'Tralalero Tralala', color: [70, 120, 202], decalId: DECAL_TRALALERO },
+  } },
+  { match: /\b(bananita|dolfinita)\b|\bbanana\b/i, pack: {
+      kind: 'fruit', landmark: 'tikihut',
+      enemies: [
+        { name: 'Banana Dolphin', color: [255, 214, 72] },
+        { name: 'Palm Crab', color: [92, 162, 82] },
+        { name: 'Tiki Sprite', color: [120, 82, 52] },
+      ],
+      boss: { name: 'Bananita Dolfinita', color: [255, 210, 60] },
+  } },
+  { match: /\b(orangutini|orangutan|pineapple)\b/i, pack: {
+      kind: 'fruit', landmark: 'pinethrone',
+      enemies: [
+        { name: 'Pineapple Grunt', color: [240, 200, 62] },
+        { name: 'Orang Scout', color: [210, 122, 52] },
+        { name: 'Coconut Roller', color: [122, 82, 52] },
+      ],
+      boss: { name: 'Orangutini', color: [220, 140, 52] },
+  } },
+  { match: /\b(99 night|nights|sunrise|forest|wolves?)\b/i, pack: {
+      kind: 'wolf', landmark: 'campfire',
+      enemies: [
+        { name: 'Wolf', color: [92, 96, 106] },
+        { name: 'Bear', color: [92, 68, 48] },
+        { name: 'Cultist', color: [42, 42, 50] },
+      ],
+      boss: { name: 'Deer Monster', color: [150, 150, 160] },
+  } },
+  { match: /\b(mrbeast|mr beast|beast|challenge|feastables|million|prize)\b/i, pack: {
+      kind: 'challenger', landmark: 'vault',
+      enemies: [
+        { name: 'Money Bag', color: [202, 182, 122] },
+        { name: 'Contestant', color: [70, 132, 232] },
+        { name: 'Feastables', color: [60, 182, 172] },
+      ],
+      boss: { name: 'Money Monster', color: [72, 122, 236] },
+  } },
+  { match: /\b(brainrot|skibidi|bombardiro|tung|sahur|crocodilo|meme)\b/i, pack: {
+      kind: 'meme', landmark: 'piazza',
+      enemies: [
+        { name: 'Tralalero', color: [60, 120, 220], decalId: DECAL_TRALALERO },
+        { name: 'Bombardiro', color: [90, 150, 80], decalId: DECAL_BOMBARDIRO },
+        { name: 'Tung Tung', color: [180, 130, 80], decalId: DECAL_TUNG },
+      ],
+      boss: { name: 'Bombardiro Crocodilo', color: [72, 122, 72], decalId: DECAL_BOMBARDIRO },
+  } },
+];
+
+const KIND_BY_VIBE: Record<string, string> = {
+  monster: 'animatronic', night: 'wolf', tropical: 'fruit', money: 'challenger',
+  lab: 'toy', brainrot: 'meme', inferno: 'titan', spy: 'challenger', hero: 'challenger', pets: 'fruit',
+};
+
+/** Resolve a TD enemy pack (mobs + boss + silhouette kind + landmark) from the
+ * brief. Specific IPs win; otherwise build a pack from the vibe roster. */
+export function deriveTdPack(brief: string, vibe: string): TdPack {
+  for (const rule of TD_PACKS) {
+    if (rule.match.test(brief)) return rule.pack;
+  }
+  const en = enemiesForVibe(vibe);
+  const mobs = en.slice(0, 3).map((e) => ({ name: e.name, color: e.color, decalId: e.decalId }));
+  const last = en[en.length - 1] ?? { name: 'Warlord', color: [180, 40, 60] as Rgb };
+  return {
+    kind: KIND_BY_VIBE[vibe] ?? 'blob',
+    enemies: mobs.length ? mobs : NEUTRAL_ENEMIES.slice(0, 3).map((e) => ({ name: e.name, color: e.color })),
+    boss: { name: last.name, color: last.color, decalId: last.decalId },
+    landmark: '',
+  };
+}
+
+// ─── Tower Defense map layouts (разные карты) ────────────────────────────────
+// The original builder had ONE hardcoded path; every preset produced the same
+// map shape. These 4 layouts (single serpentine, dual converging lanes, inward
+// spiral, switchback gauntlet) are assigned per-preset so a Brainrot map differs
+// from an FNAF map. Slots are auto-generated beside the lanes by the builder, so
+// any layout is automatically playable. Coordinates fit the 280×210 ground.
+
+export interface TdMap {
+  key: string;
+  base: [number, number];   // x, z of the base centre
+  spawn: [number, number];  // x, z of the player spawn (off the lanes)
+  lanes: Array<Array<[number, number]>>; // each lane: ordered waypoints, last = base
+}
+
+const TD_MAPS: TdMap[] = [
+  { key: 'serpentine', base: [118, -25], spawn: [118, 16], lanes: [
+      [[-120, -45], [-40, -45], [-40, 38], [38, 38], [38, -25], [118, -25]],
+  ] },
+  { key: 'dual', base: [0, 70], spawn: [0, 95], lanes: [
+      [[-128, -80], [-58, -80], [-58, -8], [0, -8], [0, 70]],
+      [[128, -80], [58, -80], [58, -8], [0, -8], [0, 70]],
+  ] },
+  { key: 'spiral', base: [0, 2], spawn: [0, 95], lanes: [
+      [[-126, -86], [112, -86], [112, 80], [-94, 80], [-94, -52], [70, -52], [70, 42], [-46, 42], [-46, -16], [0, -16], [0, 2]],
+  ] },
+  { key: 'gauntlet', base: [0, 88], spawn: [120, 70], lanes: [
+      [[-118, -88], [118, -88], [118, -44], [-118, -44], [-118, 0], [118, 0], [118, 44], [0, 44], [0, 88]],
+  ] },
+];
+
+/** Deterministically assign a map layout from vibe + title so same-vibe presets
+ * (FNAF vs Titan vs Monster-School) still get visibly different maps. */
+export function deriveTdMap(vibe: string, title: string): TdMap {
+  const pref: Record<string, number> = {
+    brainrot: 0, money: 0, hero: 0, tropical: 1, pets: 1,
+    monster: 2, lab: 2, night: 2, inferno: 3, spy: 3,
+  };
+  let h = 0;
+  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0;
+  const idx = ((pref[vibe] ?? 0) + h) % TD_MAPS.length;
+  return TD_MAPS[idx];
+}
+
+/** Emit the map as Lua locals (BASE_POS / SPAWN_POS / LANES / MAP_KEY) at y=3. */
+export function tdMapLua(map: TdMap): string {
+  const v = (xz: [number, number], y: number) => `Vector3.new(${xz[0]}, ${y}, ${xz[1]})`;
+  const lanesLua = map.lanes
+    .map((lane) => `    { ${lane.map((p) => v(p, 3)).join(', ')} }`)
+    .join(',\n');
+  return `local MAP_KEY = "${map.key}"
+local BASE_POS = ${v(map.base, 3)}
+local SPAWN_POS = ${v(map.spawn, 1)}
+local LANES = {
+${lanesLua},
+}`;
+}
+
 // ─── Derivation ──────────────────────────────────────────────────────────────
 
 function cleanTitle(title: string): string {

@@ -1,7 +1,7 @@
 import type { SimulatorSceneSpec, HeroAssetResult } from './types.js';
 import { withCinematicCamera } from './cinematicCamera.js';
 import type { TrendingShowcaseItem } from './generationEnrichment.js';
-import { rgbLua, atmosphereOptsLua, type GameVisualSpec } from './gameThemeSpec.js';
+import { rgbLua, atmosphereOptsLua, deriveTdPack, deriveTdMap, tdMapLua, type GameVisualSpec } from './gameThemeSpec.js';
 
 export type MemeSubTheme = 'skibidi' | 'bombardir' | 'tralalero' | 'sigma' | 'generic';
 
@@ -10088,29 +10088,82 @@ function buildTowerDefenseScript(params: GameTemplateParams): MultiScriptResult 
   // (99 Nights = dark pine forest at night + campfire), not a sunny meadow.
   const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
   const tdAtmo = (spec && spec.vibe !== 'neutral') ? spec.atmosphere : undefined;
-  const tdEnemyRosterLua = (spec && spec.vibe !== 'neutral' && spec.enemies && spec.enemies.length)
-    ? `{ ${spec.enemies.map((e) => `{r=${Math.round(e.color[0])}, g=${Math.round(e.color[1])}, b=${Math.round(e.color[2])}, face=${Math.max(0, Math.floor(Number(e.decalId) || 0))}}`).join(', ')} }`
-    : 'nil';
   const tdTreeKindLua = safeLuaString(tdAtmo?.treeKind || 'round', 'round');
   const tdTreeTrunkLua = tdAtmo ? rgbLua(tdAtmo.treeTrunk) : 'Color3.fromRGB(112, 80, 52)';
   const tdTreeLeafLua = tdAtmo ? rgbLua(tdAtmo.treeLeaf) : 'Color3.fromRGB(78, 142, 70)';
-  const tdCampfireLua = (tdAtmo && tdAtmo.mood === 'night')
-    ? `
-do
-    local cfPos = Vector3.new(baseCenter.X - 28, 0, baseCenter.Z + 4)
-    for i = 1, 5 do
-        local a = math.rad(i * 72)
-        local logp = part("CampLog_" .. i, Vector3.new(7, 1.5, 1.5), cfPos + Vector3.new(math.cos(a) * 2.6, 1, math.sin(a) * 2.6), Color3.fromRGB(86, 58, 38), Enum.Material.Wood)
-        logp.CFrame = CFrame.new(logp.Position) * CFrame.Angles(0, a, math.rad(22))
-    end
-    local embers = part("CampEmbers", Vector3.new(4.4, 2.4, 4.4), cfPos + Vector3.new(0, 1.7, 0), Color3.fromRGB(255, 130, 45), Enum.Material.Neon)
-    embers.Shape = Enum.PartType.Ball
-    local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 38; pl.Parent = embers
-    local fire = Instance.new("Fire"); fire.Heat = 10; fire.Size = 8; fire.Color = Color3.fromRGB(255, 150, 60); fire.SecondaryColor = Color3.fromRGB(255, 88, 30); fire.Parent = embers
-    local cbb = Instance.new("BillboardGui"); cbb.Size = UDim2.new(0, 120, 0, 28); cbb.StudsOffset = Vector3.new(0, 4.5, 0); cbb.AlwaysOnTop = true; cbb.Parent = embers
-    local ct = Instance.new("TextLabel"); ct.Size = UDim2.new(1, 0, 1, 0); ct.BackgroundTransparency = 1; ct.TextColor3 = Color3.fromRGB(255, 205, 140); ct.TextStrokeTransparency = 0.4; ct.TextScaled = true; ct.Font = Enum.Font.GothamBold; ct.Text = "Campfire"; ct.Parent = cbb
-end`
-    : '';
+
+  // Session 417: per-preset enemy pack (3 mobs + boss + silhouette kind + base
+  // landmark) + a chosen map layout (разные карты). Brief = title + theme name so
+  // the IP is detected even when the GDD omits mapTheme. The meme face decal is
+  // WRAPPED on the enemy body surface (SurfaceGui), never a floating billboard.
+  const tdBrief = `${params.title || ''} ${spec ? spec.themeName : ''}`;
+  const tdVibe = spec ? spec.vibe : 'neutral';
+  const tdPack = deriveTdPack(tdBrief, tdVibe);
+  const tdMap = deriveTdMap(tdVibe, String(params.title || 'Tower Defense'));
+  const tdMapLuaBlock = tdMapLua(tdMap);
+  const tdKindLua = safeLuaString(tdPack.kind, 'blob');
+  const tdRosterEntryLua = (e: { name: string; color: number[]; decalId?: number }) =>
+    `{name=${safeLuaString(e.name, 'Enemy')}, r=${Math.round(e.color[0])}, g=${Math.round(e.color[1])}, b=${Math.round(e.color[2])}, face=${Math.max(0, Math.floor(Number(e.decalId) || 0))}}`;
+  const tdPackRosterLua = `{ ${tdPack.enemies.map(tdRosterEntryLua).join(', ')} }`;
+  const tdBossLua = tdRosterEntryLua(tdPack.boss);
+  // Themed base landmark — pure 3D geometry near `LM` (a point just behind the
+  // base). Recognizable silhouette per preset; no floating labels.
+  const tdLandmarkLua = ((key: string): string => {
+    switch (key) {
+      case 'showstage': return `
+part("Stage", Vector3.new(28, 2, 16), LM + Vector3.new(0, 1, 0), Color3.fromRGB(58, 30, 32), Enum.Material.WoodPlanks)
+part("CurtainL", Vector3.new(2, 17, 15), LM + Vector3.new(-13, 9, 0), Color3.fromRGB(120, 22, 32), Enum.Material.Fabric)
+part("CurtainR", Vector3.new(2, 17, 15), LM + Vector3.new(13, 9, 0), Color3.fromRGB(120, 22, 32), Enum.Material.Fabric)
+part("Freddy", Vector3.new(5, 7, 4), LM + Vector3.new(0, 5.5, 0), Color3.fromRGB(120, 78, 50), Enum.Material.SmoothPlastic)
+part("FreddyHead", Vector3.new(4, 3.4, 3.6), LM + Vector3.new(0, 10.6, 0), Color3.fromRGB(120, 78, 50), Enum.Material.SmoothPlastic)
+part("FreddyHat", Vector3.new(4.4, 1.6, 4.4), LM + Vector3.new(0, 12.8, 0), Color3.fromRGB(24, 22, 28), Enum.Material.SmoothPlastic)`;
+      case 'warhq': return `
+part("HQTower", Vector3.new(16, 30, 16), LM + Vector3.new(0, 15, 0), Color3.fromRGB(96, 100, 110), Enum.Material.Concrete)
+for i = 1, 10 do part("HQWin_" .. i, Vector3.new(2.4, 2.4, 0.4), LM + Vector3.new(((i % 2) * 2 - 1) * 4, 6 + math.floor(i / 2) * 5, -8.2), Color3.fromRGB(90, 200, 255), Enum.Material.Neon) end
+part("HQAntenna", Vector3.new(0.8, 14, 0.8), LM + Vector3.new(0, 37, 0), Color3.fromRGB(210, 60, 60), Enum.Material.Neon)`;
+      case 'schoolhouse': return `
+part("SchoolGrass", Vector3.new(26, 1, 22), LM + Vector3.new(0, 0.5, 0), Color3.fromRGB(96, 160, 80), Enum.Material.Grass)
+part("School", Vector3.new(22, 14, 18), LM + Vector3.new(0, 7.5, 0), Color3.fromRGB(150, 110, 86), Enum.Material.WoodPlanks)
+part("SchoolRoof", Vector3.new(24, 2, 20), LM + Vector3.new(0, 15.5, 0), Color3.fromRGB(120, 60, 50), Enum.Material.SmoothPlastic)
+part("Chalkboard", Vector3.new(12, 6, 0.5), LM + Vector3.new(0, 8.5, -9.2), Color3.fromRGB(40, 70, 50), Enum.Material.Slate)`;
+      case 'factory': return `
+part("FactoryWall", Vector3.new(26, 16, 3), LM + Vector3.new(0, 8, -8), Color3.fromRGB(150, 80, 70), Enum.Material.Brick)
+part("FactoryGate", Vector3.new(12, 12, 1), LM + Vector3.new(0, 6, -6.4), Color3.fromRGB(60, 60, 70), Enum.Material.DiamondPlate)
+part("HandLogo", Vector3.new(6, 6, 0.6), LM + Vector3.new(0, 13, -6.2), Color3.fromRGB(70, 140, 230), Enum.Material.Neon)
+for i = 1, 5 do part("Conveyor_" .. i, Vector3.new(4, 0.6, 3), LM + Vector3.new(-10 + i * 4, 1, 4), Color3.fromRGB(50, 52, 60), Enum.Material.Metal) end`;
+      case 'boardwalk': return `
+for i = 1, 6 do part("Pier_" .. i, Vector3.new(20, 0.8, 3.4), LM + Vector3.new(0, 1, -10 + i * 4), Color3.fromRGB(150, 110, 70), Enum.Material.WoodPlanks) end
+part("PalmTrunk", Vector3.new(1.6, 16, 1.6), LM + Vector3.new(-8, 8, 0), Color3.fromRGB(120, 86, 54), Enum.Material.Wood)
+for i = 1, 5 do local a = math.rad(i * 72); part("PalmLeaf_" .. i, Vector3.new(8, 0.6, 2.6), LM + Vector3.new(-8 + math.cos(a) * 4, 16, math.sin(a) * 4), Color3.fromRGB(86, 170, 80), Enum.Material.Grass) end
+part("Surfboard", Vector3.new(2.2, 7, 0.6), LM + Vector3.new(8, 4, 0), Color3.fromRGB(240, 90, 120), Enum.Material.SmoothPlastic)`;
+      case 'tikihut': return `
+part("HutRoof", Vector3.new(18, 3, 18), LM + Vector3.new(0, 11, 0), Color3.fromRGB(150, 120, 70), Enum.Material.Grass)
+for _, cx in ipairs({-7, 7}) do for _, cz in ipairs({-7, 7}) do part("HutPole", Vector3.new(1.4, 11, 1.4), LM + Vector3.new(cx, 5.5, cz), Color3.fromRGB(120, 84, 52), Enum.Material.Wood) end end
+for _, tx in ipairs({-9, 9}) do part("Torch", Vector3.new(1, 6, 1), LM + Vector3.new(tx, 3, 9), Color3.fromRGB(110, 76, 46), Enum.Material.Wood); local fl = part("TorchFire", Vector3.new(1.4, 1.4, 1.4), LM + Vector3.new(tx, 6.5, 9), Color3.fromRGB(255, 140, 50), Enum.Material.Neon); local f = Instance.new("Fire"); f.Size = 4; f.Parent = fl end`;
+      case 'pinethrone': return `
+for i = 1, 3 do part("Step_" .. i, Vector3.new(18 - i * 3, 2, 12 - i * 2), LM + Vector3.new(0, i * 2 - 1, 0), Color3.fromRGB(150, 140, 120), Enum.Material.Slate) end
+part("Throne", Vector3.new(7, 9, 6), LM + Vector3.new(0, 9.5, 0), Color3.fromRGB(240, 200, 60), Enum.Material.SmoothPlastic)
+for i = 1, 5 do local a = math.rad(i * 72); part("ThroneCrown_" .. i, Vector3.new(1.4, 4, 1.4), LM + Vector3.new(math.cos(a) * 2.4, 15, math.sin(a) * 2.4), Color3.fromRGB(90, 170, 80), Enum.Material.Grass) end`;
+      case 'campfire': return `
+for i = 1, 6 do local a = math.rad(i * 60); local lg = part("CampLog_" .. i, Vector3.new(7, 1.5, 1.5), LM + Vector3.new(math.cos(a) * 2.6, 1, math.sin(a) * 2.6), Color3.fromRGB(86, 58, 38), Enum.Material.Wood); lg.CFrame = CFrame.new(lg.Position) * CFrame.Angles(0, a, math.rad(22)) end
+local em = part("CampEmbers", Vector3.new(4.4, 2.4, 4.4), LM + Vector3.new(0, 1.7, 0), Color3.fromRGB(255, 130, 45), Enum.Material.Neon); em.Shape = Enum.PartType.Ball
+local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 40; pl.Parent = em
+local fr = Instance.new("Fire"); fr.Heat = 12; fr.Size = 9; fr.Color = Color3.fromRGB(255, 150, 60); fr.SecondaryColor = Color3.fromRGB(255, 88, 30); fr.Parent = em
+part("Cabin", Vector3.new(12, 8, 10), LM + Vector3.new(-16, 4, -6), Color3.fromRGB(96, 66, 44), Enum.Material.Wood)`;
+      case 'vault': return `
+part("VaultBox", Vector3.new(18, 14, 12), LM + Vector3.new(0, 7, 0), Color3.fromRGB(70, 80, 72), Enum.Material.DiamondPlate)
+part("VaultDial", Vector3.new(3, 5, 5), LM + Vector3.new(9.5, 7, 0), Color3.fromRGB(230, 190, 70), Enum.Material.Metal)
+part("ArchL", Vector3.new(2.4, 14, 2.4), LM + Vector3.new(-12, 7, 8), Color3.fromRGB(70, 132, 232), Enum.Material.Neon)
+part("ArchR", Vector3.new(2.4, 14, 2.4), LM + Vector3.new(12, 7, 8), Color3.fromRGB(70, 132, 232), Enum.Material.Neon)
+part("ArchTop", Vector3.new(26, 2.4, 2.4), LM + Vector3.new(0, 14, 8), Color3.fromRGB(255, 90, 180), Enum.Material.Neon)`;
+      case 'piazza': return `
+part("Fountain", Vector3.new(16, 3, 16), LM + Vector3.new(0, 1.5, 0), Color3.fromRGB(170, 160, 140), Enum.Material.Marble)
+part("FountainWater", Vector3.new(12, 1, 12), LM + Vector3.new(0, 3.2, 0), Color3.fromRGB(90, 170, 220), Enum.Material.Glass)
+part("FountainPillar", Vector3.new(2.4, 8, 2.4), LM + Vector3.new(0, 6, 0), Color3.fromRGB(180, 170, 150), Enum.Material.Marble)
+local porb = part("PiazzaOrb", Vector3.new(3.4, 3.4, 3.4), LM + Vector3.new(0, 11, 0), Color3.fromRGB(150, 70, 190), Enum.Material.Neon); porb.Shape = Enum.PartType.Ball`;
+      default: return '';
+    }
+  })(tdPack.landmark);
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10129,7 +10182,9 @@ local THEMES = {
 local theme = THEMES[Config.MapTheme] or THEMES.meadow
 local SPEC_THEME = ${specThemeLua}
 if SPEC_THEME then theme = SPEC_THEME end
-local ENEMY_ROSTER = ${tdEnemyRosterLua}
+local ENEMY_ROSTER = ${tdPackRosterLua}
+local ENEMY_BOSS = ${tdBossLua}
+local ENEMY_KIND = ${tdKindLua}
 local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.7 or 1.0)
 
 local dataStore
@@ -10153,30 +10208,153 @@ for i = 1, 16 do
     if i % 4 == 0 then makeRock(world, p, 0.7, theme.path) else makeTree(world, p, 0.9, ${tdTreeKindLua}, ${tdTreeTrunkLua}, ${tdTreeLeafLua}) end
 end
 
-local waypoints = {
-    Vector3.new(-120, 3, -45), Vector3.new(-40, 3, -45), Vector3.new(-40, 3, 38),
-    Vector3.new(38, 3, 38), Vector3.new(38, 3, -25), Vector3.new(118, 3, -25),
-}
-for i = 1, #waypoints - 1 do
-    local a = Vector3.new(waypoints[i].X, 1.5, waypoints[i].Z)
-    local b = Vector3.new(waypoints[i + 1].X, 1.5, waypoints[i + 1].Z)
-    local seg = Instance.new("Part"); seg.Name = "Road_" .. i; seg.Anchored = true; seg.Color = theme.path; seg.Material = theme.pathMat
-    seg.Size = Vector3.new(11, 1, (b - a).Magnitude + 9)
-    seg.CFrame = CFrame.lookAt((a + b) / 2, b)
-    seg.Parent = world
+${tdMapLuaBlock}
+local baseCenter = BASE_POS
+
+-- Session 417: build each lane's road (multi-lane maps supported).
+for li, lane in ipairs(LANES) do
+    for i = 1, #lane - 1 do
+        local a = Vector3.new(lane[i].X, 1.5, lane[i].Z)
+        local b = Vector3.new(lane[i + 1].X, 1.5, lane[i + 1].Z)
+        local seg = Instance.new("Part"); seg.Name = "Road_" .. li .. "_" .. i; seg.Anchored = true; seg.Color = theme.path; seg.Material = theme.pathMat
+        seg.Size = Vector3.new(11, 1, (b - a).Magnitude + 9)
+        seg.CFrame = CFrame.lookAt((a + b) / 2, b)
+        seg.Parent = world
+    end
 end
 
-local baseCenter = waypoints[#waypoints]
 local baseCore = part("BaseCore", Vector3.new(18, 18, 18), Vector3.new(baseCenter.X, 9, baseCenter.Z), theme.base, Enum.Material.Neon)
 local baseBb = Instance.new("BillboardGui"); baseBb.Size = UDim2.new(0, 170, 0, 42); baseBb.StudsOffset = Vector3.new(0, 13, 0); baseBb.AlwaysOnTop = true; baseBb.Parent = baseCore
 local baseLabel = Instance.new("TextLabel"); baseLabel.Size = UDim2.new(1, 0, 1, 0); baseLabel.BackgroundTransparency = 1; baseLabel.TextColor3 = Color3.fromRGB(255, 255, 255); baseLabel.TextStrokeTransparency = 0.3; baseLabel.TextScaled = true; baseLabel.Font = Enum.Font.GothamBlack; baseLabel.Text = "BASE"; baseLabel.Parent = baseBb
-local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "TdSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = Vector3.new(baseCenter.X, 1, baseCenter.Z + 28); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
-${tdCampfireLua}
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "TdSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = SPAWN_POS; spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+
+-- Session 417: themed base landmark just behind the base (recognizable silhouette per preset).
+local LM = Vector3.new(baseCenter.X, 0, baseCenter.Z)
+do local d = Vector3.new(baseCenter.X, 0, baseCenter.Z); if d.Magnitude < 1 then d = Vector3.new(0, 0, 1) else d = d.Unit end; LM = Vector3.new(baseCenter.X, 0, baseCenter.Z) + d * 26 end
+do
+${tdLandmarkLua}
+end
+
+-- Session 417: tower slots auto-generated beside every lane segment so any map
+-- layout (serpentine / dual / spiral / gauntlet) is automatically playable.
+local slotPositions = {}
+do
+    local seen = {}
+    for _, lane in ipairs(LANES) do
+        for i = 1, #lane - 1 do
+            local a, b = lane[i], lane[i + 1]
+            local dir = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+            if dir.Magnitude > 1 then
+                dir = dir.Unit
+                local perp = Vector3.new(-dir.Z, 0, dir.X)
+                local mid = Vector3.new((a.X + b.X) / 2, 3.5, (a.Z + b.Z) / 2)
+                for _, s in ipairs({1, -1}) do
+                    local sp = mid + perp * (13 * s)
+                    if math.abs(sp.X) < 136 and math.abs(sp.Z) < 101 and (sp - Vector3.new(baseCenter.X, 3.5, baseCenter.Z)).Magnitude > 16 then
+                        local key = math.floor(sp.X / 7) .. "_" .. math.floor(sp.Z / 7)
+                        if not seen[key] then seen[key] = true; slotPositions[#slotPositions + 1] = Vector3.new(sp.X, 3.5, sp.Z) end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Session 417: themed enemy assembly — a multi-part 3D silhouette per "kind".
+-- The meme face decal is WRAPPED on the body via a SurfaceGui (never a floating
+-- billboard, per user requirement). All parts anchored; the round loop pivots the
+-- whole model along its lane.
+local function _eAcc(model, core, size, off, color, mat, shape)
+    local p = Instance.new("Part"); p.Size = size; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic
+    p.Anchored = true; p.CanCollide = false; p.CastShadow = false
+    if shape then p.Shape = shape end
+    p.CFrame = core.CFrame * CFrame.new(off)
+    p.Parent = model
+    return p
+end
+local function _eFace(core, faceId, faces)
+    if not faceId or faceId <= 0 then return end
+    for _, nf in ipairs(faces) do
+        local sg = Instance.new("SurfaceGui"); sg.Face = nf; sg.CanvasSize = Vector2.new(220, 220); sg.LightInfluence = 0; sg.Parent = core
+        local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1
+        img.Image = "rbxthumb://type=Asset&id=" .. faceId .. "&w=420&h=420"; img.Parent = sg
+    end
+end
+local function spawnEnemyAssembly(kind, color, faceId, scale, pos)
+    scale = scale or 1
+    local model = Instance.new("Model"); model.Name = "Enemy"
+    local core = Instance.new("Part"); core.Anchored = true; core.CanCollide = false; core.CastShadow = false
+    core.Material = Enum.Material.SmoothPlastic; core.Color = color; core.CFrame = CFrame.new(pos)
+    local accent = color:Lerp(Color3.fromRGB(255, 255, 255), 0.25)
+    local dark = color:Lerp(Color3.fromRGB(0, 0, 0), 0.4)
+    local eye = Color3.fromRGB(255, 70, 50)
+    local faces = {Enum.NormalId.Front}
+    if kind == "animatronic" then
+        core.Size = Vector3.new(4.4, 5.0, 3.2) * scale
+        _eAcc(model, core, Vector3.new(1.0, 1.9, 1.0) * scale, Vector3.new(-1.1, 3.0, 0) * scale, color)
+        _eAcc(model, core, Vector3.new(1.0, 1.9, 1.0) * scale, Vector3.new(1.1, 3.0, 0) * scale, color)
+        _eAcc(model, core, Vector3.new(2.4, 1.4, 0.8) * scale, Vector3.new(0, -0.6, -1.7) * scale, accent)
+        _eAcc(model, core, Vector3.new(0.55, 0.55, 0.4) * scale, Vector3.new(-0.7, 1.0, -1.75) * scale, eye, Enum.Material.Neon, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(0.55, 0.55, 0.4) * scale, Vector3.new(0.7, 1.0, -1.75) * scale, eye, Enum.Material.Neon, Enum.PartType.Ball)
+    elseif kind == "titan" then
+        core.Size = Vector3.new(4.2, 9.0, 3.4) * scale
+        _eAcc(model, core, Vector3.new(3.0, 3.0, 3.0) * scale, Vector3.new(0, 5.6, 0) * scale, accent)
+        _eAcc(model, core, Vector3.new(0.6, 0.6, 0.4) * scale, Vector3.new(-0.7, 6.0, -1.6) * scale, Color3.fromRGB(80, 200, 255), Enum.Material.Neon, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(0.6, 0.6, 0.4) * scale, Vector3.new(0.7, 6.0, -1.6) * scale, Color3.fromRGB(80, 200, 255), Enum.Material.Neon, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(2.2, 2.2, 1.0) * scale, Vector3.new(0, 1.6, -1.8) * scale, Color3.fromRGB(80, 200, 255), Enum.Material.Neon)
+    elseif kind == "voxel" then
+        core.Size = Vector3.new(4.0, 4.6, 4.0) * scale
+        _eAcc(model, core, Vector3.new(3.4, 3.4, 3.4) * scale, Vector3.new(0, 4.0, 0) * scale, accent)
+        _eAcc(model, core, Vector3.new(1.2, 3.6, 1.2) * scale, Vector3.new(-2.6, 0.4, 0) * scale, color)
+        _eAcc(model, core, Vector3.new(1.2, 3.6, 1.2) * scale, Vector3.new(2.6, 0.4, 0) * scale, color)
+        _eAcc(model, core, Vector3.new(0.5, 0.5, 0.4) * scale, Vector3.new(-0.8, 4.4, -1.75) * scale, Color3.fromRGB(120, 240, 255), Enum.Material.Neon)
+        _eAcc(model, core, Vector3.new(0.5, 0.5, 0.4) * scale, Vector3.new(0.8, 4.4, -1.75) * scale, Color3.fromRGB(120, 240, 255), Enum.Material.Neon)
+    elseif kind == "toy" then
+        core.Size = Vector3.new(2.8, 7.0, 2.8) * scale
+        _eAcc(model, core, Vector3.new(2.6, 2.6, 2.6) * scale, Vector3.new(0, 4.3, 0) * scale, accent)
+        _eAcc(model, core, Vector3.new(0.7, 0.7, 0.5) * scale, Vector3.new(-0.6, 4.7, -1.3) * scale, eye, Enum.Material.Neon, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(0.7, 0.7, 0.5) * scale, Vector3.new(0.6, 4.7, -1.3) * scale, eye, Enum.Material.Neon, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(0.7, 5.2, 0.7) * scale, Vector3.new(-2.0, 0.6, 0) * scale, color)
+        _eAcc(model, core, Vector3.new(0.7, 5.2, 0.7) * scale, Vector3.new(2.0, 0.6, 0) * scale, color)
+    elseif kind == "wolf" then
+        core.Size = Vector3.new(2.8, 2.6, 6.0) * scale
+        _eAcc(model, core, Vector3.new(2.4, 2.2, 2.2) * scale, Vector3.new(0, 0.8, -3.4) * scale, accent)
+        _eAcc(model, core, Vector3.new(0.5, 0.5, 0.4) * scale, Vector3.new(-0.6, 1.4, -4.4) * scale, Color3.fromRGB(255, 220, 60), Enum.Material.Neon, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(0.5, 0.5, 0.4) * scale, Vector3.new(0.6, 1.4, -4.4) * scale, Color3.fromRGB(255, 220, 60), Enum.Material.Neon, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(0.8, 2.4, 0.8) * scale, Vector3.new(-1.0, -2.2, -2.0) * scale, dark)
+        _eAcc(model, core, Vector3.new(0.8, 2.4, 0.8) * scale, Vector3.new(1.0, -2.2, -2.0) * scale, dark)
+        _eAcc(model, core, Vector3.new(0.8, 2.4, 0.8) * scale, Vector3.new(-1.0, -2.2, 2.0) * scale, dark)
+        _eAcc(model, core, Vector3.new(0.8, 2.4, 0.8) * scale, Vector3.new(1.0, -2.2, 2.0) * scale, dark)
+    elseif kind == "fruit" then
+        core.Size = Vector3.new(3.0, 4.4, 3.0) * scale
+        _eAcc(model, core, Vector3.new(1.4, 1.8, 1.4) * scale, Vector3.new(0, 2.8, 0) * scale, Color3.fromRGB(90, 170, 80))
+        _eAcc(model, core, Vector3.new(0.5, 0.5, 0.4) * scale, Vector3.new(-0.7, 0.6, -1.5) * scale, Color3.fromRGB(30, 30, 35), Enum.Material.SmoothPlastic, Enum.PartType.Ball)
+        _eAcc(model, core, Vector3.new(0.5, 0.5, 0.4) * scale, Vector3.new(0.7, 0.6, -1.5) * scale, Color3.fromRGB(30, 30, 35), Enum.Material.SmoothPlastic, Enum.PartType.Ball)
+    elseif kind == "challenger" then
+        core.Size = Vector3.new(3.0, 5.0, 2.2) * scale
+        _eAcc(model, core, Vector3.new(2.2, 2.2, 2.2) * scale, Vector3.new(0, 3.6, 0) * scale, accent)
+        _eAcc(model, core, Vector3.new(1.6, 1.6, 0.4) * scale, Vector3.new(0, 0.4, -1.2) * scale, Color3.fromRGB(70, 210, 90), Enum.Material.Neon)
+    elseif kind == "meme" then
+        core.Size = Vector3.new(3.0, 2.8, 6.2) * scale
+        _eAcc(model, core, Vector3.new(1.2, 2.2, 2.2) * scale, Vector3.new(0, 2.0, 0.6) * scale, color)
+        _eAcc(model, core, Vector3.new(1.0, 0.6, 1.8) * scale, Vector3.new(-1.0, -1.4, 2.6) * scale, Color3.fromRGB(240, 240, 240))
+        _eAcc(model, core, Vector3.new(1.0, 0.6, 1.8) * scale, Vector3.new(1.0, -1.4, 2.6) * scale, Color3.fromRGB(240, 240, 240))
+        faces = {Enum.NormalId.Front, Enum.NormalId.Back}
+    else
+        core.Size = Vector3.new(4, 4, 4) * scale
+    end
+    core.Parent = model
+    model.PrimaryPart = core
+    _eFace(core, faceId, faces)
+    model.Parent = world
+    return model, core
+end
 
 local baseHealth = Config.BaseHealth
 local currentWave = 0
 local phase = "idle"
 local gameOver = false
+local coopScale = 1
 local enemies = {}
 local towers = {}
 local slots = {}
@@ -10185,7 +10363,9 @@ local TOWER_TYPES = {
     cannon = {cost=50, damage=12, range=28, fireRate=0.7, color=Color3.fromRGB(90,150,230), label="Cannon"},
     sniper = {cost=120, damage=42, range=64, fireRate=1.6, color=Color3.fromRGB(80,210,140), label="Sniper"},
     splash = {cost=200, damage=18, range=30, fireRate=1.1, splash=12, color=Color3.fromRGB(240,150,70), label="Splash"},
+    frost = {cost=160, damage=6, range=34, fireRate=1.0, slow=0.5, slowDur=1.5, color=Color3.fromRGB(120,210,255), label="Frost"},
 }
+local MAX_TOWER_LEVEL = 5
 
 local function getCash(player)
     local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); return c and c.Value or 0
@@ -10208,13 +10388,21 @@ local function handleSlotTrigger(player, slot)
     if gameOver then return end
     if slot.tower then
         local t = slot.tower
+        if t.level >= MAX_TOWER_LEVEL then
+            TdEvent:FireClient(player, {kind="toast", text=t.def.label .. " is MAX (Lv" .. t.level .. ")"})
+            return
+        end
         local upCost = t.def.cost * (t.level + 1)
         if getCash(player) >= upCost then
             addCash(player, -upCost)
             t.level += 1
             t.damage = t.def.damage * (1 + 0.6 * (t.level - 1))
             t.range = t.def.range * (1 + 0.1 * (t.level - 1))
-            slot.prompt.ActionText = "Upgrade Lv" .. (t.level + 1)
+            -- Session 417: visual upgrade tier — grow the turret + stack a glowing plate.
+            t.turret.Size = t.turret.Size + Vector3.new(0.3, 0.3, 0.6)
+            local plate = part("TowerTier_" .. slot.index .. "_" .. t.level, Vector3.new(6.4, 0.4, 6.4), t.base.Position + Vector3.new(0, -2.8 + (t.level - 1) * 0.5, 0), t.def.color:Lerp(Color3.fromRGB(255, 255, 255), 0.4), Enum.Material.Neon)
+            plate.CanCollide = false
+            slot.prompt.ActionText = (t.level >= MAX_TOWER_LEVEL) and "MAX" or ("Upgrade Lv" .. (t.level + 1))
             slot.prompt.ObjectText = t.def.label .. " Lv" .. t.level
         else
             TdEvent:FireClient(player, {kind="toast", text="Need $" .. upCost .. " to upgrade"})
@@ -10230,19 +10418,14 @@ local function handleSlotTrigger(player, slot)
     end
     addCash(player, -def.cost)
     local base, turret = buildTowerVisual(slot, def)
-    slot.tower = {def=def, type=typeName, level=1, damage=def.damage, range=def.range, fireRate=def.fireRate, splash=def.splash, cooldown=0, owner=player, base=base, turret=turret}
+    slot.tower = {def=def, type=typeName, level=1, damage=def.damage, range=def.range, fireRate=def.fireRate, splash=def.splash, slow=def.slow, slowDur=def.slowDur, cooldown=0, owner=player, base=base, turret=turret}
     table.insert(towers, slot.tower)
     slot.prompt.ActionText = "Upgrade Lv2"
     slot.prompt.ObjectText = def.label .. " Lv1"
 end
 
-local slotDefs = {
-    Vector3.new(-90, 3.5, -58), Vector3.new(-66, 3.5, -32), Vector3.new(-54, 3.5, -8),
-    Vector3.new(-26, 3.5, 4), Vector3.new(-4, 3.5, 51), Vector3.new(14, 3.5, 24),
-    Vector3.new(51, 3.5, 8), Vector3.new(24, 3.5, -6), Vector3.new(72, 3.5, -40), Vector3.new(94, 3.5, -10),
-}
-for i = 1, math.min(Config.TowerSlots, #slotDefs) do
-    local pad = part("TowerSlot_" .. i, Vector3.new(8, 1, 8), slotDefs[i], theme.accent, Enum.Material.Metal)
+for i = 1, math.min(Config.TowerSlots, #slotPositions) do
+    local pad = part("TowerSlot_" .. i, Vector3.new(8, 1, 8), slotPositions[i], theme.accent, Enum.Material.Metal)
     pad.Transparency = 0.35
     local ring = Instance.new("SelectionBox"); ring.Adornee = pad; ring.Color3 = theme.accent; ring.LineThickness = 0.05; ring.Parent = pad
     local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Build Tower"; prompt.ObjectText = "Empty Slot"; prompt.HoldDuration = 0.15; prompt.MaxActivationDistance = 16; prompt.RequiresLineOfSight = false; prompt.Parent = pad
@@ -10258,36 +10441,34 @@ end)
 
 local function killEnemy(e, idx, killer)
     if killer then addCash(killer, e.reward) end
-    if e.part then e.part:Destroy() end
+    if e.model then e.model:Destroy() end
     table.remove(enemies, idx)
 end
-local function spawnEnemy(wave, isBoss)
-    local hp = math.floor((38 + wave * 14) * diffMult * (isBoss and 6 or 1))
+local function spawnEnemy(wave, isBoss, laneIdx)
+    laneIdx = laneIdx or 1
+    local lane = LANES[laneIdx] or LANES[1]
+    local hp = math.floor((38 + wave * 14) * diffMult * coopScale * (isBoss and 6 or 1))
     local speed = math.min(26, 13 + wave * 0.4) * (isBoss and 0.6 or 1)
     local reward = math.floor((10 + wave * 1.5) * (isBoss and 8 or 1))
     local dmg = isBoss and 5 or 1
-    local sz = isBoss and 9 or 4
-    local ecol = isBoss and Color3.fromRGB(180, 40, 60) or Color3.fromRGB(220, 90, 80)
-    local eface = 0
-    if ENEMY_ROSTER then
-        local ec = isBoss and ENEMY_ROSTER[#ENEMY_ROSTER] or ENEMY_ROSTER[((wave - 1) % #ENEMY_ROSTER) + 1]
-        if ec then ecol = Color3.fromRGB(ec.r, ec.g, ec.b); eface = ec.face or 0 end
-    end
-    local body = part("Enemy", Vector3.new(sz, sz, sz), waypoints[1] + Vector3.new(0, 1, 0), ecol, Enum.Material.SmoothPlastic)
-    body.CanCollide = false
-    if eface > 0 then
-        local efb = Instance.new("BillboardGui"); efb.Size = UDim2.new(0, sz * 18, 0, sz * 18); efb.StudsOffset = Vector3.new(0, sz * 0.15, 0); efb.Parent = body
-        local efi = Instance.new("ImageLabel"); efi.Size = UDim2.new(1, 0, 1, 0); efi.BackgroundTransparency = 1; efi.Image = "rbxthumb://type=Asset&id=" .. eface .. "&w=420&h=420"; efi.Parent = efb
-    end
-    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 56, 0, 7); bb.StudsOffset = Vector3.new(0, sz * 0.8, 0); bb.AlwaysOnTop = true; bb.Parent = body
+    local scale = isBoss and 2.6 or 1.0
+    local ec = isBoss and ENEMY_BOSS or (ENEMY_ROSTER[((wave - 1) % #ENEMY_ROSTER) + 1] or ENEMY_BOSS)
+    local ecol = Color3.fromRGB(ec.r, ec.g, ec.b)
+    local model, core = spawnEnemyAssembly(ENEMY_KIND, ecol, ec.face or 0, scale, lane[1] + Vector3.new(0, scale * 2, 0))
+    local topY = core.Size.Y / 2 + 1.6
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 58, 0, 8); bb.StudsOffset = Vector3.new(0, topY, 0); bb.AlwaysOnTop = true; bb.Parent = core
     local bg = Instance.new("Frame"); bg.Size = UDim2.new(1, 0, 1, 0); bg.BackgroundColor3 = Color3.fromRGB(25, 25, 30); bg.BorderSizePixel = 0; bg.Parent = bb
-    local fill = Instance.new("Frame"); fill.Size = UDim2.new(1, 0, 1, 0); fill.BackgroundColor3 = Color3.fromRGB(90, 220, 90); fill.BorderSizePixel = 0; fill.Parent = bg
-    table.insert(enemies, {part=body, health=hp, maxHealth=hp, segment=1, t=0, speed=speed, reward=reward, damage=dmg, fill=fill, boss=isBoss})
+    local fill = Instance.new("Frame"); fill.Size = UDim2.new(1, 0, 1, 0); fill.BackgroundColor3 = isBoss and Color3.fromRGB(255, 90, 90) or Color3.fromRGB(90, 220, 90); fill.BorderSizePixel = 0; fill.Parent = bg
+    if isBoss then
+        local nb = Instance.new("BillboardGui"); nb.Size = UDim2.new(0, 160, 0, 24); nb.StudsOffset = Vector3.new(0, topY + 2.6, 0); nb.AlwaysOnTop = true; nb.Parent = core
+        local nt = Instance.new("TextLabel"); nt.Size = UDim2.new(1, 0, 1, 0); nt.BackgroundTransparency = 1; nt.TextColor3 = Color3.fromRGB(255, 210, 120); nt.TextStrokeTransparency = 0.3; nt.TextScaled = true; nt.Font = Enum.Font.GothamBlack; nt.Text = "★ " .. (ec.name or "BOSS"); nt.Parent = nb
+    end
+    table.insert(enemies, {model=model, core=core, health=hp, maxHealth=hp, lane=laneIdx, segment=1, t=0, speed=speed, baseSpeed=speed, reward=reward, damage=dmg, fill=fill, boss=isBoss, slowUntil=0, slowMul=1})
 end
 
 local function broadcast(phaseName, timeLeft)
     baseLabel.Text = "BASE " .. math.max(0, baseHealth) .. "/" .. Config.BaseHealth
-    TdEvent:FireAllClients({kind="state", wave=currentWave, total=Config.WaveCount, baseHp=math.max(0, baseHealth), baseMax=Config.BaseHealth, phase=phaseName, time=timeLeft or 0, title=Config.Title})
+    TdEvent:FireAllClients({kind="state", wave=currentWave, total=Config.WaveCount, baseHp=math.max(0, baseHealth), baseMax=Config.BaseHealth, phase=phaseName, time=timeLeft or 0, title=Config.Title, players=#Players:GetPlayers()})
 end
 
 local function saveBest(player)
@@ -10307,18 +10488,26 @@ Players.PlayerRemoving:Connect(function(player) saveBest(player); selectedType[p
 for _, p in Players:GetPlayers() do setupPlayer(p) end
 
 RunService.Heartbeat:Connect(function(dt)
+    local nowC = os.clock()
     for i = #enemies, 1, -1 do
         local e = enemies[i]
-        local a = waypoints[e.segment]
-        local b = waypoints[e.segment + 1]
+        local lane = LANES[e.lane] or LANES[1]
+        local a = lane[e.segment]
+        local b = lane[e.segment + 1]
         if not b then
             baseHealth = math.max(0, baseHealth - e.damage)
-            if e.part then e.part:Destroy() end
+            if e.model then e.model:Destroy() end
             table.remove(enemies, i)
         else
-            e.t += (dt * e.speed) / math.max(1, (b - a).Magnitude)
+            local sp = e.speed
+            if e.slowUntil > nowC then sp = sp * e.slowMul end
+            e.t += (dt * sp) / math.max(1, (b - a).Magnitude)
             if e.t >= 1 then e.segment += 1; e.t = 0 end
-            if e.part then e.part.Position = a:Lerp(b, math.clamp(e.t, 0, 1)) + Vector3.new(0, 1, 0) end
+            if e.model and e.model.PrimaryPart then
+                local pos = a:Lerp(b, math.clamp(e.t, 0, 1)) + Vector3.new(0, e.core.Size.Y / 2, 0)
+                local dir = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+                if dir.Magnitude > 0.05 then e.model:PivotTo(CFrame.lookAt(pos, pos + dir)) else e.model:PivotTo(CFrame.new(pos)) end
+            end
         end
     end
     for _, t in ipairs(towers) do
@@ -10327,26 +10516,27 @@ RunService.Heartbeat:Connect(function(dt)
             local target, tIdx, bestDist
             local origin = t.base.Position
             for i, e in ipairs(enemies) do
-                if e.part then
-                    local d = (e.part.Position - origin).Magnitude
+                if e.core then
+                    local d = (e.core.Position - origin).Magnitude
                     if d <= t.range and (not bestDist or d < bestDist) then target, tIdx, bestDist = e, i, d end
                 end
             end
             if target then
                 t.cooldown = t.fireRate
-                t.turret.CFrame = CFrame.lookAt(t.turret.Position, target.part.Position)
-                fireBeam(origin + Vector3.new(0, 4, 0), target.part.Position, t.def.color)
+                t.turret.CFrame = CFrame.lookAt(t.turret.Position, target.core.Position)
+                fireBeam(origin + Vector3.new(0, 4, 0), target.core.Position, t.def.color)
                 local function applyHit(e2, i2)
                     e2.health -= t.damage
                     e2.fill.Size = UDim2.new(math.clamp(e2.health / e2.maxHealth, 0, 1), 0, 1, 0)
+                    if t.slow and not e2.boss then e2.slowUntil = nowC + (t.slowDur or 1.2); e2.slowMul = t.slow end
                     if e2.health <= 0 then killEnemy(e2, i2, t.owner) end
                 end
                 if t.splash then
-                    local center = target.part.Position
+                    local center = target.core.Position
                     applyHit(target, tIdx)
                     for i = #enemies, 1, -1 do
                         local e2 = enemies[i]
-                        if e2 ~= target and e2.part and (e2.part.Position - center).Magnitude <= t.splash then applyHit(e2, i) end
+                        if e2 ~= target and e2.core and (e2.core.Position - center).Magnitude <= t.splash then applyHit(e2, i) end
                     end
                 else
                     applyHit(target, tIdx)
@@ -10359,7 +10549,7 @@ end)
 task.spawn(function()
     while true do
         baseHealth = Config.BaseHealth; currentWave = 0; gameOver = false
-        for _, e in ipairs(enemies) do if e.part then e.part:Destroy() end end
+        for _, e in ipairs(enemies) do if e.model then e.model:Destroy() end end
         table.clear(enemies)
         for _, t in ipairs(towers) do if t.base then t.base:Destroy() end; if t.turret then t.turret:Destroy() end end
         table.clear(towers)
@@ -10368,6 +10558,7 @@ task.spawn(function()
         phase = "intermission"; broadcast("intermission", 3); task.wait(3)
         while currentWave < Config.WaveCount and not gameOver do
             currentWave += 1
+            coopScale = 1 + 0.45 * math.max(0, #Players:GetPlayers() - 1)
             phase = "intermission"
             for t = 8, 1, -1 do if gameOver then break end; broadcast("intermission", t); task.wait(1) end
             phase = "wave"; broadcast("wave", 0)
@@ -10375,10 +10566,13 @@ task.spawn(function()
             local count = 6 + currentWave * 2
             for n = 1, count do
                 if gameOver or baseHealth <= 0 then break end
-                spawnEnemy(currentWave, false)
-                task.wait(math.max(0.32, 1.1 - currentWave * 0.03))
+                spawnEnemy(currentWave, false, ((n - 1) % #LANES) + 1)
+                task.wait(math.max(0.3, 1.0 - currentWave * 0.03))
             end
-            if isBossWave and not gameOver and baseHealth > 0 then spawnEnemy(currentWave, true) end
+            if isBossWave and not gameOver and baseHealth > 0 then
+                TdEvent:FireAllClients({kind="boss", name=ENEMY_BOSS.name or "BOSS", wave=currentWave})
+                spawnEnemy(currentWave, true, 1)
+            end
             while #enemies > 0 and baseHealth > 0 do broadcast("wave", 0); task.wait(0.4) end
             if baseHealth <= 0 then gameOver = true; break end
             for _, p in Players:GetPlayers() do
@@ -10414,11 +10608,13 @@ local cashLabel = Instance.new("TextLabel"); cashLabel.Size = UDim2.new(0, 170, 
 local cashCorner = Instance.new("UICorner"); cashCorner.CornerRadius = UDim.new(0, 10); cashCorner.Parent = cashLabel
 local toast = Instance.new("TextLabel"); toast.Size = UDim2.new(0, 380, 0, 36); toast.Position = UDim2.new(0.5, -190, 0, 74); toast.BackgroundColor3 = Color3.fromRGB(60, 22, 22); toast.BackgroundTransparency = 0.12; toast.TextColor3 = Color3.fromRGB(255, 205, 205); toast.TextScaled = true; toast.Font = Enum.Font.GothamBold; toast.Visible = false; toast.Parent = gui
 local toastCorner = Instance.new("UICorner"); toastCorner.CornerRadius = UDim.new(0, 8); toastCorner.Parent = toast
+local coopLabel = Instance.new("TextLabel"); coopLabel.Size = UDim2.new(0, 150, 0, 30); coopLabel.Position = UDim2.new(0, 12, 0, 12); coopLabel.BackgroundColor3 = Color3.fromRGB(22, 30, 44); coopLabel.BackgroundTransparency = 0.15; coopLabel.TextColor3 = Color3.fromRGB(150, 200, 255); coopLabel.TextScaled = true; coopLabel.Font = Enum.Font.GothamBold; coopLabel.Text = "Co-op: 1"; coopLabel.Parent = gui
+local coopCorner = Instance.new("UICorner"); coopCorner.CornerRadius = UDim.new(0, 8); coopCorner.Parent = coopLabel
 
-local towerDefs = {{id="cannon", label="Cannon $50", color=Color3.fromRGB(90,150,230)}, {id="sniper", label="Sniper $120", color=Color3.fromRGB(80,210,140)}, {id="splash", label="Splash $200", color=Color3.fromRGB(240,150,70)}}
+local towerDefs = {{id="cannon", label="Cannon $50", color=Color3.fromRGB(90,150,230)}, {id="sniper", label="Sniper $120", color=Color3.fromRGB(80,210,140)}, {id="splash", label="Splash $200", color=Color3.fromRGB(240,150,70)}, {id="frost", label="Frost $160", color=Color3.fromRGB(120,210,255)}}
 local strokes = {}
 for i, def in ipairs(towerDefs) do
-    local b = Instance.new("TextButton"); b.Size = UDim2.new(0, 152, 0, 50); b.Position = UDim2.new(0.5, -240 + (i - 1) * 162, 1, -66); b.BackgroundColor3 = def.color; b.TextColor3 = Color3.fromRGB(18, 20, 30); b.TextScaled = true; b.Font = Enum.Font.GothamBold; b.Text = def.label; b.Parent = gui
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(0, 140, 0, 50); b.Position = UDim2.new(0.5, -296 + (i - 1) * 148, 1, -66); b.BackgroundColor3 = def.color; b.TextColor3 = Color3.fromRGB(18, 20, 30); b.TextScaled = true; b.Font = Enum.Font.GothamBold; b.Text = def.label; b.Parent = gui
     local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 8); bc.Parent = b
     local stroke = Instance.new("UIStroke"); stroke.Thickness = (def.id == "cannon") and 3 or 0; stroke.Color = Color3.fromRGB(255, 255, 255); stroke.Parent = b
     strokes[def.id] = stroke
@@ -10439,10 +10635,14 @@ end)
 
 TdEvent.OnClientEvent:Connect(function(p)
     if p.kind == "state" then
+        if p.players then coopLabel.Text = (p.players > 1) and ("Co-op: " .. p.players) or "Solo" end
         if p.phase == "intermission" then top.Text = "Wave " .. p.wave .. "/" .. p.total .. " | Build! " .. p.time .. "s | Base " .. p.baseHp .. "/" .. p.baseMax
         elseif p.phase == "wave" then top.Text = "Wave " .. p.wave .. "/" .. p.total .. " | Base HP " .. p.baseHp .. "/" .. p.baseMax
         elseif p.phase == "victory" then top.Text = "VICTORY! Defended all " .. p.total .. " waves!"
         elseif p.phase == "gameover" then top.Text = "BASE DESTROYED - reached wave " .. p.wave .. ". Restarting..." end
+    elseif p.kind == "boss" then
+        toast.Text = "BOSS INCOMING: " .. (p.name or "Boss") .. "!"; toast.Visible = true
+        task.delay(3, function() toast.Visible = false end)
     elseif p.kind == "toast" then
         toast.Text = p.text; toast.Visible = true
         task.delay(2, function() toast.Visible = false end)
