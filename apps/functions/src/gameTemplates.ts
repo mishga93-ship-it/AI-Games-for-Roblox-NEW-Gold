@@ -12949,6 +12949,29 @@ do
                         if oks and sz and sz.Y > 0.1 then pcall(function() wrap:ScaleTo(math.clamp(10 / sz.Y, 0.04, 16)) end) end
                         pcall(function() wrap:PivotTo(CFrame.new(pos + Vector3.new(0, 4, 0)) * CFrame.Angles(0, math.random() * 6.283, 0)) end)
                         placed = true
+                        -- Session 420c: make the real asset figure ROAM the lobby. Third-party
+                        -- models are usually static meshes (no Humanoid) or non-collidable rigs
+                        -- that would fall through the floor if unanchored, so we keep them
+                        -- anchored and glide the whole model via PivotTo, facing travel dir.
+                        local baseY = pos.Y + 4
+                        task.spawn(function()
+                            while wrap.Parent do
+                                local startCF = wrap:GetPivot()
+                                local target = Vector3.new(math.random(-44, 44), baseY, math.random(-40, 40))
+                                local move = target - startCF.Position
+                                if move.Magnitude < 4 then move = Vector3.new(8, 0, 8); target = startCF.Position + move end
+                                local dur = math.clamp(move.Magnitude / 7, 1.5, 6)
+                                local face = CFrame.lookAt(startCF.Position, target)
+                                local t0 = os.clock()
+                                while wrap.Parent do
+                                    local a = math.clamp((os.clock() - t0) / dur, 0, 1)
+                                    pcall(function() wrap:PivotTo(face + move * a) end)
+                                    if a >= 1 then break end
+                                    RunService.Heartbeat:Wait()
+                                end
+                                task.wait(math.random(1, 3))
+                            end
+                        end)
                     else wrap:Destroy() end
                 end
                 if not placed then
