@@ -195,6 +195,7 @@ import type { DecalTextureSpec, VisionModerationResult, RobloxBodyColors, Clothi
 import { analyzeLuauSource, moderateLuaSource } from './scriptSafety.js';
 import { buildGameplayScript, getGenreSceneTemplate, buildDynamicSimulatorScene, validateSimulatorSpec, detectTycoonThemeKey, detectObbyThemeKey, detectMemeSubTheme, type MultiScriptResult } from './gameTemplates.js';
 import { deriveGameVisualSpec, reviewGameQuality, healGameVisualSpec } from './gameThemeSpec.js';
+import { themeAssetScatterLua } from './data/themeAssetPacks.js';
 import type { SimulatorSceneSpec, HeroAssetSpec, HeroAssetResult } from './types.js';
 import { buildUIScript, wrapUIScriptAsRbxmx, buildGamepassShopClient, buildGamepassServer, buildGamepassCombinedRbxmx, buildScriptSystemFromPrompt, parseScriptFiles, parseScriptFilesJSON, wrapGenericScriptAsRbxmx, buildInstallerRbxmx, inferScriptType, type ScriptFile } from './uiTemplates.js';
 import { parseAndValidateUiJson, convertUiJsonToSceneNodes, buildUiInstanceRbxmx, convertSceneNodesToLua, generateLeaderstatsScript, wrapServerScriptAsRbxmx } from './uiJsonPipeline.js';
@@ -33655,6 +33656,15 @@ function resolveStarterScript(result: string | MultiScriptResult): {
 // retry only differs when its INPUT (the healed spec) differs. Always returns
 // the higher-scoring build. `gameVisualSpec` is additive: absent → builder uses
 // its legacy enum behaviour, so non-genre code paths are unaffected.
+// Session 418: append keyword-matched real catalog assets (InsertService) to the
+// finished server script. Self-contained Lua, pcall-guarded, capped + auto-scaled.
+function appendThemeAssets(r: string | MultiScriptResult, brief: string, genre: string): string | MultiScriptResult {
+  const scatter = themeAssetScatterLua(brief, genre);
+  if (!scatter) return r;
+  if (typeof r === 'string') return r + '\n' + scatter;
+  return { ...r, serverScript: (r.serverScript || '') + '\n' + scatter };
+}
+
 function buildPlayableWithQa(
   genreKind: string,
   baseParams: Parameters<typeof buildGameplayScript>[0],
@@ -33675,14 +33685,14 @@ function buildPlayableWithQa(
       second: { status: review2.status, score: review2.score, parts: review2.partCount },
       reasons: review.reasons.slice(0, 8),
     });
-    return review2.score >= review.score ? retried : result;
+    return appendThemeAssets(review2.score >= review.score ? retried : result, brief, genreKind);
   }
   if (review.status === 'warning') {
     logger.info('[gameQA] passed with warnings', {
       genre: genreKind, jobId: baseParams.jobId, score: review.score, reasons: review.reasons.slice(0, 8),
     });
   }
-  return result;
+  return appendThemeAssets(result, brief, genreKind);
 }
 
 function buildStarterLuau(job: GenerationJob, gameBrief: string, simSpec?: SimulatorSceneSpec | null, heroAssets?: HeroAssetResult[], platformTextureUrls?: string[], npcImageUrls?: string[]): string | MultiScriptResult {
