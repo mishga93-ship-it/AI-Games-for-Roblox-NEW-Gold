@@ -9453,6 +9453,89 @@ function safeLuaString(value: unknown, fallback: string): string {
   return JSON.stringify(typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : fallback);
 }
 
+// Session 414f: reusable PROVEN 3D meme-figure prelude (extracted from the obby
+// builder's memeHelperLua). Builds real volumetric meme characters from
+// primitives — Tralalero shark, Skibidi toilet, Bombardiro crocodile, Sigma —
+// instead of cheap flat decal billboards. Pure Lua → guaranteed visible, free,
+// no asset upload/moderation risk. Caller must define `local container` (parent
+// Folder/Model) and `local RunService = game:GetService("RunService")` before
+// emitting this, then call `buildMeme3dFigure(key, position, idx)`
+// (key = "tralalero"|"skibidi"|"bombardiro"|"sigma").
+function meme3dPreludeLua(): string {
+  return `
+local MEME_NPC_FALLBACK_SCALE = 2.6
+local function _memeNpcIdle(model, primary)
+    if not model or not primary then return end
+    local baseCF = primary.CFrame; local t0 = tick()
+    task.spawn(function()
+        while model.Parent do
+            local dt = tick() - t0; local bob = math.sin(dt * 1.5) * 0.35
+            model:PivotTo(baseCF * CFrame.new(0, bob, 0) * CFrame.Angles(0, math.rad((dt * 25) % 360), 0))
+            RunService.Heartbeat:Wait()
+        end
+    end)
+end
+local function _memeMakeDecor(parent, shape, color, size, offset, material)
+    local p = Instance.new("Part"); p.Shape = shape or Enum.PartType.Block; p.Color = color; p.Size = size
+    p.Material = material or Enum.Material.SmoothPlastic; p.Anchored = true; p.CanCollide = false; p.CastShadow = false
+    p.Position = offset; p.Parent = parent; return p
+end
+local function _memeFinalizeNpc(model, primary)
+    if not model or not primary then return end
+    for _, d in ipairs(model:GetDescendants()) do
+        if d:IsA("BasePart") and d ~= primary then
+            d.Anchored = false; local w = Instance.new("WeldConstraint"); w.Part0 = primary; w.Part1 = d; w.Parent = primary
+        end
+    end
+    primary.Anchored = true
+    pcall(function() model:ScaleTo(MEME_NPC_FALLBACK_SCALE) end)
+end
+local function buildSkibidiNpc(position, idx)
+    local m = Instance.new("Model"); m.Name = "SkibidiNpc_" .. idx
+    local bowl = _memeMakeDecor(m, Enum.PartType.Cylinder, Color3.fromRGB(245,245,250), Vector3.new(1.6,2.2,2.2), position, Enum.Material.SmoothPlastic); bowl.Orientation = Vector3.new(0,0,90); m.PrimaryPart = bowl
+    for i = 1, 8 do local a = (i-1)*(math.pi*2/8); _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(235,235,240), Vector3.new(0.35,0.2,0.35), position + Vector3.new(math.cos(a)*1.3,1.0,math.sin(a)*1.3), Enum.Material.SmoothPlastic) end
+    _memeMakeDecor(m, Enum.PartType.Ball, Color3.fromRGB(255,215,175), Vector3.new(1.8,1.8,1.8), position + Vector3.new(0,1.9,0), Enum.Material.SmoothPlastic)
+    _memeMakeDecor(m, Enum.PartType.Ball, Color3.fromRGB(80,200,255), Vector3.new(0.35,0.35,0.35), position + Vector3.new(0.35,2.1,0.75), Enum.Material.Neon)
+    _memeMakeDecor(m, Enum.PartType.Ball, Color3.fromRGB(80,200,255), Vector3.new(0.35,0.35,0.35), position + Vector3.new(-0.35,2.1,0.75), Enum.Material.Neon)
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(30,20,20), Vector3.new(0.7,0.35,0.2), position + Vector3.new(0,1.55,0.85), Enum.Material.SmoothPlastic)
+    m.Parent = container; _memeFinalizeNpc(m, bowl); _memeNpcIdle(m, bowl); return m
+end
+local function buildBombardiroNpc(position, idx)
+    local m = Instance.new("Model"); m.Name = "BombardiroNpc_" .. idx
+    local body = _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(85,200,90), Vector3.new(1.4,1.2,4.5), position, Enum.Material.Neon); m.PrimaryPart = body
+    _memeMakeDecor(m, Enum.PartType.Cylinder, Color3.fromRGB(45,140,60), Vector3.new(1.6,1.1,1.1), position + Vector3.new(0,0,-2.8), Enum.Material.Neon)
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(120,120,130), Vector3.new(3.8,0.2,1.6), position + Vector3.new(-2.5,0,0), Enum.Material.Metal)
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(120,120,130), Vector3.new(3.8,0.2,1.6), position + Vector3.new(2.5,0,0), Enum.Material.Metal)
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(45,140,60), Vector3.new(0.3,1.2,1.2), position + Vector3.new(0,0.8,2.2), Enum.Material.Neon)
+    m.Parent = container; _memeFinalizeNpc(m, body); _memeNpcIdle(m, body); return m
+end
+local function buildTralaleroNpc(position, idx)
+    local m = Instance.new("Model"); m.Name = "TralaleroNpc_" .. idx
+    local body = _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(60,120,220), Vector3.new(4.2,1.6,1.6), position, Enum.Material.SmoothPlastic); m.PrimaryPart = body
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(40,90,180), Vector3.new(0.5,1.2,0.9), position + Vector3.new(0,1.2,0), Enum.Material.SmoothPlastic)
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(240,240,240), Vector3.new(1,0.5,1.6), position + Vector3.new(-1.1,-1.1,0), Enum.Material.SmoothPlastic)
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(240,240,240), Vector3.new(1,0.5,1.6), position + Vector3.new(1.1,-1.1,0), Enum.Material.SmoothPlastic)
+    _memeMakeDecor(m, Enum.PartType.Ball, Color3.fromRGB(255,255,255), Vector3.new(0.4,0.4,0.4), position + Vector3.new(1.8,0.4,0.6), Enum.Material.SmoothPlastic)
+    m.Parent = container; _memeFinalizeNpc(m, body); _memeNpcIdle(m, body); return m
+end
+local function buildSigmaNpc(position, idx)
+    local m = Instance.new("Model"); m.Name = "SigmaNpc_" .. idx
+    local head = _memeMakeDecor(m, Enum.PartType.Ball, Color3.fromRGB(255,210,80), Vector3.new(2.5,2.5,2.5), position, Enum.Material.Neon); m.PrimaryPart = head
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(20,20,20), Vector3.new(0.35,0.55,0.9), position + Vector3.new(0.5,0.25,1.1), Enum.Material.SmoothPlastic)
+    _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(20,20,20), Vector3.new(0.35,0.55,0.9), position + Vector3.new(-0.5,0.25,1.1), Enum.Material.SmoothPlastic)
+    _memeMakeDecor(m, Enum.PartType.Cylinder, Color3.fromRGB(255,220,60), Vector3.new(0.5,2.2,2.2), position + Vector3.new(0,1.6,0), Enum.Material.Metal)
+    for i = 1, 4 do local a = (i-1)*(math.pi*2/4); _memeMakeDecor(m, Enum.PartType.Block, Color3.fromRGB(255,220,60), Vector3.new(0.25,0.7,0.25), position + Vector3.new(math.cos(a)*0.9,2.1,math.sin(a)*0.9), Enum.Material.Metal) end
+    m.Parent = container; _memeFinalizeNpc(m, head); _memeNpcIdle(m, head); return m
+end
+local _meme3dBuilders = {skibidi=buildSkibidiNpc, bombardiro=buildBombardiroNpc, tralalero=buildTralaleroNpc, sigma=buildSigmaNpc}
+local _meme3dOrder = {"tralalero","bombardiro","skibidi","sigma"}
+local function buildMeme3dFigure(key, position, idx)
+    local b = _meme3dBuilders[key] or _meme3dBuilders[_meme3dOrder[((idx - 1) % 4) + 1]]
+    return b(position, idx)
+end
+`;
+}
+
 // Session 414e: reusable themed marker above a builder's `spawnLoc` — shows the
 // theme's signature meme face (decal) + the game title. Safe (attached to the
 // spawn pad, no world placement). Assumes `spawnLoc` and `Config.Title` are in
@@ -10408,18 +10491,39 @@ function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult 
   // Session 414d: themed hero centerpiece at the plaza — a lit pedestal showing
   // the theme's signature meme face (decal) + the game title. This is the free
   // "hero asset"; the Meshy 3D mesh upgrades the orb later.
-  const heroCenterLua = spec
-    ? `
+  // Session 414f: real 3D hero centerpiece (no cheap flat decal). Meme vibes get
+  // a volumetric meme figure (Tralalero shark / Sigma / Bombardiro croc); other
+  // vibes get a clean 3D glowing spire. Title stays as a text label only.
+  const heroMemeKey = !spec ? ''
+    : (spec.vibe === 'brainrot' || spec.vibe === 'tropical') ? 'tralalero'
+    : spec.vibe === 'monster' ? 'bombardiro'
+    : (spec.vibe === 'money' || spec.vibe === 'hero') ? 'sigma'
+    : '';
+  const heroCenterLua = !spec
+    ? ''
+    : heroMemeKey
+      ? `
+do
+    local container = world
+    local RunService = game:GetService("RunService")
+${meme3dPreludeLua()}
+    local hp = Vector3.new(28, 0, 28)
+    local ped = part("HeroPedestal", Vector3.new(16, 9, 16), hp + Vector3.new(0, 4.5, 0), theme.wall, Enum.Material.Marble)
+    local hpl = Instance.new("PointLight"); hpl.Color = theme.accent; hpl.Brightness = 2.2; hpl.Range = 30; hpl.Parent = ped
+    buildMeme3dFigure("${heroMemeKey}", hp + Vector3.new(0, 15, 0), 1)
+    local hbb = Instance.new("BillboardGui"); hbb.Size = UDim2.new(0, 200, 0, 40); hbb.StudsOffset = Vector3.new(0, 6, 0); hbb.AlwaysOnTop = true; hbb.Parent = ped
+    local hTxt = Instance.new("TextLabel"); hTxt.Size = UDim2.new(1, 0, 1, 0); hTxt.BackgroundTransparency = 1; hTxt.TextColor3 = Color3.fromRGB(255, 255, 255); hTxt.TextStrokeTransparency = 0.3; hTxt.TextScaled = true; hTxt.Font = Enum.Font.GothamBlack; hTxt.Text = Config.Title; hTxt.Parent = hbb
+end`
+      : `
 do
     local hp = Vector3.new(28, 0, 28)
     part("HeroPedestal", Vector3.new(16, 9, 16), hp + Vector3.new(0, 4.5, 0), theme.wall, Enum.Material.Marble)
-    local orb = part("HeroOrb", Vector3.new(8, 8, 8), hp + Vector3.new(0, 13, 0), theme.accent, Enum.Material.Neon); orb.Shape = Enum.PartType.Ball
-    local hpl = Instance.new("PointLight"); hpl.Color = theme.accent; hpl.Brightness = 2.4; hpl.Range = 30; hpl.Parent = orb
-    local hbb = Instance.new("BillboardGui"); hbb.Size = UDim2.new(0, 220, 0, 250); hbb.StudsOffset = Vector3.new(0, 10, 0); hbb.AlwaysOnTop = true; hbb.Parent = orb
-${spec.heroDecalId > 0 ? `    local hImg = Instance.new("ImageLabel"); hImg.Size = UDim2.new(1, 0, 0.78, 0); hImg.BackgroundTransparency = 1; hImg.Image = "rbxthumb://type=Asset&id=${Math.floor(spec.heroDecalId)}&w=420&h=420"; hImg.Parent = hbb
-` : ''}    local hTxt = Instance.new("TextLabel"); hTxt.Size = UDim2.new(1, 0, 0.22, 0); hTxt.Position = UDim2.new(0, 0, 0.78, 0); hTxt.BackgroundTransparency = 1; hTxt.TextColor3 = Color3.fromRGB(255, 255, 255); hTxt.TextStrokeTransparency = 0.3; hTxt.TextScaled = true; hTxt.Font = Enum.Font.GothamBlack; hTxt.Text = ${titleLua}; hTxt.Parent = hbb
-end`
-    : '';
+    part("HeroSpire", Vector3.new(3, 18, 3), hp + Vector3.new(0, 18, 0), theme.accent, Enum.Material.Neon)
+    local orb = part("HeroOrb", Vector3.new(5.5, 5.5, 5.5), hp + Vector3.new(0, 28, 0), theme.accent, Enum.Material.Neon); orb.Shape = Enum.PartType.Ball
+    local hpl = Instance.new("PointLight"); hpl.Color = theme.accent; hpl.Brightness = 2.6; hpl.Range = 32; hpl.Parent = orb
+    local hbb = Instance.new("BillboardGui"); hbb.Size = UDim2.new(0, 200, 0, 40); hbb.StudsOffset = Vector3.new(0, 5, 0); hbb.AlwaysOnTop = true; hbb.Parent = orb
+    local hTxt = Instance.new("TextLabel"); hTxt.Size = UDim2.new(1, 0, 1, 0); hTxt.BackgroundTransparency = 1; hTxt.TextColor3 = Color3.fromRGB(255, 255, 255); hTxt.TextStrokeTransparency = 0.3; hTxt.TextScaled = true; hTxt.Font = Enum.Font.GothamBlack; hTxt.Text = Config.Title; hTxt.Parent = hbb
+end`;
 
   // Session 414d: per-theme signature props at the plaza corners (PA/PB), matching
   // the user's preset descriptions: MrBeast vault+challenge gate, 99 Nights camp,
