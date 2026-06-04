@@ -2,6 +2,7 @@ import type { SimulatorSceneSpec, HeroAssetResult } from './types.js';
 import { withCinematicCamera } from './cinematicCamera.js';
 import type { TrendingShowcaseItem } from './generationEnrichment.js';
 import { rgbLua, atmosphereOptsLua, deriveTdPack, deriveTdMap, tdMapLua, type GameVisualSpec } from './gameThemeSpec.js';
+import { pickThemeAssets } from './data/themeAssetPacks.js';
 
 export type MemeSubTheme = 'skibidi' | 'bombardir' | 'tralalero' | 'sigma' | 'generic';
 
@@ -9589,6 +9590,66 @@ end
 `;
 }
 
+// Session 414k: load a REAL Roblox catalog model (user-supplied verified IDs) at
+// runtime via InsertService, then drive it around the map with a server PivotTo
+// "wander" loop so the city feels alive (the user asked for NPCs that walk and
+// for real models instead of blocky composites). We can't UPLOAD meshes (our
+// Open-Cloud account is moderated → invisible), but InsertService:LoadAsset of an
+// EXISTING public asset works in the generate→open .rbxl→playtest flow. Every
+// insert is pcall-guarded so a blocked/unauthorized id just returns nil and the
+// caller falls back to a 3D composite figure or an R15 humanoid.
+function realNpcPreludeLua(): string {
+  return `
+local _InsertSvc = game:GetService("InsertService")
+-- Load + sanitize a catalog model. Returns the anchored, scaled Model (parented
+-- to \`world\`) or nil. targetH = desired overall height in studs.
+local function buildRealNpc(assetId, pos, targetH)
+    if not assetId or assetId <= 0 then return nil end
+    local ok, m = pcall(function() return _InsertSvc:LoadAsset(assetId) end)
+    if not ok or typeof(m) ~= "Instance" then return nil end
+    for _, d in ipairs(m:GetDescendants()) do if d:IsA("LuaSourceContainer") then pcall(function() d:Destroy() end) end end
+    if not m:FindFirstChildWhichIsA("BasePart", true) then pcall(function() m:Destroy() end); return nil end
+    if not m.PrimaryPart then local bp = m:FindFirstChildWhichIsA("BasePart", true); if bp then m.PrimaryPart = bp end end
+    -- anchor every part + drop any Humanoid (we move it ourselves; avoids ragdoll/anim noise)
+    for _, d in ipairs(m:GetDescendants()) do
+        if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.Massless = true
+        elseif d:IsA("Humanoid") then pcall(function() d:Destroy() end) end
+    end
+    local okc, _cf, sz = pcall(function() return m:GetBoundingBox() end)
+    if okc and sz then local dmax = math.max(sz.X, sz.Y, sz.Z); if dmax > 0.1 then pcall(function() m:ScaleTo((targetH or 8) / dmax) end) end end
+    pcall(function() m:PivotTo(CFrame.new(pos)) end)
+    m.Parent = world
+    return m
+end
+-- Steady server-side stroll: pick a random point within \`radius\` of \`home\`, walk
+-- there facing the travel direction (with a subtle bob), pause, repeat. Works for
+-- any anchored model regardless of internal rig.
+local function wanderModel(m, home, radius)
+    task.spawn(function()
+        task.wait(math.random() * 2)
+        while m and m.Parent do
+            local cur = m:GetPivot().Position
+            local flatCur = Vector3.new(cur.X, home.Y, cur.Z)
+            local target = Vector3.new(home.X + math.random(-radius, radius), home.Y, home.Z + math.random(-radius, radius))
+            local dist = (target - flatCur).Magnitude
+            if dist > 2 then
+                local dir = (target - flatCur).Unit
+                local dur = dist / 7
+                local t = 0
+                while t < dur and m and m.Parent do
+                    local dt = task.wait(0.06); t = t + dt
+                    local p = flatCur:Lerp(target, math.min(t / dur, 1))
+                    local bob = math.sin(t * 8) * 0.25
+                    pcall(function() m:PivotTo(CFrame.lookAt(p + Vector3.new(0, bob, 0), p + dir)) end)
+                end
+            end
+            task.wait(0.6 + math.random() * 1.6)
+        end
+    end)
+end
+`;
+}
+
 // Session 414e: reusable themed marker above a builder's `spawnLoc` — shows the
 // theme's signature meme face (decal) + the game title. Safe (attached to the
 // spawn pad, no world placement). Assumes `spawnLoc` and `Config.Title` are in
@@ -10884,14 +10945,32 @@ function buildRoleplayTownScript(params: GameTemplateParams): MultiScriptResult 
     return n.includes('tralalero') ? 'tralalero' : n.includes('bombardiro') ? 'bombardiro' : n.includes('skibidi') ? 'skibidi' : n.includes('sigma') ? 'sigma' : '';
   };
   const npcFigs = spec ? spec.characters.slice(0, 3).map((c) => memeFigForName(c.name)) : [];
+  // Session 414k: each NPC tries to load a REAL Roblox catalog model (user-supplied
+  // verified IDs) via InsertService, then WANDERS the plaza. Lua pcall falls back to
+  // the 3D composite / R15 humanoid when LoadAsset is blocked (published place).
+  const npcAssetForName = (name: string): number => {
+    const n = String(name).toLowerCase();
+    if (n.includes('tralalero') || n.includes('tralala')) return 107158060686382;
+    if (n.includes('tung')) return 108399116162473;
+    if (n.includes('bananita') || n.includes('dolfinita') || n.includes('dolphinita')) return 136122396955192;
+    if (n.includes('brain') || n.includes('host') || n.includes('mister') || /\bmr\b/.test(n)) return 117702698985688;
+    return 0;
+  };
+  // Theme asset pool (matched packs) — used both for ambient citizens and as a
+  // fallback so EVERY talk-NPC becomes a real model, not just the hardcoded names.
+  const themeIds = pickThemeAssets(String(params.title || ''), 6);
+  const ambientIds = themeIds;
+  // each talk-NPC: a specific real model if we recognise the name, else round-robin
+  // a themed model from the matched pack, else 0 (→ walking R15 humanoid fallback).
+  const npcAssetFor = (name: string, i: number): number => npcAssetForName(name) || themeIds[i] || 0;
   const npcsLua = spec
     ? spec.characters
         .slice(0, 3)
-        .map((c, i) => `    {name=${safeLuaString(c.name, 'NPC')}, pos=${npcSlots[i].pos}, color=${rgbLua(c.color)}, line=${safeLuaString(c.line, 'Welcome!')}, fig=${safeLuaString(memeFigForName(c.name), '')}},`)
+        .map((c, i) => `    {name=${safeLuaString(c.name, 'NPC')}, pos=${npcSlots[i].pos}, color=${rgbLua(c.color)}, line=${safeLuaString(c.line, 'Welcome!')}, fig=${safeLuaString(memeFigForName(c.name), '')}, asset=${npcAssetFor(c.name, i)}},`)
         .join('\n')
-    : `    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash.", fig=""},
-    {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status.", fig=""},
-    {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!", fig=""},`;
+    : `    {name="Mira", pos=Vector3.new(-28, 0, -16), color=Color3.fromRGB(230, 180, 150), line="Welcome to " .. Config.Title .. "! Grab a job pad to earn cash.", fig="", asset=0},
+    {name="Theo", pos=Vector3.new(30, 0, 14), color=Color3.fromRGB(170, 200, 235), line="Buy a role at the Shop desk to flex your status.", fig="", asset=0},
+    {name="Ada", pos=Vector3.new(12, 0, -32), color=Color3.fromRGB(210, 200, 160), line="The Mayor job pays the most. Good luck out there!", fig="", asset=0},`;
 
   // Session 414d: themed hero centerpiece at the plaza — a lit pedestal showing
   // the theme's signature meme face (decal) + the game title. This is the free
@@ -11097,6 +11176,13 @@ local function buildCar(cn, cp, cc)
             for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.AssemblyLinearVelocity = Vector3.zero; p.Anchored = true end end
         end
     end)
+    -- Session 414k: discoverable "Drive" prompt (shows only when you walk up — no
+    -- floating banner). Force-sits the player so it's obvious cars are driveable.
+    local drivePrompt = Instance.new("ProximityPrompt"); drivePrompt.ActionText = "Drive"; drivePrompt.ObjectText = "Car"; drivePrompt.HoldDuration = 0; drivePrompt.MaxActivationDistance = 12; drivePrompt.RequiresLineOfSight = false; drivePrompt.Parent = seat
+    drivePrompt.Triggered:Connect(function(player)
+        local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then pcall(function() seat:Sit(hum) end) end
+    end)
 end
 buildCar("Car1", Vector3.new(20, 0, -62), Color3.fromRGB(210, 70, 70))
 buildCar("Car2", Vector3.new(-20, 0, 62), Color3.fromRGB(70, 120, 210))
@@ -11166,24 +11252,62 @@ RpAction.OnServerEvent:Connect(function(player, payload)
 end)
 
 ${humanoidNpcPreludeLua()}
+${realNpcPreludeLua()}
 local NPCS = {
 ${npcsLua}
 }
 for idx, n in ipairs(NPCS) do
-    -- Session 414h: meme characters spawn as the actual 3D creature (shark/croc/
-    -- skibidi); everyone else is a real R15 humanoid. No floating face banners.
-    local anchor
-    if n.fig and n.fig ~= "" then
-        local fig = buildMeme3dFigure(n.fig, n.pos + Vector3.new(0, 3.5, 0), idx)
-        anchor = fig and fig.PrimaryPart
-    else
-        local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(n.pos + Vector3.new(0, 3.5, 0)), {name = n.name, color = n.color, health = 100})
-        if npc and hrp then hrp.Anchored = true; anchor = npc:FindFirstChild("Head") or hrp end
-    end
-    if anchor then
-        label3d(anchor, n.name, 5, Color3.fromRGB(255, 255, 255))
-        local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 14; pr.RequiresLineOfSight = false; pr.Parent = anchor
-        pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
+    -- Session 414k: each NPC first tries a REAL catalog model (InsertService) and
+    -- strolls the plaza. If LoadAsset is blocked → 3D composite creature (meme
+    -- vibes) or a WALKING R15 humanoid. No more static blocks. Loads run in their
+    -- own thread so 3 sequential LoadAssets don't stall the boot script.
+    task.spawn(function()
+        task.wait(idx * 0.25)
+        local anchor
+        local spawnPos = n.pos + Vector3.new(0, 4.5, 0)
+        local realM = buildRealNpc(n.asset, spawnPos, 8)
+        if realM then
+            wanderModel(realM, spawnPos, 30)
+            anchor = realM.PrimaryPart
+        elseif n.fig and n.fig ~= "" then
+            local fig = buildMeme3dFigure(n.fig, spawnPos, idx)
+            anchor = fig and fig.PrimaryPart
+        else
+            local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(spawnPos), {name = n.name, color = n.color, walkSpeed = 8, health = 100})
+            if npc then
+                anchor = npc:FindFirstChild("Head") or hrp
+                if hum then
+                    task.spawn(function()
+                        while npc.Parent do
+                            hum:MoveTo(Vector3.new(n.pos.X + math.random(-24, 24), n.pos.Y, n.pos.Z + math.random(-24, 24)))
+                            hum.MoveToFinished:Wait()
+                            task.wait(0.5 + math.random() * 1.6)
+                        end
+                    end)
+                end
+            end
+        end
+        if anchor then
+            label3d(anchor, n.name, 5, Color3.fromRGB(255, 255, 255))
+            local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 14; pr.RequiresLineOfSight = false; pr.Parent = anchor
+            pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
+        end
+    end)
+end
+
+-- Session 414k: ambient citizens — real catalog models roaming the plaza so the
+-- city is populated and alive (user: "нпс что бы ходили по городу"). No prompts.
+local AMBIENT_ASSETS = {${ambientIds.join(', ')}}
+if #AMBIENT_ASSETS > 0 then
+    for i = 1, 6 do
+        local ang = (i / 6) * math.pi * 2
+        local home = Vector3.new(math.cos(ang) * 62, 4.5, math.sin(ang) * 62)
+        local id = AMBIENT_ASSETS[((i - 1) % #AMBIENT_ASSETS) + 1]
+        task.spawn(function()
+            task.wait(1 + i * 0.4) -- stagger LoadAsset to smooth the rate
+            local cm = buildRealNpc(id, home, 7)
+            if cm then wanderModel(cm, home, 34) end
+        end)
     end
 end
 
