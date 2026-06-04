@@ -10434,8 +10434,31 @@ local function spawnEnemyAssembly(kind, color, faceId, scale, pos, figKey, idx, 
         _eAcc(model, core, Vector3.new(2.2, 2.2, 2.2) * scale, Vector3.new(0, 3.6, 0) * scale, accent)
         _eAcc(model, core, Vector3.new(1.6, 1.6, 0.4) * scale, Vector3.new(0, 0.4, -1.2) * scale, Color3.fromRGB(70, 210, 90), Enum.Material.Neon)
     elseif kind == "meme" then
-        -- Real 3D meme creature (shark/croc/skibidi) when the name maps to a
-        -- figure key; otherwise a composite body with the face on its surface.
+        -- (1) real Creator Store brainrot model from the loaded pool;
+        -- (2) composite 3D figure (shark/croc/skibidi); (3) composite box.
+        if memePoolReady then
+            local tmpl = _pickMemeTemplate(figKey, ename, idx or 1)
+            if tmpl then
+                local clone = tmpl:Clone()
+                local prim = clone.PrimaryPart or _ensurePrimary(clone)
+                if prim then
+                    pcall(function()
+                        local _, bsz = clone:GetBoundingBox()
+                        local sf = (bsz.Y > 0.1) and math.clamp((7 * scale) / bsz.Y, 0.15, 6) or 1
+                        clone:ScaleTo(sf)
+                    end)
+                    for _, d in ipairs(clone:GetDescendants()) do
+                        if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.CastShadow = false
+                        elseif d:IsA("Humanoid") then d.EvaluateStateMachine = false end
+                    end
+                    clone:PivotTo(CFrame.new(pos))
+                    clone.Parent = world
+                    model:Destroy(); core:Destroy()
+                    return clone, prim, true
+                end
+                clone:Destroy()
+            end
+        end
         if figKey and figKey ~= "" then
             local fm, fcore = buildMeme3dFigureMoving(figKey, pos, idx or 1)
             if fm and fcore then
@@ -10573,7 +10596,7 @@ local function spawnEnemy(wave, isBoss, laneIdx)
     local ec = isBoss and ENEMY_BOSS or (ENEMY_ROSTER[((wave - 1) % #ENEMY_ROSTER) + 1] or ENEMY_BOSS)
     local ecol = Color3.fromRGB(ec.r, ec.g, ec.b)
     enemySpawnCount += 1
-    local model, core, isFigure = spawnEnemyAssembly(ENEMY_KIND, ecol, ec.face or 0, scale, lane[1] + Vector3.new(0, scale * 2, 0), ec.fig or "", enemySpawnCount)
+    local model, core, isFigure = spawnEnemyAssembly(ENEMY_KIND, ecol, ec.face or 0, scale, lane[1] + Vector3.new(0, scale * 2, 0), ec.fig or "", enemySpawnCount, ec.name or "")
     local footOffset, topY
     if isFigure then
         local bcf, bsz = model:GetBoundingBox()
