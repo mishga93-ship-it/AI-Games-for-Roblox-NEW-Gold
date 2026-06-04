@@ -11241,7 +11241,34 @@ for i = 1, 10 do
     local win = part("CityWin_" .. i, Vector3.new(21, hh * 0.78, 21), bld.Position, Color3.fromRGB(255, 120, 50), Enum.Material.Neon)
     win.Transparency = 0.72; win.CanCollide = false
 end`
-    : (racingVibe === 'money' || racingVibe === 'spy' || racingVibe === 'lab' || racingVibe === 'brainrot' || racingVibe === 'hero')
+    : racingVibe === 'money'
+      ? `
+-- MONEY (MrBeast "Race for a Billion"): giant $ signs on posts + gold-bar stacks
+-- + glowing coins + a $ VAULT. Gold = money — recognizable, no generic towers.
+for i = 1, 6 do
+    local a = math.rad(i * 60); local px, pz = math.cos(a) * 205, math.sin(a) * 205 * 0.8
+    part("DollarPost_" .. i, Vector3.new(3, 34, 3), Vector3.new(px, 17, pz), Color3.fromRGB(92, 78, 42), Enum.Material.Metal)
+    local board = part("DollarSign_" .. i, Vector3.new(20, 20, 1.2), Vector3.new(px, 38, pz), Color3.fromRGB(26, 96, 52), Enum.Material.Metal)
+    for _, fc in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
+        local sg = Instance.new("SurfaceGui"); sg.Adornee = board; sg.Face = fc; sg.LightInfluence = 0; sg.Parent = board
+        local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = Color3.fromRGB(140, 255, 150); t.TextScaled = true; t.Font = Enum.Font.GothamBlack; t.Text = "$"; t.Parent = sg
+    end
+end
+for i = 1, 10 do
+    local a = math.rad(i * 36); local gx, gz = math.cos(a) * 66, math.sin(a) * 66 * 0.7
+    for k = 0, 2 do part("GoldBar_" .. i .. "_" .. k, Vector3.new(7, 2, 3.4), Vector3.new(gx, 1.6 + k * 2.1, gz), Color3.fromRGB(255, 205, 64), Enum.Material.Metal) end
+    local coin = part("Coin_" .. i, Vector3.new(0.5, 4.4, 4.4), Vector3.new(gx + 7, 2.6, gz), Color3.fromRGB(255, 222, 84), Enum.Material.Metal); coin.Shape = Enum.PartType.Cylinder
+    local cl = Instance.new("PointLight"); cl.Color = Color3.fromRGB(255, 222, 120); cl.Brightness = 1.1; cl.Range = 12; cl.Parent = coin
+end
+do
+    local vault = part("MoneyVault", Vector3.new(26, 18, 18), Vector3.new(0, 9, 66), Color3.fromRGB(72, 66, 46), Enum.Material.Metal)
+    local sg = Instance.new("SurfaceGui"); sg.Adornee = vault; sg.Face = Enum.NormalId.Front; sg.LightInfluence = 0; sg.Parent = vault
+    ${spec && Number(spec.heroDecalId) > 0 ? `local vimg = Instance.new("ImageLabel"); vimg.Size = UDim2.new(1, 0, 0.66, 0); vimg.BackgroundTransparency = 1; vimg.Image = "rbxthumb://type=Asset&id=${Math.floor(Number(spec.heroDecalId))}&w=420&h=420"; vimg.Parent = sg
+    local vt = Instance.new("TextLabel"); vt.Size = UDim2.new(1, 0, 0.34, 0); vt.Position = UDim2.new(0, 0, 0.66, 0)` : `local vt = Instance.new("TextLabel"); vt.Size = UDim2.new(1, 0, 1, 0)`}
+    vt.BackgroundTransparency = 1; vt.TextColor3 = Color3.fromRGB(255, 222, 90); vt.TextScaled = true; vt.Font = Enum.Font.GothamBlack; vt.Text = "$ VAULT"; vt.Parent = sg
+    for k = 0, 3 do part("VaultGold_" .. k, Vector3.new(8, 2, 4), Vector3.new(-9 + k * 6, 1.5, 54), Color3.fromRGB(255, 205, 64), Enum.Material.Metal) end
+end`
+    : (racingVibe === 'spy' || racingVibe === 'lab' || racingVibe === 'brainrot' || racingVibe === 'hero')
       ? `
 for i = 1, 10 do
     local a = math.rad(i * 36); local hh = 32 + (i % 4) * 16
@@ -11527,6 +11554,12 @@ local function seatPlayer(player, car)
     -- race start) so the player can't be jittered out; drop them on the seat + Sit.
     char:PivotTo(car.seat.CFrame * CFrame.new(0, 2.6, 0))
     pcall(function() car.seat:Sit(hum) end)
+    -- one retry if Sit didn't take (character still loading on first try)
+    task.delay(0.35, function()
+        if car.seat and car.seat.Parent and not car.seat.Occupant and char.Parent and hum.Health > 0 then
+            char:PivotTo(car.seat.CFrame * CFrame.new(0, 2.4, 0)); pcall(function() car.seat:Sit(hum) end)
+        end
+    end)
 end
 
 local function spawnCarFor(player)
@@ -11657,7 +11690,8 @@ SelectCar.OnServerEvent:Connect(function(player, payload)
     if type(payload.car) == "string" and CARS[payload.car] then pref.car = payload.car end
     if typeof(payload.color) == "Color3" then pref.primary = payload.color end
     prefs[player.UserId] = pref
-    if not raceActive then spawnCarFor(player) end
+    -- always rebuild so the garage choice is visibly applied (+ re-seats the player).
+    spawnCarFor(player)
 end)
 BoostEvent.OnServerEvent:Connect(function(player)
     local car = cars[player.UserId]; if not car or not raceActive then return end
@@ -11683,6 +11717,22 @@ Players.PlayerRemoving:Connect(function(player)
     cars[player.UserId] = nil
 end)
 for _, p in Players:GetPlayers() do setupPlayer(p) end
+
+-- auto-reseat: recover any player who isn't in their car between races (covers a
+-- failed/late Sit and players who hopped out). Never yanks someone mid-race.
+task.spawn(function()
+    while true do
+        task.wait(1.5)
+        if not raceActive then
+            for _, car in pairs(cars) do
+                if car.player and car.seat and car.seat.Parent and not car.seat.Occupant then
+                    local ch = car.player.Character; local hh = ch and ch:FindFirstChildOfClass("Humanoid")
+                    if hh and hh.Health > 0 then seatPlayer(car.player, car) end
+                end
+            end
+        end
+    end
+end)
 
 local function broadcast(phase, info)
     RaceEvent:FireAllClients({kind = "state", phase = phase, info = info or 0, laps = Config.Laps, title = Config.Title})
