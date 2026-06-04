@@ -12952,9 +12952,10 @@ do
                     else wrap:Destroy() end
                 end
                 if not placed then
-                    local post = part("HubTotem_" .. idx, Vector3.new(1.6, 10, 1.6), pos + Vector3.new(0, 5, 0), theme.lobby, Enum.Material.Wood, world)
-                    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 110, 0, 110); bb.StudsOffset = Vector3.new(0, 7, 0); bb.Adornee = post; bb.Parent = post
-                    local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. id .. "&w=150&h=150"; img.Parent = bb
+                    -- LoadAsset failed → simple 3D figure placeholder (no floating image)
+                    part("HubFigure_" .. idx, Vector3.new(3, 5, 2), pos + Vector3.new(0, 3.5, 0), theme.accent, Enum.Material.SmoothPlastic, world)
+                    local head = part("HubFigureHead_" .. idx, Vector3.new(2.2, 2.2, 2.2), pos + Vector3.new(0, 7, 0), theme.accent:Lerp(Color3.fromRGB(255, 255, 255), 0.25), Enum.Material.SmoothPlastic, world)
+                    head.Shape = Enum.PartType.Ball
                 end
                 task.wait()
             end
@@ -13031,9 +13032,19 @@ local function part(name, size, pos, color, mat, parent, collide)
     p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
 end
 local function apart(name, size, pos, color, mat, collide) return part(name, size, pos, color, mat, arena, collide) end
+-- Session 420b: physical 3D sign (SurfaceGui on a real board), NOT a floating
+-- AlwaysOnTop BillboardGui. AlwaysOnTop billboards render through the whole map
+-- (lobby podiums bled over the arena HUD); a board is occluded + double-sided.
 local function label3d(adornee, text, offsetY, color)
-    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 240, 0, 44); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
-    local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
+    local basePos = adornee:IsA("BasePart") and adornee.Position or Vector3.new(0, 0, 0)
+    local board = Instance.new("Part"); board.Name = "Sign"; board.Anchored = true; board.CanCollide = false; board.CastShadow = false
+    board.Size = Vector3.new(math.clamp(#text * 0.85, 8, 22), 3, 0.4); board.Position = basePos + Vector3.new(0, offsetY + 1.4, 0)
+    board.Color = Color3.fromRGB(16, 18, 28); board.Material = Enum.Material.SmoothPlastic; board.Parent = adornee
+    for _, face in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
+        local sg = Instance.new("SurfaceGui"); sg.Face = face; sg.CanvasSize = Vector2.new(280, 80); sg.Parent = board
+        local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = sg
+    end
+    return board
 end
 
 -- ===== world coordinates =====
@@ -13044,14 +13055,32 @@ local LOBBY = Vector3.new(0, 6, 0)
 
 local lobby = part("Lobby", Vector3.new(130, 2, 130), Vector3.new(0, 0, 0), theme.lobby, theme.lobbyMat)
 setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(208, 208, 214), 0.55), tint = Color3.fromRGB(253, 251, 250), haze = 1.4, bloom = 0.8`}})
-label3d(lobby, Config.Title, 13, theme.accent)
+local titlePost = part("TitlePost", Vector3.new(2, 12, 2), Vector3.new(0, 6, -58), theme.lobby, Enum.Material.Metal)
+label3d(titlePost, Config.Title, 6, theme.accent)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "HubSpawn"; spawnLoc.Size = Vector3.new(22, 1, 22); spawnLoc.Position = Vector3.new(0, 1.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
-${themedSpawnBillboardLua(spec)}
 ${decorLua}
 
 local specPlat = part("Spectate", Vector3.new(70, 2, 30), AC + Vector3.new(0, 4, 150), theme.lobby, theme.lobbyMat)
-label3d(specPlat, "Spectators", 7, theme.accent)
+label3d(specPlat, "Spectators", 6, theme.accent)
 local SPEC = specPlat.Position + Vector3.new(0, 5, 0)
+
+-- Session 420b: ambient themed figures that WALK around the lobby (3D R15
+-- humanoid NPCs, no floating nameplate). Reuses the preset's seeker/mob colours.
+task.spawn(function()
+    for i = 1, 3 do
+        local info = (i % 2 == 1) and SEEKER or MOB1
+        local npc, hum = makeHumanoidNpc(world, CFrame.new(Vector3.new(math.random(-26, 26), 5, math.random(-24, 24))), {name = info.name, color = info.color, walkSpeed = 8})
+        if npc and hum then
+            task.spawn(function()
+                while npc.Parent do
+                    hum:MoveTo(Vector3.new(math.random(-42, 42), 5, math.random(-40, 40)))
+                    task.wait(math.random(3, 7))
+                end
+            end)
+        end
+        task.wait(0.1)
+    end
+end)
 
 local deathPlane = part("DeathPlane", Vector3.new(1200, 2, 1200), Vector3.new(AC.X, VOID_Y, AC.Z), Color3.fromRGB(220, 70, 40), Enum.Material.Neon, world, false)
 deathPlane.Transparency = 0.55
@@ -13062,6 +13091,10 @@ local eliminated = {}
 local function isAlive(p) return p.Parent ~= nil and not eliminated[p] end
 local function aliveList() local t = {}; for _, p in Players:GetPlayers() do if isAlive(p) then t[#t+1] = p end end; return t end
 local function aliveCount() return #aliveList() end
+-- Session 420b: a round is "over" the instant nobody is alive (so a solo tester
+-- who got out doesn't wait the whole timer), or when 1 is left in a multiplayer
+-- game. Survival minigames break on this.
+local function fewAlive() return aliveCount() == 0 or (fewAlive()) end
 local function rootOf(p) local c = p.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 local function teleport(p, pos) local r = rootOf(p); if r then r.CFrame = CFrame.new(pos) end end
 local function teleportAll(pos) for _, p in Players:GetPlayers() do teleport(p, pos + Vector3.new(math.random(-7, 7), 0, math.random(-7, 7))) end end
@@ -13116,8 +13149,8 @@ local function survivorsWin(pts)
     return survivors, winner
 end
 local function makeSeeker(pos, info, speed)
+    -- walking 3D R15 figure with glowing eyes; no floating nameplate.
     local npc, hum, hrp = makeHumanoidNpc(arena, CFrame.new(pos), {name = info.name, color = info.color, eyes = true, walkSpeed = speed or 14, health = 100000})
-    if npc then label3d(npc:FindFirstChild("Head") or hrp or npc.PrimaryPart, info.name, 2.6, Color3.fromRGB(255, 90, 90)) end
     return npc, hum, hrp
 end
 
@@ -13140,7 +13173,7 @@ local function mgTileDrop()
     local interval = 0.85
     for _, idx in ipairs(order) do
         if not roundActive then break end
-        if aliveCount() <= 1 and #Players:GetPlayers() > 1 then break end
+        if fewAlive() then break end
         local tile = tiles[idx]; tile.Color = Color3.fromRGB(255, 120, 80); task.wait(0.25)
         tile.CanCollide = false; tile.Transparency = 0.7
         broadcast("play", "Don't fall! " .. aliveCount() .. " left", 0, "Tile Drop")
@@ -13159,7 +13192,6 @@ local function mgMusicalChairs()
             local a = (i / c) * math.pi * 2
             local pos = Vector3.new(AC.X + math.cos(a) * 16, FLOOR_Y + 2.5, AC.Z + math.sin(a) * 16)
             local ch = apart("Chair_" .. i, Vector3.new(5, 3, 5), pos, theme.accent, Enum.Material.Neon, true)
-            label3d(ch, "SIT", 2, theme.lobby)
             chairs[#chairs + 1] = {part = ch, pos = pos}
         end
     end
@@ -13227,10 +13259,10 @@ local function mgDodgeball()
             end
             broadcast("play", "Dodge! " .. aliveCount() .. " left", math.max(0, math.floor(endAt - tick())), "Dodgeball")
             task.wait(math.max(0.42, 1.2 - (38 - (endAt - tick())) * 0.02))
-            if aliveCount() <= 1 and #Players:GetPlayers() > 1 then break end
+            if fewAlive() then break end
         end
     end)
-    while roundActive and tick() < endAt and not (aliveCount() <= 1 and #Players:GetPlayers() > 1) do task.wait(0.4) end
+    while roundActive and tick() < endAt and not (fewAlive()) do task.wait(0.4) end
     return survivorsWin(12)
 end
 
@@ -13373,7 +13405,7 @@ local function mgLava()
     end)
     local y = FLOOR_Y + 1.2
     local endAt = tick() + 45
-    while roundActive and tick() < endAt and not (aliveCount() <= 1 and #Players:GetPlayers() > 1) do
+    while roundActive and tick() < endAt and not (fewAlive()) do
         y += 0.7; lava.Position = Vector3.new(AC.X, y, AC.Z)
         broadcast("play", "Climb! Lava rising - " .. aliveCount() .. " left", math.max(0, math.floor(endAt - tick())), "Lava")
         task.wait(0.7)
@@ -13488,7 +13520,7 @@ local function mgColorRush()
     roundActive = true
     for c = 1, 10 do
         if not roundActive then break end
-        if aliveCount() <= 1 and #Players:GetPlayers() > 1 then break end
+        if fewAlive() then break end
         resetTiles()
         local cg = math.random(1, #TILECOLORS)
         broadcast("play", "Stand on " .. CNAMES[cg] .. "!", 0, "Color Rush")
@@ -13526,15 +13558,21 @@ end
 local PODIUM_POS = {Vector3.new(-32, 0, 42), Vector3.new(0, 0, 48), Vector3.new(32, 0, 42)}
 local podiums = {}
 for i = 1, 3 do
-    local base = part("Podium_" .. i, Vector3.new(18, 1, 18), PODIUM_POS[i] + Vector3.new(0, 1, 0), theme.accent, Enum.Material.Neon)
-    local post = part("PodiumPost_" .. i, Vector3.new(1.6, 11, 1.6), PODIUM_POS[i] + Vector3.new(0, 6.5, -8), theme.lobby, Enum.Material.Metal)
-    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 240, 0, 130); bb.StudsOffset = Vector3.new(0, 8, 0); bb.AlwaysOnTop = true; bb.Adornee = post; bb.Parent = post
-    local frame = Instance.new("Frame"); frame.Size = UDim2.new(1, 0, 1, 0); frame.BackgroundColor3 = Color3.fromRGB(18, 20, 30); frame.BackgroundTransparency = 0.25; frame.Parent = bb
-    local uic = Instance.new("UICorner"); uic.CornerRadius = UDim.new(0, 12); uic.Parent = frame
-    local nameL = Instance.new("TextLabel"); nameL.Size = UDim2.new(1, -8, 0.6, 0); nameL.Position = UDim2.new(0, 4, 0, 4); nameL.BackgroundTransparency = 1; nameL.TextColor3 = Color3.fromRGB(255, 255, 255); nameL.TextScaled = true; nameL.Font = Enum.Font.GothamBlack; nameL.Text = "?"; nameL.Parent = frame
-    local voteL = Instance.new("TextLabel"); voteL.Size = UDim2.new(1, -8, 0.36, 0); voteL.Position = UDim2.new(0, 4, 0.62, 0); voteL.BackgroundTransparency = 1; voteL.TextColor3 = theme.accent; voteL.TextScaled = true; voteL.Font = Enum.Font.GothamBold; voteL.Text = "0 votes"; voteL.Parent = frame
-    label3d(base, "VOTE", 2.4, theme.lobby)
-    podiums[i] = {nameLabel = nameL, voteLabel = voteL, pos = PODIUM_POS[i] + Vector3.new(0, 2, 0)}
+    part("Podium_" .. i, Vector3.new(18, 1, 18), PODIUM_POS[i] + Vector3.new(0, 1, 0), theme.accent, Enum.Material.Neon)
+    -- 3D sign board ON the podium (double-sided SurfaceGui) — NOT a floating billboard
+    local board = part("PodiumSign_" .. i, Vector3.new(17, 7, 0.6), PODIUM_POS[i] + Vector3.new(0, 6, 0), Color3.fromRGB(16, 18, 28), Enum.Material.SmoothPlastic)
+    local nameLs, voteLs = {}, {}
+    for _, face in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
+        local sg = Instance.new("SurfaceGui"); sg.Face = face; sg.CanvasSize = Vector2.new(300, 120); sg.Parent = board
+        local nameL = Instance.new("TextLabel"); nameL.Size = UDim2.new(1, 0, 0.6, 0); nameL.BackgroundTransparency = 1; nameL.TextColor3 = Color3.fromRGB(255, 255, 255); nameL.TextScaled = true; nameL.Font = Enum.Font.GothamBlack; nameL.Text = "?"; nameL.Parent = sg
+        local voteL = Instance.new("TextLabel"); voteL.Size = UDim2.new(1, 0, 0.34, 0); voteL.Position = UDim2.new(0, 0, 0.64, 0); voteL.BackgroundTransparency = 1; voteL.TextColor3 = theme.accent; voteL.TextScaled = true; voteL.Font = Enum.Font.GothamBold; voteL.Text = "0 votes"; voteL.Parent = sg
+        nameLs[#nameLs + 1] = nameL; voteLs[#voteLs + 1] = voteL
+    end
+    podiums[i] = {nameLabels = nameLs, voteLabels = voteLs, pos = PODIUM_POS[i] + Vector3.new(0, 2, 0)}
+end
+local function setPodium(i, name, votes)
+    if name then for _, l in ipairs(podiums[i].nameLabels) do l.Text = name end end
+    if votes then for _, l in ipairs(podiums[i].voteLabels) do l.Text = votes end end
 end
 local function countVotes()
     local tally = {0, 0, 0}
@@ -13560,11 +13598,11 @@ task.spawn(function()
         clearArena(); table.clear(eliminated)
         teleportAll(LOBBY)
         local options = pick3()
-        for i = 1, 3 do podiums[i].nameLabel.Text = options[i].name; podiums[i].voteLabel.Text = "0 votes" end
+        for i = 1, 3 do setPodium(i, options[i].name, "0 votes") end
         local tally = {0, 0, 0}
-        for t = 16, 1, -1 do
+        for t = 12, 1, -1 do
             tally = countVotes()
-            for i = 1, 3 do podiums[i].voteLabel.Text = tally[i] .. (tally[i] == 1 and " vote" or " votes") end
+            for i = 1, 3 do setPodium(i, nil, tally[i] .. (tally[i] == 1 and " vote" or " votes")) end
             broadcast("vote", "Walk onto a pad to VOTE the next game!", t, "", {opt1 = options[1].name, opt2 = options[2].name, opt3 = options[3].name, v1 = tally[1], v2 = tally[2], v3 = tally[3]})
             task.wait(1)
         end
@@ -13593,23 +13631,24 @@ local remotes = ReplicatedStorage:WaitForChild("MgRemotes")
 local MgEvent = remotes:WaitForChild("MgEvent")
 
 local gui = Instance.new("ScreenGui"); gui.Name = "HubHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
-local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 540, 0, 54); top.Position = UDim2.new(0.5, -270, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.12; top.TextColor3 = Color3.fromRGB(230, 235, 250); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Welcome to the hub!"; top.Parent = gui
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 420, 0, 44); top.Position = UDim2.new(0.5, -210, 0, 8); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.15; top.TextColor3 = Color3.fromRGB(235, 240, 250); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Welcome!"; top.Parent = gui
 local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = top
-local sub = Instance.new("TextLabel"); sub.Size = UDim2.new(0, 360, 0, 38); sub.Position = UDim2.new(0.5, -180, 0, 70); sub.BackgroundColor3 = Color3.fromRGB(22, 26, 38); sub.BackgroundTransparency = 0.15; sub.TextColor3 = Color3.fromRGB(180, 220, 255); sub.TextScaled = true; sub.Font = Enum.Font.GothamBold; sub.Text = "Points 0   Alive 0"; sub.Parent = gui
-local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 8); sc.Parent = sub
-local banner = Instance.new("TextLabel"); banner.Size = UDim2.new(0, 540, 0, 78); banner.Position = UDim2.new(0.5, -270, 0.4, 0); banner.BackgroundTransparency = 1; banner.TextColor3 = Color3.fromRGB(255, 235, 120); banner.TextStrokeTransparency = 0.2; banner.TextScaled = true; banner.Font = Enum.Font.GothamBlack; banner.Text = ""; banner.Parent = gui
+local stat = Instance.new("TextLabel"); stat.Size = UDim2.new(0, 188, 0, 30); stat.Position = UDim2.new(1, -200, 0, 8); stat.BackgroundColor3 = Color3.fromRGB(22, 26, 38); stat.BackgroundTransparency = 0.25; stat.TextColor3 = Color3.fromRGB(180, 220, 255); stat.TextScaled = true; stat.Font = Enum.Font.GothamBold; stat.Text = "Pts 0  Alive 0"; stat.Parent = gui
+local stc = Instance.new("UICorner"); stc.CornerRadius = UDim.new(0, 8); stc.Parent = stat
+local banner = Instance.new("TextLabel"); banner.Size = UDim2.new(0, 460, 0, 56); banner.Position = UDim2.new(0.5, -230, 0.62, 0); banner.BackgroundTransparency = 1; banner.TextColor3 = Color3.fromRGB(255, 235, 120); banner.TextStrokeTransparency = 0.25; banner.TextScaled = true; banner.Font = Enum.Font.GothamBlack; banner.Text = ""; banner.Parent = gui
 
-local votePanel = Instance.new("Frame"); votePanel.Size = UDim2.new(0, 320, 0, 170); votePanel.Position = UDim2.new(0, 18, 0.5, -85); votePanel.BackgroundColor3 = Color3.fromRGB(16, 18, 28); votePanel.BackgroundTransparency = 0.18; votePanel.Visible = false; votePanel.Parent = gui
+local votePanel = Instance.new("Frame"); votePanel.Size = UDim2.new(0, 264, 0, 150); votePanel.Position = UDim2.new(0, 16, 0.5, -75); votePanel.BackgroundColor3 = Color3.fromRGB(16, 18, 28); votePanel.BackgroundTransparency = 0.22; votePanel.Visible = false; votePanel.Parent = gui
 local vpc = Instance.new("UICorner"); vpc.CornerRadius = UDim.new(0, 12); vpc.Parent = votePanel
-local vTitle = Instance.new("TextLabel"); vTitle.Size = UDim2.new(1, -12, 0, 30); vTitle.Position = UDim2.new(0, 6, 0, 6); vTitle.BackgroundTransparency = 1; vTitle.TextColor3 = Color3.fromRGB(255, 255, 255); vTitle.TextScaled = true; vTitle.Font = Enum.Font.GothamBlack; vTitle.Text = "VOTE!"; vTitle.Parent = votePanel
+local vTitle = Instance.new("TextLabel"); vTitle.Size = UDim2.new(1, -12, 0, 26); vTitle.Position = UDim2.new(0, 6, 0, 6); vTitle.BackgroundTransparency = 1; vTitle.TextColor3 = Color3.fromRGB(255, 255, 255); vTitle.TextScaled = true; vTitle.Font = Enum.Font.GothamBlack; vTitle.Text = "VOTE"; vTitle.Parent = votePanel
 local voteRows = {}
 for i = 1, 3 do
-    local row = Instance.new("TextLabel"); row.Size = UDim2.new(1, -16, 0, 38); row.Position = UDim2.new(0, 8, 0, 38 + (i - 1) * 42); row.BackgroundColor3 = Color3.fromRGB(34, 38, 54); row.BackgroundTransparency = 0.1; row.TextColor3 = Color3.fromRGB(235, 240, 255); row.TextScaled = true; row.Font = Enum.Font.GothamBold; row.Text = "-"; row.Parent = votePanel
+    local row = Instance.new("TextLabel"); row.Size = UDim2.new(1, -14, 0, 34); row.Position = UDim2.new(0, 7, 0, 34 + (i - 1) * 38); row.BackgroundColor3 = Color3.fromRGB(34, 38, 54); row.BackgroundTransparency = 0.12; row.TextColor3 = Color3.fromRGB(235, 240, 255); row.TextScaled = true; row.Font = Enum.Font.GothamBold; row.Text = "-"; row.Parent = votePanel
     local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(0, 8); rc.Parent = row
     voteRows[i] = row
 end
 
 local myPoints = 0
+local outActive = false
 task.spawn(function()
     local ls = player:WaitForChild("leaderstats"); local pts = ls:WaitForChild("Points")
     local function r() myPoints = pts.Value end
@@ -13618,25 +13657,25 @@ end)
 MgEvent.OnClientEvent:Connect(function(p)
     if typeof(p) ~= "table" then return end
     if p.kind == "state" then
-        local timeStr = (p.time and p.time > 0) and ("   " .. p.time .. "s") or ""
+        local timeStr = (p.time and p.time > 0) and ("  " .. p.time .. "s") or ""
         top.Text = p.text .. timeStr
-        sub.Text = "Points " .. myPoints .. "   Alive " .. (p.alive or 0)
+        stat.Text = "Pts " .. myPoints .. "  Alive " .. (p.alive or 0)
         if p.phase == "vote" then
             votePanel.Visible = true
-            vTitle.Text = "VOTE!   " .. (p.time or 0) .. "s"
             local names = {p.opt1 or "-", p.opt2 or "-", p.opt3 or "-"}
             local votes = {p.v1 or 0, p.v2 or 0, p.v3 or 0}
-            for i = 1, 3 do voteRows[i].Text = names[i] .. "   (" .. votes[i] .. ")" end
+            for i = 1, 3 do voteRows[i].Text = names[i] .. "  (" .. votes[i] .. ")" end
             banner.Text = ""
         else
             votePanel.Visible = false
         end
         if p.phase == "intro" then banner.TextColor3 = Color3.fromRGB(255, 235, 120); banner.Text = p.text
-        elseif p.phase == "result" then banner.TextColor3 = Color3.fromRGB(140, 255, 160); banner.Text = p.text end
+        elseif p.phase == "result" then banner.TextColor3 = Color3.fromRGB(140, 255, 160); banner.Text = p.text
+        elseif p.phase == "play" then if not outActive then banner.Text = "" end end
     elseif p.kind == "out" then
         local msg = p.text or "OUT! Spectating..."
-        banner.TextColor3 = Color3.fromRGB(255, 120, 120); banner.Text = msg
-        task.delay(2.6, function() if banner.Text == msg then banner.Text = "" end end)
+        outActive = true; banner.TextColor3 = Color3.fromRGB(255, 120, 120); banner.Text = msg
+        task.delay(2.6, function() outActive = false; if banner.Text == msg then banner.Text = "" end end)
     end
 end)
 `;
