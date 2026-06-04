@@ -9469,8 +9469,8 @@ local function _memeNpcIdle(model, primary)
     local baseCF = primary.CFrame; local t0 = tick()
     task.spawn(function()
         while model.Parent do
-            local dt = tick() - t0; local bob = math.sin(dt * 1.5) * 0.35
-            model:PivotTo(baseCF * CFrame.new(0, bob, 0) * CFrame.Angles(0, math.rad((dt * 25) % 360), 0))
+            local dt = tick() - t0; local bob = math.sin(dt * 1.5) * 0.3
+            model:PivotTo(baseCF * CFrame.new(0, bob, 0))
             RunService.Heartbeat:Wait()
         end
     end)
@@ -10510,7 +10510,7 @@ ${meme3dPreludeLua()}
     local hp = Vector3.new(28, 0, 28)
     local ped = part("HeroPedestal", Vector3.new(16, 9, 16), hp + Vector3.new(0, 4.5, 0), theme.wall, Enum.Material.Marble)
     local hpl = Instance.new("PointLight"); hpl.Color = theme.accent; hpl.Brightness = 2.2; hpl.Range = 30; hpl.Parent = ped
-    buildMeme3dFigure("${heroMemeKey}", hp + Vector3.new(0, 15, 0), 1)
+    local heroFig = buildMeme3dFigure("${heroMemeKey}", hp + Vector3.new(0, 13, 0), 1); pcall(function() heroFig:ScaleTo(1.7) end)
     local hbb = Instance.new("BillboardGui"); hbb.Size = UDim2.new(0, 200, 0, 40); hbb.StudsOffset = Vector3.new(0, 6, 0); hbb.AlwaysOnTop = true; hbb.Parent = ped
     local hTxt = Instance.new("TextLabel"); hTxt.Size = UDim2.new(1, 0, 1, 0); hTxt.BackgroundTransparency = 1; hTxt.TextColor3 = Color3.fromRGB(255, 255, 255); hTxt.TextStrokeTransparency = 0.3; hTxt.TextScaled = true; hTxt.Font = Enum.Font.GothamBlack; hTxt.Text = Config.Title; hTxt.Parent = hbb
 end`
@@ -10597,7 +10597,10 @@ local function part(name, size, pos, color, mat, parent)
     local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
 end
 local function label3d(adornee, text, offsetY, color)
-    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 210, 0, 40); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    -- Session 414g: declutter — labels are NOT AlwaysOnTop (so they sit in 3D and
+    -- occlude behind walls instead of overlaying everything) and vanish past 90
+    -- studs (MaxDistance) so the screen isn't a wall of floating text.
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 190, 0, 34); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = false; bb.MaxDistance = 90; bb.LightInfluence = 0; bb.Parent = adornee
     local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
     return t
 end
@@ -10623,7 +10626,11 @@ local function buildHouse(name, pos, size, color, sign)
     local body = part(name, size, pos + Vector3.new(0, size.Y / 2, 0), color, Enum.Material.Brick)
     part(name .. "_Roof", Vector3.new(size.X + 5, 4, size.Z + 5), pos + Vector3.new(0, size.Y + 2, 0), theme.roof, Enum.Material.Slate)
     local door = part(name .. "_Door", Vector3.new(9, 13, 1.4), pos + Vector3.new(0, 6.5, size.Z / 2 + 0.4), Color3.fromRGB(70, 46, 32), Enum.Material.Wood); door.CanCollide = false
-    label3d(body, sign, size.Y / 2 + 7, Color3.fromRGB(255, 255, 255))
+    -- Session 414g: sign is a banner STUCK ON the building's door-side wall (not a
+    -- floating billboard) — addresses "наклеим на здания, чтобы не висели".
+    local board = part(name .. "_Sign", Vector3.new(size.X * 0.8, 4.5, 0.6), pos + Vector3.new(0, size.Y - 2.5, size.Z / 2 + 0.5), theme.accent, Enum.Material.SmoothPlastic)
+    local sg = Instance.new("SurfaceGui"); sg.Face = Enum.NormalId.Back; sg.Adornee = board; sg.LightInfluence = 0; sg.PixelsPerStud = 50; sg.Parent = board
+    local st = Instance.new("TextLabel"); st.Size = UDim2.new(1, 0, 1, 0); st.BackgroundTransparency = 1; st.TextColor3 = Color3.fromRGB(25, 25, 32); st.TextScaled = true; st.Font = Enum.Font.GothamBlack; st.Text = sign; st.Parent = sg
     return body
 end
 
@@ -10703,7 +10710,7 @@ for _, n in ipairs(NPCS) do
     local head = part("NPCHead_" .. n.name, Vector3.new(2, 2, 2), n.pos + Vector3.new(0, 8.5, 0), n.color:Lerp(Color3.new(1, 1, 1), 0.2), Enum.Material.SmoothPlastic); head.CanCollide = false
     label3d(head, n.name, 2.2, Color3.fromRGB(255, 255, 255))
     if n.face and n.face > 0 then
-        local fb = Instance.new("BillboardGui"); fb.Size = UDim2.new(0, 96, 0, 96); fb.StudsOffset = Vector3.new(0, 5.5, 0); fb.AlwaysOnTop = true; fb.Parent = head
+        local fb = Instance.new("BillboardGui"); fb.Size = UDim2.new(0, 80, 0, 80); fb.StudsOffset = Vector3.new(0, 5, 0); fb.AlwaysOnTop = false; fb.MaxDistance = 70; fb.LightInfluence = 0; fb.Parent = head
         local fi = Instance.new("ImageLabel"); fi.Size = UDim2.new(1, 0, 1, 0); fi.BackgroundTransparency = 1; fi.Image = "rbxthumb://type=Asset&id=" .. n.face .. "&w=420&h=420"; fi.Parent = fb
     end
     local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 12; pr.RequiresLineOfSight = false; pr.Parent = body
@@ -15352,39 +15359,39 @@ export function buildGameplayScript(params: GameTemplateParams): string | MultiS
   }
   // Session 399: tower_defense — runtime-owned wave/tower world (like rpg/pvp).
   if (params.gameKind === 'tower_defense') {
-    return withCinematicCamera(withTrendingShowcase(buildTowerDefenseScript(params), params, trendingShowcaseOptsFor('tower_defense')));
+    return withCinematicCamera(buildTowerDefenseScript(params));
   }
   // Session 399 (cont.): roleplay_town — persistent social town world.
   if (params.gameKind === 'roleplay_town') {
-    return withCinematicCamera(withTrendingShowcase(buildRoleplayTownScript(params), params, trendingShowcaseOptsFor('roleplay_town')));
+    return withCinematicCamera(buildRoleplayTownScript(params));
   }
   // Session 399 (cont.): racing — closed-loop foot race with laps + round loop.
   if (params.gameKind === 'racing') {
-    return withCinematicCamera(withTrendingShowcase(buildRacingScript(params), params, trendingShowcaseOptsFor('racing')));
+    return withCinematicCamera(buildRacingScript(params));
   }
   // Session 399 (cont.): parkour — ascending spiral course with checkpoints.
   if (params.gameKind === 'parkour') {
-    return withCinematicCamera(withTrendingShowcase(buildParkourScript(params), params, trendingShowcaseOptsFor('parkour')));
+    return withCinematicCamera(buildParkourScript(params));
   }
   // Session 399 (cont.): story_game — linear narrative chapter walk.
   if (params.gameKind === 'story_game') {
-    return withCinematicCamera(withTrendingShowcase(buildStoryGameScript(params), params, trendingShowcaseOptsFor('story_game')));
+    return withCinematicCamera(buildStoryGameScript(params));
   }
   // Session 399 (cont.): survival — resource gathering + day/night enemy nights.
   if (params.gameKind === 'survival') {
-    return withCinematicCamera(withTrendingShowcase(buildSurvivalScript(params), params, trendingShowcaseOptsFor('survival')));
+    return withCinematicCamera(buildSurvivalScript(params));
   }
   // Session 399 (cont.): minigame_hub — lobby + rotating tile-arena minigames.
   if (params.gameKind === 'minigame_hub') {
-    return withCinematicCamera(withTrendingShowcase(buildMinigameHubScript(params), params, trendingShowcaseOptsFor('minigame_hub')));
+    return withCinematicCamera(buildMinigameHubScript(params));
   }
   // Session 399 (cont.): fighting_arena — melee ring brawl with rounds.
   if (params.gameKind === 'fighting_arena') {
-    return withCinematicCamera(withTrendingShowcase(buildFightingScript(params), params, trendingShowcaseOptsFor('fighting_arena')));
+    return withCinematicCamera(buildFightingScript(params));
   }
   // Session 399 (cont.): custom_game — flexible playable sandbox scaffold.
   if (params.gameKind === 'custom_game') {
-    return withCinematicCamera(withTrendingShowcase(buildCustomGameScript(params), params, trendingShowcaseOptsFor('custom_game')));
+    return withCinematicCamera(buildCustomGameScript(params));
   }
   const simulatorKind = String(params.simulatorKind || '').toLowerCase();
   if (
