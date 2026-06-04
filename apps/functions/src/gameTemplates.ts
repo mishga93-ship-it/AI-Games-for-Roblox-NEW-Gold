@@ -11499,6 +11499,9 @@ function buildSurvivalScript(params: GameTemplateParams): MultiScriptResult {
   const specMergeLua = (spec && spec.vibe !== 'neutral')
     ? `{groundMat=Enum.Material.${spec.palette.groundMaterial}, atmo=${rgbLua(spec.palette.accent)}, ambient=${rgbLua(spec.palette.road)}, rock=${rgbLua(spec.palette.wall)}}`
     : 'nil';
+  const svEnemyRosterLua = (spec && spec.vibe !== 'neutral' && spec.enemies && spec.enemies.length)
+    ? `{ ${spec.enemies.map((e) => `{name=${safeLuaString(e.name, 'Enemy')}, r=${Math.round(e.color[0])}, g=${Math.round(e.color[1])}, b=${Math.round(e.color[2])}, face=${Math.max(0, Math.floor(Number(e.decalId) || 0))}}`).join(', ')} }`
+    : 'nil';
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11519,6 +11522,7 @@ if SPEC_MERGE then local t = {} for k, v in pairs(theme) do t[k] = v end for k, 
 local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.6 or 1.0)
 local enemySpeed = 10 * (Config.Difficulty == "hard" and 1.25 or 1)
 local enemyDmg = math.floor(6 * diffMult)
+local SV_ENEMY_ROSTER = ${svEnemyRosterLua}
 
 local remotes = Instance.new("Folder"); remotes.Name = "SvRemotes"; remotes.Parent = ReplicatedStorage
 local SvEvent = Instance.new("RemoteEvent"); SvEvent.Name = "SvEvent"; SvEvent.Parent = remotes
@@ -11589,8 +11593,16 @@ local isNight = false
 local function spawnEnemy()
     local a = math.random() * math.pi * 2
     local pos = Vector3.new(math.cos(a) * 150, 5, math.sin(a) * 150)
-    local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(pos), {name = "Enemy", color = theme.enemy, walkSpeed = enemySpeed, eyes = true, health = math.floor(60 * diffMult)})
+    local ecol, ename, eface = theme.enemy, "Enemy", 0
+    if SV_ENEMY_ROSTER then local ec = SV_ENEMY_ROSTER[math.random(#SV_ENEMY_ROSTER)]; if ec then ecol = Color3.fromRGB(ec.r, ec.g, ec.b); ename = ec.name; eface = ec.face or 0 end end
+    local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(pos), {name = ename, color = ecol, walkSpeed = enemySpeed, eyes = true, health = math.floor(60 * diffMult)})
     if not npc or not hum or not hrp then if npc then npc:Destroy() end return end
+    local _eh = npc:FindFirstChild("Head")
+    if _eh then
+        local eb = Instance.new("BillboardGui"); eb.Size = UDim2.new(0, eface > 0 and 80 or 110, 0, eface > 0 and 90 or 24); eb.StudsOffset = Vector3.new(0, eface > 0 and 2.6 or 1.9, 0); eb.AlwaysOnTop = true; eb.Parent = _eh
+        if eface > 0 then local ei = Instance.new("ImageLabel"); ei.Size = UDim2.new(1, 0, 1, 0); ei.BackgroundTransparency = 1; ei.Image = "rbxthumb://type=Asset&id=" .. eface .. "&w=420&h=420"; ei.Parent = eb
+        else local et = Instance.new("TextLabel"); et.Size = UDim2.new(1, 0, 1, 0); et.BackgroundTransparency = 1; et.TextColor3 = Color3.fromRGB(255, 120, 110); et.TextStrokeTransparency = 0.3; et.TextScaled = true; et.Font = Enum.Font.GothamBold; et.Text = ename; et.Parent = eb end
+    end
     local e = {npc = npc, hum = hum, hrp = hrp}
     table.insert(enemies, e)
     -- per-enemy AI: chase the nearest player (real walking via Humanoid:MoveTo) and bite when close.
@@ -11962,6 +11974,7 @@ for i, k in ipairs(kerbs) do part("Kerb_" .. i, k[1], k[2], theme.kerb, Enum.Mat
 part("RingOut", Vector3.new(280, 1, 280), Vector3.new(0, 4, 0), Color3.fromRGB(40, 44, 60), Enum.Material.SmoothPlastic)
 local ringOut = world:FindFirstChild("RingOut")
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "ArenaSpawn"; spawnLoc.Size = Vector3.new(10, 1, 10); spawnLoc.Position = Vector3.new(0, 21.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${themedSpawnBillboardLua(spec)}
 local specPad = part("Corner", Vector3.new(30, 2, 14), Vector3.new(0, 22, 70), theme.kerb, theme.floorMat)
 label3d(specPad, "KO Corner", 5, theme.accent)
 local spectate = specPad.Position + Vector3.new(0, 4, 0)
