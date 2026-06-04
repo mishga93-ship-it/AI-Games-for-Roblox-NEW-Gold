@@ -123,18 +123,27 @@ function ringLua(n: number, rx: number, rz: number, y: number): string {
 export function themeAssetScatterLua(brief: string, genre: string): string {
   const ids = pickThemeAssets(brief, 6);
   if (!ids.length) return '';
-  let ptsLua: string;
-  let target = 16;
-  let pad = 16;
-  if (genre === 'racing') {
-    ptsLua = ringLua(7, 112, 80, 12);
-  } else if (genre === 'parkour') {
-    ptsLua = ringLua(6, 56, 56, 12);
-    target = 14;
-    pad = 14;
-  } else {
-    ptsLua = ringLua(7, 150, 150, 11);
-  }
+  // Per-genre placement so assets land in a visible-but-clear zone. They are
+  // CanCollide=false decor on podiums, so minor overlap never blocks gameplay.
+  const PLACEMENT: Record<string, { n: number; rx: number; rz: number; y: number; target: number }> = {
+    racing: { n: 7, rx: 112, rz: 80, y: 12, target: 16 },
+    parkour: { n: 6, rx: 56, rz: 56, y: 12, target: 14 },
+    tower_defense: { n: 6, rx: 78, rz: 78, y: 7, target: 14 },
+    roleplay_town: { n: 7, rx: 118, rz: 118, y: 5, target: 15 },
+    story_game: { n: 6, rx: 48, rz: 48, y: 6, target: 14 },
+    minigame_hub: { n: 6, rx: 72, rz: 72, y: 6, target: 14 },
+    survival: { n: 6, rx: 84, rz: 84, y: 7, target: 14 },
+    fighting_arena: { n: 6, rx: 62, rz: 62, y: 7, target: 13 },
+    custom_game: { n: 6, rx: 90, rz: 90, y: 7, target: 15 },
+    rpg: { n: 6, rx: 86, rz: 86, y: 6, target: 14 },
+    horror: { n: 6, rx: 70, rz: 70, y: 6, target: 14 },
+    pvp: { n: 6, rx: 78, rz: 78, y: 7, target: 14 },
+    pvp_arena: { n: 6, rx: 62, rz: 62, y: 7, target: 13 },
+  };
+  const pl = PLACEMENT[genre] || { n: 7, rx: 110, rz: 110, y: 8, target: 16 };
+  const ptsLua = ringLua(pl.n, pl.rx, pl.rz, pl.y);
+  const target = pl.target;
+  const pad = target;
   const half = (target / 2 + 1).toFixed(1);
   return `
 -- ===== REAL CATALOG THEME ASSETS (keyword-matched, InsertService, scaled) =====
