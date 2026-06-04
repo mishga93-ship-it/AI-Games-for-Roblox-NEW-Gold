@@ -10284,8 +10284,8 @@ do
     end
 end
 
-${meme3dPreludeLua()}
 local container = world
+${meme3dPreludeLua()}
 
 -- Session 417: themed enemy assembly — a multi-part 3D silhouette per "kind".
 -- The meme face decal is WRAPPED on the body via a SurfaceGui (never a floating
@@ -10417,8 +10417,16 @@ local function fireBeam(from, to, color)
     Debris:AddItem(b, 0.08)
 end
 local function buildTowerVisual(slot, def)
-    local base = part("TowerBase_" .. slot.index, Vector3.new(5, 6, 5), slot.part.Position + Vector3.new(0, 3.5, 0), def.color, Enum.Material.Metal)
-    local turret = part("TowerGun_" .. slot.index, Vector3.new(2, 2, 6), base.Position + Vector3.new(0, 4, 0), def.color:Lerp(Color3.new(1, 1, 1), 0.35), Enum.Material.Neon)
+    -- Session 417b: a proper turret silhouette — dark pedestal + metal column +
+    -- glowing dome housing (lit) + a long neon barrel that aims at the target.
+    -- Decoration parented to the base so a round reset (base:Destroy()) cascades.
+    local p = slot.part.Position
+    local base = part("TowerBase_" .. slot.index, Vector3.new(5.6, 3, 5.6), p + Vector3.new(0, 2, 0), def.color:Lerp(Color3.fromRGB(0, 0, 0), 0.42), Enum.Material.Metal)
+    local col = part("TowerCol_" .. slot.index, Vector3.new(3.2, 3, 3.2), p + Vector3.new(0, 4.6, 0), def.color:Lerp(Color3.fromRGB(0, 0, 0), 0.12), Enum.Material.Metal); col.Parent = base
+    local dome = part("TowerDome_" .. slot.index, Vector3.new(4.4, 4, 4.4), p + Vector3.new(0, 6.4, 0), def.color, Enum.Material.SmoothPlastic); dome.Shape = Enum.PartType.Ball; dome.Parent = base
+    local pl = Instance.new("PointLight"); pl.Color = def.color; pl.Brightness = 1.6; pl.Range = 16; pl.Parent = dome
+    local fin = part("TowerFin_" .. slot.index, Vector3.new(5.8, 0.6, 1.4), p + Vector3.new(0, 3.7, 0), def.color, Enum.Material.Neon); fin.Parent = base
+    local turret = part("TowerGun_" .. slot.index, Vector3.new(1.8, 1.8, 8), p + Vector3.new(0, 6.6, 3.6), def.color:Lerp(Color3.new(1, 1, 1), 0.45), Enum.Material.Neon)
     turret.CanCollide = false
     return base, turret
 end
