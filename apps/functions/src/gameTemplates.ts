@@ -11995,7 +11995,7 @@ do
     for i = 1, 16 do
         local ang = (i / 16) * math.pi * 2 + 0.4
         local r = 58 + (i % 4) * 14
-        pcall(function() makeTree(world, Vector3.new(math.cos(ang) * r, 0.5, math.sin(ang) * r), 1.0 + (i % 3) * 0.35, "${treeKind}", ${trunk}, ${leaf}) end)
+        pcall(function() makeTree(world, Vector3.new(math.cos(ang) * r, 0.5, math.sin(ang) * r), 1.0 + (i % 3) * 0.35, ${treeKind}, ${trunk}, ${leaf}) end)
     end
     -- (b) watchtower silhouette flanking the start (iconic 99 Nights landmark)
     do
