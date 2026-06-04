@@ -9453,6 +9453,23 @@ function safeLuaString(value: unknown, fallback: string): string {
   return JSON.stringify(typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : fallback);
 }
 
+// Session 414e: reusable themed marker above a builder's `spawnLoc` — shows the
+// theme's signature meme face (decal) + the game title. Safe (attached to the
+// spawn pad, no world placement). Assumes `spawnLoc` and `Config.Title` are in
+// scope (true for all genre builders). Empty for absent/neutral spec.
+function themedSpawnBillboardLua(spec: GameVisualSpec | undefined): string {
+  if (!spec || spec.vibe === 'neutral') return '';
+  const decal = Math.max(0, Math.floor(Number(spec.heroDecalId) || 0));
+  const h = decal > 0 ? 220 : 60;
+  const imgPart = decal > 0
+    ? `local _hi = Instance.new("ImageLabel"); _hi.Size = UDim2.new(1, 0, 0.74, 0); _hi.BackgroundTransparency = 1; _hi.Image = "rbxthumb://type=Asset&id=${decal}&w=420&h=420"; _hi.Parent = _hb; `
+    : '';
+  const txtH = decal > 0 ? '0.26' : '1';
+  const txtY = decal > 0 ? '0.74' : '0';
+  return `
+do local _hb = Instance.new("BillboardGui"); _hb.Size = UDim2.new(0, 200, 0, ${h}); _hb.StudsOffset = Vector3.new(0, 14, 0); _hb.AlwaysOnTop = true; _hb.Parent = spawnLoc; ${imgPart}local _ht = Instance.new("TextLabel"); _ht.Size = UDim2.new(1, 0, ${txtH}, 0); _ht.Position = UDim2.new(0, 0, ${txtY}, 0); _ht.BackgroundTransparency = 1; _ht.TextColor3 = Color3.fromRGB(255, 255, 255); _ht.TextStrokeTransparency = 0.3; _ht.TextScaled = true; _ht.Font = Enum.Font.GothamBlack; _ht.Text = Config.Title; _ht.Parent = _hb end`;
+}
+
 function buildRpgAdventureScript(params: GameTemplateParams): MultiScriptResult {
   const titleLua = safeLuaString(params.title, 'Quest Realm RPG');
   const enemyLua = safeLuaString(params.enemyFamily, 'Slimes');
@@ -10744,6 +10761,10 @@ for i = 1, 10 do
     local a = math.rad(i * 36)
     makeTree(world, Vector3.new(math.cos(a) * 188, 0.5, math.sin(a) * 188 * 0.78), 1.1, "palm", Color3.fromRGB(122, 86, 54), Color3.fromRGB(86, 170, 80))
 end`
+        : (racingVibe === 'night' || racingVibe === 'monster' || racingVibe === 'pets')
+        ? `
+for i = 1, 12 do local a = math.rad(i * 30); makeTree(world, Vector3.new(math.cos(a) * 188, 0.5, math.sin(a) * 188 * 0.78), 1.0, "pine", Color3.fromRGB(58, 46, 38), Color3.fromRGB(40, 72, 56)) end
+do local cf = Vector3.new(0, 0, 58) for i = 1, 5 do local a = math.rad(i * 72); local lg = part("CampLog_" .. i, Vector3.new(6, 1.3, 1.3), cf + Vector3.new(math.cos(a) * 2.2, 1, math.sin(a) * 2.2), Color3.fromRGB(86, 58, 38), Enum.Material.Wood); lg.CFrame = CFrame.new(lg.Position) * CFrame.Angles(0, a, math.rad(22)) end local em = part("CampEmbers", Vector3.new(4, 2.2, 4), cf + Vector3.new(0, 1.6, 0), Color3.fromRGB(255, 130, 45), Enum.Material.Neon); em.Shape = Enum.PartType.Ball; local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 30; pl.Parent = em; local fr = Instance.new("Fire"); fr.Size = 7; fr.Parent = em end`
         : '';
 
   const serverScript = `local Players = game:GetService("Players")
@@ -10808,6 +10829,7 @@ local startBb = Instance.new("BillboardGui"); startBb.Size = UDim2.new(0, 220, 0
 local startLabel = Instance.new("TextLabel"); startLabel.Size = UDim2.new(1, 0, 1, 0); startLabel.BackgroundTransparency = 1; startLabel.TextColor3 = Color3.fromRGB(255, 255, 255); startLabel.TextStrokeTransparency = 0.3; startLabel.TextScaled = true; startLabel.Font = Enum.Font.GothamBlack; startLabel.Text = "START / FINISH"; startLabel.Parent = startBb
 
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "RaceSpawn"; spawnLoc.Size = Vector3.new(24, 1, 16); spawnLoc.Position = Vector3.new(rx, 1.2, -10); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${themedSpawnBillboardLua(spec)}
 
 local raceState = {}
 local racing = false
@@ -11171,6 +11193,7 @@ local function label3d(adornee, text, offsetY, color)
 end
 
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "StorySpawn"; spawnLoc.Size = Vector3.new(20, 1, 16); spawnLoc.Position = Vector3.new(0, 1, -8); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${themedSpawnBillboardLua(spec)}
 label3d(spawnLoc, Config.Title, 7, theme.accent)
 part("PathStart", Vector3.new(40, 1, 24), Vector3.new(0, 0, -8), theme.floor, theme.floorMat)
 ${worldVisualsLua()}
@@ -11742,6 +11765,7 @@ ${worldVisualsLua()}
 setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(208, 208, 214), 0.55), tint = Color3.fromRGB(253, 251, 250), haze = 1.4, bloom = 0.8`}})
 label3d(lobby, Config.Title, 9, theme.accent)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "HubSpawn"; spawnLoc.Size = Vector3.new(20, 1, 20); spawnLoc.Position = Vector3.new(0, 1.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${themedSpawnBillboardLua(spec)}
 local lobbyPos = Vector3.new(0, 5, 0)
 
 local GRID, TS = 8, 13
@@ -12138,6 +12162,7 @@ local monument = part("Monument", Vector3.new(8, 30, 8), Vector3.new(0, 15, -36)
 label3d(monument, Config.Title, 18, theme.accent, 280)
 label3d(monument, Config.Summary, 13, Color3.fromRGB(225, 230, 240), 320)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "CustomSpawn"; spawnLoc.Size = Vector3.new(16, 1, 16); spawnLoc.Position = Vector3.new(0, 1.2, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${themedSpawnBillboardLua(spec)}
 
 local function getCash(player) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); return c and c.Value or 0 end
 local function addCash(player, amount) local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Cash"); if c then c.Value = math.max(0, c.Value + amount) end end
