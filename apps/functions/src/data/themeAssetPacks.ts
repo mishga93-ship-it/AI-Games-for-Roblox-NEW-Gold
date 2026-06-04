@@ -52,8 +52,10 @@ export const THEME_ASSET_PACKS: ThemeAssetPack[] = [
   },
   {
     key: 'fnaf',
-    match: /freddy|fnaf|fazbear|animatronic|chica/i,
-    assets: [131366436943647, 91663076384784, 97758124242493, 4939881709, 18940321829],
+    // Session 421: extended so the "The Last Night Guard / Survive until 6 AM"
+    // preset (no freddy/fnaf token) also matches. User-supplied rigs go first.
+    match: /freddy|fnaf|fazbear|animatronic|chica|springtrap|foxy|bonnie|night\s*guard|five\s*nights?|\b6\s*am\b|пять\s*ноч|аниматроник/i,
+    assets: [15313551841, 15084022697, 6946588630, 15443639546, 16779482754, 16779487191, 13725245790, 131366436943647, 91663076384784, 97758124242493, 4939881709, 18940321829],
   },
   {
     key: 'titan',
@@ -79,6 +81,19 @@ export const THEME_ASSET_PACKS: ThemeAssetPack[] = [
     key: 'trapped',
     match: /trapped|trap\b|ловушк|западн/i,
     assets: [9615431080, 189960819, 120602053699409, 11465147915],
+  },
+  // Session 421: user-supplied packs for Story presets that had no coverage.
+  {
+    key: 'kingdom',
+    // "Orangutini's Kingdom / Save the pineapple throne" + generic medieval royalty.
+    match: /orangutini|pineapple\s*throne|\bkingdom\b|\bthrone\b|\broyal(ty)?\b|\bknight\b|\bcastle\b|\bmedieval\b|королевств|корол[еья]|трон|рыцар|замок/i,
+    assets: [82802422656855, 123795807984011, 4620868616, 135468299840894, 16376323744, 79970686014760, 38500538],
+  },
+  {
+    key: 'haunted',
+    // "The Haunted Sleepover" — ghost/mimic spooky props.
+    match: /haunted|sleep\s*over|\bmimic\b|ghost|spooky|haunt/i,
+    assets: [7575093283, 11517379233],
   },
 ];
 
