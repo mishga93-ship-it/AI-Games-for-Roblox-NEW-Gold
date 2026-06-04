@@ -10313,18 +10313,22 @@ local function _ensurePrimary(m)
     if best then m.PrimaryPart = best end
     return m.PrimaryPart
 end
-local function _pickMemeTemplate(figKey, ename, idx)
+local function _pickMemeTemplate(figKey, ename, idx, preferName)
     if #MEME_POOL == 0 then return nil end
-    if figKey ~= "" and MEME_POOL_BY_NAME[figKey] then return MEME_POOL_BY_NAME[figKey] end
-    local keys = {}
-    if figKey ~= "" then keys[#keys + 1] = figKey end
-    if ename and ename ~= "" then keys[#keys + 1] = string.lower(ename) end
-    for _, key in ipairs(keys) do
-        for _, e in ipairs(MEME_POOL) do
-            if string.find(e.name, key, 1, true) then return e.model end
+    if preferName then
+        -- boss: pick the model whose name matches so the ★ label fits the figure
+        if figKey ~= "" and MEME_POOL_BY_NAME[figKey] then return MEME_POOL_BY_NAME[figKey] end
+        local keys = {}
+        if figKey ~= "" then keys[#keys + 1] = figKey end
+        if ename and ename ~= "" then keys[#keys + 1] = string.lower(ename) end
+        for _, key in ipairs(keys) do
+            for _, e in ipairs(MEME_POOL) do
+                if string.find(e.name, key, 1, true) then return e.model end
+            end
         end
     end
-    return MEME_POOL[((idx - 1) % #MEME_POOL) + 1].model
+    -- mobs: a different brainrot each spawn → variety across the whole pool
+    return MEME_POOL[math.random(#MEME_POOL)].model
 end
 if MEME_ASSET_IDS then
     task.spawn(function()
@@ -10437,7 +10441,7 @@ local function spawnEnemyAssembly(kind, color, faceId, scale, pos, figKey, idx, 
         -- (1) real Creator Store brainrot model from the loaded pool;
         -- (2) composite 3D figure (shark/croc/skibidi); (3) composite box.
         if memePoolReady then
-            local tmpl = _pickMemeTemplate(figKey, ename, idx or 1)
+            local tmpl = _pickMemeTemplate(figKey, ename, idx or 1, scale > 2)
             if tmpl then
                 local clone = tmpl:Clone()
                 local prim = clone.PrimaryPart or _ensurePrimary(clone)
@@ -10454,7 +10458,7 @@ local function spawnEnemyAssembly(kind, color, faceId, scale, pos, figKey, idx, 
                     clone:PivotTo(CFrame.new(pos))
                     clone.Parent = world
                     model:Destroy(); core:Destroy()
-                    return clone, prim, true
+                    return clone, prim, true, false
                 end
                 clone:Destroy()
             end
@@ -10464,7 +10468,7 @@ local function spawnEnemyAssembly(kind, color, faceId, scale, pos, figKey, idx, 
             if fm and fcore then
                 pcall(function() fm:ScaleTo(scale * 1.45) end)
                 model:Destroy()
-                return fm, fcore, true
+                return fm, fcore, true, true
             end
         end
         core.Size = Vector3.new(3.0, 2.8, 6.2) * scale
@@ -10593,10 +10597,12 @@ local function spawnEnemy(wave, isBoss, laneIdx)
     local reward = math.floor((10 + wave * 1.5) * (isBoss and 8 or 1))
     local dmg = isBoss and 5 or 1
     local scale = isBoss and 2.6 or 1.0
-    local ec = isBoss and ENEMY_BOSS or (ENEMY_ROSTER[((wave - 1) % #ENEMY_ROSTER) + 1] or ENEMY_BOSS)
-    local ecol = Color3.fromRGB(ec.r, ec.g, ec.b)
     enemySpawnCount += 1
-    local model, core, isFigure = spawnEnemyAssembly(ENEMY_KIND, ecol, ec.face or 0, scale, lane[1] + Vector3.new(0, scale * 2, 0), ec.fig or "", enemySpawnCount, ec.name or "")
+    -- Session 417c: per-ENEMY type cycling (not per-wave) so a single wave mixes
+    -- enemy types instead of being all one creature.
+    local ec = isBoss and ENEMY_BOSS or (ENEMY_ROSTER[((enemySpawnCount - 1) % #ENEMY_ROSTER) + 1] or ENEMY_BOSS)
+    local ecol = Color3.fromRGB(ec.r, ec.g, ec.b)
+    local model, core, isFigure, noTurn = spawnEnemyAssembly(ENEMY_KIND, ecol, ec.face or 0, scale, lane[1] + Vector3.new(0, scale * 2, 0), ec.fig or "", enemySpawnCount, ec.name or "")
     local footOffset, topY
     if isFigure then
         local bcf, bsz = model:GetBoundingBox()
@@ -10614,7 +10620,7 @@ local function spawnEnemy(wave, isBoss, laneIdx)
         local nb = Instance.new("BillboardGui"); nb.Size = UDim2.new(0, 160, 0, 24); nb.StudsOffset = Vector3.new(0, topY + 2.6, 0); nb.AlwaysOnTop = true; nb.Parent = core
         local nt = Instance.new("TextLabel"); nt.Size = UDim2.new(1, 0, 1, 0); nt.BackgroundTransparency = 1; nt.TextColor3 = Color3.fromRGB(255, 210, 120); nt.TextStrokeTransparency = 0.3; nt.TextScaled = true; nt.Font = Enum.Font.GothamBlack; nt.Text = "★ " .. (ec.name or "BOSS"); nt.Parent = nb
     end
-    table.insert(enemies, {model=model, core=core, health=hp, maxHealth=hp, lane=laneIdx, segment=1, t=0, speed=speed, baseSpeed=speed, reward=reward, damage=dmg, fill=fill, boss=isBoss, slowUntil=0, slowMul=1, footOffset=footOffset, noFaceTravel=isFigure})
+    table.insert(enemies, {model=model, core=core, health=hp, maxHealth=hp, lane=laneIdx, segment=1, t=0, speed=speed, baseSpeed=speed, reward=reward, damage=dmg, fill=fill, boss=isBoss, slowUntil=0, slowMul=1, footOffset=footOffset, noFaceTravel=noTurn})
 end
 
 local function broadcast(phaseName, timeLeft)
