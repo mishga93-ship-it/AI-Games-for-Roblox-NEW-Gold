@@ -11385,11 +11385,11 @@ for i = 1, N do
     local len = (b - a).Magnitude + 12
     local cf = CFrame.lookAt(mid, Vector3.new(b.X, 1, b.Z))
     local seg = Instance.new("Part"); seg.Name = "Track_" .. i; seg.Anchored = true; seg.Color = theme.road; seg.Material = Enum.Material.Asphalt
-    seg.Size = Vector3.new(42, 1, len); seg.CFrame = cf; seg.Parent = world
+    seg.Size = Vector3.new(60, 1, len); seg.CFrame = cf; seg.Parent = world
     local curbColor = (i % 2 == 0) and Color3.fromRGB(228, 228, 232) or theme.accent
     for _, sgn in ipairs({1, -1}) do
-        local curb = Instance.new("Part"); curb.Anchored = true; curb.Name = "Curb_" .. i .. "_" .. sgn; curb.Size = Vector3.new(2, 1.4, len)
-        curb.CFrame = cf * CFrame.new(sgn * 21.5, 0.4, 0); curb.Color = curbColor; curb.Material = Enum.Material.SmoothPlastic; curb.Parent = world
+        local curb = Instance.new("Part"); curb.Anchored = true; curb.CanCollide = false; curb.Name = "Curb_" .. i .. "_" .. sgn; curb.Size = Vector3.new(2, 0.6, len)
+        curb.CFrame = cf * CFrame.new(sgn * 30, 0.3, 0); curb.Color = curbColor; curb.Material = Enum.Material.SmoothPlastic; curb.Parent = world
     end
 end
 
@@ -11407,31 +11407,31 @@ local checkpoints = {}
 for i = 1, N do
     local a = waypoints[i]; local b = waypoints[(i % N) + 1]
     local cp = Instance.new("Part"); cp.Name = "CP_" .. i; cp.Anchored = true; cp.CanCollide = false; cp.Transparency = 0.62
-    cp.Size = Vector3.new(44, 18, 3); cp.CFrame = CFrame.lookAt(Vector3.new(a.X, 9, a.Z), Vector3.new(b.X, 9, b.Z))
+    cp.Size = Vector3.new(64, 18, 3); cp.CFrame = CFrame.lookAt(Vector3.new(a.X, 9, a.Z), Vector3.new(b.X, 9, b.Z))
     cp.Color = (i == 1) and Color3.fromRGB(255, 255, 255) or theme.accent; cp.Material = Enum.Material.ForceField; cp.Parent = world
     checkpoints[i] = cp
 end
 
 -- ===== START / FINISH GANTRY (grounded — banner wraps the structure, not floating) =====
 do
-    local pL = part("StartPillarL", Vector3.new(3, 28, 3), startCenter + right * 26 + Vector3.new(0, 14, 0), theme.accent, Enum.Material.Metal)
-    local pR = part("StartPillarR", Vector3.new(3, 28, 3), startCenter - right * 26 + Vector3.new(0, 14, 0), theme.accent, Enum.Material.Metal)
-    local beam = Instance.new("Part"); beam.Name = "StartBeam"; beam.Anchored = true; beam.Size = Vector3.new(56, 5, 4)
+    local pL = part("StartPillarL", Vector3.new(3, 28, 3), startCenter + right * 34 + Vector3.new(0, 14, 0), theme.accent, Enum.Material.Metal)
+    local pR = part("StartPillarR", Vector3.new(3, 28, 3), startCenter - right * 34 + Vector3.new(0, 14, 0), theme.accent, Enum.Material.Metal)
+    local beam = Instance.new("Part"); beam.Name = "StartBeam"; beam.Anchored = true; beam.Size = Vector3.new(74, 5, 4)
     beam.CFrame = CFrame.lookAt(startCenter + Vector3.new(0, 28, 0), startCenter + Vector3.new(0, 28, 0) + fwd); beam.Color = Color3.fromRGB(22, 24, 32); beam.Material = Enum.Material.Metal; beam.Parent = world
-    local board = Instance.new("Part"); board.Name = "StartBanner"; board.Anchored = true; board.Size = Vector3.new(52, 9, 1)
+    local board = Instance.new("Part"); board.Name = "StartBanner"; board.Anchored = true; board.Size = Vector3.new(68, 9, 1)
     board.CFrame = beam.CFrame * CFrame.new(0, 0, 1.6); board.Color = Color3.fromRGB(16, 18, 26); board.Material = Enum.Material.SmoothPlastic; board.Parent = world
     local sg = Instance.new("SurfaceGui"); sg.Adornee = board; sg.Face = Enum.NormalId.Back; sg.CanvasSize = Vector2.new(900, 200); sg.LightInfluence = 0; sg.Parent = board
     ${bannerLua}
     titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255); titleLbl.TextStrokeTransparency = 0.35; titleLbl.TextScaled = true; titleLbl.Font = Enum.Font.GothamBlack; titleLbl.Text = Config.Title; titleLbl.Parent = sg
     -- checkered start line on the ground
-    for k = -3, 3 do
+    for k = -4, 4 do
         local sq = Instance.new("Part"); sq.Anchored = true; sq.Name = "Grid_" .. k; sq.Size = Vector3.new(6, 1.05, 6)
         sq.CFrame = CFrame.new(startCenter) * CFrame.lookAt(Vector3.zero, fwd).Rotation * CFrame.new(k * 6, 0.55, 0)
         sq.Color = (k % 2 == 0) and Color3.fromRGB(245, 245, 245) or Color3.fromRGB(28, 28, 32); sq.Material = Enum.Material.SmoothPlastic; sq.Parent = world
     end
 end
 
-local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "RaceSpawn"; spawnLoc.Size = Vector3.new(28, 1, 18); spawnLoc.Position = startCenter - fwd * 30 + Vector3.new(0, 1.2, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "RaceSpawn"; spawnLoc.Size = Vector3.new(40, 1, 18); spawnLoc.Position = startCenter - fwd * 30 + Vector3.new(0, 1.2, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 
 -- ===== BOOST PADS (free timed speed boost on the straights) =====
 local boostPads = {}
