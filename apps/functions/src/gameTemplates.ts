@@ -11013,8 +11013,44 @@ for i = 1, 12 do local a = math.rad(i * 30); makeTree(world, Vector3.new(math.co
 do local cf = Vector3.new(0, 0, 58) for i = 1, 5 do local a = math.rad(i * 72); local lg = part("CampLog_" .. i, Vector3.new(6, 1.3, 1.3), cf + Vector3.new(math.cos(a) * 2.2, 1, math.sin(a) * 2.2), Color3.fromRGB(86, 58, 38), Enum.Material.Wood); lg.CFrame = CFrame.new(lg.Position) * CFrame.Angles(0, a, math.rad(22)) end local em = part("CampEmbers", Vector3.new(4, 2.2, 4), cf + Vector3.new(0, 1.6, 0), Color3.fromRGB(255, 130, 45), Enum.Material.Neon); em.Shape = Enum.PartType.Ball; local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 30; pl.Parent = em; local fr = Instance.new("Fire"); fr.Size = 7; fr.Parent = em end`
         : '';
 
+  const heroDecal = spec ? Math.max(0, Math.floor(Number(spec.heroDecalId) || 0)) : 0;
+  const bannerLua = heroDecal > 0
+    ? `local img = Instance.new("ImageLabel"); img.Size = UDim2.new(0.26, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=${heroDecal}&w=420&h=420"; img.Parent = sg
+    local titleLbl = Instance.new("TextLabel"); titleLbl.Size = UDim2.new(0.72, 0, 1, 0); titleLbl.Position = UDim2.new(0.27, 0, 0, 0)`
+    : `local titleLbl = Instance.new("TextLabel"); titleLbl.Size = UDim2.new(1, 0, 1, 0)`;
+  // Session 418: sky/dragon presets (e.g. "Drive the Dragon Highway") resolve to
+  // a neutral vibe, so add a local "race above the clouds" decor set — floating
+  // islands + cloud puffs + a stylized dragon arc (all CanCollide=false, clear of
+  // the track). Sky elements ARE meant to be elevated; this is not the floating
+  // decal-banner anti-pattern.
+  const titleLow = String(params.title || '').toLowerCase();
+  const isSky = /dragon|sky|cloud|above the clouds|heaven|aero|wing/.test(titleLow);
+  const racingSkyDecorLua = isSky
+    ? `
+for i = 1, 16 do
+    local a = math.rad(i * 22.5); local r = 235 + (i % 3) * 26
+    local cl = part("Cloud_" .. i, Vector3.new(34 + (i % 4) * 8, 8, 26), Vector3.new(math.cos(a) * r, 40 + (i % 5) * 9, math.sin(a) * r * 0.8), Color3.fromRGB(245, 248, 255), Enum.Material.SmoothPlastic)
+    cl.Transparency = 0.25; cl.CanCollide = false
+end
+for i = 1, 7 do
+    local a = math.rad(i * 51); local r = 212
+    local isl = part("SkyIsland_" .. i, Vector3.new(40, 10, 40), Vector3.new(math.cos(a) * r, 22, math.sin(a) * r * 0.8), Color3.fromRGB(96, 78, 60), Enum.Material.Rock); isl.CanCollide = false
+    local grass = part("SkyIslandTop_" .. i, Vector3.new(42, 3, 42), isl.Position + Vector3.new(0, 6, 0), Color3.fromRGB(86, 168, 92), Enum.Material.Grass); grass.CanCollide = false
+    makeTree(world, isl.Position + Vector3.new(0, 8, 0), 1.0, "round", Color3.fromRGB(110, 78, 50), Color3.fromRGB(78, 150, 86))
+end
+do
+    local segs = 9
+    for i = 0, segs - 1 do
+        local t = i / (segs - 1)
+        local s = 7 - t * 4
+        local d = part("Dragon_" .. i, Vector3.new(s, s, s + 3), Vector3.new(math.cos(t * math.pi * 1.4) * 120, 58 + math.sin(t * math.pi) * 26, math.sin(t * math.pi * 1.4) * 80), Color3.fromRGB(120, 60, 160), Enum.Material.SmoothPlastic); d.CanCollide = false
+        if i == 0 then local eye = part("DragonEye", Vector3.new(2, 2, 2), d.Position + Vector3.new(0, 2, -3), Color3.fromRGB(255, 220, 80), Enum.Material.Neon); eye.CanCollide = false; eye.Shape = Enum.PartType.Ball end
+    end
+end`
+    : '';
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local DataStoreService = game:GetService("DataStoreService")
 
 local Config = {Title=${titleLua}, Theme=${themeLua}, Laps=${lapCount}, Difficulty=${difficultyLua}}
@@ -11028,21 +11064,31 @@ local THEMES = {
 local theme = THEMES[Config.Theme] or THEMES.city
 local SPEC_THEME = ${specThemeLua}
 if SPEC_THEME then theme = SPEC_THEME end
-local boost = Config.Difficulty == "hard" and 42 or (Config.Difficulty == "casual" and 28 or 34)
+local tireColor = Color3.fromRGB(26, 26, 30)
+
+-- car roster: distinct stats so the 3 garage choices feel different.
+local CARS = {
+    cruiser = {label="Cruiser", maxSpeed=92,  accel=46, grip=0.82, turn=2.7, body=Vector3.new(7.0, 2.2, 13.0)},
+    bolt    = {label="Bolt",    maxSpeed=128, accel=62, grip=0.66, turn=2.3, body=Vector3.new(6.4, 1.9, 13.6)},
+    drifter = {label="Drifter", maxSpeed=104, accel=54, grip=0.50, turn=3.3, body=Vector3.new(7.0, 2.0, 12.6)},
+}
+local CAR_ORDER = {"cruiser", "bolt", "drifter"}
 
 local dataStore
-local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("RacingStats_v1") end)
+local okStore, storeErr = pcall(function() dataStore = DataStoreService:GetDataStore("RacingStats_v2") end)
 if not okStore then warn("[Racing] DataStore unavailable: " .. tostring(storeErr)) end
 
 local remotes = Instance.new("Folder"); remotes.Name = "RaceRemotes"; remotes.Parent = ReplicatedStorage
 local RaceEvent = Instance.new("RemoteEvent"); RaceEvent.Name = "RaceEvent"; RaceEvent.Parent = remotes
+local SelectCar = Instance.new("RemoteEvent"); SelectCar.Name = "SelectCar"; SelectCar.Parent = remotes
+local BoostEvent = Instance.new("RemoteEvent"); BoostEvent.Name = "BoostEvent"; BoostEvent.Parent = remotes
 local world = Instance.new("Folder"); world.Name = "GeneratedRace"; world.Parent = workspace
 
 local function part(name, size, pos, color, mat, parent)
     local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
 end
 
-part("RaceGround", Vector3.new(420, 1, 320), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
+part("RaceGround", Vector3.new(470, 1, 370), Vector3.new(0, 0, 0), theme.ground, theme.groundMat)
 ${worldVisualsLua()}
 setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(205, 205, 210), 0.6), tint = Color3.fromRGB(252, 250, 248), haze = 1.5`}})
 for i = 1, 14 do
@@ -11051,42 +11097,180 @@ for i = 1, 14 do
     if i % 4 == 0 then makeRock(world, p, 0.7, ${racingRockLua}) else makeTree(world, p, 0.9, ${racingTreeKindLua}, ${racingTreeTrunkLua}, ${racingTreeLeafLua}) end
 end
 ${racingDecorLua}
+${racingSkyDecorLua}
 
+-- ===== TRACK (oval circuit with curbs) =====
 local waypoints = {}
-local rx, rz = 155, 100
+local rx, rz = 165, 108
 for i = 0, 11 do local a = math.rad(i * 30); table.insert(waypoints, Vector3.new(math.cos(a) * rx, 2, math.sin(a) * rz)) end
 local N = #waypoints
 for i = 1, N do
     local a = waypoints[i]; local b = waypoints[(i % N) + 1]
     local mid = Vector3.new((a.X + b.X) / 2, 1, (a.Z + b.Z) / 2)
+    local len = (b - a).Magnitude + 12
+    local cf = CFrame.lookAt(mid, Vector3.new(b.X, 1, b.Z))
     local seg = Instance.new("Part"); seg.Name = "Track_" .. i; seg.Anchored = true; seg.Color = theme.road; seg.Material = Enum.Material.Asphalt
-    seg.Size = Vector3.new(30, 1, (b - a).Magnitude + 8); seg.CFrame = CFrame.lookAt(mid, Vector3.new(b.X, 1, b.Z)); seg.Parent = world
+    seg.Size = Vector3.new(42, 1, len); seg.CFrame = cf; seg.Parent = world
+    local curbColor = (i % 2 == 0) and Color3.fromRGB(228, 228, 232) or theme.accent
+    for _, sgn in ipairs({1, -1}) do
+        local curb = Instance.new("Part"); curb.Anchored = true; curb.Name = "Curb_" .. i .. "_" .. sgn; curb.Size = Vector3.new(2, 1.4, len)
+        curb.CFrame = cf * CFrame.new(sgn * 21.5, 0.4, 0); curb.Color = curbColor; curb.Material = Enum.Material.SmoothPlastic; curb.Parent = world
+    end
 end
 
+-- start tangent + helpers (used by gantry, grid, boost pads)
+local startCenter = Vector3.new(waypoints[1].X, 0, waypoints[1].Z)
+local fwd = (Vector3.new(waypoints[2].X, 0, waypoints[2].Z) - startCenter)
+if fwd.Magnitude < 0.1 then fwd = Vector3.new(0, 0, 1) end
+fwd = fwd.Unit
+local right = Vector3.new(0, 1, 0):Cross(fwd).Unit
+local startYaw = math.atan2(-fwd.X, -fwd.Z)
+local function yawToLook(y) return Vector3.new(-math.sin(y), 0, -math.cos(y)) end
+
+-- checkpoints (sequential gates)
 local checkpoints = {}
 for i = 1, N do
     local a = waypoints[i]; local b = waypoints[(i % N) + 1]
-    local cp = Instance.new("Part"); cp.Name = "CP_" .. i; cp.Anchored = true; cp.CanCollide = false; cp.Transparency = 0.55
-    cp.Size = Vector3.new(32, 16, 3); cp.CFrame = CFrame.lookAt(Vector3.new(a.X, 8, a.Z), Vector3.new(b.X, 8, b.Z))
+    local cp = Instance.new("Part"); cp.Name = "CP_" .. i; cp.Anchored = true; cp.CanCollide = false; cp.Transparency = 0.62
+    cp.Size = Vector3.new(44, 18, 3); cp.CFrame = CFrame.lookAt(Vector3.new(a.X, 9, a.Z), Vector3.new(b.X, 9, b.Z))
     cp.Color = (i == 1) and Color3.fromRGB(255, 255, 255) or theme.accent; cp.Material = Enum.Material.ForceField; cp.Parent = world
     checkpoints[i] = cp
 end
-local startBb = Instance.new("BillboardGui"); startBb.Size = UDim2.new(0, 220, 0, 44); startBb.StudsOffset = Vector3.new(0, 11, 0); startBb.AlwaysOnTop = true; startBb.Parent = checkpoints[1]
-local startLabel = Instance.new("TextLabel"); startLabel.Size = UDim2.new(1, 0, 1, 0); startLabel.BackgroundTransparency = 1; startLabel.TextColor3 = Color3.fromRGB(255, 255, 255); startLabel.TextStrokeTransparency = 0.3; startLabel.TextScaled = true; startLabel.Font = Enum.Font.GothamBlack; startLabel.Text = "START / FINISH"; startLabel.Parent = startBb
 
-local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "RaceSpawn"; spawnLoc.Size = Vector3.new(24, 1, 16); spawnLoc.Position = Vector3.new(rx, 1.2, -10); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
-${themedSpawnBillboardLua(spec)}
+-- ===== START / FINISH GANTRY (grounded — banner wraps the structure, not floating) =====
+do
+    local pL = part("StartPillarL", Vector3.new(3, 28, 3), startCenter + right * 26 + Vector3.new(0, 14, 0), theme.accent, Enum.Material.Metal)
+    local pR = part("StartPillarR", Vector3.new(3, 28, 3), startCenter - right * 26 + Vector3.new(0, 14, 0), theme.accent, Enum.Material.Metal)
+    local beam = Instance.new("Part"); beam.Name = "StartBeam"; beam.Anchored = true; beam.Size = Vector3.new(56, 5, 4)
+    beam.CFrame = CFrame.lookAt(startCenter + Vector3.new(0, 28, 0), startCenter + Vector3.new(0, 28, 0) + fwd); beam.Color = Color3.fromRGB(22, 24, 32); beam.Material = Enum.Material.Metal; beam.Parent = world
+    local board = Instance.new("Part"); board.Name = "StartBanner"; board.Anchored = true; board.Size = Vector3.new(52, 9, 1)
+    board.CFrame = beam.CFrame * CFrame.new(0, 0, 1.6); board.Color = Color3.fromRGB(16, 18, 26); board.Material = Enum.Material.SmoothPlastic; board.Parent = world
+    local sg = Instance.new("SurfaceGui"); sg.Adornee = board; sg.Face = Enum.NormalId.Back; sg.CanvasSize = Vector2.new(900, 200); sg.LightInfluence = 0; sg.Parent = board
+    ${bannerLua}
+    titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255); titleLbl.TextStrokeTransparency = 0.35; titleLbl.TextScaled = true; titleLbl.Font = Enum.Font.GothamBlack; titleLbl.Text = Config.Title; titleLbl.Parent = sg
+    -- checkered start line on the ground
+    for k = -3, 3 do
+        local sq = Instance.new("Part"); sq.Anchored = true; sq.Name = "Grid_" .. k; sq.Size = Vector3.new(6, 1.05, 6)
+        sq.CFrame = CFrame.new(startCenter) * CFrame.lookAt(Vector3.zero, fwd).Rotation * CFrame.new(k * 6, 0.55, 0)
+        sq.Color = (k % 2 == 0) and Color3.fromRGB(245, 245, 245) or Color3.fromRGB(28, 28, 32); sq.Material = Enum.Material.SmoothPlastic; sq.Parent = world
+    end
+end
 
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "RaceSpawn"; spawnLoc.Size = Vector3.new(28, 1, 18); spawnLoc.Position = startCenter - fwd * 30 + Vector3.new(0, 1.2, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+
+-- ===== BOOST PADS (free timed speed boost on the straights) =====
+local boostPads = {}
+for _, wi in ipairs({2, 5, 8, 11}) do
+    local a = waypoints[wi]; local b = waypoints[(wi % N) + 1]
+    local mid = Vector3.new((a.X + b.X) / 2, 1.1, (a.Z + b.Z) / 2)
+    local pad = Instance.new("Part"); pad.Name = "BoostPad_" .. wi; pad.Anchored = true; pad.CanCollide = false; pad.Size = Vector3.new(20, 0.4, 14)
+    pad.CFrame = CFrame.lookAt(mid, Vector3.new(b.X, 1.1, b.Z)); pad.Color = Color3.fromRGB(255, 220, 70); pad.Material = Enum.Material.Neon; pad.Parent = world
+    local arrow = Instance.new("Part"); arrow.Anchored = true; arrow.CanCollide = false; arrow.Size = Vector3.new(8, 0.5, 8); arrow.CFrame = pad.CFrame * CFrame.new(0, 0.05, 0) * CFrame.Angles(0, math.rad(45), 0)
+    arrow.Color = Color3.fromRGB(255, 255, 255); arrow.Material = Enum.Material.Neon; arrow.Transparency = 0.2; arrow.Parent = world
+    table.insert(boostPads, pad)
+end
+
+-- ===== ARCADE CAR BUILDER (pure parts, no upload — guaranteed visible) =====
+local function weld(a, b) local w = Instance.new("WeldConstraint"); w.Part0 = a; w.Part1 = b; w.Parent = a end
+local function buildRaceCar(cfg, cf)
+    local stat = CARS[cfg.car] or CARS.cruiser
+    local bs = stat.body
+    local model = Instance.new("Model"); model.Name = "RaceCar_" .. tostring(cfg.userId)
+    local chassis = Instance.new("Part"); chassis.Name = "Chassis"; chassis.Size = bs; chassis.CFrame = cf; chassis.Anchored = true; chassis.CanCollide = true
+    chassis.Color = cfg.primary; chassis.Material = Enum.Material.Metal; chassis.Parent = model; model.PrimaryPart = chassis
+    local cabin = Instance.new("Part"); cabin.Name = "Cabin"; cabin.Size = Vector3.new(bs.X * 0.78, 2.2, bs.Z * 0.4); cabin.CFrame = cf * CFrame.new(0, bs.Y * 0.5 + 1.1, -bs.Z * 0.06)
+    cabin.Color = cfg.primary:Lerp(Color3.fromRGB(0, 0, 0), 0.2); cabin.Material = Enum.Material.SmoothPlastic; cabin.CanCollide = false; cabin.Anchored = true; cabin.Parent = model
+    local glass = Instance.new("Part"); glass.Name = "Windshield"; glass.Size = Vector3.new(bs.X * 0.7, 1.8, 0.4); glass.CFrame = cf * CFrame.new(0, bs.Y * 0.5 + 1.2, -bs.Z * 0.26)
+    glass.Color = Color3.fromRGB(150, 210, 235); glass.Material = Enum.Material.Glass; glass.Transparency = 0.45; glass.CanCollide = false; glass.Anchored = true; glass.Parent = model
+    local spoiler = Instance.new("Part"); spoiler.Name = "Spoiler"; spoiler.Size = Vector3.new(bs.X * 0.9, 0.5, 2); spoiler.CFrame = cf * CFrame.new(0, bs.Y * 0.5 + 1.6, bs.Z * 0.46)
+    spoiler.Color = cfg.accent; spoiler.Material = Enum.Material.SmoothPlastic; spoiler.CanCollide = false; spoiler.Anchored = true; spoiler.Parent = model
+    for _, hx in ipairs({-1, 1}) do
+        local hl = Instance.new("Part"); hl.Name = "Head"; hl.Size = Vector3.new(1.4, 1, 0.6); hl.CFrame = cf * CFrame.new(hx * bs.X * 0.32, 0, -bs.Z * 0.5)
+        hl.Color = Color3.fromRGB(255, 250, 210); hl.Material = Enum.Material.Neon; hl.CanCollide = false; hl.Anchored = true; hl.Parent = model
+    end
+    local rearSmoke = {}
+    local wheelDefs = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}}
+    for _, wd in ipairs(wheelDefs) do
+        local wpos = cf * CFrame.new(wd[1] * (bs.X * 0.5 - 0.2), -bs.Y * 0.5, wd[2] * (bs.Z * 0.34))
+        local wheel = Instance.new("Part"); wheel.Name = "Wheel"; wheel.Shape = Enum.PartType.Cylinder; wheel.Size = Vector3.new(1.4, 3.2, 3.2)
+        wheel.CFrame = wpos * CFrame.Angles(0, 0, math.rad(90)); wheel.Color = tireColor; wheel.Material = Enum.Material.SmoothPlastic; wheel.CanCollide = false; wheel.Anchored = true; wheel.Parent = model
+        local rim = Instance.new("Part"); rim.Name = "Rim"; rim.Shape = Enum.PartType.Cylinder; rim.Size = Vector3.new(1.5, 1.5, 1.5); rim.CFrame = wheel.CFrame
+        rim.Color = cfg.accent; rim.Material = Enum.Material.Metal; rim.CanCollide = false; rim.Anchored = true; rim.Parent = model
+        if wd[2] > 0 then
+            local em = Instance.new("ParticleEmitter"); em.Name = "Drift"; em.Texture = "rbxassetid://243660364"; em.Rate = 0; em.Enabled = false; em.Lifetime = NumberRange.new(0.5, 0.9)
+            em.Size = NumberSequence.new(2.4); em.Speed = NumberRange.new(2, 5); em.Transparency = NumberSequence.new(0.35); em.Color = ColorSequence.new(Color3.fromRGB(225, 225, 230)); em.Parent = wheel
+            table.insert(rearSmoke, em)
+        end
+    end
+    local seat = Instance.new("VehicleSeat"); seat.Name = "DriveSeat"; seat.Size = Vector3.new(bs.X * 0.5, 1, 3.2); seat.CFrame = cf * CFrame.new(0, bs.Y * 0.5 + 0.6, bs.Z * 0.04)
+    seat.Color = cfg.accent; seat.Material = Enum.Material.Fabric; seat.MaxSpeed = 0; seat.Torque = 0; seat.TurnSpeed = 0; seat.HeadsUpDisplay = false; seat.Anchored = true; seat.Parent = model
+    local flame = Instance.new("ParticleEmitter"); flame.Name = "Boost"; flame.Texture = "rbxassetid://243664672"; flame.Rate = 0; flame.Enabled = false; flame.Lifetime = NumberRange.new(0.3, 0.5)
+    flame.Size = NumberSequence.new(3); flame.Speed = NumberRange.new(6, 10); flame.Color = ColorSequence.new(Color3.fromRGB(255, 170, 60), Color3.fromRGB(255, 80, 30)); flame.Parent = spoiler
+    local att = Instance.new("Attachment"); att.Name = "Drive"; att.Parent = chassis
+    local lv = Instance.new("LinearVelocity"); lv.Name = "DriveLV"; lv.Attachment0 = att; lv.RelativeTo = Enum.ActuatorRelativeTo.World; lv.MaxForce = 1e6; lv.VectorVelocity = Vector3.zero; lv.Parent = chassis
+    local ao = Instance.new("AlignOrientation"); ao.Name = "DriveAO"; ao.Mode = Enum.OrientationAlignmentMode.OneAttachment; ao.Attachment0 = att; ao.RigidityEnabled = true; ao.CFrame = CFrame.Angles(0, startYaw, 0); ao.Parent = chassis
+    for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = false; if p ~= chassis then p.Massless = true end end end
+    for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") and p ~= chassis then weld(chassis, p) end end
+    model:SetAttribute("OwnerUserId", cfg.userId)
+    model.Parent = world
+    return {model = model, seat = seat, chassis = chassis, lv = lv, ao = ao, flame = flame, smoke = rearSmoke, stat = stat}
+end
+
+-- ===== PER-PLAYER STATE =====
+local cars = {}
+local prefs = {}
+local slotOf = {}
+local nextSlot = 0
 local raceState = {}
-local racing = false
+local raceActive = false
 local finishOrder = 0
 
-local function fmt(t) return string.format("%.1f", t) end
-local function applySpeed(player, speed)
-    local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid"); if hum then hum.WalkSpeed = speed end
+local function gridCFrame(slot)
+    local row = math.floor(slot / 2)
+    local col = (slot % 2 == 0) and 1 or -1
+    local base = startCenter - fwd * (16 + row * 16) + right * (col * 9) + Vector3.new(0, 3.4, 0)
+    return CFrame.lookAt(base, base + fwd)
 end
-local function teleport(player, pos)
-    local char = player.Character; local root = char and char:FindFirstChild("HumanoidRootPart"); if root then root.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
+
+local function defPrefs() return {car = "cruiser", primary = theme.accent, accent = Color3.fromRGB(24, 24, 30)} end
+
+local function seatPlayer(player, car)
+    local char = player.Character; if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid"); if not (hum and car and car.seat and car.seat.Parent) then return end
+    char:PivotTo(car.seat.CFrame * CFrame.new(0, 2, 0))
+    pcall(function() car.seat:Sit(hum) end)
+    -- re-assert server ownership: occupying a VehicleSeat would otherwise flip
+    -- network ownership to the client and fight the server drive controller.
+    task.defer(function() pcall(function() if car.chassis and car.chassis.Parent then car.chassis:SetNetworkOwner(nil) end end) end)
+end
+
+local function spawnCarFor(player)
+    local pref = prefs[player.UserId] or defPrefs()
+    local old = cars[player.UserId]; if old and old.model then old.model:Destroy() end
+    local slot = slotOf[player.UserId]; if not slot then slot = nextSlot; slotOf[player.UserId] = slot; nextSlot = nextSlot + 1 end
+    local cf = gridCFrame(slot)
+    local car = buildRaceCar({userId = player.UserId, car = pref.car, primary = pref.primary, accent = pref.accent}, cf)
+    pcall(function() car.chassis:SetNetworkOwner(nil) end)
+    car.yaw = startYaw; car.speed = 0; car.drift = 0; car.boost = 40; car.boostUntil = 0; car.player = player
+    cars[player.UserId] = car
+    task.defer(function() seatPlayer(player, car) end)
+    RaceEvent:FireClient(player, {kind = "car", name = car.stat.label, maxSpeed = car.stat.maxSpeed})
+end
+
+local function resetToGrid(player)
+    local car = cars[player.UserId]; if not car or not car.model or not car.model.Parent then spawnCarFor(player); return end
+    local slot = slotOf[player.UserId] or 0
+    car.model:PivotTo(gridCFrame(slot))
+    car.chassis.AssemblyLinearVelocity = Vector3.zero; car.chassis.AssemblyAngularVelocity = Vector3.zero
+    car.yaw = startYaw; car.speed = 0; car.drift = 0
+    car.ao.CFrame = CFrame.Angles(0, startYaw, 0); car.lv.VectorVelocity = Vector3.zero
+    seatPlayer(player, car)
+end
+
+-- ===== REWARDS =====
+local function addCoins(player, n)
+    local ls = player:FindFirstChild("leaderstats"); local c = ls and ls:FindFirstChild("Coins"); if c then c.Value += n end
+    RaceEvent:FireClient(player, {kind = "coins", amount = (c and c.Value) or 0, gain = n})
 end
 local function addWin(player)
     local ls = player:FindFirstChild("leaderstats"); local w = ls and ls:FindFirstChild("Wins"); if w then w.Value += 1 end
@@ -11094,13 +11278,20 @@ end
 local function recordBest(player, t)
     local ls = player:FindFirstChild("leaderstats"); local bt = ls and ls:FindFirstChild("Best Time"); if not bt then return end
     local secs = math.floor(t)
-    if bt.Value == 0 or secs < bt.Value then bt.Value = secs; if dataStore then pcall(function() dataStore:SetAsync("race_" .. player.UserId, secs) end) end end
+    if bt.Value == 0 or secs < bt.Value then bt.Value = secs; if dataStore then pcall(function() dataStore:SetAsync("rb_" .. player.UserId, secs) end) end end
 end
+local function fmt(t) return string.format("%.1f", t) end
 
+-- ===== CHECKPOINT / LAP LOGIC =====
+local function ownerOf(hit)
+    local m = hit; while m and m ~= workspace do local uid = m:GetAttribute("OwnerUserId"); if uid then return uid end; m = m.Parent end
+    return nil
+end
 for i = 1, N do
     checkpoints[i].Touched:Connect(function(hit)
-        local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
-        local st = raceState[player]; if not st or st.finished or not racing then return end
+        local uid = ownerOf(hit); if not uid then return end
+        local player = Players:GetPlayerByUserId(uid); if not player then return end
+        local st = raceState[player]; if not st or st.finished or not raceActive then return end
         if st.nextCp ~= i then return end
         if i == 1 then
             st.lap += 1
@@ -11108,57 +11299,129 @@ for i = 1, N do
                 st.finished = true; finishOrder += 1; st.place = finishOrder
                 local elapsed = os.clock() - st.startTime
                 addWin(player); recordBest(player, elapsed)
-                RaceEvent:FireClient(player, {kind="finish", place=finishOrder, time=fmt(elapsed)})
+                local prize = (finishOrder == 1) and 250 or (finishOrder == 2) and 150 or (finishOrder == 3) and 100 or 50
+                addCoins(player, prize)
+                RaceEvent:FireClient(player, {kind = "finish", place = finishOrder, time = fmt(elapsed), prize = prize})
             else
-                st.nextCp = 2
-                RaceEvent:FireClient(player, {kind="lap", lap=st.lap, total=Config.Laps})
+                st.nextCp = 2; addCoins(player, 25)
+                RaceEvent:FireClient(player, {kind = "lap", lap = st.lap, total = Config.Laps})
             end
         else
-            st.nextCp = i + 1
-            if st.nextCp > N then st.nextCp = 1 end
+            st.nextCp = i + 1; if st.nextCp > N then st.nextCp = 1 end
         end
     end)
 end
 
+-- boost pads
+for _, pad in ipairs(boostPads) do
+    pad.Touched:Connect(function(hit)
+        local uid = ownerOf(hit); if not uid then return end
+        local car = cars[uid]; if car and raceActive then car.boostUntil = os.clock() + 1.8 end
+    end)
+end
+
+-- ===== DRIVE CONTROLLER (server-authoritative; VehicleSeat input replicates) =====
+RunService.Heartbeat:Connect(function(dt)
+    for uid, car in pairs(cars) do
+        local chassis = car.chassis
+        if chassis and chassis.Parent then
+            local seat = car.seat
+            local throttle = (raceActive and seat.Occupant) and (seat.ThrottleFloat or 0) or 0
+            local steer = (raceActive and seat.Occupant) and (seat.SteerFloat or 0) or 0
+            local boosting = os.clock() < (car.boostUntil or 0)
+            local mult = boosting and 1.6 or 1
+            local target = throttle * car.stat.maxSpeed * mult
+            car.speed = car.speed + (target - car.speed) * math.clamp(dt * (car.stat.accel / 18), 0, 1)
+            local fast = math.abs(car.speed) > car.stat.maxSpeed * 0.5
+            local drifting = math.abs(steer) > 0.6 and fast
+            local turnAmt = steer * car.stat.turn * math.clamp(math.abs(car.speed) / car.stat.maxSpeed, 0, 1)
+            if drifting then turnAmt = turnAmt * 1.5 end
+            car.yaw = car.yaw - turnAmt * dt
+            car.ao.CFrame = CFrame.Angles(0, car.yaw, 0)
+            local look = yawToLook(car.yaw)
+            local desired = look * car.speed
+            local cur = chassis.AssemblyLinearVelocity
+            local grip = drifting and (car.stat.grip * 0.4) or car.stat.grip
+            local nx = cur.X + (desired.X - cur.X) * math.clamp(grip, 0, 1)
+            local nz = cur.Z + (desired.Z - cur.Z) * math.clamp(grip, 0, 1)
+            car.lv.VectorVelocity = Vector3.new(nx, cur.Y, nz)
+            if drifting then
+                car.drift = (car.drift or 0) + dt
+                for _, em in ipairs(car.smoke) do em.Enabled = true; em.Rate = 40 end
+            else
+                if (car.drift or 0) > 0.5 then
+                    local pts = math.floor(car.drift * 14)
+                    car.boost = math.min(100, (car.boost or 0) + pts)
+                    if car.player then addCoins(car.player, pts); RaceEvent:FireClient(car.player, {kind = "boostmeter", value = car.boost}) end
+                end
+                car.drift = 0
+                for _, em in ipairs(car.smoke) do em.Enabled = false; em.Rate = 0 end
+            end
+            car.flame.Enabled = boosting; car.flame.Rate = boosting and 60 or 0
+        end
+    end
+end)
+
+-- ===== REMOTES: garage select + boost button =====
+SelectCar.OnServerEvent:Connect(function(player, payload)
+    if typeof(payload) ~= "table" then return end
+    local pref = prefs[player.UserId] or defPrefs()
+    if type(payload.car) == "string" and CARS[payload.car] then pref.car = payload.car end
+    if typeof(payload.color) == "Color3" then pref.primary = payload.color end
+    prefs[player.UserId] = pref
+    if not raceActive then spawnCarFor(player) end
+end)
+BoostEvent.OnServerEvent:Connect(function(player)
+    local car = cars[player.UserId]; if not car or not raceActive then return end
+    if (car.boost or 0) >= 35 then car.boost -= 35; car.boostUntil = os.clock() + 2.0; RaceEvent:FireClient(player, {kind = "boostmeter", value = car.boost}) end
+end)
+
+-- ===== PLAYER LIFECYCLE =====
 local function setupPlayer(player)
     local best = 0
-    if dataStore then pcall(function() local v = dataStore:GetAsync("race_" .. player.UserId); if typeof(v) == "number" then best = v end end) end
+    if dataStore then pcall(function() local v = dataStore:GetAsync("rb_" .. player.UserId); if typeof(v) == "number" then best = v end end) end
     local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
     local w = Instance.new("IntValue"); w.Name = "Wins"; w.Value = 0; w.Parent = ls
     local bt = Instance.new("IntValue"); bt.Name = "Best Time"; bt.Value = best; bt.Parent = ls
-    raceState[player] = {nextCp = 1, lap = 0, startTime = 0, finished = false, place = nil}
+    local co = Instance.new("IntValue"); co.Name = "Coins"; co.Value = 0; co.Parent = ls
+    prefs[player.UserId] = defPrefs(); raceState[player] = {nextCp = 1, lap = 0, startTime = 0, finished = false, place = nil}
+    player.CharacterAdded:Connect(function() task.wait(0.4); spawnCarFor(player) end)
+    if player.Character then spawnCarFor(player) end
 end
 Players.PlayerAdded:Connect(setupPlayer)
-Players.PlayerRemoving:Connect(function(player) raceState[player] = nil end)
+Players.PlayerRemoving:Connect(function(player)
+    raceState[player] = nil
+    local car = cars[player.UserId]; if car and car.model then car.model:Destroy() end
+    cars[player.UserId] = nil
+end)
 for _, p in Players:GetPlayers() do setupPlayer(p) end
 
 local function broadcast(phase, info)
-    RaceEvent:FireAllClients({kind="state", phase=phase, info=info or 0, laps=Config.Laps, title=Config.Title})
+    RaceEvent:FireAllClients({kind = "state", phase = phase, info = info or 0, laps = Config.Laps, title = Config.Title})
 end
 
+-- ===== RACE ROUND LOOP =====
 task.spawn(function()
     while true do
-        racing = false; finishOrder = 0
+        raceActive = false; finishOrder = 0
         for _, p in Players:GetPlayers() do
             local st = raceState[p]; if st then st.nextCp = 1; st.lap = 0; st.finished = false; st.place = nil end
-            applySpeed(p, 16); teleport(p, spawnLoc.Position)
+            resetToGrid(p)
         end
         for t = 5, 1, -1 do broadcast("countdown", t); task.wait(1) end
-        racing = true
+        raceActive = true
         for _, p in Players:GetPlayers() do
             local st = raceState[p]; if st then st.nextCp = 2; st.lap = 0; st.finished = false; st.startTime = os.clock() end
-            applySpeed(p, boost)
         end
         broadcast("race", 0)
-        local elapsed = 0; local maxTime = 150
-        while racing and elapsed < maxTime do
+        local elapsed = 0; local maxTime = 180
+        while raceActive and elapsed < maxTime do
             local players = Players:GetPlayers(); local allDone = #players > 0
             for _, p in players do if raceState[p] and not raceState[p].finished then allDone = false; break end end
             if allDone then break end
             broadcast("race", elapsed); task.wait(0.5); elapsed += 0.5
         end
-        racing = false
-        for _, p in Players:GetPlayers() do applySpeed(p, 16) end
+        raceActive = false
         broadcast("results", 0)
         task.wait(8)
     end
@@ -11167,26 +11430,66 @@ print("[Racing] " .. Config.Title .. " ready - " .. Config.Laps .. " laps, theme
 `;
   const clientScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("RaceRemotes")
 local RaceEvent = remotes:WaitForChild("RaceEvent")
+local SelectCar = remotes:WaitForChild("SelectCar")
+local BoostEvent = remotes:WaitForChild("BoostEvent")
 
 local gui = Instance.new("ScreenGui"); gui.Name = "RacingHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
-local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 480, 0, 54); top.Position = UDim2.new(0.5, -240, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.1; top.TextColor3 = Color3.fromRGB(225, 240, 255); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Racing"; top.Parent = gui
-local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = top
-local lap = Instance.new("TextLabel"); lap.Size = UDim2.new(0, 180, 0, 40); lap.Position = UDim2.new(0, 14, 0, 12); lap.BackgroundColor3 = Color3.fromRGB(22, 30, 44); lap.BackgroundTransparency = 0.1; lap.TextColor3 = Color3.fromRGB(160, 220, 255); lap.TextScaled = true; lap.Font = Enum.Font.GothamBold; lap.Text = "Lap 0"; lap.Parent = gui
-local lc = Instance.new("UICorner"); lc.CornerRadius = UDim.new(0, 10); lc.Parent = lap
-local big = Instance.new("TextLabel"); big.Size = UDim2.new(0, 400, 0, 80); big.Position = UDim2.new(0.5, -200, 0.4, 0); big.BackgroundTransparency = 1; big.TextColor3 = Color3.fromRGB(255, 255, 255); big.TextStrokeTransparency = 0.2; big.TextScaled = true; big.Font = Enum.Font.GothamBlack; big.Text = ""; big.Parent = gui
+local function corner(o, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 10); c.Parent = o end
 
-local myLap = 0
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 500, 0, 50); top.Position = UDim2.new(0.5, -250, 0, 10); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.1; top.TextColor3 = Color3.fromRGB(225, 240, 255); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Racing"; top.Parent = gui; corner(top)
+local lap = Instance.new("TextLabel"); lap.Size = UDim2.new(0, 150, 0, 40); lap.Position = UDim2.new(0, 14, 0, 10); lap.BackgroundColor3 = Color3.fromRGB(22, 30, 44); lap.BackgroundTransparency = 0.1; lap.TextColor3 = Color3.fromRGB(160, 220, 255); lap.TextScaled = true; lap.Font = Enum.Font.GothamBold; lap.Text = "Lap 0"; lap.Parent = gui; corner(lap)
+local place = Instance.new("TextLabel"); place.Size = UDim2.new(0, 150, 0, 40); place.Position = UDim2.new(0, 14, 0, 56); place.BackgroundColor3 = Color3.fromRGB(22, 30, 44); place.BackgroundTransparency = 0.1; place.TextColor3 = Color3.fromRGB(255, 225, 120); place.TextScaled = true; place.Font = Enum.Font.GothamBold; place.Text = ""; place.Parent = gui; corner(place)
+local speedo = Instance.new("TextLabel"); speedo.Size = UDim2.new(0, 170, 0, 56); speedo.Position = UDim2.new(1, -184, 1, -150); speedo.BackgroundColor3 = Color3.fromRGB(16, 18, 26); speedo.BackgroundTransparency = 0.1; speedo.TextColor3 = Color3.fromRGB(235, 245, 255); speedo.TextScaled = true; speedo.Font = Enum.Font.GothamBlack; speedo.Text = "0"; speedo.Parent = gui; corner(speedo)
+local coins = Instance.new("TextLabel"); coins.Size = UDim2.new(0, 170, 0, 36); coins.Position = UDim2.new(1, -184, 0, 10); coins.BackgroundColor3 = Color3.fromRGB(28, 26, 14); coins.BackgroundTransparency = 0.1; coins.TextColor3 = Color3.fromRGB(255, 220, 90); coins.TextScaled = true; coins.Font = Enum.Font.GothamBold; coins.Text = "Coins 0"; coins.Parent = gui; corner(coins)
+local meterBg = Instance.new("Frame"); meterBg.Size = UDim2.new(0, 170, 0, 16); meterBg.Position = UDim2.new(1, -184, 1, -86); meterBg.BackgroundColor3 = Color3.fromRGB(30, 32, 40); meterBg.Parent = gui; corner(meterBg, 8)
+local meterFill = Instance.new("Frame"); meterFill.Size = UDim2.new(0.4, 0, 1, 0); meterFill.BackgroundColor3 = Color3.fromRGB(255, 180, 60); meterFill.Parent = meterBg; corner(meterFill, 8)
+local big = Instance.new("TextLabel"); big.Size = UDim2.new(0, 460, 0, 90); big.Position = UDim2.new(0.5, -230, 0.36, 0); big.BackgroundTransparency = 1; big.TextColor3 = Color3.fromRGB(255, 255, 255); big.TextStrokeTransparency = 0.2; big.TextScaled = true; big.Font = Enum.Font.GothamBlack; big.Text = ""; big.Parent = gui
+local drift = Instance.new("TextLabel"); drift.Size = UDim2.new(0, 300, 0, 50); drift.Position = UDim2.new(0.5, -150, 0.6, 0); drift.BackgroundTransparency = 1; drift.TextColor3 = Color3.fromRGB(255, 210, 90); drift.TextStrokeTransparency = 0.3; drift.TextScaled = true; drift.Font = Enum.Font.GothamBlack; drift.Text = ""; drift.Parent = gui
+
+local boostBtn = Instance.new("TextButton"); boostBtn.Size = UDim2.new(0, 150, 0, 60); boostBtn.Position = UDim2.new(0.5, -75, 1, -78); boostBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 40); boostBtn.TextColor3 = Color3.fromRGB(20, 14, 6); boostBtn.TextScaled = true; boostBtn.Font = Enum.Font.GothamBlack; boostBtn.Text = "BOOST"; boostBtn.Parent = gui; corner(boostBtn, 12)
+boostBtn.Activated:Connect(function() BoostEvent:FireServer() end)
+UserInputService.InputBegan:Connect(function(input, gp) if gp then return end if input.KeyCode == Enum.KeyCode.LeftShift then BoostEvent:FireServer() end end)
+
+-- garage panel
+local garage = Instance.new("Frame"); garage.Size = UDim2.new(0, 360, 0, 210); garage.Position = UDim2.new(0.5, -180, 1, -230); garage.BackgroundColor3 = Color3.fromRGB(18, 20, 30); garage.BackgroundTransparency = 0.06; garage.Parent = gui; corner(garage, 14)
+local gtitle = Instance.new("TextLabel"); gtitle.Size = UDim2.new(1, -20, 0, 30); gtitle.Position = UDim2.new(0, 10, 0, 8); gtitle.BackgroundTransparency = 1; gtitle.TextColor3 = Color3.fromRGB(230, 238, 255); gtitle.TextScaled = true; gtitle.Font = Enum.Font.GothamBold; gtitle.Text = "Garage — pick your ride"; gtitle.Parent = garage
+local cars3 = {{key = "cruiser", label = "Cruiser"}, {key = "bolt", label = "Bolt"}, {key = "drifter", label = "Drifter"}}
+for i, c in ipairs(cars3) do
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(0, 108, 0, 56); b.Position = UDim2.new(0, 8 + (i - 1) * 116, 0, 44); b.BackgroundColor3 = Color3.fromRGB(40, 46, 64); b.TextColor3 = Color3.fromRGB(235, 240, 255); b.TextScaled = true; b.Font = Enum.Font.GothamBold; b.Text = c.label; b.Parent = garage; corner(b, 10)
+    b.Activated:Connect(function() SelectCar:FireServer({car = c.key}) end)
+end
+local swatches = {Color3.fromRGB(235, 70, 70), Color3.fromRGB(70, 150, 255), Color3.fromRGB(90, 220, 130), Color3.fromRGB(245, 210, 70), Color3.fromRGB(180, 90, 235), Color3.fromRGB(245, 245, 245)}
+for i, col in ipairs(swatches) do
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(0, 48, 0, 48); b.Position = UDim2.new(0, 8 + (i - 1) * 56, 0, 110); b.BackgroundColor3 = col; b.Text = ""; b.Parent = garage; corner(b, 10)
+    b.Activated:Connect(function() SelectCar:FireServer({color = col}) end)
+end
+local hint = Instance.new("TextLabel"); hint.Size = UDim2.new(1, -20, 0, 24); hint.Position = UDim2.new(0, 10, 0, 168); hint.BackgroundTransparency = 1; hint.TextColor3 = Color3.fromRGB(150, 160, 180); hint.TextScaled = true; hint.Font = Enum.Font.Gotham; hint.Text = "Drift hard turns to fill BOOST · hit yellow pads"; hint.Parent = garage
+
+RunService.RenderStepped:Connect(function()
+    local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local seat = hum and hum.SeatPart
+    if seat and seat.Name == "DriveSeat" and seat.Parent and seat.Parent:FindFirstChild("Chassis") then
+        local v = seat.Parent.Chassis.AssemblyLinearVelocity
+        speedo.Text = tostring(math.floor(Vector3.new(v.X, 0, v.Z).Magnitude)) .. " spd"
+    end
+end)
+
 RaceEvent.OnClientEvent:Connect(function(p)
     if typeof(p) ~= "table" then return end
     if p.kind == "state" then
-        if p.phase == "countdown" then big.Text = tostring(p.info); top.Text = "Get ready... " .. p.info
+        if p.phase == "countdown" then big.Text = tostring(p.info); top.Text = "Get ready... " .. p.info; garage.Visible = false
         elseif p.phase == "race" then big.Text = ""; top.Text = p.title .. "  |  " .. string.format("%.1f", p.info) .. "s"
-        elseif p.phase == "results" then big.Text = ""; top.Text = "Race over - restarting..." end
-    elseif p.kind == "lap" then myLap = p.lap; lap.Text = "Lap " .. p.lap .. "/" .. p.total
-    elseif p.kind == "finish" then big.Text = "FINISH #" .. p.place; lap.Text = "Done " .. p.time .. "s"; top.Text = "You placed #" .. p.place .. " (" .. p.time .. "s)" end
+        elseif p.phase == "results" then big.Text = "Race over - restarting"; top.Text = "Results"; garage.Visible = true; place.Text = "" end
+    elseif p.kind == "lap" then lap.Text = "Lap " .. p.lap .. "/" .. p.total
+    elseif p.kind == "coins" then coins.Text = "Coins " .. p.amount
+    elseif p.kind == "boostmeter" then meterFill.Size = UDim2.new(math.clamp(p.value / 100, 0, 1), 0, 1, 0)
+    elseif p.kind == "car" then top.Text = p.name .. " ready"
+    elseif p.kind == "finish" then big.Text = "FINISH #" .. p.place; place.Text = "Place #" .. p.place; lap.Text = "+" .. p.prize .. " coins"; task.delay(2.5, function() big.Text = "" end) end
 end)
 `;
   return {
@@ -11264,7 +11567,28 @@ local startPos = Vector3.new(radius, 6, 0)
 local startPad = part("StartPad", Vector3.new(18, 1, 18), startPos, theme.checkpoint, Enum.Material.Neon)
 label3d(startPad, "START", 4, theme.checkpoint)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "ParkourSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = startPos + Vector3.new(0, 1, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.checkpoint; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
-${themedSpawnBillboardLua(spec)}
+${(() => {
+  // Session 418: grounded start banner (posts + board) instead of a floating
+  // AlwaysOnTop billboard — the hero decal/title wraps a real structure.
+  if (!spec || spec.vibe === 'neutral') return '';
+  const d = Math.max(0, Math.floor(Number(spec.heroDecalId) || 0));
+  const img = d > 0
+    ? `local img = Instance.new("ImageLabel"); img.Size = UDim2.new(0.3, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=${d}&w=420&h=420"; img.Parent = sg
+        local tl = Instance.new("TextLabel"); tl.Size = UDim2.new(0.67, 0, 1, 0); tl.Position = UDim2.new(0.32, 0, 0, 0)`
+    : `local tl = Instance.new("TextLabel"); tl.Size = UDim2.new(1, 0, 1, 0)`;
+  return `
+do
+    local bx = startPos
+    part("StartSignL", Vector3.new(2, 13, 2), bx + Vector3.new(-12, 6.5, 0), theme.checkpoint, Enum.Material.Metal)
+    part("StartSignR", Vector3.new(2, 13, 2), bx + Vector3.new(12, 6.5, 0), theme.checkpoint, Enum.Material.Metal)
+    local board = part("StartSignBoard", Vector3.new(26, 7, 1), bx + Vector3.new(0, 13, 0), Color3.fromRGB(16, 18, 26), Enum.Material.SmoothPlastic)
+    for _, fc in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
+        local sg = Instance.new("SurfaceGui"); sg.Adornee = board; sg.Face = fc; sg.CanvasSize = Vector2.new(780, 200); sg.LightInfluence = 0; sg.Parent = board
+        ${img}
+        tl.BackgroundTransparency = 1; tl.TextColor3 = Color3.fromRGB(255, 255, 255); tl.TextStrokeTransparency = 0.35; tl.TextScaled = true; tl.Font = Enum.Font.GothamBlack; tl.Text = Config.Title; tl.Parent = sg
+    end
+end`;
+})()}
 
 local checkpointPos = {}
 local runState = {}
