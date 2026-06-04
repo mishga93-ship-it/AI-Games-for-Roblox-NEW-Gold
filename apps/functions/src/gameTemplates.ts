@@ -11071,16 +11071,32 @@ ${buildingDefsLua}
 for _, d in ipairs(buildingDefs) do buildHouse(d.name, d.pos, d.size, theme.wall, d.sign) end
 ${signaturePropsLua}
 
--- Session 414i: parked cars along the main street (RP "город с машинами").
+-- Session 414j: DRIVEABLE cars — sit in the seat and drive (WASD). The car is
+-- anchored while empty (stable, no drift) and is unanchored + network-owned by
+-- the driver when someone sits, then re-anchored (velocity zeroed) on exit.
 local function buildCar(cn, cp, cc)
-    part(cn, Vector3.new(8, 3, 16), cp + Vector3.new(0, 3, 0), cc, Enum.Material.SmoothPlastic)
-    part(cn .. "_Cab", Vector3.new(7, 3, 7.5), cp + Vector3.new(0, 6, -0.5), cc:Lerp(Color3.fromRGB(255, 255, 255), 0.12), Enum.Material.SmoothPlastic)
-    part(cn .. "_Glass", Vector3.new(7.3, 2.3, 6.8), cp + Vector3.new(0, 6.2, -0.5), Color3.fromRGB(120, 180, 220), Enum.Material.Glass)
+    local model = Instance.new("Model"); model.Name = cn; model.Parent = world
+    local chassis = part(cn .. "_Chassis", Vector3.new(8, 2, 16), cp + Vector3.new(0, 3, 0), cc, Enum.Material.SmoothPlastic, model); model.PrimaryPart = chassis
+    part(cn .. "_Cab", Vector3.new(7, 3, 7.5), cp + Vector3.new(0, 5.5, -0.5), cc:Lerp(Color3.fromRGB(255, 255, 255), 0.12), Enum.Material.SmoothPlastic, model)
+    part(cn .. "_Glass", Vector3.new(7.3, 2.3, 6.8), cp + Vector3.new(0, 5.7, -0.5), Color3.fromRGB(120, 180, 220), Enum.Material.Glass, model)
     for _, wx in ipairs({-4, 4}) do for _, wz in ipairs({-5, 5}) do
-        local w = part(cn .. "_W", Vector3.new(1.8, 3, 3), cp + Vector3.new(wx, 1.5, wz), Color3.fromRGB(28, 28, 32), Enum.Material.SmoothPlastic); w.Shape = Enum.PartType.Cylinder
+        local w = part(cn .. "_W", Vector3.new(1.8, 3, 3), cp + Vector3.new(wx, 1.5, wz), Color3.fromRGB(28, 28, 32), Enum.Material.SmoothPlastic, model); w.Shape = Enum.PartType.Cylinder
     end end
-    part(cn .. "_HL1", Vector3.new(1.3, 1, 0.4), cp + Vector3.new(-2.4, 3, 8), Color3.fromRGB(255, 248, 200), Enum.Material.Neon)
-    part(cn .. "_HL2", Vector3.new(1.3, 1, 0.4), cp + Vector3.new(2.4, 3, 8), Color3.fromRGB(255, 248, 200), Enum.Material.Neon)
+    part(cn .. "_HL1", Vector3.new(1.3, 1, 0.4), cp + Vector3.new(-2.4, 3, 8), Color3.fromRGB(255, 248, 200), Enum.Material.Neon, model)
+    part(cn .. "_HL2", Vector3.new(1.3, 1, 0.4), cp + Vector3.new(2.4, 3, 8), Color3.fromRGB(255, 248, 200), Enum.Material.Neon, model)
+    local seat = Instance.new("VehicleSeat"); seat.Name = cn .. "_Seat"; seat.Size = Vector3.new(4.5, 1, 4); seat.CFrame = CFrame.new(cp + Vector3.new(0, 4.6, 1)); seat.Color = cc:Lerp(Color3.fromRGB(255, 255, 255), 0.3); seat.Material = Enum.Material.Fabric; seat.MaxSpeed = 55; seat.Torque = 16; seat.TurnSpeed = 32; seat.HeadsUpDisplay = false; seat.Parent = model
+    for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") and p ~= chassis then local wj = Instance.new("WeldConstraint"); wj.Part0 = chassis; wj.Part1 = p; wj.Parent = chassis end end
+    for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = true end end
+    seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+        local occ = seat.Occupant
+        if occ then
+            for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = false end end
+            local plr = Players:GetPlayerFromCharacter(occ.Parent)
+            if plr then pcall(function() chassis:SetNetworkOwner(plr) end) end
+        else
+            for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.AssemblyLinearVelocity = Vector3.zero; p.Anchored = true end end
+        end
+    end)
 end
 buildCar("Car1", Vector3.new(20, 0, -62), Color3.fromRGB(210, 70, 70))
 buildCar("Car2", Vector3.new(-20, 0, 62), Color3.fromRGB(70, 120, 210))
@@ -11191,17 +11207,20 @@ do
         part("PetEarR", Vector3.new(0.8, 1.5, 0.6), pbody.Position + Vector3.new(0.8, 2.7, 1.7), pc, Enum.Material.SmoothPlastic, m)
         local el = part("PetEyeL", Vector3.new(0.5, 0.5, 0.5), pbody.Position + Vector3.new(-0.55, 1.6, 2.9), Color3.fromRGB(20, 20, 25), Enum.Material.Neon, m); el.Shape = Enum.PartType.Ball
         local er = part("PetEyeR", Vector3.new(0.5, 0.5, 0.5), pbody.Position + Vector3.new(0.55, 1.6, 2.9), Color3.fromRGB(20, 20, 25), Enum.Material.Neon, m); er.Shape = Enum.PartType.Ball
-        for _, d in ipairs(m:GetDescendants()) do
-            if d:IsA("BasePart") then d.CanCollide = false; if d ~= pbody then d.Anchored = false; local wd = Instance.new("WeldConstraint"); wd.Part0 = pbody; wd.Part1 = d; wd.Parent = pbody end end
-        end
-        pbody.Anchored = true
+        -- Session 414j: keep ALL pet parts ANCHORED (no welds) and move the whole
+        -- model with PivotTo, so head+body stay together (fix: head lagged behind
+        -- when only the welded body was moved via .Position).
+        for _, d in ipairs(m:GetDescendants()) do if d:IsA("BasePart") then d.CanCollide = false end end
         m.Parent = world
         PETS[player] = m
         RpEvent:FireClient(player, {kind="toast", text="You adopted a pet! It follows you."})
         task.spawn(function()
             while m.Parent and player.Parent and PETS[player] == m do
                 local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if r then pbody.Position = pbody.Position:Lerp(r.Position + Vector3.new(4, -1.4, 4), 0.12) end
+                if r then
+                    local goal = r.Position + (r.CFrame.RightVector * 4) - (r.CFrame.LookVector * 3) + Vector3.new(0, -1, 0)
+                    m:PivotTo(m:GetPivot():Lerp(CFrame.new(goal), 0.16))
+                end
                 task.wait(0.06)
             end
         end)
