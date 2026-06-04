@@ -2942,7 +2942,7 @@ app.post('/api/content/jobs/:jobId/approve-concept', async (req: AuthedRequest, 
         const regenContext: 'character' | 'pet' | 'garment' = isPetJob
           ? 'pet'
           : isLayeredClothingRegen ? 'garment' : 'character';
-        newConceptUrl = await generatePreviewTexture(alignedPrompt, previewStyle, regenContext);
+        newConceptUrl = await generatePreviewTexture(alignedPrompt, previewStyle, regenContext, regenContext === 'character' ? 'detailed' : 'toon');
       } catch (err) {
         logger.warn('Concept regeneration failed', { error: errorMessage(err) });
       }
@@ -26325,7 +26325,7 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         prompt: alignedConceptPrompt.slice(0, 200),
       });
       try {
-        conceptPreviewUrl = await generatePreviewTexture(alignedConceptPrompt, previewStyle, conceptContext);
+        conceptPreviewUrl = await generatePreviewTexture(alignedConceptPrompt, previewStyle, conceptContext, conceptContext === 'character' ? 'detailed' : 'toon');
         logger.info('concept_image: generatePreviewTexture returned', { jobId, hasUrl: !!conceptPreviewUrl });
         if (conceptPreviewUrl) {
           // Safety check — moderate concept image BEFORE proceeding to 3D generation & Roblox upload.

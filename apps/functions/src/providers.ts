@@ -903,6 +903,11 @@ export async function generatePreviewTexture(
   description: string,
   _style: string = 'roblox',
   context: 'character' | 'game' | 'prop' | 'pet' | 'garment' = 'character',
+  // 'detailed' opts the character concept into a semi-realistic AAA-stylized
+  // look instead of the default flat Roblox-toon. Only the character/boss
+  // concept pipeline passes 'detailed' — outfit/aura/glow-up/fitting-room keep
+  // 'toon' so their previews are unchanged. (Session 423, user "вариант B".)
+  detail: 'toon' | 'detailed' = 'toon',
 ): Promise<string | undefined> {
   const englishDescription = await translateForImageGen(description);
   // Session 231 (Roblox suspension fix): every prompt suffixes a Roblox-friendly safety clause
@@ -948,7 +953,15 @@ export async function generatePreviewTexture(
       // keywords ("bright primary palette", "Saturday morning cartoon") + explicit "FULLY
       // COLORED, NOT monochrome" prefix push schnell to actually saturate the image — without
       // them schnell at 4 steps drifts to grey for low-color briefs (sigma chad, talking npc).
-      : `FULLY COLORED, NOT monochrome, NOT grayscale. ${englishDescription}. ${CHARACTER_COLOR_DIRECTIVE} Stylized 3D cartoon character, bright primary palette, vibrant saturated colors, Saturday morning cartoon palette, rich material variety, clean Roblox-toon look, full body in confident A-pose, wearing a fully closed long-sleeve outfit and long pants in distinct colors, white background, centered, 3/4 view. Original non-franchise design; do not imitate or resemble any existing cartoon, game, TV, movie, mascot, or copyrighted character. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`;
+      : detail === 'detailed'
+        // Session 423 (user "вариант B"): semi-realistic AAA-stylized concept
+        // instead of flat Roblox-toon. Stays inside the "stylized game / hero-
+        // shooter" zone (NOT photoreal) to limit Meshy v6 content_policy
+        // rejections, and explicitly demands that back-mounted parts /
+        // appendages (tentacles, wings, tails, extra arms) survive — the toon
+        // template forced a clean humanoid silhouette and dropped them.
+        ? `FULLY COLORED, NOT monochrome, NOT grayscale. ${englishDescription}. ${CHARACTER_COLOR_DIRECTIVE} Detailed stylized 3D game character concept art in a modern AAA-stylized look (hero-shooter / action-game style, like a polished stylized 3D game — NOT a flat Saturday-morning cartoon, NOT a plain toy figure): crisp sculpted forms, defined proportions, layered armor panels, mechanical parts, fabric and material variety with soft shading, depth and rim light. IMPORTANT — keep EVERY distinctive feature from the description: accessories, back-mounted parts, and appendages such as tentacles, wings, tails or extra arms must be clearly visible and attached to the character. Full body, confident standing pose, wearing a fully closed long-sleeve outfit or full-body armor and long pants in distinct colors, plain white background, centered, 3/4 view. Original non-franchise design; do not imitate or resemble any existing cartoon, game, TV, movie, mascot, or copyrighted character. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`
+        : `FULLY COLORED, NOT monochrome, NOT grayscale. ${englishDescription}. ${CHARACTER_COLOR_DIRECTIVE} Stylized 3D cartoon character, bright primary palette, vibrant saturated colors, Saturday morning cartoon palette, rich material variety, clean Roblox-toon look, full body in confident A-pose, wearing a fully closed long-sleeve outfit and long pants in distinct colors, white background, centered, 3/4 view. Original non-franchise design; do not imitate or resemble any existing cartoon, game, TV, movie, mascot, or copyrighted character. Do NOT include any text, watermarks, or logos.${SAFETY_SUFFIX}`;
   const imgW = context === 'game' ? 1024 : 768;
   const imgH = context === 'game' ? 768 : 1024;
 
