@@ -12930,57 +12930,76 @@ do
         local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 80; pl.Parent = em
     end
     local MODELS = ${models}
+    local LOBBY_FIG_CAP = 10  -- Session 420d: hard cap on lobby characters
     if #MODELS > 0 then
         task.spawn(function()
-            for idx, id in ipairs(MODELS) do
-                local ang = (idx / #MODELS) * math.pi * 2
-                local r = 44 + (idx % 3) * 8
-                local pos = Vector3.new(math.cos(ang) * r, 1.5, math.sin(ang) * r)
+            local placedCount = 0
+            local function roam(fig, baseY)
+                task.spawn(function()
+                    while fig.Parent do
+                        local startCF = fig:GetPivot()
+                        local target = Vector3.new(math.random(-44, 44), baseY, math.random(-40, 40))
+                        local move = target - startCF.Position
+                        if move.Magnitude < 4 then move = Vector3.new(8, 0, 8); target = startCF.Position + move end
+                        local dur = math.clamp(move.Magnitude / 7, 1.5, 6)
+                        local face = CFrame.lookAt(startCF.Position, target)
+                        local t0 = os.clock()
+                        while fig.Parent do
+                            local a = math.clamp((os.clock() - t0) / dur, 0, 1)
+                            pcall(function() fig:PivotTo(face + move * a) end)
+                            if a >= 1 then break end
+                            RunService.Heartbeat:Wait()
+                        end
+                        task.wait(math.random(1, 3))
+                    end
+                end)
+            end
+            local function placeFigure(fig)
+                fig.Parent = world
+                local hasPart = false
+                for _, d in ipairs(fig:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; hasPart = true end end
+                if not hasPart then pcall(function() fig:Destroy() end); return end
+                placedCount += 1
+                local ang = (placedCount / LOBBY_FIG_CAP) * math.pi * 2
+                local r = 40 + (placedCount % 3) * 7
+                local pos = Vector3.new(math.cos(ang) * r, 5.5, math.sin(ang) * r)
+                local oks, sz = pcall(function() return fig:GetExtentsSize() end)
+                if oks and sz and sz.Y > 0.1 then pcall(function() fig:ScaleTo(math.clamp(9 / sz.Y, 0.04, 14)) end) end
+                pcall(function() fig:PivotTo(CFrame.new(pos) * CFrame.Angles(0, math.random() * 6.283, 0)) end)
+                roam(fig, pos.Y)
+            end
+            for _, id in ipairs(MODELS) do
+                if placedCount >= LOBBY_FIG_CAP then break end
                 ${loadLine}
-                local placed = false
                 if ok and c then
-                    local wrap = Instance.new("Model"); wrap.Name = "HubAsset_" .. id; wrap.Parent = world
-                    for _, k in ipairs(c:GetChildren()) do k.Parent = wrap end
+                    -- a "pack" asset can hold MANY characters; descend one wrapper level
+                    -- and take only a couple per pack so the lobby stays under the cap.
+                    local root = c
+                    local kids = {}
+                    for _, ch in ipairs(root:GetChildren()) do if ch:IsA("Model") then kids[#kids + 1] = ch end end
+                    if #kids == 1 then
+                        local inner = {}
+                        for _, ch in ipairs(kids[1]:GetChildren()) do if ch:IsA("Model") then inner[#inner + 1] = ch end end
+                        if #inner >= 2 then kids = inner end
+                    end
+                    if #kids == 0 then
+                        local one = Instance.new("Model"); for _, k in ipairs(c:GetChildren()) do k.Parent = one end; kids = {one}
+                    end
+                    local takePer = math.min(#kids, 2, LOBBY_FIG_CAP - placedCount)
+                    for k = 1, takePer do pcall(placeFigure, kids[k]) end
+                    for k = takePer + 1, #kids do pcall(function() kids[k]:Destroy() end) end
                     pcall(function() c:Destroy() end)
-                    local hasPart = false
-                    for _, d in ipairs(wrap:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; hasPart = true end end
-                    if hasPart then
-                        local oks, sz = pcall(function() return wrap:GetExtentsSize() end)
-                        if oks and sz and sz.Y > 0.1 then pcall(function() wrap:ScaleTo(math.clamp(10 / sz.Y, 0.04, 16)) end) end
-                        pcall(function() wrap:PivotTo(CFrame.new(pos + Vector3.new(0, 4, 0)) * CFrame.Angles(0, math.random() * 6.283, 0)) end)
-                        placed = true
-                        -- Session 420c: make the real asset figure ROAM the lobby. Third-party
-                        -- models are usually static meshes (no Humanoid) or non-collidable rigs
-                        -- that would fall through the floor if unanchored, so we keep them
-                        -- anchored and glide the whole model via PivotTo, facing travel dir.
-                        local baseY = pos.Y + 4
-                        task.spawn(function()
-                            while wrap.Parent do
-                                local startCF = wrap:GetPivot()
-                                local target = Vector3.new(math.random(-44, 44), baseY, math.random(-40, 40))
-                                local move = target - startCF.Position
-                                if move.Magnitude < 4 then move = Vector3.new(8, 0, 8); target = startCF.Position + move end
-                                local dur = math.clamp(move.Magnitude / 7, 1.5, 6)
-                                local face = CFrame.lookAt(startCF.Position, target)
-                                local t0 = os.clock()
-                                while wrap.Parent do
-                                    local a = math.clamp((os.clock() - t0) / dur, 0, 1)
-                                    pcall(function() wrap:PivotTo(face + move * a) end)
-                                    if a >= 1 then break end
-                                    RunService.Heartbeat:Wait()
-                                end
-                                task.wait(math.random(1, 3))
-                            end
-                        end)
-                    else wrap:Destroy() end
-                end
-                if not placed then
-                    -- LoadAsset failed → simple 3D figure placeholder (no floating image)
-                    part("HubFigure_" .. idx, Vector3.new(3, 5, 2), pos + Vector3.new(0, 3.5, 0), theme.accent, Enum.Material.SmoothPlastic, world)
-                    local head = part("HubFigureHead_" .. idx, Vector3.new(2.2, 2.2, 2.2), pos + Vector3.new(0, 7, 0), theme.accent:Lerp(Color3.fromRGB(255, 255, 255), 0.25), Enum.Material.SmoothPlastic, world)
-                    head.Shape = Enum.PartType.Ball
                 end
                 task.wait()
+            end
+            -- nothing loaded (third-party assets disabled?) → 4 simple 3D figures
+            if placedCount == 0 then
+                for i = 1, 4 do
+                    local a = (i / 4) * math.pi * 2; local pos = Vector3.new(math.cos(a) * 42, 5.5, math.sin(a) * 42)
+                    part("HubFigure_" .. i, Vector3.new(3, 5, 2), pos, theme.accent, Enum.Material.SmoothPlastic, world)
+                    local head = part("HubFigureHead_" .. i, Vector3.new(2.2, 2.2, 2.2), pos + Vector3.new(0, 3.5, 0), theme.accent:Lerp(Color3.fromRGB(255, 255, 255), 0.25), Enum.Material.SmoothPlastic, world)
+                    head.Shape = Enum.PartType.Ball
+                end
             end
         end)
     end
@@ -13021,6 +13040,9 @@ function buildMinigameHubScript(params: GameTemplateParams): MultiScriptResult {
   const mob1Name = safeLuaString((pack.enemies[0] && pack.enemies[0].name) || 'Hunter', 'Hunter');
   const mob1Color = rgbLua((pack.enemies[0] && pack.enemies[0].color) || pack.boss.color);
   const decorLua = hubThemeDecorLua(spec);
+  // Session 420d: only spawn generic R15 lobby NPCs when the vibe has NO real
+  // asset figures (those already roam, capped at 10). Keeps lobby ≤ 10 characters.
+  const ambientNpcCount = spec && HUB_VIBE_ASSETS[spec.vibe] ? 0 : 4;
 
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13090,7 +13112,7 @@ local SPEC = specPlat.Position + Vector3.new(0, 5, 0)
 -- Session 420b: ambient themed figures that WALK around the lobby (3D R15
 -- humanoid NPCs, no floating nameplate). Reuses the preset's seeker/mob colours.
 task.spawn(function()
-    for i = 1, 3 do
+    for i = 1, ${ambientNpcCount} do
         local info = (i % 2 == 1) and SEEKER or MOB1
         local npc, hum = makeHumanoidNpc(world, CFrame.new(Vector3.new(math.random(-26, 26), 5, math.random(-24, 24))), {name = info.name, color = info.color, walkSpeed = 8})
         if npc and hum then
@@ -13111,13 +13133,14 @@ deathPlane.Transparency = 0.55
 -- ===== round state + helpers =====
 local roundActive = false
 local eliminated = {}
+local roundRespawn = nil  -- Session 420d: safe respawn point for solo practice
 local function isAlive(p) return p.Parent ~= nil and not eliminated[p] end
 local function aliveList() local t = {}; for _, p in Players:GetPlayers() do if isAlive(p) then t[#t+1] = p end end; return t end
 local function aliveCount() return #aliveList() end
 -- Session 420b: a round is "over" the instant nobody is alive (so a solo tester
 -- who got out doesn't wait the whole timer), or when 1 is left in a multiplayer
 -- game. Survival minigames break on this.
-local function fewAlive() return aliveCount() == 0 or (fewAlive()) end
+local function fewAlive() return aliveCount() == 0 or (aliveCount() <= 1 and #Players:GetPlayers() > 1) end
 local function rootOf(p) local c = p.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 local function teleport(p, pos) local r = rootOf(p); if r then r.CFrame = CFrame.new(pos) end end
 local function teleportAll(pos) for _, p in Players:GetPlayers() do teleport(p, pos + Vector3.new(math.random(-7, 7), 0, math.random(-7, 7))) end end
@@ -13139,6 +13162,13 @@ local function broadcast(phase, text, timeLeft, mode, extra)
 end
 local function eliminate(p, reason)
     if not isAlive(p) then return end
+    -- Solo practice: with only 1 player there is nobody to lose to, so instead of
+    -- ending the round we respawn the player and let the game run its full length.
+    if #Players:GetPlayers() <= 1 then
+        if roundRespawn then teleport(p, roundRespawn) end
+        MgEvent:FireClient(p, {kind="hint", text = "Keep going!"})
+        return
+    end
     eliminated[p] = true
     teleport(p, SPEC + Vector3.new(math.random(-12, 12), 0, math.random(-10, 10)))
     MgEvent:FireClient(p, {kind="out", text = reason or "OUT! Spectating..."})
@@ -13221,9 +13251,12 @@ local function mgMusicalChairs()
     placeAlive(startSpots(math.max(4, aliveCount()), 26))
     countdown(3, "Musical Chairs - grab a seat when the music stops!", "Musical Chairs")
     roundActive = true
+    local solo = #Players:GetPlayers() <= 1
+    local cyc = 0
     local chairCount = math.max(1, aliveCount() - 1)
     layoutChairs(chairCount)
-    while roundActive and aliveCount() > 1 and chairCount >= 1 do
+    while roundActive and chairCount >= 1 and (aliveCount() > 1 or solo) do
+        cyc += 1; if solo and cyc > 6 then break end
         broadcast("play", "Music playing... keep moving!", 0, "Musical Chairs")
         task.wait(math.random(40, 80) / 10)
         if not roundActive then break end
@@ -13247,8 +13280,8 @@ local function mgMusicalChairs()
         local safe = {}
         for _, p in pairs(claimed) do safe[p] = true end
         for _, p in ipairs(aliveList()) do if not safe[p] then eliminate(p, "No chair! Spectating...") end end
-        chairCount = aliveCount() - 1
-        if aliveCount() <= 1 or chairCount < 1 then break end
+        chairCount = math.max(solo and 1 or 0, aliveCount() - 1)
+        if not solo and (aliveCount() <= 1 or chairCount < 1) then break end
         layoutChairs(chairCount); task.wait(1.4)
     end
     return survivorsWin(12)
@@ -13346,6 +13379,7 @@ local function mgRace()
         if hum then hum.UseJumpPower = true; hum.WalkSpeed = 34; hum.JumpPower = 55 end
     end
     countdown(3, "Sprint Race - first across the finish wins!", "Race")
+    roundRespawn = Vector3.new(AC.X, FLOOR_Y + 4, startZ - 4)
     roundActive = true
     local placement = 0; local placed = {}
     finish.Touched:Connect(function(hit)
@@ -13419,6 +13453,7 @@ local function mgLava()
     apart("LavaTop", Vector3.new(10, 2, 10), Vector3.new(AC.X, FLOOR_Y + 26, AC.Z), theme.accent, Enum.Material.Neon, true)
     placeAlive(startSpots(math.max(4, aliveCount()), 18))
     countdown(3, "Floor is Lava - climb above the rising lava!", "Lava")
+    roundRespawn = Vector3.new(AC.X, FLOOR_Y + 28, AC.Z)
     roundActive = true
     local lava = apart("Lava", Vector3.new(90, 2, 90), Vector3.new(AC.X, FLOOR_Y + 1.2, AC.Z), Color3.fromRGB(255, 110, 40), Enum.Material.Neon, false)
     local fr = Instance.new("Fire"); fr.Size = 14; fr.Heat = 18; fr.Parent = lava
@@ -13447,6 +13482,7 @@ local function mgRedLight()
     local al = aliveList()
     for i, p in ipairs(al) do teleport(p, Vector3.new(AC.X + (i % 7 - 3) * 6, FLOOR_Y + 4, startZ - 2)) end
     countdown(4, "Red Light Green Light - move on GREEN, freeze on RED!", "Red Light")
+    roundRespawn = Vector3.new(AC.X, FLOOR_Y + 4, startZ - 2)
     roundActive = true
     local placed = {}; local placement = 0
     finish.Touched:Connect(function(hit)
@@ -13507,6 +13543,7 @@ local function mgGlassBridge()
     local al = aliveList()
     for i, p in ipairs(al) do teleport(p, Vector3.new(AC.X + (i % 3 - 1) * 4, FLOOR_Y + 4, z0 - 8)) end
     countdown(4, "Glass Bridge - one tile per row is safe. Choose wisely!", "Glass Bridge")
+    roundRespawn = Vector3.new(AC.X, FLOOR_Y + 4, z0 - 8)
     roundActive = true
     local placed = {}; local placement = 0
     finish.Touched:Connect(function(hit)
@@ -13636,6 +13673,7 @@ task.spawn(function()
         local chosen = options[bi]
         broadcast("intro", "Next up: " .. chosen.name .. " - " .. chosen.how, 3, chosen.name)
         clearArena(); table.clear(eliminated)
+        roundRespawn = Vector3.new(AC.X, FLOOR_Y + 6, AC.Z)  -- default safe respawn (games override)
         local ok, survivors, winner = pcall(chosen.run)
         roundActive = false
         if not ok then warn("[Hub] minigame error: " .. tostring(survivors)); survivors = aliveList(); winner = nil end
@@ -13699,6 +13737,10 @@ MgEvent.OnClientEvent:Connect(function(p)
         local msg = p.text or "OUT! Spectating..."
         outActive = true; banner.TextColor3 = Color3.fromRGB(255, 120, 120); banner.Text = msg
         task.delay(2.6, function() outActive = false; if banner.Text == msg then banner.Text = "" end end)
+    elseif p.kind == "hint" then
+        local msg = p.text or "Keep going!"
+        outActive = true; banner.TextColor3 = Color3.fromRGB(255, 205, 120); banner.Text = msg
+        task.delay(1.2, function() outActive = false; if banner.Text == msg then banner.Text = "" end end)
     end
 end)
 `;
