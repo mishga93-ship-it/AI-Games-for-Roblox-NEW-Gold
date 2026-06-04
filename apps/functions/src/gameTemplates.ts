@@ -11183,6 +11183,7 @@ local function buildCar(cn, cp, cc)
         local char = player.Character; local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then pcall(function() seat:Sit(hum) end) end
     end)
+    return model
 end
 buildCar("Car1", Vector3.new(20, 0, -62), Color3.fromRGB(210, 70, 70))
 buildCar("Car2", Vector3.new(-20, 0, 62), Color3.fromRGB(70, 120, 210))
@@ -11209,21 +11210,36 @@ ${jobsLua}
 }
 local working = {}
 local employed = {}
+local shiftJob = {}
+-- Session 414L: ACTIVE jobs — clock in at a job pad, then DELIVER the order to the
+-- central Depot for 2x pay (instead of one idle button). Makes players move across
+-- the city — the user asked for more activities, not "press pad → cash".
+local depot = part("DeliveryDepot", Vector3.new(13, 1, 13), Vector3.new(48, 0.6, -48), Color3.fromRGB(120, 230, 160), Enum.Material.Neon); depot.Transparency = 0.4
+label3d(depot, "Delivery Depot — drop your order", 5, Color3.fromRGB(150, 255, 190))
+do
+    local dpl = Instance.new("PointLight"); dpl.Color = Color3.fromRGB(130, 255, 170); dpl.Range = 16; dpl.Brightness = 1.4; dpl.Parent = depot
+    local depotPrompt = Instance.new("ProximityPrompt"); depotPrompt.ActionText = "Deliver Order"; depotPrompt.ObjectText = "Depot"; depotPrompt.HoldDuration = 0.3; depotPrompt.MaxActivationDistance = 14; depotPrompt.RequiresLineOfSight = false; depotPrompt.Parent = depot
+    depotPrompt.Triggered:Connect(function(player)
+        local jb = shiftJob[player]
+        if not jb then RpEvent:FireClient(player, {kind="toast", text="Start a shift at a job pad first!"}); return end
+        shiftJob[player] = nil
+        working[player] = false
+        addCash(player, jb.pay * 2)
+        RpEvent:FireClient(player, {kind="toast", text=jb.name .. " delivery done! +$" .. (jb.pay * 2)})
+    end)
+end
 for i = 1, math.min(Config.JobCount, #JOBS) do
     local job = JOBS[i]
     local pad = part("Job_" .. job.name, Vector3.new(9, 1, 9), job.pos, theme.accent, Enum.Material.Neon); pad.Transparency = 0.35
-    label3d(pad, job.name .. " (+$" .. job.pay .. ")", 4, theme.accent)
-    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Work"; prompt.ObjectText = job.name; prompt.HoldDuration = 0.5; prompt.MaxActivationDistance = 14; prompt.RequiresLineOfSight = false; prompt.Parent = pad
+    label3d(pad, job.name .. " — Start Shift (+$" .. (job.pay * 2) .. ")", 4, theme.accent)
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Start Shift"; prompt.ObjectText = job.name; prompt.HoldDuration = 0.3; prompt.MaxActivationDistance = 14; prompt.RequiresLineOfSight = false; prompt.Parent = pad
     prompt.Triggered:Connect(function(player)
-        if working[player] then return end
+        if shiftJob[player] then RpEvent:FireClient(player, {kind="toast", text="Finish your delivery at the Depot first!"}); return end
+        shiftJob[player] = job
         working[player] = true
         employed[player] = job.name
         setRole(player, job.name)
-        RpEvent:FireClient(player, {kind="toast", text="On shift as " .. job.name .. "..."})
-        task.delay(2.5, function()
-            if player and player.Parent then addCash(player, job.pay); RpEvent:FireClient(player, {kind="toast", text="Paycheck +$" .. job.pay}) end
-            working[player] = false
-        end)
+        RpEvent:FireClient(player, {kind="toast", text="On shift as " .. job.name .. "! Deliver to the green Depot."})
     end)
 end
 
@@ -11352,6 +11368,129 @@ do
     Players.PlayerRemoving:Connect(function(player) if PETS[player] then PETS[player]:Destroy(); PETS[player] = nil end end)
 end
 
+-- ===== Session 414L: ACTIVITIES — claim a house, hunt coins, buy a car, use the ATM =====
+
+-- (1) Claimable houses: a small suburb of 3 plots on the west edge. Claim one, then
+-- recolor the walls and add furniture (one house per player).
+do
+    local CLAIMS = {}
+    local plotPalette = {Color3.fromRGB(235, 235, 235), Color3.fromRGB(120, 180, 240), Color3.fromRGB(240, 180, 120), Color3.fromRGB(160, 230, 160), Color3.fromRGB(230, 150, 200)}
+    label3d(part("SuburbSign", Vector3.new(3, 6, 3), Vector3.new(-160, 3, -6), theme.accent, Enum.Material.Neon), "Suburb — Claim a House", 5, theme.accent)
+    local plots = {Vector3.new(-160, 0, -52), Vector3.new(-160, 0, 36), Vector3.new(-160, 0, 78)}
+    for pi, pp in ipairs(plots) do
+        local hm = Instance.new("Model"); hm.Name = "Plot_" .. pi; hm.Parent = world
+        local floor = part("PFloor" .. pi, Vector3.new(20, 1, 20), pp + Vector3.new(0, 0.5, 0), theme.plaza, Enum.Material.WoodPlanks, hm)
+        local walls = {
+            part("PWa" .. pi, Vector3.new(20, 10, 1), pp + Vector3.new(0, 5.5, -9.5), Color3.fromRGB(220, 220, 220), Enum.Material.SmoothPlastic, hm),
+            part("PWb" .. pi, Vector3.new(1, 10, 20), pp + Vector3.new(-9.5, 5.5, 0), Color3.fromRGB(220, 220, 220), Enum.Material.SmoothPlastic, hm),
+            part("PWc" .. pi, Vector3.new(1, 10, 20), pp + Vector3.new(9.5, 5.5, 0), Color3.fromRGB(220, 220, 220), Enum.Material.SmoothPlastic, hm),
+        }
+        part("PRoof" .. pi, Vector3.new(22, 1, 22), pp + Vector3.new(0, 11, 0), theme.roof, Enum.Material.SmoothPlastic, hm)
+        local signBoard = part("PSign" .. pi, Vector3.new(8, 2, 1), pp + Vector3.new(0, 12.5, 0), theme.accent, Enum.Material.Neon, hm)
+        local nameTag = label3d(signBoard, "Empty — Claim it!", 3, Color3.fromRGB(255, 255, 255))
+        local claimP = Instance.new("ProximityPrompt"); claimP.ActionText = "Claim House"; claimP.ObjectText = "Plot " .. pi; claimP.HoldDuration = 0.4; claimP.MaxActivationDistance = 14; claimP.RequiresLineOfSight = false; claimP.Parent = floor
+        local recolorP = Instance.new("ProximityPrompt"); recolorP.ActionText = "Recolor Walls"; recolorP.ObjectText = "Customize"; recolorP.HoldDuration = 0.2; recolorP.MaxActivationDistance = 14; recolorP.RequiresLineOfSight = false; recolorP.Enabled = false; recolorP.Parent = floor
+        local furnishP = Instance.new("ProximityPrompt"); furnishP.ActionText = "Add Furniture"; furnishP.ObjectText = "Decorate"; furnishP.HoldDuration = 0.2; furnishP.MaxActivationDistance = 14; furnishP.RequiresLineOfSight = false; furnishP.Enabled = false; furnishP.Parent = floor
+        local colorIdx = 1
+        local furn = 0
+        claimP.Triggered:Connect(function(player)
+            if CLAIMS[pi] then return end
+            for _, v in pairs(CLAIMS) do if v == player.UserId then RpEvent:FireClient(player, {kind="toast", text="You already own a house."}); return end end
+            CLAIMS[pi] = player.UserId
+            claimP.Enabled = false; recolorP.Enabled = true; furnishP.Enabled = true
+            nameTag.Text = player.DisplayName .. "'s House"
+            RpEvent:FireClient(player, {kind="toast", text="House claimed! Recolor the walls + add furniture."})
+        end)
+        recolorP.Triggered:Connect(function(player)
+            if CLAIMS[pi] ~= player.UserId then return end
+            colorIdx = (colorIdx % #plotPalette) + 1
+            for _, w in ipairs(walls) do w.Color = plotPalette[colorIdx] end
+        end)
+        furnishP.Triggered:Connect(function(player)
+            if CLAIMS[pi] ~= player.UserId then return end
+            if furn >= 4 then RpEvent:FireClient(player, {kind="toast", text="House is fully furnished!"}); return end
+            furn = furn + 1
+            local spots = {Vector3.new(-5, 0, -5), Vector3.new(5, 0, -5), Vector3.new(-5, 0, 5), Vector3.new(5, 0, 5)}
+            local fp = pp + spots[furn]
+            if furn == 1 then
+                part("Furn" .. pi .. "t", Vector3.new(5, 0.5, 3), fp + Vector3.new(0, 3, 0), Color3.fromRGB(150, 100, 60), Enum.Material.Wood, hm)
+                part("Furn" .. pi .. "tl", Vector3.new(4.4, 3, 0.4), fp + Vector3.new(0, 1.5, 0), Color3.fromRGB(120, 80, 50), Enum.Material.Wood, hm)
+            elseif furn == 2 then
+                part("Furn" .. pi .. "s", Vector3.new(3, 3, 3), fp + Vector3.new(0, 1.5, 0), Color3.fromRGB(200, 80, 80), Enum.Material.Fabric, hm)
+            elseif furn == 3 then
+                local lamp = part("Furn" .. pi .. "l", Vector3.new(1, 5, 1), fp + Vector3.new(0, 2.5, 0), Color3.fromRGB(235, 220, 120), Enum.Material.Neon, hm)
+                local lpl = Instance.new("PointLight"); lpl.Range = 13; lpl.Brightness = 2; lpl.Parent = lamp
+            else
+                part("Furn" .. pi .. "p", Vector3.new(2, 2, 2), fp + Vector3.new(0, 1, 0), Color3.fromRGB(120, 90, 60), Enum.Material.Slate, hm)
+                part("Furn" .. pi .. "pl", Vector3.new(2.4, 3, 2.4), fp + Vector3.new(0, 3.5, 0), Color3.fromRGB(80, 170, 80), Enum.Material.Grass, hm)
+            end
+            RpEvent:FireClient(player, {kind="toast", text="Furniture added (" .. furn .. "/4)"})
+        end)
+    end
+    Players.PlayerRemoving:Connect(function(player) for k, v in pairs(CLAIMS) do if v == player.UserId then CLAIMS[k] = nil end end end)
+end
+
+-- (2) Collectible coins scattered around town — a light quest: grab glowing coins
+-- for cash. They respawn after a few seconds so there's always something to do.
+do
+    label3d(part("QuestBoard", Vector3.new(6, 7, 1), Vector3.new(24, 4, 30), theme.accent, Enum.Material.WoodPlanks), "Quest: grab the glowing coins!", 5, theme.accent)
+    local function makeCoin(pos)
+        local coin = part("Coin", Vector3.new(2.2, 2.2, 2.2), pos, Color3.fromRGB(255, 215, 70), Enum.Material.Neon)
+        coin.Shape = Enum.PartType.Ball; coin.CanCollide = false
+        local cpl = Instance.new("PointLight"); cpl.Color = Color3.fromRGB(255, 225, 110); cpl.Range = 9; cpl.Brightness = 1.5; cpl.Parent = coin
+        local taken = false
+        coin.Touched:Connect(function(hit)
+            if taken then return end
+            local plr = Players:GetPlayerFromCharacter(hit.Parent); if not plr then return end
+            taken = true; coin.Transparency = 1; cpl.Enabled = false
+            addCash(plr, 35); RpEvent:FireClient(plr, {kind="toast", text="Coin +$35"})
+            task.delay(12, function() if coin.Parent then taken = false; coin.Transparency = 0; cpl.Enabled = true end end)
+        end)
+        task.spawn(function() local t = 0; while coin.Parent do t = t + 0.12; coin.Position = pos + Vector3.new(0, math.sin(t) * 0.5, 0); task.wait(0.06) end end)
+    end
+    for i = 1, 12 do
+        local a = math.rad(i * 30)
+        makeCoin(Vector3.new(math.cos(a) * 70, 4, math.sin(a) * 70))
+    end
+end
+
+-- (3) Car dealership — spend $500 to spawn your own driveable car near you.
+do
+    local OWNED = {}
+    local dealer = part("CarDealership", Vector3.new(14, 7, 9), Vector3.new(150, 4, 25), theme.accent, Enum.Material.Neon)
+    label3d(dealer, "Car Dealership — Buy a Car ($500)", 5, theme.accent)
+    local dPrompt = Instance.new("ProximityPrompt"); dPrompt.ActionText = "Buy Car ($500)"; dPrompt.ObjectText = "Dealership"; dPrompt.HoldDuration = 0.4; dPrompt.MaxActivationDistance = 16; dPrompt.RequiresLineOfSight = false; dPrompt.Parent = dealer
+    dPrompt.Triggered:Connect(function(player)
+        if getCash(player) < 500 then RpEvent:FireClient(player, {kind="toast", text="Need $500 for a car."}); return end
+        if OWNED[player] and OWNED[player].Parent then OWNED[player]:Destroy() end
+        addCash(player, -500)
+        local char = player.Character; local root = char and char:FindFirstChild("HumanoidRootPart")
+        local base = (root and root.Position or Vector3.new(150, 0, 40)) + Vector3.new(0, 0, 16)
+        local m = buildCar("MyCar_" .. player.UserId, Vector3.new(base.X, 0, base.Z), Color3.fromRGB(math.random(70, 240), math.random(70, 240), math.random(70, 240)))
+        OWNED[player] = m
+        RpEvent:FireClient(player, {kind="toast", text="New car delivered! Walk up and press Drive."})
+    end)
+    Players.PlayerRemoving:Connect(function(player) if OWNED[player] and OWNED[player].Parent then OWNED[player]:Destroy() end; OWNED[player] = nil end)
+end
+
+-- (4) ATM — collect a small cash boost every 60s (light passive income on a timer).
+do
+    local atm = part("ATM", Vector3.new(4, 7, 2.5), Vector3.new(-44, 4, 22), Color3.fromRGB(60, 170, 100), Enum.Material.Metal)
+    part("ATMScreen", Vector3.new(3, 2.4, 0.3), Vector3.new(-44, 6, 23.2), Color3.fromRGB(120, 240, 170), Enum.Material.Neon)
+    label3d(atm, "ATM — Collect $150 / 60s", 5, Color3.fromRGB(120, 240, 150))
+    local last = {}
+    local aPrompt = Instance.new("ProximityPrompt"); aPrompt.ActionText = "Collect $150"; aPrompt.ObjectText = "ATM"; aPrompt.HoldDuration = 0.3; aPrompt.MaxActivationDistance = 12; aPrompt.RequiresLineOfSight = false; aPrompt.Parent = atm
+    aPrompt.Triggered:Connect(function(player)
+        local now = os.clock()
+        if last[player] and (now - last[player]) < 60 then
+            RpEvent:FireClient(player, {kind="toast", text="ATM recharging — try again soon."}); return
+        end
+        last[player] = now
+        addCash(player, 150); RpEvent:FireClient(player, {kind="toast", text="ATM +$150"})
+    end)
+    Players.PlayerRemoving:Connect(function(player) last[player] = nil end)
+end
+
 local function saveData(player)
     if not dataStore then return end
     local ls = player:FindFirstChild("leaderstats"); if not ls then return end
@@ -11368,7 +11507,7 @@ local function setupPlayer(player)
     if player.Character then task.delay(0.3, function() updateRoleTag(player) end) end
 end
 Players.PlayerAdded:Connect(setupPlayer)
-Players.PlayerRemoving:Connect(function(player) saveData(player); working[player] = nil; employed[player] = nil end)
+Players.PlayerRemoving:Connect(function(player) saveData(player); working[player] = nil; employed[player] = nil; shiftJob[player] = nil end)
 for _, p in Players:GetPlayers() do setupPlayer(p) end
 
 task.spawn(function()
