@@ -130,6 +130,15 @@ function ringLua(n: number, rx: number, rz: number, y: number): string {
   return `{${pts.join(', ')}}`;
 }
 
+// Session 421: asset IDs that are MULTI-MODEL "packs" (several characters/props in
+// one asset), per the user's store links — e.g. "FNAF Killers", "Fnaf Morphs",
+// "FNAF 1 Rig Pack", "Characters by rainy ye — The Mimic". The default inserter
+// scales a whole LoadAsset result to one target size on one podium, which would
+// squish a pack into a tiny clump. For these IDs we instead lay each child model
+// out individually (see _insert). Only EXPLICIT IDs are exploded → normal single
+// assets are untouched (no decompose-a-car-into-parts regression).
+const PACK_IDS = new Set<number>([15313551841, 6946588630, 13725245790, 7575093283]);
+
 // Story Game is a linear +z corridor, not a plaza: NPC chapters sit at z≈70/240/320,
 // the rune puzzle at z≈140 and its barrier at z≈168. A ring at the origin would clump
 // every prop on the spawn pad. Instead lay props in side alcoves (x=±16, inside the
@@ -177,14 +186,21 @@ export function themeAssetScatterLua(brief: string, genre: string): string {
   const target = pl.target;
   const pad = target;
   const half = (target / 2 + 1).toFixed(1);
+  // Which of the selected ids are multi-model packs → exploded child-by-child.
+  const packsLua = ids.filter((id) => PACK_IDS.has(id)).map((id) => `[${id}]=true`).join(', ');
   return `
 -- ===== REAL CATALOG THEME ASSETS (keyword-matched, InsertService, scaled) =====
 do
     local _af = Instance.new("Folder"); _af.Name = "ThemeAssets"; _af.Parent = workspace
     local _ip = game:GetService("InsertService")
+    local _packs = {${packsLua}}
     local function _scaleTo(m, t)
         local ok, _cf, sz = pcall(function() return m:GetBoundingBox() end)
         if ok and sz then local d = math.max(sz.X, sz.Y, sz.Z); if d > 0.1 then pcall(function() m:ScaleTo(t / d) end) end end
+    end
+    local function _prep(inst)
+        if inst:IsA("Model") and not inst.PrimaryPart then local bp = inst:FindFirstChildWhichIsA("BasePart", true); if bp then inst.PrimaryPart = bp end end
+        for _, d in ipairs(inst:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false end end
     end
     local function _insert(id, cf, t)
         task.spawn(function()
@@ -192,11 +208,32 @@ do
             if not ok or typeof(m) ~= "Instance" then return end
             for _, d in ipairs(m:GetDescendants()) do if d:IsA("LuaSourceContainer") then pcall(function() d:Destroy() end) end end
             if not m:FindFirstChildWhichIsA("BasePart", true) then pcall(function() m:Destroy() end); return end
-            if not m.PrimaryPart then local bp = m:FindFirstChildWhichIsA("BasePart", true); if bp then m.PrimaryPart = bp end end
-            for _, d in ipairs(m:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false end end
-            _scaleTo(m, t)
-            pcall(function() m:PivotTo(cf) end)
-            m.Parent = _af
+            -- A "pack" asset holds several character/prop Models. Lay them out
+            -- individually so each reads clearly instead of one squished clump.
+            local items = {}
+            if _packs[id] then
+                for _, c in ipairs(m:GetChildren()) do
+                    if c:IsA("Model") and c:FindFirstChildWhichIsA("BasePart", true) then table.insert(items, c) end
+                end
+            end
+            if #items >= 2 then
+                local maxN = math.min(#items, 4)
+                local GP = {Vector3.new(-1, 0, -1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, 1)}
+                for i = 1, maxN do
+                    local it = items[i]
+                    _prep(it)
+                    _scaleTo(it, t * 0.5)
+                    local g = GP[i]
+                    pcall(function() it:PivotTo(cf * CFrame.new(g.X * (t * 0.38), 0, g.Z * (t * 0.38))) end)
+                    it.Parent = _af
+                end
+                pcall(function() m:Destroy() end)
+            else
+                _prep(m)
+                _scaleTo(m, t)
+                pcall(function() m:PivotTo(cf) end)
+                m.Parent = _af
+            end
         end)
     end
     local function _stand(name, size, pos)
