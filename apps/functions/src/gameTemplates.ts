@@ -11018,6 +11018,7 @@ local startPos = Vector3.new(radius, 6, 0)
 local startPad = part("StartPad", Vector3.new(18, 1, 18), startPos, theme.checkpoint, Enum.Material.Neon)
 label3d(startPad, "START", 4, theme.checkpoint)
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "ParkourSpawn"; spawnLoc.Size = Vector3.new(14, 1, 14); spawnLoc.Position = startPos + Vector3.new(0, 1, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.checkpoint; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+${themedSpawnBillboardLua(spec)}
 
 local checkpointPos = {}
 local runState = {}
