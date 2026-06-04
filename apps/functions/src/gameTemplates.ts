@@ -12866,10 +12866,111 @@ end)
   };
 }
 
-// Session 399 (cont.): Mini-games Hub — lobby + a shared tile-grid arena that
-// rotates 3 elimination modes (Tile Drop / Color Call / Edge Collapse). Fall =
-// out (teleport to a spectate pad). Survivors score Points; a lone survivor
-// gets a Win. Round loop is endless. leaderstats Points + Wins.
+// Session 420: real public asset packs spliced into the hub lobby as themed
+// decor. 99 Nights creatures load via InsertService:LoadAsset; brainrot models
+// via AssetService:LoadAssetAsync (needs "Allow Loading Third Party Assets").
+// Both are pcall'd with an rbxthumb totem fallback so the lobby is never empty.
+// The 99 Nights "Deer Adventure Map" (107235854565333) is intentionally omitted
+// — it is a full map that would overlap the lobby (same call as session 419).
+const HUB_VIBE_ASSETS: Record<string, { fire?: number; models: number[]; loader: 'insert' | 'asset' }> = {
+  night: {
+    fire: 82051509034737, // 99 Nights — Initial Fire Morsel (campfire)
+    loader: 'insert',
+    models: [
+      136689985623077, // Bear
+      112465932068951, // Polar bear
+      82325268253970,  // Owl
+      89097886898916,  // Ram Monster
+      105990008575555, // Deer rig
+      113480154894240, // forest creature
+    ],
+  },
+  brainrot: {
+    loader: 'asset',
+    models: [
+      112586636995159, 122979917244614, 108399116162473, 107158060686382,
+      72466520546640, 84968460904245, 129736155547573, 131938063150331, 132474197060148,
+    ],
+  },
+};
+
+// Themed lobby decoration spliced into the hub server script. Assumes `world`,
+// `part(name,size,pos,color,mat,parent)`, `makeTree`, `makeRock`, `theme`, and
+// `Vector3` are in scope (true in buildMinigameHubScript). Always builds a ring
+// of atmosphere-matched trees/rocks; for night/brainrot vibes it also async-loads
+// the real asset pack with an rbxthumb totem fallback.
+function hubThemeDecorLua(spec: GameVisualSpec | undefined): string {
+  if (!spec) return '';
+  const a = spec.atmosphere;
+  const treeKind = safeLuaString(a.treeKind || 'round', 'round');
+  const leaf = rgbLua(a.treeLeaf);
+  const trunk = rgbLua(a.treeTrunk);
+  const assets = HUB_VIBE_ASSETS[spec.vibe];
+  const models = assets ? `{${assets.models.join(', ')}}` : '{}';
+  const fire = assets && assets.fire ? String(assets.fire) : '0';
+  const loadLine = assets && assets.loader === 'insert'
+    ? `local ok, c = pcall(function() return game:GetService("InsertService"):LoadAsset(id) end)`
+    : `local ok, c = pcall(function() return game:GetService("AssetService"):LoadAssetAsync(id) end)`;
+  return `
+do
+    for i = 1, 18 do
+        local ang = (i / 18) * math.pi * 2 + 0.3
+        local r = 46 + (i % 4) * 6
+        pcall(function() makeTree(world, Vector3.new(math.cos(ang) * r, 1, math.sin(ang) * r), 1.0 + (i % 3) * 0.4, ${treeKind}, ${trunk}, ${leaf}) end)
+    end
+    for i = 1, 6 do
+        local ang = math.rad(i * 60 + 18); local r = 56
+        pcall(function() makeRock(world, Vector3.new(math.cos(ang) * r, 0.2, math.sin(ang) * r), 1.0 + (i % 2) * 0.5) end)
+    end
+    local FIRE_ID = ${fire}
+    if FIRE_ID > 0 then
+        local em = part("HubEmbers", Vector3.new(3.6, 2, 3.6), Vector3.new(0, 1.6, -52), Color3.fromRGB(255, 130, 45), Enum.Material.Neon, world)
+        em.Shape = Enum.PartType.Ball
+        local fr = Instance.new("Fire"); fr.Size = 10; fr.Heat = 14; fr.Parent = em
+        local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4; pl.Range = 80; pl.Parent = em
+    end
+    local MODELS = ${models}
+    if #MODELS > 0 then
+        task.spawn(function()
+            for idx, id in ipairs(MODELS) do
+                local ang = (idx / #MODELS) * math.pi * 2
+                local r = 44 + (idx % 3) * 8
+                local pos = Vector3.new(math.cos(ang) * r, 1.5, math.sin(ang) * r)
+                ${loadLine}
+                local placed = false
+                if ok and c then
+                    local wrap = Instance.new("Model"); wrap.Name = "HubAsset_" .. id; wrap.Parent = world
+                    for _, k in ipairs(c:GetChildren()) do k.Parent = wrap end
+                    pcall(function() c:Destroy() end)
+                    local hasPart = false
+                    for _, d in ipairs(wrap:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; hasPart = true end end
+                    if hasPart then
+                        local oks, sz = pcall(function() return wrap:GetExtentsSize() end)
+                        if oks and sz and sz.Y > 0.1 then pcall(function() wrap:ScaleTo(math.clamp(10 / sz.Y, 0.04, 16)) end) end
+                        pcall(function() wrap:PivotTo(CFrame.new(pos + Vector3.new(0, 4, 0)) * CFrame.Angles(0, math.random() * 6.283, 0)) end)
+                        placed = true
+                    else wrap:Destroy() end
+                end
+                if not placed then
+                    local post = part("HubTotem_" .. idx, Vector3.new(1.6, 10, 1.6), pos + Vector3.new(0, 5, 0), theme.lobby, Enum.Material.Wood, world)
+                    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 110, 0, 110); bb.StudsOffset = Vector3.new(0, 7, 0); bb.Adornee = post; bb.Parent = post
+                    local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. id .. "&w=150&h=150"; img.Parent = bb
+                end
+                task.wait()
+            end
+        end)
+    end
+end`;
+}
+
+// Session 420: Mini-games Hub rebuilt — a real party hub with a lobby + VOTING
+// system and a library of distinct, playable minigames (Tile Drop, Musical
+// Chairs, Dodgeball, Hide & Seek, Sprint Race, Parkour Dash, Red Light/Green
+// Light, Glass Bridge, Color Rush, Floor is Lava). Each round: players vote on a
+// pad for one of 3 random games → teleport to its arena → play → survivors/
+// finishers score Points, the winner gets a Win → back to lobby. Themed per
+// preset (palette/atmosphere + deriveTdPack seeker + real 99 Nights/brainrot
+// asset decor). leaderstats Points + Wins.
 function buildMinigameHubScript(params: GameTemplateParams): MultiScriptResult {
   const titleLua = safeLuaString(params.title, 'Mini Games');
   const themeRaw = String(params.mapTheme || '').toLowerCase();
@@ -12886,8 +12987,21 @@ function buildMinigameHubScript(params: GameTemplateParams): MultiScriptResult {
     : 'nil';
   const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
+  // Session 420: themed seeker/doll (Hide & Seek, Red Light/Green Light) + a mob
+  // for the chasers — reuse the TD pack so each preset gets a recognizable hunter
+  // (FNAF animatronic, 99 Nights wolf, brainrot figure, ...). Plus lobby decor.
+  const brief = `${params.title} ${params.summary || ''}`;
+  const pack = deriveTdPack(brief, spec ? spec.vibe : 'neutral');
+  const seekerName = safeLuaString(pack.boss.name, 'Seeker');
+  const seekerColor = rgbLua(pack.boss.color);
+  const mob1Name = safeLuaString((pack.enemies[0] && pack.enemies[0].name) || 'Hunter', 'Hunter');
+  const mob1Color = rgbLua((pack.enemies[0] && pack.enemies[0].color) || pack.boss.color);
+  const decorLua = hubThemeDecorLua(spec);
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
 
 local Config = {Title=${titleLua}, Theme=${themeLua}}
 
@@ -12899,126 +13013,578 @@ local THEMES = {
 local theme = THEMES[Config.Theme] or THEMES.party
 local SPEC_THEME = ${specThemeLua}
 if SPEC_THEME then theme = SPEC_THEME end
-local COLORS = {Color3.fromRGB(235,90,90), Color3.fromRGB(90,150,235), Color3.fromRGB(110,210,120)}
-local CNAMES = {"RED", "BLUE", "GREEN"}
+local SEEKER = {name=${seekerName}, color=${seekerColor}}
+local MOB1 = {name=${mob1Name}, color=${mob1Color}}
+local TILECOLORS = {Color3.fromRGB(235,90,90), Color3.fromRGB(90,150,235), Color3.fromRGB(110,210,120), Color3.fromRGB(245,205,70)}
+local CNAMES = {"RED", "BLUE", "GREEN", "YELLOW"}
 
 local remotes = Instance.new("Folder"); remotes.Name = "MgRemotes"; remotes.Parent = ReplicatedStorage
 local MgEvent = Instance.new("RemoteEvent"); MgEvent.Name = "MgEvent"; MgEvent.Parent = remotes
 local world = Instance.new("Folder"); world.Name = "GeneratedHub"; world.Parent = workspace
+local arena = Instance.new("Folder"); arena.Name = "Arena"; arena.Parent = workspace
 
-local function part(name, size, pos, color, mat, parent)
-    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
+${worldVisualsLua()}
+
+local function part(name, size, pos, color, mat, parent, collide)
+    local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true
+    if collide == nil then p.CanCollide = true else p.CanCollide = collide end
+    p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
 end
+local function apart(name, size, pos, color, mat, collide) return part(name, size, pos, color, mat, arena, collide) end
 local function label3d(adornee, text, offsetY, color)
-    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 200, 0, 38); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 240, 0, 44); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
     local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
 end
 
-local lobby = part("Lobby", Vector3.new(90, 2, 90), Vector3.new(0, 0, 0), theme.lobby, theme.lobbyMat)
-${worldVisualsLua()}
+-- ===== world coordinates =====
+local AC = Vector3.new(460, 60, 0)        -- arena centre (far from the lobby)
+local FLOOR_Y = AC.Y                       -- arena floor top surface
+local VOID_Y = AC.Y - 36
+local LOBBY = Vector3.new(0, 6, 0)
+
+local lobby = part("Lobby", Vector3.new(130, 2, 130), Vector3.new(0, 0, 0), theme.lobby, theme.lobbyMat)
 setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(208, 208, 214), 0.55), tint = Color3.fromRGB(253, 251, 250), haze = 1.4, bloom = 0.8`}})
-label3d(lobby, Config.Title, 9, theme.accent)
-local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "HubSpawn"; spawnLoc.Size = Vector3.new(20, 1, 20); spawnLoc.Position = Vector3.new(0, 1.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
+label3d(lobby, Config.Title, 13, theme.accent)
+local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "HubSpawn"; spawnLoc.Size = Vector3.new(22, 1, 22); spawnLoc.Position = Vector3.new(0, 1.5, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 ${themedSpawnBillboardLua(spec)}
-local lobbyPos = Vector3.new(0, 5, 0)
+${decorLua}
 
-local GRID, TS = 8, 13
-local acx, acy, acz = 240, 46, 0
-local tiles = {}
-for gx = 0, GRID - 1 do
-    for gz = 0, GRID - 1 do
-        local pos = Vector3.new(acx + (gx - (GRID - 1) / 2) * TS, acy, acz + (gz - (GRID - 1) / 2) * TS)
-        local g = ((gx + gz) % 3) + 1
-        local tile = part("Tile_" .. gx .. "_" .. gz, Vector3.new(TS - 1, 2, TS - 1), pos, COLORS[g], Enum.Material.SmoothPlastic)
-        table.insert(tiles, {part = tile, group = g, pos = pos, dist = math.abs(gx - (GRID - 1) / 2) + math.abs(gz - (GRID - 1) / 2)})
-    end
-end
-part("DeathPlane", Vector3.new(GRID * TS + 160, 1, GRID * TS + 160), Vector3.new(acx, acy - 30, acz), Color3.fromRGB(220, 80, 40), Enum.Material.Neon)
-local deathPlane = world:FindFirstChild("DeathPlane")
-local specPlatform = part("Spectate", Vector3.new(34, 2, 20), Vector3.new(acx, acy + 4, acz + (GRID * TS) / 2 + 44), theme.lobby, theme.lobbyMat)
-label3d(specPlatform, "Spectators", 5, theme.accent)
-local spectate = specPlatform.Position + Vector3.new(0, 4, 0)
+local specPlat = part("Spectate", Vector3.new(70, 2, 30), AC + Vector3.new(0, 4, 150), theme.lobby, theme.lobbyMat)
+label3d(specPlat, "Spectators", 7, theme.accent)
+local SPEC = specPlat.Position + Vector3.new(0, 5, 0)
 
-local inRound = false
+local deathPlane = part("DeathPlane", Vector3.new(1200, 2, 1200), Vector3.new(AC.X, VOID_Y, AC.Z), Color3.fromRGB(220, 70, 40), Enum.Material.Neon, world, false)
+deathPlane.Transparency = 0.55
+
+-- ===== round state + helpers =====
+local roundActive = false
 local eliminated = {}
-local function resetTiles() for _, t in ipairs(tiles) do t.part.CanCollide = true; t.part.Transparency = 0 end end
-local function dropTile(t) t.part.CanCollide = false; t.part.Transparency = 0.75 end
-local function alivePlayers() local n = 0; for _, p in Players:GetPlayers() do if not eliminated[p] then n += 1 end end; return n end
-local function teleport(player, pos) local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); if r then r.CFrame = CFrame.new(pos) end end
-local function teleportAll(pos) for _, p in Players:GetPlayers() do teleport(p, pos) end end
+local function isAlive(p) return p.Parent ~= nil and not eliminated[p] end
+local function aliveList() local t = {}; for _, p in Players:GetPlayers() do if isAlive(p) then t[#t+1] = p end end; return t end
+local function aliveCount() return #aliveList() end
+local function rootOf(p) local c = p.Character; return c and c:FindFirstChild("HumanoidRootPart") end
+local function teleport(p, pos) local r = rootOf(p); if r then r.CFrame = CFrame.new(pos) end end
+local function teleportAll(pos) for _, p in Players:GetPlayers() do teleport(p, pos + Vector3.new(math.random(-7, 7), 0, math.random(-7, 7))) end end
 
-deathPlane.Touched:Connect(function(hit)
-    local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
-    if inRound and not eliminated[player] then eliminated[player] = true; teleport(player, spectate); MgEvent:FireClient(player, {kind="out"}) end
-end)
-
-local function award(points, winner)
-    for _, p in Players:GetPlayers() do
-        if not eliminated[p] then local ls = p:FindFirstChild("leaderstats"); local pts = ls and ls:FindFirstChild("Points"); if pts then pts.Value += points end end
-    end
-    if winner then local ls = winner:FindFirstChild("leaderstats"); local w = ls and ls:FindFirstChild("Wins"); if w then w.Value += 1 end end
-end
-local function broadcast(phase, text, mode)
-    MgEvent:FireAllClients({kind="state", phase=phase, text=text, alive=alivePlayers(), mode=mode or "", title=Config.Title})
-end
-
-local function setupPlayer(player)
-    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+local function setupPlayer(p)
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = p
     local pts = Instance.new("IntValue"); pts.Name = "Points"; pts.Value = 0; pts.Parent = ls
     local w = Instance.new("IntValue"); w.Name = "Wins"; w.Value = 0; w.Parent = ls
 end
 Players.PlayerAdded:Connect(setupPlayer)
 for _, p in Players:GetPlayers() do setupPlayer(p) end
+local function addPoints(p, n) local ls = p:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild("Points"); if v then v.Value += n end end
+local function addWin(p) local ls = p:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild("Wins"); if v then v.Value += 1 end end
+
+local function broadcast(phase, text, timeLeft, mode, extra)
+    local payload = {kind="state", phase=phase, text=text, time=timeLeft or 0, alive=aliveCount(), mode=mode or "", title=Config.Title}
+    if extra then for k, v in pairs(extra) do payload[k] = v end end
+    MgEvent:FireAllClients(payload)
+end
+local function eliminate(p, reason)
+    if not isAlive(p) then return end
+    eliminated[p] = true
+    teleport(p, SPEC + Vector3.new(math.random(-12, 12), 0, math.random(-10, 10)))
+    MgEvent:FireClient(p, {kind="out", text = reason or "OUT! Spectating..."})
+end
+deathPlane.Touched:Connect(function(hit)
+    if not roundActive then return end
+    local p = Players:GetPlayerFromCharacter(hit.Parent); if not p then return end
+    eliminate(p, "You fell! Spectating...")
+end)
+
+-- ===== shared arena helpers =====
+local function buildFloor(size, mat, color)
+    return apart("ArenaFloor", Vector3.new(size, 2, size), Vector3.new(AC.X, FLOOR_Y, AC.Z), color or theme.lobby, mat or Enum.Material.SmoothPlastic, true)
+end
+local function startSpots(n, radius)
+    local spots = {}; n = math.max(1, n)
+    for i = 1, n do local a = (i / n) * math.pi * 2; spots[i] = Vector3.new(AC.X + math.cos(a) * radius, FLOOR_Y + 4, AC.Z + math.sin(a) * radius) end
+    return spots
+end
+local function placeAlive(spots)
+    local al = aliveList()
+    for i, p in ipairs(al) do teleport(p, spots[((i - 1) % #spots) + 1]) end
+end
+local function countdown(secs, label, mode)
+    for t = secs, 1, -1 do broadcast("intro", label, t, mode); task.wait(1) end
+end
+local function survivorsWin(pts)
+    local survivors = aliveList()
+    for _, p in ipairs(survivors) do addPoints(p, pts or 10) end
+    local winner = (#survivors == 1) and survivors[1] or nil
+    return survivors, winner
+end
+local function makeSeeker(pos, info, speed)
+    local npc, hum, hrp = makeHumanoidNpc(arena, CFrame.new(pos), {name = info.name, color = info.color, eyes = true, walkSpeed = speed or 14, health = 100000})
+    if npc then label3d(npc:FindFirstChild("Head") or hrp or npc.PrimaryPart, info.name, 2.6, Color3.fromRGB(255, 90, 90)) end
+    return npc, hum, hrp
+end
+
+-- ===== minigames (each builds its arena, runs, returns survivors, winner) =====
+local function mgTileDrop()
+    local GRID, TS = 8, 13
+    local tiles = {}
+    for gx = 0, GRID - 1 do
+        for gz = 0, GRID - 1 do
+            local pos = Vector3.new(AC.X + (gx - (GRID - 1) / 2) * TS, FLOOR_Y, AC.Z + (gz - (GRID - 1) / 2) * TS)
+            local g = ((gx + gz) % #TILECOLORS) + 1
+            tiles[#tiles + 1] = apart("Tile_" .. gx .. "_" .. gz, Vector3.new(TS - 1, 2, TS - 1), pos, TILECOLORS[g], Enum.Material.Neon, true)
+        end
+    end
+    placeAlive(startSpots(math.max(4, aliveCount()), 30))
+    countdown(3, "Tile Drop - last one standing wins!", "Tile Drop")
+    roundActive = true; broadcast("play", "Don't fall!", 0, "Tile Drop")
+    local order = {}; for i = 1, #tiles do order[i] = i end
+    for i = #order, 2, -1 do local j = math.random(1, i); order[i], order[j] = order[j], order[i] end
+    local interval = 0.85
+    for _, idx in ipairs(order) do
+        if not roundActive then break end
+        if aliveCount() <= 1 and #Players:GetPlayers() > 1 then break end
+        local tile = tiles[idx]; tile.Color = Color3.fromRGB(255, 120, 80); task.wait(0.25)
+        tile.CanCollide = false; tile.Transparency = 0.7
+        broadcast("play", "Don't fall! " .. aliveCount() .. " left", 0, "Tile Drop")
+        task.wait(interval); interval = math.max(0.28, interval - 0.012)
+    end
+    return survivorsWin(10)
+end
+
+local function mgMusicalChairs()
+    buildFloor(64, Enum.Material.WoodPlanks, theme.lobby)
+    local chairs = {}
+    local function layoutChairs(c)
+        for _, ch in ipairs(chairs) do ch.part:Destroy() end
+        chairs = {}
+        for i = 1, c do
+            local a = (i / c) * math.pi * 2
+            local pos = Vector3.new(AC.X + math.cos(a) * 16, FLOOR_Y + 2.5, AC.Z + math.sin(a) * 16)
+            local ch = apart("Chair_" .. i, Vector3.new(5, 3, 5), pos, theme.accent, Enum.Material.Neon, true)
+            label3d(ch, "SIT", 2, theme.lobby)
+            chairs[#chairs + 1] = {part = ch, pos = pos}
+        end
+    end
+    placeAlive(startSpots(math.max(4, aliveCount()), 26))
+    countdown(3, "Musical Chairs - grab a seat when the music stops!", "Musical Chairs")
+    roundActive = true
+    local chairCount = math.max(1, aliveCount() - 1)
+    layoutChairs(chairCount)
+    while roundActive and aliveCount() > 1 and chairCount >= 1 do
+        broadcast("play", "Music playing... keep moving!", 0, "Musical Chairs")
+        task.wait(math.random(40, 80) / 10)
+        if not roundActive then break end
+        broadcast("play", "STOP! Grab a chair!", 0, "Musical Chairs")
+        local claimed = {}
+        local deadline = tick() + 3.2
+        while tick() < deadline do
+            for _, p in ipairs(aliveList()) do
+                local r = rootOf(p)
+                if r then
+                    for _, ch in ipairs(chairs) do
+                        if not claimed[ch] then
+                            local dx = r.Position.X - ch.pos.X; local dz = r.Position.Z - ch.pos.Z
+                            if (dx * dx + dz * dz) <= 16 then claimed[ch] = p; break end
+                        end
+                    end
+                end
+            end
+            RunService.Heartbeat:Wait()
+        end
+        local safe = {}
+        for _, p in pairs(claimed) do safe[p] = true end
+        for _, p in ipairs(aliveList()) do if not safe[p] then eliminate(p, "No chair! Spectating...") end end
+        chairCount = aliveCount() - 1
+        if aliveCount() <= 1 or chairCount < 1 then break end
+        layoutChairs(chairCount); task.wait(1.4)
+    end
+    return survivorsWin(12)
+end
+
+local function mgDodgeball()
+    buildFloor(70, Enum.Material.Metal, theme.lobby)
+    for _, s in ipairs({-1, 1}) do
+        apart("WallX_" .. s, Vector3.new(2, 12, 72), Vector3.new(AC.X + s * 35, FLOOR_Y + 6, AC.Z), theme.accent, Enum.Material.Neon, true)
+        apart("WallZ_" .. s, Vector3.new(72, 12, 2), Vector3.new(AC.X, FLOOR_Y + 6, AC.Z + s * 35), theme.accent, Enum.Material.Neon, true)
+    end
+    placeAlive(startSpots(math.max(4, aliveCount()), 22))
+    countdown(3, "Dodgeball - don't get hit by a ball!", "Dodgeball")
+    roundActive = true
+    local endAt = tick() + 38
+    task.spawn(function()
+        while roundActive and tick() < endAt do
+            local targets = aliveList()
+            if #targets > 0 then
+                local tgt = targets[math.random(#targets)]; local r = rootOf(tgt)
+                local from = Vector3.new(AC.X + math.random(-30, 30), FLOOR_Y + 8, AC.Z + math.random(-30, 30))
+                local ball = Instance.new("Part"); ball.Shape = Enum.PartType.Ball; ball.Size = Vector3.new(4, 4, 4); ball.Position = from
+                ball.Color = Color3.fromRGB(255, 90, 70); ball.Material = Enum.Material.Neon; ball.CanCollide = true; ball.Parent = arena
+                local dir = r and (r.Position - from).Unit or Vector3.new(0, 0, 1)
+                ball.AssemblyLinearVelocity = dir * 72 + Vector3.new(0, 8, 0)
+                ball.Touched:Connect(function(hit)
+                    local pp = Players:GetPlayerFromCharacter(hit.Parent)
+                    if pp and isAlive(pp) and roundActive then eliminate(pp, "Hit by a ball! Spectating...") end
+                end)
+                Debris:AddItem(ball, 6)
+            end
+            broadcast("play", "Dodge! " .. aliveCount() .. " left", math.max(0, math.floor(endAt - tick())), "Dodgeball")
+            task.wait(math.max(0.42, 1.2 - (38 - (endAt - tick())) * 0.02))
+            if aliveCount() <= 1 and #Players:GetPlayers() > 1 then break end
+        end
+    end)
+    while roundActive and tick() < endAt and not (aliveCount() <= 1 and #Players:GetPlayers() > 1) do task.wait(0.4) end
+    return survivorsWin(12)
+end
+
+local function mgHideSeek()
+    buildFloor(92, Enum.Material.Grass, theme.lobby)
+    for i = 1, 26 do
+        local a = math.random() * math.pi * 2; local r = math.random(8, 40)
+        local h = math.random(4, 8)
+        apart("Cover_" .. i, Vector3.new(math.random(4, 8), h, math.random(4, 8)), Vector3.new(AC.X + math.cos(a) * r, FLOOR_Y + h / 2 + 1, AC.Z + math.sin(a) * r), theme.lobby:Lerp(theme.accent, (i % 3) / 6), Enum.Material.Wood, true)
+    end
+    placeAlive(startSpots(math.max(4, aliveCount()), 36))
+    countdown(4, "Hide & Seek - survive the seeker until time runs out!", "Hide & Seek")
+    roundActive = true
+    local seekers = {}
+    seekers[1] = {makeSeeker(Vector3.new(AC.X, FLOOR_Y + 4, AC.Z), SEEKER, 13)}
+    if aliveCount() > 6 then seekers[2] = {makeSeeker(Vector3.new(AC.X + 10, FLOOR_Y + 4, AC.Z + 10), MOB1, 12)} end
+    local endAt = tick() + 42
+    task.spawn(function()
+        while roundActive and tick() < endAt do
+            for _, sk in ipairs(seekers) do
+                local npc, hum, hrp = sk[1], sk[2], sk[3]
+                if npc and npc.Parent and hum and hrp then
+                    local target, best = nil, 1 / 0
+                    for _, p in ipairs(aliveList()) do
+                        local pr = rootOf(p)
+                        if pr then local d = (pr.Position - hrp.Position).Magnitude; if d < best then best = d; target = pr end end
+                    end
+                    if target then
+                        hum:MoveTo(target.Position)
+                        if best <= 6 then
+                            for _, p in ipairs(aliveList()) do local pr = rootOf(p); if pr and (pr.Position - hrp.Position).Magnitude <= 6 then eliminate(p, "Caught! Spectating...") end end
+                        end
+                    end
+                end
+            end
+            broadcast("play", "Hide! " .. math.max(0, math.floor(endAt - tick())) .. "s left", math.max(0, math.floor(endAt - tick())), "Hide & Seek")
+            task.wait(0.4)
+            if aliveCount() == 0 then break end
+        end
+    end)
+    while roundActive and tick() < endAt and aliveCount() > 0 do task.wait(0.4) end
+    return survivorsWin(14)
+end
+
+local function mgRace()
+    local len = 220
+    local startZ = AC.Z - len / 2
+    local finishZ = AC.Z + len / 2
+    apart("Track", Vector3.new(42, 2, len + 24), Vector3.new(AC.X, FLOOR_Y, AC.Z), theme.lobby, Enum.Material.SmoothPlastic, true)
+    for _, s in ipairs({-1, 1}) do apart("Rail_" .. s, Vector3.new(1.5, 6, len + 24), Vector3.new(AC.X + s * 22, FLOOR_Y + 3, AC.Z), theme.accent, Enum.Material.Neon, true) end
+    for i = 1, 6 do apart("Hurdle_" .. i, Vector3.new(42, 3, 2), Vector3.new(AC.X, FLOOR_Y + 2, startZ + i * (len / 7)), Color3.fromRGB(235, 90, 90), Enum.Material.Neon, true) end
+    local finish = apart("Finish", Vector3.new(44, 2, 4), Vector3.new(AC.X, FLOOR_Y + 1, finishZ), Color3.fromRGB(120, 240, 140), Enum.Material.Neon, true)
+    label3d(finish, "FINISH", 4, theme.accent)
+    local al = aliveList()
+    for i, p in ipairs(al) do
+        teleport(p, Vector3.new(AC.X + (i % 5 - 2) * 6, FLOOR_Y + 4, startZ - 4))
+        local ch = p.Character; local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+        if hum then hum.UseJumpPower = true; hum.WalkSpeed = 34; hum.JumpPower = 55 end
+    end
+    countdown(3, "Sprint Race - first across the finish wins!", "Race")
+    roundActive = true
+    local placement = 0; local placed = {}
+    finish.Touched:Connect(function(hit)
+        local pp = Players:GetPlayerFromCharacter(hit.Parent)
+        if pp and isAlive(pp) and roundActive and not placed[pp] then
+            placed[pp] = true; placement += 1; addPoints(pp, math.max(4, 16 - placement * 2))
+            if placement == 1 then addWin(pp) end
+            MgEvent:FireClient(pp, {kind="out", text = "Finished #" .. placement .. "!"})
+            eliminated[pp] = true; teleport(pp, SPEC + Vector3.new(math.random(-12, 12), 0, 0))
+        end
+    end)
+    local endAt = tick() + 45
+    while roundActive and tick() < endAt and aliveCount() > 0 do
+        broadcast("play", "Race to the finish! " .. math.max(0, math.floor(endAt - tick())) .. "s", math.max(0, math.floor(endAt - tick())), "Race")
+        task.wait(0.4)
+    end
+    for _, p in ipairs(al) do local ch = p.Character; local hum = ch and ch:FindFirstChildOfClass("Humanoid"); if hum then hum.WalkSpeed = 16; hum.JumpPower = 50 end end
+    local winners = {}; for p in pairs(placed) do winners[#winners + 1] = p end
+    return winners, nil
+end
+
+local function mgParkour()
+    local steps = 16; local gap = 9
+    local startPos = Vector3.new(AC.X, FLOOR_Y + 1, AC.Z - 70)
+    apart("PkStart", Vector3.new(16, 2, 16), startPos, theme.accent, Enum.Material.Neon, true)
+    local prev = startPos
+    for i = 1, steps do
+        local nx = AC.X + math.sin(i * 0.7) * 18
+        local nz = startPos.Z + i * gap
+        local ny = FLOOR_Y + 1 + i * 1.2
+        prev = Vector3.new(nx, ny, nz)
+        apart("Plat_" .. i, Vector3.new(8, 1.4, 8), prev, theme.lobby:Lerp(theme.accent, i / steps), Enum.Material.Neon, true)
+    end
+    local goal = apart("PkGoal", Vector3.new(16, 2, 16), prev + Vector3.new(0, 2, 10), Color3.fromRGB(120, 240, 140), Enum.Material.Neon, true)
+    label3d(goal, "GOAL", 4, theme.accent)
+    local al = aliveList()
+    for i, p in ipairs(al) do teleport(p, startPos + Vector3.new((i % 4 - 1.5) * 3, 3, 0)) end
+    countdown(3, "Parkour Dash - reach the goal! Falling sends you back to start.", "Parkour")
+    roundActive = true
+    local placed = {}; local placement = 0
+    goal.Touched:Connect(function(hit)
+        local pp = Players:GetPlayerFromCharacter(hit.Parent)
+        if pp and isAlive(pp) and roundActive and not placed[pp] then
+            placed[pp] = true; placement += 1; addPoints(pp, math.max(5, 16 - placement * 2))
+            if placement == 1 then addWin(pp) end
+            MgEvent:FireClient(pp, {kind="out", text = "Reached the goal #" .. placement .. "!"})
+            eliminated[pp] = true; teleport(pp, SPEC + Vector3.new(math.random(-12, 12), 0, 0))
+        end
+    end)
+    local endAt = tick() + 50
+    while roundActive and tick() < endAt and aliveCount() > 0 do
+        for _, p in ipairs(aliveList()) do
+            local r = rootOf(p)
+            if r and r.Position.Y < FLOOR_Y - 6 then teleport(p, startPos + Vector3.new(0, 4, 0)) end
+        end
+        broadcast("play", "Reach the GOAL! " .. math.max(0, math.floor(endAt - tick())) .. "s", math.max(0, math.floor(endAt - tick())), "Parkour")
+        task.wait(0.25)
+    end
+    local winners = {}; for p in pairs(placed) do winners[#winners + 1] = p end
+    return winners, nil
+end
+
+local function mgLava()
+    buildFloor(86, Enum.Material.CrackedLava, Color3.fromRGB(60, 40, 36))
+    for i = 1, 14 do
+        local a = (i / 14) * math.pi * 2 + (i % 2) * 0.3
+        local r = 10 + (i % 4) * 7
+        local h = 4 + (i % 5) * 4
+        apart("Pillar_" .. i, Vector3.new(7, 2, 7), Vector3.new(AC.X + math.cos(a) * r, FLOOR_Y + h, AC.Z + math.sin(a) * r), theme.lobby, Enum.Material.Rock, true)
+    end
+    apart("LavaTop", Vector3.new(10, 2, 10), Vector3.new(AC.X, FLOOR_Y + 26, AC.Z), theme.accent, Enum.Material.Neon, true)
+    placeAlive(startSpots(math.max(4, aliveCount()), 18))
+    countdown(3, "Floor is Lava - climb above the rising lava!", "Lava")
+    roundActive = true
+    local lava = apart("Lava", Vector3.new(90, 2, 90), Vector3.new(AC.X, FLOOR_Y + 1.2, AC.Z), Color3.fromRGB(255, 110, 40), Enum.Material.Neon, false)
+    local fr = Instance.new("Fire"); fr.Size = 14; fr.Heat = 18; fr.Parent = lava
+    lava.Touched:Connect(function(hit)
+        local pp = Players:GetPlayerFromCharacter(hit.Parent)
+        if pp and isAlive(pp) and roundActive then eliminate(pp, "Burned by lava! Spectating...") end
+    end)
+    local y = FLOOR_Y + 1.2
+    local endAt = tick() + 45
+    while roundActive and tick() < endAt and not (aliveCount() <= 1 and #Players:GetPlayers() > 1) do
+        y += 0.7; lava.Position = Vector3.new(AC.X, y, AC.Z)
+        broadcast("play", "Climb! Lava rising - " .. aliveCount() .. " left", math.max(0, math.floor(endAt - tick())), "Lava")
+        task.wait(0.7)
+    end
+    return survivorsWin(13)
+end
+
+local function mgRedLight()
+    local len = 200
+    local startZ = AC.Z - len / 2
+    local finishZ = AC.Z + len / 2
+    apart("RLGTrack", Vector3.new(60, 2, len + 20), Vector3.new(AC.X, FLOOR_Y, AC.Z), theme.lobby, Enum.Material.SmoothPlastic, true)
+    local finish = apart("RLGFinish", Vector3.new(62, 2, 6), Vector3.new(AC.X, FLOOR_Y + 1, finishZ), Color3.fromRGB(120, 240, 140), Enum.Material.Neon, true)
+    label3d(finish, "FINISH", 4, theme.accent)
+    makeSeeker(Vector3.new(AC.X, FLOOR_Y + 4, finishZ + 10), SEEKER, 0)
+    local al = aliveList()
+    for i, p in ipairs(al) do teleport(p, Vector3.new(AC.X + (i % 7 - 3) * 6, FLOOR_Y + 4, startZ - 2)) end
+    countdown(4, "Red Light Green Light - move on GREEN, freeze on RED!", "Red Light")
+    roundActive = true
+    local placed = {}; local placement = 0
+    finish.Touched:Connect(function(hit)
+        local pp = Players:GetPlayerFromCharacter(hit.Parent)
+        if pp and isAlive(pp) and roundActive and not placed[pp] then
+            placed[pp] = true; placement += 1; addPoints(pp, math.max(6, 18 - placement * 2))
+            if placement == 1 then addWin(pp) end
+            MgEvent:FireClient(pp, {kind="out", text = "Finished #" .. placement .. "!"})
+            eliminated[pp] = true; teleport(pp, SPEC + Vector3.new(math.random(-12, 12), 0, 0))
+        end
+    end)
+    local endAt = tick() + 60
+    while roundActive and tick() < endAt and aliveCount() > 0 do
+        broadcast("play", "GREEN LIGHT - GO!", 0, "Red Light", {light = "green"})
+        task.wait(math.random(20, 45) / 10)
+        if not roundActive or aliveCount() == 0 then break end
+        local snap = {}
+        for _, p in ipairs(aliveList()) do local r = rootOf(p); if r then snap[p] = r.Position end end
+        broadcast("play", "RED LIGHT - FREEZE!", 0, "Red Light", {light = "red"})
+        local redEnd = tick() + 2.6
+        while tick() < redEnd do
+            for _, p in ipairs(aliveList()) do
+                local r = rootOf(p); local s = snap[p]
+                if r and s then
+                    local dx = r.Position.X - s.X; local dz = r.Position.Z - s.Z
+                    if (dx * dx + dz * dz) > 9 then eliminate(p, "Moved on red! Spectating...") end
+                end
+            end
+            RunService.Heartbeat:Wait()
+        end
+    end
+    local winners = {}; for p in pairs(placed) do winners[#winners + 1] = p end
+    return winners, nil
+end
+
+local function mgGlassBridge()
+    local rows = 12
+    local z0 = AC.Z - 60
+    apart("GBStart", Vector3.new(20, 2, 12), Vector3.new(AC.X, FLOOR_Y, z0 - 8), theme.accent, Enum.Material.Neon, true)
+    local endZ = z0 + rows * 10
+    local finish = apart("GBFinish", Vector3.new(20, 2, 12), Vector3.new(AC.X, FLOOR_Y, endZ + 6), Color3.fromRGB(120, 240, 140), Enum.Material.Neon, true)
+    label3d(finish, "SAFE", 4, theme.accent)
+    for i = 1, rows do
+        local z = z0 + i * 10
+        local safe = math.random(0, 1)
+        for col = 0, 1 do
+            local isSafe = (col == safe)
+            local tile = apart("GB_" .. i .. "_" .. col, Vector3.new(8, 1, 8), Vector3.new(AC.X + (col == 0 and -5 or 5), FLOOR_Y + 0.5, z), Color3.fromRGB(150, 210, 255), Enum.Material.Glass, true)
+            tile.Transparency = 0.35
+            if not isSafe then
+                tile.Touched:Connect(function(hit)
+                    local pp = Players:GetPlayerFromCharacter(hit.Parent)
+                    if pp and isAlive(pp) and roundActive then task.delay(0.35, function() tile.CanCollide = false; tile.Transparency = 0.85 end) end
+                end)
+            end
+        end
+    end
+    local al = aliveList()
+    for i, p in ipairs(al) do teleport(p, Vector3.new(AC.X + (i % 3 - 1) * 4, FLOOR_Y + 4, z0 - 8)) end
+    countdown(4, "Glass Bridge - one tile per row is safe. Choose wisely!", "Glass Bridge")
+    roundActive = true
+    local placed = {}; local placement = 0
+    finish.Touched:Connect(function(hit)
+        local pp = Players:GetPlayerFromCharacter(hit.Parent)
+        if pp and isAlive(pp) and roundActive and not placed[pp] then
+            placed[pp] = true; placement += 1; addPoints(pp, math.max(6, 20 - placement * 2))
+            if placement == 1 then addWin(pp) end
+            MgEvent:FireClient(pp, {kind="out", text = "Crossed #" .. placement .. "!"})
+            eliminated[pp] = true; teleport(pp, SPEC + Vector3.new(math.random(-12, 12), 0, 0))
+        end
+    end)
+    local endAt = tick() + 55
+    while roundActive and tick() < endAt and aliveCount() > 0 do
+        broadcast("play", "Cross the glass bridge! " .. math.max(0, math.floor(endAt - tick())) .. "s", math.max(0, math.floor(endAt - tick())), "Glass Bridge")
+        task.wait(0.4)
+    end
+    local winners = {}; for p in pairs(placed) do winners[#winners + 1] = p end
+    return winners, nil
+end
+
+local function mgColorRush()
+    local GRID, TS = 7, 13
+    local tiles = {}
+    for gx = 0, GRID - 1 do
+        for gz = 0, GRID - 1 do
+            local g = math.random(1, #TILECOLORS)
+            local pos = Vector3.new(AC.X + (gx - (GRID - 1) / 2) * TS, FLOOR_Y, AC.Z + (gz - (GRID - 1) / 2) * TS)
+            tiles[#tiles + 1] = {part = apart("CR_" .. gx .. "_" .. gz, Vector3.new(TS - 1, 2, TS - 1), pos, TILECOLORS[g], Enum.Material.Neon, true), group = g}
+        end
+    end
+    local function resetTiles() for _, t in ipairs(tiles) do t.part.CanCollide = true; t.part.Transparency = 0 end end
+    placeAlive(startSpots(math.max(4, aliveCount()), 28))
+    countdown(3, "Color Rush - reach the called colour before the rest drop!", "Color Rush")
+    roundActive = true
+    for c = 1, 10 do
+        if not roundActive then break end
+        if aliveCount() <= 1 and #Players:GetPlayers() > 1 then break end
+        resetTiles()
+        local cg = math.random(1, #TILECOLORS)
+        broadcast("play", "Stand on " .. CNAMES[cg] .. "!", 0, "Color Rush")
+        task.wait(math.max(1.4, 3.4 - c * 0.18))
+        for _, t in ipairs(tiles) do if t.group ~= cg then t.part.CanCollide = false; t.part.Transparency = 0.7 end end
+        task.wait(1.1)
+    end
+    return survivorsWin(12)
+end
+
+-- ##MG_DEFS_END## (session 420: more minigame functions inserted above this line)
+
+local MINIGAMES = {}
+local function reg(name, how, run) MINIGAMES[#MINIGAMES + 1] = {name = name, how = how, run = run} end
+reg("Tile Drop", "Tiles vanish one by one - be the last standing.", mgTileDrop)
+reg("Musical Chairs", "Grab a chair the instant the music stops.", mgMusicalChairs)
+reg("Dodgeball", "Dodge the flying balls - last one wins.", mgDodgeball)
+reg("Hide & Seek", "Hide from the seeker until the timer ends.", mgHideSeek)
+reg("Sprint Race", "First racer across the finish line wins.", mgRace)
+reg("Parkour Dash", "Leap the platforms and reach the goal.", mgParkour)
+reg("Floor is Lava", "Climb above the rising lava - last one up wins.", mgLava)
+reg("Red Light Green Light", "Move on green, freeze on red, reach the end.", mgRedLight)
+reg("Glass Bridge", "Pick the safe glass tile each row and cross.", mgGlassBridge)
+reg("Color Rush", "Sprint to the called colour before the floor drops.", mgColorRush)
+-- ##MG_REGISTER_END## (session 420: more reg(...) calls inserted above this line)
+
+local function pick3()
+    local pool = {}; for i = 1, #MINIGAMES do pool[i] = i end
+    for i = #pool, 2, -1 do local j = math.random(1, i); pool[i], pool[j] = pool[j], pool[i] end
+    local out = {}
+    for i = 1, math.min(3, #pool) do out[i] = MINIGAMES[pool[i]] end
+    while #out < 3 do out[#out + 1] = MINIGAMES[math.random(#MINIGAMES)] end
+    return out
+end
+local PODIUM_POS = {Vector3.new(-32, 0, 42), Vector3.new(0, 0, 48), Vector3.new(32, 0, 42)}
+local podiums = {}
+for i = 1, 3 do
+    local base = part("Podium_" .. i, Vector3.new(18, 1, 18), PODIUM_POS[i] + Vector3.new(0, 1, 0), theme.accent, Enum.Material.Neon)
+    local post = part("PodiumPost_" .. i, Vector3.new(1.6, 11, 1.6), PODIUM_POS[i] + Vector3.new(0, 6.5, -8), theme.lobby, Enum.Material.Metal)
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 240, 0, 130); bb.StudsOffset = Vector3.new(0, 8, 0); bb.AlwaysOnTop = true; bb.Adornee = post; bb.Parent = post
+    local frame = Instance.new("Frame"); frame.Size = UDim2.new(1, 0, 1, 0); frame.BackgroundColor3 = Color3.fromRGB(18, 20, 30); frame.BackgroundTransparency = 0.25; frame.Parent = bb
+    local uic = Instance.new("UICorner"); uic.CornerRadius = UDim.new(0, 12); uic.Parent = frame
+    local nameL = Instance.new("TextLabel"); nameL.Size = UDim2.new(1, -8, 0.6, 0); nameL.Position = UDim2.new(0, 4, 0, 4); nameL.BackgroundTransparency = 1; nameL.TextColor3 = Color3.fromRGB(255, 255, 255); nameL.TextScaled = true; nameL.Font = Enum.Font.GothamBlack; nameL.Text = "?"; nameL.Parent = frame
+    local voteL = Instance.new("TextLabel"); voteL.Size = UDim2.new(1, -8, 0.36, 0); voteL.Position = UDim2.new(0, 4, 0.62, 0); voteL.BackgroundTransparency = 1; voteL.TextColor3 = theme.accent; voteL.TextScaled = true; voteL.Font = Enum.Font.GothamBold; voteL.Text = "0 votes"; voteL.Parent = frame
+    label3d(base, "VOTE", 2.4, theme.lobby)
+    podiums[i] = {nameLabel = nameL, voteLabel = voteL, pos = PODIUM_POS[i] + Vector3.new(0, 2, 0)}
+end
+local function countVotes()
+    local tally = {0, 0, 0}
+    for _, p in Players:GetPlayers() do
+        local r = rootOf(p)
+        if r then
+            for i = 1, 3 do
+                local dx = r.Position.X - podiums[i].pos.X; local dz = r.Position.Z - podiums[i].pos.Z
+                if (dx * dx + dz * dz) <= 121 then tally[i] += 1; break end
+            end
+        end
+    end
+    return tally
+end
+
+local function clearArena() arena:ClearAllChildren() end
 
 task.spawn(function()
     local round = 0
     while true do
         round += 1
-        inRound = false; resetTiles(); table.clear(eliminated)
-        teleportAll(lobbyPos)
-        local mode = ((round - 1) % 3) + 1
-        local modeName = (mode == 1 and "Tile Drop") or (mode == 2 and "Color Call") or "Edge Collapse"
-        for t = 5, 1, -1 do broadcast("lobby", modeName .. " in " .. t .. "s", modeName); task.wait(1) end
-        for _, p in Players:GetPlayers() do eliminated[p] = false; teleport(p, tiles[math.random(1, #tiles)].pos + Vector3.new(0, 4, 0)) end
-        inRound = true; broadcast("arena", modeName .. "!", modeName); task.wait(2)
-        if mode == 1 then
-            local order = {}; for i = 1, #tiles do order[i] = i end
-            for i = #order, 2, -1 do local j = math.random(1, i); order[i], order[j] = order[j], order[i] end
-            local interval = math.max(0.3, 1.3 - round * 0.04)
-            for _, idx in ipairs(order) do
-                if not inRound then break end
-                if alivePlayers() <= 1 and #Players:GetPlayers() > 1 then break end
-                dropTile(tiles[idx]); broadcast("arena", "Don't fall!", modeName); task.wait(interval)
-            end
-        elseif mode == 2 then
-            for callN = 1, 8 do
-                if not inRound then break end
-                if alivePlayers() <= 1 and #Players:GetPlayers() > 1 then break end
-                local cg = math.random(1, 3)
-                broadcast("arena", "Stand on " .. CNAMES[cg] .. "!", modeName); task.wait(2.4)
-                for _, t in ipairs(tiles) do if t.group ~= cg then dropTile(t) end end
-                task.wait(1.0); resetTiles()
-            end
-        else
-            local order = {}; for i = 1, #tiles do order[i] = i end
-            table.sort(order, function(a, b) return tiles[a].dist > tiles[b].dist end)
-            local interval = math.max(0.25, 0.9 - round * 0.02)
-            for _, idx in ipairs(order) do
-                if not inRound then break end
-                if alivePlayers() <= 1 and #Players:GetPlayers() > 1 then break end
-                dropTile(tiles[idx]); broadcast("arena", "Floor collapsing inward!", modeName); task.wait(interval)
-            end
+        roundActive = false
+        clearArena(); table.clear(eliminated)
+        teleportAll(LOBBY)
+        local options = pick3()
+        for i = 1, 3 do podiums[i].nameLabel.Text = options[i].name; podiums[i].voteLabel.Text = "0 votes" end
+        local tally = {0, 0, 0}
+        for t = 16, 1, -1 do
+            tally = countVotes()
+            for i = 1, 3 do podiums[i].voteLabel.Text = tally[i] .. (tally[i] == 1 and " vote" or " votes") end
+            broadcast("vote", "Walk onto a pad to VOTE the next game!", t, "", {opt1 = options[1].name, opt2 = options[2].name, opt3 = options[3].name, v1 = tally[1], v2 = tally[2], v3 = tally[3]})
+            task.wait(1)
         end
-        inRound = false
-        local survivors = alivePlayers()
-        local winner = nil
-        if survivors == 1 then for _, p in Players:GetPlayers() do if not eliminated[p] then winner = p end end end
-        award(10, winner)
-        broadcast("result", survivors == 0 and "Everyone fell! Next round..." or (survivors .. " survived! +10 pts"), modeName)
-        task.wait(5)
+        tally = countVotes()
+        local best, bi = -1, 1
+        for i = 1, 3 do if tally[i] > best then best = tally[i]; bi = i end end
+        if best <= 0 then bi = math.random(1, 3) end
+        local chosen = options[bi]
+        broadcast("intro", "Next up: " .. chosen.name .. " - " .. chosen.how, 3, chosen.name)
+        clearArena(); table.clear(eliminated)
+        local ok, survivors, winner = pcall(chosen.run)
+        roundActive = false
+        if not ok then warn("[Hub] minigame error: " .. tostring(survivors)); survivors = aliveList(); winner = nil end
+        local n = survivors and #survivors or 0
+        if winner then addWin(winner) end
+        broadcast("result", (winner and (winner.Name .. " wins ") or (n .. " survived ")) .. chosen.name .. "!", 0, chosen.name)
+        clearArena(); task.wait(5)
     end
 end)
-print("[Hub] " .. Config.Title .. " ready - theme=" .. Config.Theme)
+print("[Hub] " .. Config.Title .. " ready - " .. #MINIGAMES .. " minigames, theme=" .. Config.Theme)
 `;
   const clientScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13027,11 +13593,21 @@ local remotes = ReplicatedStorage:WaitForChild("MgRemotes")
 local MgEvent = remotes:WaitForChild("MgEvent")
 
 local gui = Instance.new("ScreenGui"); gui.Name = "HubHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
-local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 480, 0, 52); top.Position = UDim2.new(0.5, -240, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.12; top.TextColor3 = Color3.fromRGB(230, 235, 250); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Welcome to the hub"; top.Parent = gui
+local top = Instance.new("TextLabel"); top.Size = UDim2.new(0, 540, 0, 54); top.Position = UDim2.new(0.5, -270, 0, 12); top.BackgroundColor3 = Color3.fromRGB(16, 18, 26); top.BackgroundTransparency = 0.12; top.TextColor3 = Color3.fromRGB(230, 235, 250); top.TextScaled = true; top.Font = Enum.Font.GothamBlack; top.Text = "Welcome to the hub!"; top.Parent = gui
 local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 10); tc.Parent = top
-local sub = Instance.new("TextLabel"); sub.Size = UDim2.new(0, 320, 0, 38); sub.Position = UDim2.new(0.5, -160, 0, 68); sub.BackgroundColor3 = Color3.fromRGB(22, 26, 38); sub.BackgroundTransparency = 0.15; sub.TextColor3 = Color3.fromRGB(180, 220, 255); sub.TextScaled = true; sub.Font = Enum.Font.GothamBold; sub.Text = "Points 0   Alive 0"; sub.Parent = gui
+local sub = Instance.new("TextLabel"); sub.Size = UDim2.new(0, 360, 0, 38); sub.Position = UDim2.new(0.5, -180, 0, 70); sub.BackgroundColor3 = Color3.fromRGB(22, 26, 38); sub.BackgroundTransparency = 0.15; sub.TextColor3 = Color3.fromRGB(180, 220, 255); sub.TextScaled = true; sub.Font = Enum.Font.GothamBold; sub.Text = "Points 0   Alive 0"; sub.Parent = gui
 local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 8); sc.Parent = sub
-local banner = Instance.new("TextLabel"); banner.Size = UDim2.new(0, 420, 0, 70); banner.Position = UDim2.new(0.5, -210, 0.42, 0); banner.BackgroundTransparency = 1; banner.TextColor3 = Color3.fromRGB(255, 120, 120); banner.TextStrokeTransparency = 0.2; banner.TextScaled = true; banner.Font = Enum.Font.GothamBlack; banner.Text = ""; banner.Parent = gui
+local banner = Instance.new("TextLabel"); banner.Size = UDim2.new(0, 540, 0, 78); banner.Position = UDim2.new(0.5, -270, 0.4, 0); banner.BackgroundTransparency = 1; banner.TextColor3 = Color3.fromRGB(255, 235, 120); banner.TextStrokeTransparency = 0.2; banner.TextScaled = true; banner.Font = Enum.Font.GothamBlack; banner.Text = ""; banner.Parent = gui
+
+local votePanel = Instance.new("Frame"); votePanel.Size = UDim2.new(0, 320, 0, 170); votePanel.Position = UDim2.new(0, 18, 0.5, -85); votePanel.BackgroundColor3 = Color3.fromRGB(16, 18, 28); votePanel.BackgroundTransparency = 0.18; votePanel.Visible = false; votePanel.Parent = gui
+local vpc = Instance.new("UICorner"); vpc.CornerRadius = UDim.new(0, 12); vpc.Parent = votePanel
+local vTitle = Instance.new("TextLabel"); vTitle.Size = UDim2.new(1, -12, 0, 30); vTitle.Position = UDim2.new(0, 6, 0, 6); vTitle.BackgroundTransparency = 1; vTitle.TextColor3 = Color3.fromRGB(255, 255, 255); vTitle.TextScaled = true; vTitle.Font = Enum.Font.GothamBlack; vTitle.Text = "VOTE!"; vTitle.Parent = votePanel
+local voteRows = {}
+for i = 1, 3 do
+    local row = Instance.new("TextLabel"); row.Size = UDim2.new(1, -16, 0, 38); row.Position = UDim2.new(0, 8, 0, 38 + (i - 1) * 42); row.BackgroundColor3 = Color3.fromRGB(34, 38, 54); row.BackgroundTransparency = 0.1; row.TextColor3 = Color3.fromRGB(235, 240, 255); row.TextScaled = true; row.Font = Enum.Font.GothamBold; row.Text = "-"; row.Parent = votePanel
+    local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(0, 8); rc.Parent = row
+    voteRows[i] = row
+end
 
 local myPoints = 0
 task.spawn(function()
@@ -13042,9 +13618,26 @@ end)
 MgEvent.OnClientEvent:Connect(function(p)
     if typeof(p) ~= "table" then return end
     if p.kind == "state" then
-        top.Text = p.text; sub.Text = "Points " .. myPoints .. "   Alive " .. p.alive
-        if p.phase == "lobby" then banner.Text = "" end
-    elseif p.kind == "out" then banner.Text = "OUT! Spectating..."; task.delay(2.5, function() if banner.Text == "OUT! Spectating..." then banner.Text = "" end end) end
+        local timeStr = (p.time and p.time > 0) and ("   " .. p.time .. "s") or ""
+        top.Text = p.text .. timeStr
+        sub.Text = "Points " .. myPoints .. "   Alive " .. (p.alive or 0)
+        if p.phase == "vote" then
+            votePanel.Visible = true
+            vTitle.Text = "VOTE!   " .. (p.time or 0) .. "s"
+            local names = {p.opt1 or "-", p.opt2 or "-", p.opt3 or "-"}
+            local votes = {p.v1 or 0, p.v2 or 0, p.v3 or 0}
+            for i = 1, 3 do voteRows[i].Text = names[i] .. "   (" .. votes[i] .. ")" end
+            banner.Text = ""
+        else
+            votePanel.Visible = false
+        end
+        if p.phase == "intro" then banner.TextColor3 = Color3.fromRGB(255, 235, 120); banner.Text = p.text
+        elseif p.phase == "result" then banner.TextColor3 = Color3.fromRGB(140, 255, 160); banner.Text = p.text end
+    elseif p.kind == "out" then
+        local msg = p.text or "OUT! Spectating..."
+        banner.TextColor3 = Color3.fromRGB(255, 120, 120); banner.Text = msg
+        task.delay(2.6, function() if banner.Text == msg then banner.Text = "" end end)
+    end
 end)
 `;
   return {
