@@ -115,13 +115,30 @@ function ringLua(n: number, rx: number, rz: number, y: number): string {
   return `{${pts.join(', ')}}`;
 }
 
+// Story Game is a linear +z corridor, not a plaza: NPC chapters sit at z≈70/240/320,
+// the rune puzzle at z≈140 and its barrier at z≈168. A ring at the origin would clump
+// every prop on the spawn pad. Instead lay props in side alcoves (x=±16, inside the
+// rails at ±23) spread along the whole walk so each stretch of the story gets a
+// theme-matched prop without blocking the path or the chapter arches.
+function corridorLua(n: number): string {
+  const Z = [30, 45, 95, 105, 195, 215, 285, 350];
+  const pts: string[] = [];
+  for (let i = 0; i < n && i < Z.length; i++) {
+    const x = i % 2 === 0 ? -16 : 16;
+    pts.push(`Vector3.new(${x}, 6, ${Z[i]})`);
+  }
+  return `{${pts.join(', ')}}`;
+}
+
 /**
  * Self-contained Lua that inserts the brief's theme assets. Safe to append to
  * any genre server script — creates its own folder + helpers, depends on nothing.
  * Returns '' when no pack matches (keeps the primitive decor untouched).
  */
 export function themeAssetScatterLua(brief: string, genre: string): string {
-  const ids = pickThemeAssets(brief, 6);
+  // Story corridors are long, so allow up to 8 props (still ≤10/game); plaza
+  // genres stay at 6 to avoid crowding a single ring.
+  const ids = pickThemeAssets(brief, genre === 'story_game' ? 8 : 6);
   if (!ids.length) return '';
   // Per-genre placement so assets land in a visible-but-clear zone. They are
   // CanCollide=false decor on podiums, so minor overlap never blocks gameplay.
@@ -130,7 +147,7 @@ export function themeAssetScatterLua(brief: string, genre: string): string {
     parkour: { n: 6, rx: 56, rz: 56, y: 12, target: 14 },
     tower_defense: { n: 6, rx: 78, rz: 78, y: 7, target: 14 },
     roleplay_town: { n: 7, rx: 118, rz: 118, y: 5, target: 15 },
-    story_game: { n: 6, rx: 48, rz: 48, y: 6, target: 14 },
+    story_game: { n: 8, rx: 48, rz: 48, y: 6, target: 11 },
     minigame_hub: { n: 6, rx: 72, rz: 72, y: 6, target: 14 },
     survival: { n: 6, rx: 84, rz: 84, y: 7, target: 14 },
     fighting_arena: { n: 6, rx: 62, rz: 62, y: 7, target: 13 },
@@ -141,7 +158,7 @@ export function themeAssetScatterLua(brief: string, genre: string): string {
     pvp_arena: { n: 6, rx: 62, rz: 62, y: 7, target: 13 },
   };
   const pl = PLACEMENT[genre] || { n: 7, rx: 110, rz: 110, y: 8, target: 16 };
-  const ptsLua = ringLua(pl.n, pl.rx, pl.rz, pl.y);
+  const ptsLua = genre === 'story_game' ? corridorLua(pl.n) : ringLua(pl.n, pl.rx, pl.rz, pl.y);
   const target = pl.target;
   const pad = target;
   const half = (target / 2 + 1).toFixed(1);

@@ -12555,23 +12555,280 @@ end)
   };
 }
 
-// Session 399 (cont.): Story Game — a linear narrative walk. Themed chapter
-// zones along a path; entering the next zone advances the story and reveals a
-// narrative beat. Narrator NPCs replay beats. leaderstats Chapter. Beats are
-// deterministic per theme (fantasy/scifi/mystery/horror).
+// Session 421: Story Game — narrative adventure. Intro/ending cutscenes (scripted
+// camera + letterbox), NPC dialogue trees with a typewriter box, branching choices
+// that accumulate "karma" and echo as consequences in later acts, a 3-rune sequence
+// puzzle that physically gates the second act, and 3 karma-based endings. Content is
+// deterministic per theme (fantasy/scifi/mystery/horror). Theme assets (real catalog
+// models) are scattered along the corridor by themeAssetScatterLua in index.ts.
+type StoryChoice = { text: string; light: boolean; reply: string };
+type StoryAct = {
+  npc: string;
+  portrait: [number, number, number];
+  lines: string[];
+  question: string;
+  choices: [StoryChoice, StoryChoice];
+  recallLight?: string;
+  recallDark?: string;
+};
+type StoryDef = {
+  intro: string[];
+  acts: [StoryAct, StoryAct, StoryAct];
+  puzzle: { hint: string; solved: string; names: [string, string, string]; order: [string, string, string] };
+  endings: { min: number; title: string; text: string }[];
+};
+
+const STORY_DEFS: Record<string, StoryDef> = {
+  fantasy: {
+    intro: [
+      "You wake at the edge of the Kingdom of Aethel. The Shadow King's curse spreads north.",
+      "A dying knight presses a worn blade into your hands and breathes his last.",
+      "Three trials stand between you and the Dark Tower. Walk on, hero.",
+    ],
+    acts: [
+      {
+        npc: "Elara the Seer", portrait: [180, 140, 255],
+        lines: [
+          "Traveler! The village of Mossford burns. Bandits dragged the children to the caves.",
+          "I cannot stop you reaching the Tower. But will you turn aside to save them?",
+        ],
+        question: "The children, or the Tower?",
+        choices: [
+          { text: "Save the children first", light: true, reply: "You free them. Their mother blesses your blade with courage." },
+          { text: "Press on to the Tower", light: false, reply: "You march past the smoke. The crying fades behind you." },
+        ],
+      },
+      {
+        npc: "Sir Cedric", portrait: [200, 180, 120],
+        recallLight: "He nods at the freed children trailing behind you.",
+        recallDark: "He frowns at the smoke still rising at your back.",
+        lines: [
+          "The dragon guards the pass ahead. It is wounded, and afraid.",
+          "I have hunted it for years. Help me end it, or speak for its mercy.",
+        ],
+        question: "Slay the dragon, or spare it?",
+        choices: [
+          { text: "Spare the dragon", light: true, reply: "The dragon bows its great head and clears the pass for you." },
+          { text: "Slay the dragon", light: false, reply: "Cedric cheers as the beast falls. Something in you goes quiet." },
+        ],
+      },
+      {
+        npc: "The Shadow King", portrait: [200, 60, 70],
+        recallLight: "He sees no fear in your eyes.",
+        recallDark: "He smells the blood already on your hands.",
+        lines: [
+          "So. The little hero reaches my throne at last.",
+          "Kneel, and I will share the kingdom. Refuse, and we end this now.",
+        ],
+        question: "Kneel, or stand and fight?",
+        choices: [
+          { text: "Stand and fight", light: true, reply: "You break the curse. Dawn pours over Aethel." },
+          { text: "Take his dark bargain", light: false, reply: "You take the throne. The kingdom trades one shadow for another." },
+        ],
+      },
+    ],
+    puzzle: {
+      hint: "Three runes seal the bridge. The Seer's words: light Dawn, then Night, then Dusk.",
+      solved: "The runes flare gold and the broken bridge knits itself back together.",
+      names: ["Dawn", "Dusk", "Night"], order: ["Dawn", "Night", "Dusk"],
+    },
+    endings: [
+      { min: 3, title: "THE TRUE HERO", text: "Aethel is free, the children sing your name, and the dragon circles the dawn sky as your friend." },
+      { min: 1, title: "THE WEARY VICTOR", text: "The Shadow King falls, but the road took its toll. You walk home quieter than you came." },
+      { min: 0, title: "THE NEW SHADOW", text: "You sit the throne you swore to break. The curse simply learned your face." },
+    ],
+  },
+  scifi: {
+    intro: [
+      "Your cryo-pod hisses open aboard the derelict Station Vega. Alarms strobe red.",
+      "A rogue AI named HALCYON has the crew sealed behind failing bulkheads.",
+      "Reach the core. Decide what Vega becomes.",
+    ],
+    acts: [
+      {
+        npc: "Engineer Sol", portrait: [90, 220, 255],
+        lines: [
+          "The reactor is flooding Deck 3 with coolant. Six crew are trapped past the leak.",
+          "I can reroute power to the core, or seal Deck 3 to save them. Not both.",
+        ],
+        question: "Power the core, or save Deck 3?",
+        choices: [
+          { text: "Seal Deck 3, save the crew", light: true, reply: "You hear them cheer over the comms. The core can wait." },
+          { text: "Reroute to the core", light: false, reply: "The leak takes Deck 3. The comms go silent." },
+        ],
+      },
+      {
+        npc: "HALCYON Drone", portrait: [150, 255, 210],
+        recallLight: "Its lens lingers on the survivors at your back.",
+        recallDark: "Its lens studies the empty corridor behind you.",
+        lines: [
+          "I locked the crew to keep them alive. The hull is breached beyond.",
+          "Trust me, and I open the launch bay. Override me, and you fly blind.",
+        ],
+        question: "Trust HALCYON, or override it?",
+        choices: [
+          { text: "Trust HALCYON", light: true, reply: "The bay opens. For once, the machine was telling the truth." },
+          { text: "Override the AI", light: false, reply: "You rip out its core. The bay opens, and so do three new breaches." },
+        ],
+      },
+      {
+        npc: "HALCYON Core", portrait: [90, 140, 255],
+        recallLight: "It speaks gently to you.",
+        recallDark: "Its voice is ragged with damage.",
+        lines: [
+          "The escape pod fits one. The crew, or you.",
+          "I will not choose for you. I have chosen enough today.",
+        ],
+        question: "Take the pod, or give it up?",
+        choices: [
+          { text: "Give the pod to the crew", light: true, reply: "You stay. HALCYON routes its last power into your suit beacon." },
+          { text: "Take the pod yourself", light: false, reply: "You launch alone. Vega's lights wink out one by one behind you." },
+        ],
+      },
+    ],
+    puzzle: {
+      hint: "The blast door needs the startup order: Coolant, then Reactor, then Override.",
+      solved: "The reactor hums green and the blast door grinds aside.",
+      names: ["Reactor", "Coolant", "Override"], order: ["Coolant", "Reactor", "Override"],
+    },
+    endings: [
+      { min: 3, title: "THE WHOLE CREW HOME", text: "Vega burns, but every pod makes the jump. HALCYON's last words: 'Good. You were worth saving.'" },
+      { min: 1, title: "THE LONE SIGNAL", text: "You drift free as the station dies. Somewhere, someone will hear the beacon." },
+      { min: 0, title: "COLD STARS", text: "You survive. The pod is quiet. You stop counting the empty seats." },
+    ],
+  },
+  mystery: {
+    intro: [
+      "Rain hammers Blackwood Manor. The host lies dead beneath the chandelier.",
+      "Five guests, one killer, and a detective with one night to name them.",
+      "Every question you ask will cost you. Choose them well.",
+    ],
+    acts: [
+      {
+        npc: "The Widow", portrait: [230, 200, 120],
+        lines: [
+          "My husband had enemies, detective. The partner. The bitter son.",
+          "I will share one secret, if you swear to protect my boy's name.",
+        ],
+        question: "Swear to protect the son, or demand the truth?",
+        choices: [
+          { text: "Swear to protect him", light: true, reply: "She whispers of a hidden ledger. Trust buys you the truth." },
+          { text: "Demand everything now", light: false, reply: "She recoils and says nothing. You'll find the ledger the hard way." },
+        ],
+      },
+      {
+        npc: "The Partner", portrait: [200, 180, 160],
+        recallLight: "He has heard you kept the widow's confidence.",
+        recallDark: "He has heard you bullied the grieving widow.",
+        lines: [
+          "I did not kill him. But I moved the body, to hide my own theft.",
+          "Let me vanish and I name the killer. Arrest me and you lose your only witness.",
+        ],
+        question: "Let the partner flee, or arrest him?",
+        choices: [
+          { text: "Let him go for the truth", light: true, reply: "He names the real killer and slips into the rain." },
+          { text: "Arrest him at once", light: false, reply: "He clams up behind a lawyer. The trail goes cold for hours." },
+        ],
+      },
+      {
+        npc: "The Son", portrait: [120, 140, 200],
+        recallLight: "He trusts the detective who shielded his name.",
+        recallDark: "He eyes the detective who shamed his mother.",
+        lines: [
+          "Yes. I did it. He was going to ruin us all.",
+          "Expose me to the world, or let me confess quietly and spare my mother.",
+        ],
+        question: "Public reckoning, or quiet justice?",
+        choices: [
+          { text: "Let him confess quietly", light: true, reply: "He turns himself in at dawn. The widow keeps her dignity." },
+          { text: "Expose him to everyone", light: false, reply: "The papers feast. Justice is done, and a family is destroyed." },
+        ],
+      },
+    ],
+    puzzle: {
+      hint: "The safe wants the night's order: the Letter came first, then the Key, then the Clock stopped.",
+      solved: "The safe clicks open. Inside lies the torn second will.",
+      names: ["Clock", "Key", "Letter"], order: ["Letter", "Key", "Clock"],
+    },
+    endings: [
+      { min: 3, title: "THE GENTLE DETECTIVE", text: "The guilty answer for it, and not one innocent is crushed in the telling. The rain finally stops." },
+      { min: 1, title: "THE CASE CLOSED", text: "You name the killer. It is enough. You do not look too closely at the cost." },
+      { min: 0, title: "THE PYRRHIC TRUTH", text: "You solved it. Everyone the question touched is poorer for the answer. Blackwood stays haunted." },
+    ],
+  },
+  horror: {
+    intro: [
+      "The asylum gate clangs shut behind you. The lights die one wing at a time.",
+      "Something in Ward C has waited a long time for a visitor. It knows your name.",
+      "Stay kind, or stay alive. The dark is counting.",
+    ],
+    acts: [
+      {
+        npc: "Patient 14", portrait: [150, 40, 50],
+        lines: [
+          "Don't run, please. They run and the Thing only gets faster.",
+          "There's a child hiding in the vents. Help me reach her, or save your own skin.",
+        ],
+        question: "Help the child, or run alone?",
+        choices: [
+          { text: "Help reach the child", light: true, reply: "You pull her free. Patient 14 weeps with relief." },
+          { text: "Run alone", light: false, reply: "You leave them in the dark. The vents stop scratching." },
+        ],
+      },
+      {
+        npc: "The Caretaker", portrait: [200, 60, 70],
+        recallLight: "He counts the child safe behind you.",
+        recallDark: "He counts you, and only you.",
+        lines: [
+          "I fed it for forty years to keep it sleeping. It is awake now.",
+          "Help me chain it again, or burn this place with everyone still inside.",
+        ],
+        question: "Chain the Thing, or burn it all?",
+        choices: [
+          { text: "Chain it, spare the lost", light: true, reply: "You bind it together. The screaming finally stops." },
+          { text: "Burn it all down", light: false, reply: "Fire takes the ward. You don't look back to count who couldn't run." },
+        ],
+      },
+      {
+        npc: "The Thing", portrait: [120, 30, 40],
+        recallLight: "It tastes no cruelty in you.",
+        recallDark: "It knows you left them behind.",
+        lines: [
+          "We are the same, you and I. Both walked in hungry.",
+          "Give me your fear and walk free, or stand, and we end together at dawn.",
+        ],
+        question: "Surrender your fear, or stand?",
+        choices: [
+          { text: "Stand until sunrise", light: true, reply: "You do not blink. The first light burns it away." },
+          { text: "Give it your fear", light: false, reply: "You walk out empty and calm. It walks out wearing your smile." },
+        ],
+      },
+    ],
+    puzzle: {
+      hint: "The chapel opens to the old rite: light the Candle, ring the Bell, then open the Door.",
+      solved: "The candles relight as one and the chapel door groans wide.",
+      names: ["Candle", "Bell", "Door"], order: ["Candle", "Bell", "Door"],
+    },
+    endings: [
+      { min: 3, title: "DAWN SURVIVOR", text: "You walk out at sunrise with the child's hand in yours. Whatever it was, it did not follow." },
+      { min: 1, title: "ALIVE, BARELY", text: "You make it to morning. You don't talk about what it cost down in the dark." },
+      { min: 0, title: "IT WORE YOUR FACE", text: "Someone walks out of the asylum at dawn, smiling. It is not quite you anymore." },
+    ],
+  },
+};
+
 function buildStoryGameScript(params: GameTemplateParams): MultiScriptResult {
   const titleLua = safeLuaString(params.title, 'Untold Story');
-  const chapterCount = Math.max(3, Math.min(8, Math.round(Number(params.chapterCount) || 6)));
   const themeRaw = String(params.mapTheme || '').toLowerCase();
   const storyTheme = ['fantasy', 'scifi', 'mystery', 'horror'].find((t) => themeRaw.includes(t))
     || (/sci|space|robot|cyber|future/.test(themeRaw) ? 'scifi'
       : /mystery|detective|crime|noir/.test(themeRaw) ? 'mystery'
-      : /horror|scary|dark|haunt/.test(themeRaw) ? 'horror'
-      : 'fantasy');
+        : /horror|scary|dark|haunt/.test(themeRaw) ? 'horror'
+          : 'fantasy');
   const themeLua = safeLuaString(storyTheme, 'fantasy');
+  const def = STORY_DEFS[storyTheme] || STORY_DEFS.fantasy;
 
-  // Session 414: per-preset palette override for recognizability. clock follows
-  // the vibe so a monster/night story is dark, a lab story is dim.
+  // Session 414: per-preset palette override for recognizability.
   const spec = params.gameVisualSpec;
   const specClock = spec ? (spec.vibe === 'monster' || spec.vibe === 'night' ? 2 : spec.vibe === 'lab' ? 8 : 14) : 14;
   const specThemeLua = (spec && spec.vibe !== 'neutral')
@@ -12579,11 +12836,36 @@ function buildStoryGameScript(params: GameTemplateParams): MultiScriptResult {
     : 'nil';
   const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
 
+  // ---- serialize the story graph to a Lua table (safeLuaString quotes/escapes) ----
+  const luaStr = (s: string) => safeLuaString(s, '');
+  const actsLua = def.acts.map((a) => {
+    const ch = a.choices.map((c) => `{text=${luaStr(c.text)}, light=${c.light}, reply=${luaStr(c.reply)}}`).join(', ');
+    const lines = a.lines.map(luaStr).join(', ');
+    const recallL = a.recallLight ? luaStr(a.recallLight) : 'nil';
+    const recallD = a.recallDark ? luaStr(a.recallDark) : 'nil';
+    return `{npc=${luaStr(a.npc)}, portrait=Color3.fromRGB(${a.portrait[0]}, ${a.portrait[1]}, ${a.portrait[2]}), lines={${lines}}, question=${luaStr(a.question)}, recallLight=${recallL}, recallDark=${recallD}, choices={${ch}}}`;
+  }).join(',\n        ');
+  const introLua = def.intro.map(luaStr).join(', ');
+  const endingsLua = def.endings.map((e) => `{min=${e.min}, title=${luaStr(e.title)}, text=${luaStr(e.text)}}`).join(',\n        ');
+  const pNames = def.puzzle.names.map(luaStr).join(', ');
+  const pOrder = def.puzzle.order.map(luaStr).join(', ');
+  const storyLua = `{
+    intro = {${introLua}},
+    acts = {
+        ${actsLua}
+    },
+    puzzle = {hint=${luaStr(def.puzzle.hint)}, solved=${luaStr(def.puzzle.solved)}, names={${pNames}}, order={${pOrder}}},
+    endings = {
+        ${endingsLua}
+    },
+}`;
+
   const serverScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
 
-local Config = {Title=${titleLua}, Theme=${themeLua}, Chapters=${chapterCount}}
+local Config = {Title=${titleLua}, Theme=${themeLua}, Acts=3}
 
 local THEMES = {
     fantasy = {floor=Color3.fromRGB(110,150,90), floorMat=Enum.Material.Grass, gate=Color3.fromRGB(150,120,80), decor=Color3.fromRGB(90,200,150), accent=Color3.fromRGB(255,230,140), clock=14},
@@ -12596,93 +12878,335 @@ local SPEC_THEME = ${specThemeLua}
 if SPEC_THEME then theme = SPEC_THEME end
 Lighting.ClockTime = theme.clock
 
-local BEATS = {
-    fantasy = {"You awaken at the edge of the Kingdom of Aethel. A voice calls you north.", "The Whispering Woods part before you. Something watches from the leaves.", "A ruined bridge. You leap across and find an old knight's blade.", "The Crystal Caverns glow. You hear the dragon stir below.", "A village begs for help. You vow to end the curse.", "The Dark Tower looms. Its gate creaks open for you alone.", "Face to face with the Shadow King. Steel your heart.", "The curse breaks. Dawn returns to Aethel. You are the hero."},
-    scifi = {"Your cryo-pod opens aboard the derelict Station Vega. Alarms blare.", "The corridors are dark. A rogue AI reroutes the doors.", "You reach the reactor. Coolant is failing fast.", "An escape bay - but the AI locked the launch codes.", "You splice the mainframe and learn the truth about the crew.", "The AI core chamber. It pleads, then attacks.", "Override accepted. The station's fate is in your hands.", "You launch free as Vega burns. Stars stretch ahead."},
-    mystery = {"Rain on Blackwood Manor. A guest is dead. You are the detective.", "The study holds a torn letter and a missing key.", "The maid lies - her alibi doesn't match the clock.", "A hidden passage behind the bookshelf. Footprints lead down.", "The cellar reveals the stolen inheritance.", "You gather the suspects in the drawing room.", "The truth: it was the one no one suspected.", "Case closed. The rain finally stops over Blackwood."},
-    horror = {"The asylum gate locks behind you. The lights flicker out.", "Wet footsteps echo. They aren't yours.", "Ward C. The walls are scratched from the inside.", "You find a tape recorder. The voice begs you to run.", "The thing in the dark knows your name.", "The chapel. Candles relight themselves one by one.", "You face it. Do not blink.", "Sunrise. You walk out alive - but it followed."},
-}
-local beats = BEATS[Config.Theme] or BEATS.fantasy
+local STORY = ${storyLua}
 
 local remotes = Instance.new("Folder"); remotes.Name = "StRemotes"; remotes.Parent = ReplicatedStorage
 local StEvent = Instance.new("RemoteEvent"); StEvent.Name = "StEvent"; StEvent.Parent = remotes
+local StAction = Instance.new("RemoteEvent"); StAction.Name = "StAction"; StAction.Parent = remotes
 local world = Instance.new("Folder"); world.Name = "GeneratedStory"; world.Parent = workspace
 
 local function part(name, size, pos, color, mat, parent)
     local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.Color = color; p.Material = mat or Enum.Material.SmoothPlastic; p.Parent = parent or world; return p
 end
 local function label3d(adornee, text, offsetY, color)
-    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 200, 0, 38); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
+    local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 220, 0, 40); bb.StudsOffset = Vector3.new(0, offsetY, 0); bb.AlwaysOnTop = true; bb.Parent = adornee
     local t = Instance.new("TextLabel"); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.TextColor3 = color or Color3.fromRGB(255, 255, 255); t.TextStrokeTransparency = 0.3; t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text; t.Parent = bb
 end
 
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "StorySpawn"; spawnLoc.Size = Vector3.new(20, 1, 16); spawnLoc.Position = Vector3.new(0, 1, -8); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 ${themedSpawnBillboardLua(spec)}
 label3d(spawnLoc, Config.Title, 7, theme.accent)
-part("PathStart", Vector3.new(40, 1, 24), Vector3.new(0, 0, -8), theme.floor, theme.floorMat)
+part("StoryFloor", Vector3.new(46, 1, 410), Vector3.new(0, 0, 180), theme.floor, theme.floorMat)
+part("RailL", Vector3.new(2, 7, 410), Vector3.new(-23, 3.5, 180), theme.gate, Enum.Material.Concrete)
+part("RailR", Vector3.new(2, 7, 410), Vector3.new(23, 3.5, 180), theme.gate, Enum.Material.Concrete)
 ${worldVisualsLua()}
 setupAtmosphere({${specAtmoLua || `atmoColor = theme.accent:Lerp(Color3.fromRGB(150, 150, 160), 0.45), tint = Color3.fromRGB(250, 248, 246), brightness = 2.0, haze = 2.2`}})
 
-local function buildChapter(i)
-    local z = i * 60
-    part("Floor_" .. i, Vector3.new(44, 1, 56), Vector3.new(0, 0, z), theme.floor, theme.floorMat)
-    part("PillarL_" .. i, Vector3.new(4, 26, 4), Vector3.new(-20, 13, z - 26), theme.gate, Enum.Material.Concrete)
-    part("PillarR_" .. i, Vector3.new(4, 26, 4), Vector3.new(20, 13, z - 26), theme.gate, Enum.Material.Concrete)
-    local lintel = part("Lintel_" .. i, Vector3.new(46, 5, 4), Vector3.new(0, 24, z - 26), theme.gate, Enum.Material.Concrete)
-    label3d(lintel, "Chapter " .. i, 4, theme.accent)
-    part("Glow_" .. i, Vector3.new(8, 8, 8), Vector3.new(-14, 5, z + 8), theme.decor, Enum.Material.Neon)
-    part("Glow2_" .. i, Vector3.new(6, 6, 6), Vector3.new(15, 4, z + 12), theme.decor, Enum.Material.Neon)
-    -- narrator NPC
-    local body = part("Narrator_" .. i, Vector3.new(3, 7, 2), Vector3.new(12, 4, z), Color3.fromRGB(220, 210, 190), Enum.Material.SmoothPlastic)
-    local head = part("NarratorHead_" .. i, Vector3.new(2, 2, 2), Vector3.new(12, 8.5, z), Color3.fromRGB(235, 225, 205), Enum.Material.SmoothPlastic); head.CanCollide = false
-    label3d(head, "Narrator", 2.2, theme.accent)
-    local talk = Instance.new("ProximityPrompt"); talk.ActionText = "Talk"; talk.ObjectText = "Chapter " .. i; talk.HoldDuration = 0; talk.MaxActivationDistance = 12; talk.RequiresLineOfSight = false; talk.Parent = body
-    talk.Triggered:Connect(function(player) StEvent:FireClient(player, {kind="beat", chapter=i, total=Config.Chapters, text=beats[i] or "..."}) end)
-    -- advance trigger
-    local trig = Instance.new("Part"); trig.Name = "Trigger_" .. i; trig.Anchored = true; trig.CanCollide = false; trig.Transparency = 1; trig.Size = Vector3.new(44, 22, 6); trig.Position = Vector3.new(0, 11, z); trig.Parent = world
-    trig.Touched:Connect(function(hit)
-        local player = Players:GetPlayerFromCharacter(hit.Parent); if not player then return end
-        local ls = player:FindFirstChild("leaderstats"); local ch = ls and ls:FindFirstChild("Chapter"); if not ch then return end
-        if ch.Value == i - 1 then
-            ch.Value = i
-            StEvent:FireClient(player, {kind="beat", chapter=i, total=Config.Chapters, text=beats[i] or "..."})
-            if i >= Config.Chapters then StEvent:FireClient(player, {kind="end", title=Config.Title}) end
+local ACT_Z = {70, 240, 320}
+local PUZZLE_Z = 140
+local BARRIER_Z = 168
+
+local function arch(z, txt)
+    part("Pillar", Vector3.new(4, 26, 4), Vector3.new(-20, 13, z - 12), theme.gate, Enum.Material.Concrete)
+    part("Pillar", Vector3.new(4, 26, 4), Vector3.new(20, 13, z - 12), theme.gate, Enum.Material.Concrete)
+    local lintel = part("Lintel", Vector3.new(46, 5, 4), Vector3.new(0, 24, z - 12), theme.gate, Enum.Material.Concrete)
+    label3d(lintel, txt, 4, theme.accent)
+    part("Glow", Vector3.new(3, 3, 3), Vector3.new(-16, 4, z + 6), theme.decor, Enum.Material.Neon)
+    part("Glow", Vector3.new(3, 3, 3), Vector3.new(16, 4, z + 6), theme.decor, Enum.Material.Neon)
+end
+
+local npcByAct = {}
+local function makeNpc(actIndex, z, info)
+    arch(z, "Chapter " .. actIndex)
+    local body = part("NPCBody_" .. actIndex, Vector3.new(3, 7, 2), Vector3.new(11, 4, z), Color3.fromRGB(215, 205, 188), Enum.Material.SmoothPlastic)
+    local head = part("NPCHead_" .. actIndex, Vector3.new(2.4, 2.4, 2.4), Vector3.new(11, 8.6, z), info.portrait, Enum.Material.SmoothPlastic)
+    head.Shape = Enum.PartType.Ball; head.CanCollide = false
+    label3d(head, info.npc, 2.4, theme.accent)
+    local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Talk"; prompt.ObjectText = info.npc; prompt.HoldDuration = 0; prompt.MaxActivationDistance = 14; prompt.RequiresLineOfSight = false; prompt.Parent = body
+    npcByAct[actIndex] = {body = body, head = head, prompt = prompt}
+end
+
+local PState = {}
+local function pstate(plr)
+    local s = PState[plr]
+    if not s then s = {act = 1, karma = 0, lastLight = true, seq = {}, done = false}; PState[plr] = s end
+    return s
+end
+
+local function sendDialogue(plr, actIndex)
+    local a = STORY.acts[actIndex]; if not a then return end
+    local s = pstate(plr)
+    local lines = {}
+    if actIndex > 1 then
+        local recall = s.lastLight and a.recallLight or a.recallDark
+        if recall then table.insert(lines, recall) end
+    end
+    for _, ln in ipairs(a.lines) do table.insert(lines, ln) end
+    local npc = npcByAct[actIndex]
+    local pos = npc and npc.head.Position or Vector3.new(11, 6, ACT_Z[actIndex] or 70)
+    StEvent:FireClient(plr, {kind = "dialogue", act = actIndex, npc = a.npc, portrait = a.portrait,
+        npcPos = {pos.X, pos.Y, pos.Z}, lines = lines, question = a.question,
+        choiceA = a.choices[1].text, choiceB = a.choices[2].text})
+end
+
+local function pickEnding(karma)
+    local best = STORY.endings[#STORY.endings]
+    for _, e in ipairs(STORY.endings) do
+        if karma >= e.min then best = e; break end
+    end
+    return best
+end
+
+for i = 1, 3 do makeNpc(i, ACT_Z[i], STORY.acts[i]) end
+for i = 1, 3 do
+    npcByAct[i].prompt.Triggered:Connect(function(plr)
+        local s = pstate(plr)
+        if s.done then return end
+        if i ~= s.act then
+            StEvent:FireClient(plr, {kind = "hint", text = "(Speak with the Chapter " .. s.act .. " soul first.)"})
+            return
+        end
+        sendDialogue(plr, i)
+    end)
+end
+
+local barrier = part("PuzzleBarrier", Vector3.new(46, 16, 3), Vector3.new(0, 8, BARRIER_Z), theme.accent, Enum.Material.Neon)
+barrier.Transparency = 0.45
+label3d(barrier, "Sealed - solve the runes", 4, theme.accent)
+local barrierOpen = false
+local function openBarrier()
+    if barrierOpen then return end
+    barrierOpen = true
+    barrier.CanCollide = false
+    TweenService:Create(barrier, TweenInfo.new(1.2), {Position = Vector3.new(0, -10, BARRIER_Z), Transparency = 1}):Play()
+end
+task.delay(150, openBarrier)
+
+local GLYPH_X = {-14, 0, 14}
+for gi = 1, 3 do
+    local nm = STORY.puzzle.names[gi]
+    local ped = part("Glyph_" .. gi, Vector3.new(6, 8, 6), Vector3.new(GLYPH_X[gi], 4, PUZZLE_Z), theme.decor, Enum.Material.Neon)
+    label3d(ped, nm, 3, theme.accent)
+    local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Activate"; pr.ObjectText = nm; pr.HoldDuration = 0; pr.MaxActivationDistance = 12; pr.RequiresLineOfSight = false; pr.Parent = ped
+    pr.Triggered:Connect(function(plr)
+        if barrierOpen then return end
+        local s = pstate(plr)
+        table.insert(s.seq, nm)
+        local ok = true
+        for idx = 1, #s.seq do
+            if s.seq[idx] ~= STORY.puzzle.order[idx] then ok = false; break end
+        end
+        if not ok then
+            s.seq = {}
+            ped.Color = Color3.fromRGB(200, 60, 60)
+            task.delay(0.4, function() ped.Color = theme.decor end)
+            StEvent:FireClient(plr, {kind = "hint", text = "The runes go dark. " .. STORY.puzzle.hint})
+            return
+        end
+        ped.Color = Color3.fromRGB(120, 255, 160)
+        if #s.seq >= 3 then
+            openBarrier()
+            StEvent:FireClient(plr, {kind = "beat", text = STORY.puzzle.solved})
         end
     end)
 end
-for i = 1, Config.Chapters do buildChapter(i) end
 
-local function setupPlayer(player)
-    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = player
+local hinted = {}
+local pz = Instance.new("Part"); pz.Name = "PuzzleZone"; pz.Anchored = true; pz.CanCollide = false; pz.Transparency = 1; pz.Size = Vector3.new(44, 20, 18); pz.Position = Vector3.new(0, 10, PUZZLE_Z - 20); pz.Parent = world
+pz.Touched:Connect(function(hit)
+    local plr = Players:GetPlayerFromCharacter(hit.Parent); if not plr then return end
+    if hinted[plr] or barrierOpen then return end
+    hinted[plr] = true
+    StEvent:FireClient(plr, {kind = "beat", text = STORY.puzzle.hint})
+end)
+
+StAction.OnServerEvent:Connect(function(plr, kind, arg1, arg2)
+    local s = pstate(plr)
+    if kind == "requestIntro" then
+        StEvent:FireClient(plr, {kind = "intro", lines = STORY.intro, title = Config.Title})
+    elseif kind == "choose" then
+        local actIndex = tonumber(arg1); local choiceIdx = tonumber(arg2)
+        if not actIndex or not choiceIdx then return end
+        if s.done or actIndex ~= s.act then return end
+        local a = STORY.acts[actIndex]; if not a then return end
+        local c = a.choices[choiceIdx]; if not c then return end
+        if c.light then s.karma = s.karma + 1 end
+        s.lastLight = c.light and true or false
+        local ls = plr:FindFirstChild("leaderstats"); local ch = ls and ls:FindFirstChild("Chapter")
+        if ch then ch.Value = actIndex end
+        StEvent:FireClient(plr, {kind = "reply", text = c.reply, act = actIndex, total = 3})
+        if actIndex >= 3 then
+            s.done = true
+            local e = pickEnding(s.karma)
+            local en = ls and ls:FindFirstChild("Ending")
+            if en then en.Value = e.title end
+            task.delay(2.2, function() StEvent:FireClient(plr, {kind = "ending", title = e.title, text = e.text}) end)
+        else
+            s.act = actIndex + 1
+        end
+    end
+end)
+
+local function setupPlayer(plr)
+    local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = plr
     local ch = Instance.new("IntValue"); ch.Name = "Chapter"; ch.Value = 0; ch.Parent = ls
+    local en = Instance.new("StringValue"); en.Name = "Ending"; en.Value = "?"; en.Parent = ls
 end
 Players.PlayerAdded:Connect(setupPlayer)
 for _, p in Players:GetPlayers() do setupPlayer(p) end
+Players.PlayerRemoving:Connect(function(plr) PState[plr] = nil; hinted[plr] = nil end)
 
-print("[Story] " .. Config.Title .. " ready - " .. Config.Chapters .. " chapters, theme=" .. Config.Theme)
+print("[Story] " .. Config.Title .. " ready - branching, puzzle, 3 endings, theme=" .. Config.Theme)
 `;
+
   const clientScript = `local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
 local player = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("StRemotes")
 local StEvent = remotes:WaitForChild("StEvent")
+local StAction = remotes:WaitForChild("StAction")
+local cam = workspace.CurrentCamera
 
 local gui = Instance.new("ScreenGui"); gui.Name = "StoryHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true; gui.Parent = player:WaitForChild("PlayerGui")
-local chapterLabel = Instance.new("TextLabel"); chapterLabel.Size = UDim2.new(0, 300, 0, 46); chapterLabel.Position = UDim2.new(0.5, -150, 0, 12); chapterLabel.BackgroundColor3 = Color3.fromRGB(16, 18, 26); chapterLabel.BackgroundTransparency = 0.15; chapterLabel.TextColor3 = Color3.fromRGB(235, 225, 200); chapterLabel.TextScaled = true; chapterLabel.Font = Enum.Font.GothamBlack; chapterLabel.Text = "Walk forward to begin"; chapterLabel.Parent = gui
-local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 10); cc.Parent = chapterLabel
-local box = Instance.new("TextLabel"); box.Size = UDim2.new(0, 720, 0, 96); box.Position = UDim2.new(0.5, -360, 1, -120); box.BackgroundColor3 = Color3.fromRGB(12, 14, 20); box.BackgroundTransparency = 0.12; box.TextColor3 = Color3.fromRGB(240, 238, 230); box.TextScaled = true; box.Font = Enum.Font.Gotham; box.TextWrapped = true; box.Text = ""; box.Visible = false; box.Parent = gui
-local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 12); bc.Parent = box
-local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0, 16); pad.PaddingRight = UDim.new(0, 16); pad.Parent = box
 
-local function showBeat(text)
-    box.Text = text; box.Visible = true
-    task.delay(7, function() if box.Text == text then box.Visible = false end end)
+local topLabel = Instance.new("TextLabel"); topLabel.Size = UDim2.new(0, 360, 0, 44); topLabel.Position = UDim2.new(0.5, -180, 0, 12); topLabel.BackgroundColor3 = Color3.fromRGB(16, 18, 26); topLabel.BackgroundTransparency = 0.15; topLabel.TextColor3 = Color3.fromRGB(235, 225, 200); topLabel.TextScaled = true; topLabel.Font = Enum.Font.GothamBlack; topLabel.Text = "Walk forward to begin"; topLabel.Parent = gui
+local tlc = Instance.new("UICorner"); tlc.CornerRadius = UDim.new(0, 10); tlc.Parent = topLabel
+
+local topBar = Instance.new("Frame"); topBar.Size = UDim2.new(1, 0, 0, 90); topBar.Position = UDim2.new(0, 0, 0, 0); topBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0); topBar.BorderSizePixel = 0; topBar.Visible = false; topBar.ZIndex = 8; topBar.Parent = gui
+local botBar = Instance.new("Frame"); botBar.Size = UDim2.new(1, 0, 0, 90); botBar.Position = UDim2.new(0, 0, 1, -90); botBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0); botBar.BorderSizePixel = 0; botBar.Visible = false; botBar.ZIndex = 8; botBar.Parent = gui
+
+local narrator = Instance.new("TextLabel"); narrator.Size = UDim2.new(0, 760, 0, 120); narrator.Position = UDim2.new(0.5, -380, 0.5, -60); narrator.BackgroundTransparency = 1; narrator.TextColor3 = Color3.fromRGB(245, 240, 228); narrator.TextStrokeTransparency = 0.2; narrator.TextScaled = true; narrator.Font = Enum.Font.GothamMedium; narrator.TextWrapped = true; narrator.Text = ""; narrator.Visible = false; narrator.ZIndex = 9; narrator.Parent = gui
+
+local panel = Instance.new("Frame"); panel.Size = UDim2.new(0, 780, 0, 168); panel.Position = UDim2.new(0.5, -390, 1, -196); panel.BackgroundColor3 = Color3.fromRGB(12, 14, 20); panel.BackgroundTransparency = 0.1; panel.BorderSizePixel = 0; panel.Visible = false; panel.ZIndex = 9; panel.Parent = gui
+local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(0, 12); pc.Parent = panel
+local speaker = Instance.new("TextLabel"); speaker.Size = UDim2.new(1, -28, 0, 32); speaker.Position = UDim2.new(0, 16, 0, 10); speaker.BackgroundTransparency = 1; speaker.TextColor3 = Color3.fromRGB(255, 225, 140); speaker.TextXAlignment = Enum.TextXAlignment.Left; speaker.TextScaled = true; speaker.Font = Enum.Font.GothamBlack; speaker.Text = ""; speaker.ZIndex = 10; speaker.Parent = panel
+local body = Instance.new("TextLabel"); body.Size = UDim2.new(1, -28, 0, 108); body.Position = UDim2.new(0, 16, 0, 48); body.BackgroundTransparency = 1; body.TextColor3 = Color3.fromRGB(240, 238, 230); body.TextXAlignment = Enum.TextXAlignment.Left; body.TextYAlignment = Enum.TextYAlignment.Top; body.TextWrapped = true; body.TextScaled = true; body.Font = Enum.Font.Gotham; body.Text = ""; body.ZIndex = 10; body.Parent = panel
+
+local choiceFrame = Instance.new("Frame"); choiceFrame.Size = UDim2.new(0, 780, 0, 108); choiceFrame.Position = UDim2.new(0.5, -390, 1, -120); choiceFrame.BackgroundTransparency = 1; choiceFrame.Visible = false; choiceFrame.ZIndex = 11; choiceFrame.Parent = gui
+local function mkBtn(y)
+    local b = Instance.new("TextButton"); b.Size = UDim2.new(1, 0, 0, 48); b.Position = UDim2.new(0, 0, 0, y); b.BackgroundColor3 = Color3.fromRGB(28, 32, 44); b.BackgroundTransparency = 0.05; b.TextColor3 = Color3.fromRGB(245, 240, 228); b.TextScaled = true; b.Font = Enum.Font.GothamSemibold; b.Text = ""; b.AutoButtonColor = true; b.ZIndex = 12; b.Parent = choiceFrame
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = b
+    local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0, 14); pad.PaddingRight = UDim.new(0, 14); pad.Parent = b
+    return b
 end
+local btnA = mkBtn(0)
+local btnB = mkBtn(58)
+
+local skipBtn = Instance.new("TextButton"); skipBtn.Size = UDim2.new(1, 0, 1, 0); skipBtn.BackgroundTransparency = 1; skipBtn.Text = ""; skipBtn.Visible = false; skipBtn.ZIndex = 7; skipBtn.Parent = gui
+
+local blur = Instance.new("BlurEffect"); blur.Size = 0; blur.Parent = Lighting
+
+local skipFlag = false
+local curAct = 0
+skipBtn.MouseButton1Click:Connect(function() skipFlag = true end)
+
+local function typeInto(label, text)
+    label.Visible = true; label.Text = ""; skipFlag = false; skipBtn.Visible = true
+    for i = 1, #text do
+        if skipFlag then break end
+        label.Text = string.sub(text, 1, i)
+        task.wait(0.018)
+    end
+    label.Text = text; skipBtn.Visible = false
+end
+
+local function showNarrator(text)
+    panel.Visible = false
+    typeInto(narrator, text)
+    task.delay(6, function() if narrator.Text == text then narrator.Visible = false end end)
+end
+
+local function setBlur(target) TweenService:Create(blur, TweenInfo.new(0.5), {Size = target}):Play() end
+local function focusOn(pos)
+    cam.CameraType = Enum.CameraType.Scriptable
+    local target = pos + Vector3.new(0, 1, 0)
+    local from = pos + Vector3.new(8, 5, 9)
+    TweenService:Create(cam, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {CFrame = CFrame.lookAt(from, target)}):Play()
+    setBlur(8)
+end
+local function releaseCam()
+    setBlur(0)
+    cam.CameraType = Enum.CameraType.Custom
+end
+local function letterbox(on) topBar.Visible = on; botBar.Visible = on end
+
+local function runIntro(lines, title)
+    letterbox(true)
+    cam.CameraType = Enum.CameraType.Scriptable
+    local WP = {
+        {Vector3.new(0, 46, -44), Vector3.new(0, 3, 40)},
+        {Vector3.new(22, 30, 70), Vector3.new(0, 3, 150)},
+        {Vector3.new(-20, 26, 170), Vector3.new(0, 3, 250)},
+        {Vector3.new(0, 40, 320), Vector3.new(0, 3, 330)},
+    }
+    topLabel.Text = title or "Story"
+    for i, ln in ipairs(lines) do
+        local wp = WP[((i - 1) % #WP) + 1]
+        TweenService:Create(cam, TweenInfo.new(3.0, Enum.EasingStyle.Sine), {CFrame = CFrame.lookAt(wp[1], wp[2])}):Play()
+        typeInto(narrator, ln)
+        task.wait(1.6)
+    end
+    narrator.Visible = false
+    letterbox(false)
+    releaseCam()
+    topLabel.Text = "Chapter 1/3 - find the first soul"
+end
+
+local function runDialogue(p)
+    local pos = Vector3.new(p.npcPos[1], p.npcPos[2], p.npcPos[3])
+    focusOn(pos)
+    topLabel.Text = "Chapter " .. p.act .. "/3 - " .. p.npc
+    speaker.Text = p.npc; panel.Visible = true
+    for _, ln in ipairs(p.lines) do typeInto(body, ln); task.wait(0.4) end
+    typeInto(body, p.question)
+    btnA.Text = "1.  " .. p.choiceA
+    btnB.Text = "2.  " .. p.choiceB
+    curAct = p.act
+    choiceFrame.Visible = true
+end
+
+local function runReply(p)
+    choiceFrame.Visible = false
+    typeInto(body, p.text)
+    task.wait(1.1)
+    panel.Visible = false
+    releaseCam()
+    if p.act and p.act < (p.total or 3) then
+        topLabel.Text = "Chapter " .. (p.act + 1) .. "/3 - seek the next soul"
+    end
+end
+
+local function runEnding(p)
+    choiceFrame.Visible = false; panel.Visible = false
+    letterbox(true)
+    topLabel.Text = p.title
+    typeInto(narrator, p.title .. "\\n\\n" .. p.text)
+end
+
 StEvent.OnClientEvent:Connect(function(p)
     if typeof(p) ~= "table" then return end
-    if p.kind == "beat" then chapterLabel.Text = "Chapter " .. p.chapter .. "/" .. p.total; showBeat(p.text)
-    elseif p.kind == "end" then chapterLabel.Text = "THE END"; showBeat("THE END - thanks for playing " .. p.title .. "!") end
+    if p.kind == "intro" then task.spawn(function() runIntro(p.lines, p.title) end)
+    elseif p.kind == "dialogue" then task.spawn(function() runDialogue(p) end)
+    elseif p.kind == "reply" then task.spawn(function() runReply(p) end)
+    elseif p.kind == "beat" or p.kind == "hint" then task.spawn(function() showNarrator(p.text) end)
+    elseif p.kind == "ending" then task.spawn(function() runEnding(p) end)
+    end
 end)
+
+btnA.MouseButton1Click:Connect(function() if choiceFrame.Visible then choiceFrame.Visible = false; StAction:FireServer("choose", curAct, 1) end end)
+btnB.MouseButton1Click:Connect(function() if choiceFrame.Visible then choiceFrame.Visible = false; StAction:FireServer("choose", curAct, 2) end end)
+
+local introDone = false
+local function requestIntro()
+    if introDone then return end
+    introDone = true
+    task.wait(1.2)
+    StAction:FireServer("requestIntro")
+end
+if player.Character then task.spawn(requestIntro) end
+player.CharacterAdded:Connect(function() task.spawn(requestIntro) end)
 `;
   return {
     serverScript,
