@@ -9536,6 +9536,46 @@ end
 `;
 }
 
+// Session 414g: reusable real R15 humanoid NPC builder (extracted from the
+// survival builder). Creates a proper Roblox character rig (not a block stack),
+// recolours it, optional glowing eyes. Returns npc, humanoid, root (or nil on
+// engine failure). Caller anchors the root for a static town NPC.
+function humanoidNpcPreludeLua(): string {
+  return `
+local function makeHumanoidNpc(parent, cframe, opts)
+    opts = opts or {}
+    local ok, npc = pcall(function()
+        return game:GetService("Players"):CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
+    end)
+    if not ok or not npc then return nil end
+    npc.Name = opts.name or "NPC"
+    local hum = npc:FindFirstChildOfClass("Humanoid")
+    local hrp = npc:FindFirstChild("HumanoidRootPart")
+    for _, pt in ipairs(npc:GetDescendants()) do
+        if pt:IsA("Shirt") or pt:IsA("Pants") or pt:IsA("ShirtGraphic") or pt:IsA("Decal") or pt:IsA("Accessory") or pt:IsA("BodyColors") then pt:Destroy()
+        elseif pt:IsA("BasePart") and opts.color then pt.Color = opts.color; pt.Material = opts.material or Enum.Material.SmoothPlastic end
+    end
+    if hum then
+        hum.WalkSpeed = opts.walkSpeed or 0
+        hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+        if opts.health then hum.MaxHealth = opts.health; hum.Health = opts.health end
+    end
+    if opts.eyes and npc:FindFirstChild("Head") then
+        local head = npc.Head
+        for _, sx in ipairs({-0.32, 0.32}) do
+            local eye = Instance.new("Part"); eye.Size = Vector3.new(0.26, 0.26, 0.18); eye.Color = Color3.fromRGB(255, 60, 40); eye.Material = Enum.Material.Neon; eye.CanCollide = false; eye.Massless = true
+            local w = Instance.new("Weld"); w.Part0 = head; w.Part1 = eye; w.C0 = CFrame.new(sx, 0.15, -0.58); w.Parent = eye
+            eye.Parent = npc
+        end
+    end
+    if cframe then npc:PivotTo(cframe) end
+    npc.Parent = parent or workspace
+    return npc, hum, hrp
+end
+`;
+}
+
 // Session 414e: reusable themed marker above a builder's `spawnLoc` — shows the
 // theme's signature meme face (decal) + the game title. Safe (attached to the
 // spawn pad, no world placement). Assumes `spawnLoc` and `Config.Title` are in
@@ -10622,16 +10662,28 @@ part("RoadEW", Vector3.new(380, 1, 20), Vector3.new(0, 0.7, 0), theme.road, Enum
 local spawnLoc = Instance.new("SpawnLocation"); spawnLoc.Name = "TownSpawn"; spawnLoc.Size = Vector3.new(16, 1, 16); spawnLoc.Position = Vector3.new(0, 1.2, 0); spawnLoc.Anchored = true; spawnLoc.Color = theme.accent; spawnLoc.Material = Enum.Material.Neon; spawnLoc.Parent = world
 label3d(spawnLoc, Config.Title, 7, theme.accent)
 
+-- Session 414g: ENTERABLE hollow house — 4 collidable walls + a doorway gap in
+-- the front + floor + roof + an interior lamp, instead of one solid block. Sign
+-- is a banner stuck on the front wall above the door (not a floating billboard).
 local function buildHouse(name, pos, size, color, sign)
-    local body = part(name, size, pos + Vector3.new(0, size.Y / 2, 0), color, Enum.Material.Brick)
-    part(name .. "_Roof", Vector3.new(size.X + 5, 4, size.Z + 5), pos + Vector3.new(0, size.Y + 2, 0), theme.roof, Enum.Material.Slate)
-    local door = part(name .. "_Door", Vector3.new(9, 13, 1.4), pos + Vector3.new(0, 6.5, size.Z / 2 + 0.4), Color3.fromRGB(70, 46, 32), Enum.Material.Wood); door.CanCollide = false
-    -- Session 414g: sign is a banner STUCK ON the building's door-side wall (not a
-    -- floating billboard) — addresses "наклеим на здания, чтобы не висели".
-    local board = part(name .. "_Sign", Vector3.new(size.X * 0.8, 4.5, 0.6), pos + Vector3.new(0, size.Y - 2.5, size.Z / 2 + 0.5), theme.accent, Enum.Material.SmoothPlastic)
+    local hx, hy, hz = size.X, size.Y, size.Z
+    local base, cx, cz = pos.Y, pos.X, pos.Z
+    local wallT = 1.4
+    part(name .. "_Floor", Vector3.new(hx, 1, hz), Vector3.new(cx, base + 0.5, cz), color:Lerp(Color3.fromRGB(0, 0, 0), 0.25), Enum.Material.WoodPlanks)
+    part(name .. "_Roof", Vector3.new(hx + 5, 4, hz + 5), Vector3.new(cx, base + hy + 2, cz), theme.roof, Enum.Material.Slate)
+    part(name .. "_WallB", Vector3.new(hx, hy, wallT), Vector3.new(cx, base + hy / 2, cz - hz / 2), color, Enum.Material.Brick)
+    part(name .. "_WallL", Vector3.new(wallT, hy, hz), Vector3.new(cx - hx / 2, base + hy / 2, cz), color, Enum.Material.Brick)
+    part(name .. "_WallR", Vector3.new(wallT, hy, hz), Vector3.new(cx + hx / 2, base + hy / 2, cz), color, Enum.Material.Brick)
+    local doorW, doorH = 12, 15
+    local segW = (hx - doorW) / 2
+    part(name .. "_WallF1", Vector3.new(segW, hy, wallT), Vector3.new(cx - (doorW / 2 + segW / 2), base + hy / 2, cz + hz / 2), color, Enum.Material.Brick)
+    part(name .. "_WallF2", Vector3.new(segW, hy, wallT), Vector3.new(cx + (doorW / 2 + segW / 2), base + hy / 2, cz + hz / 2), color, Enum.Material.Brick)
+    part(name .. "_Lintel", Vector3.new(doorW + 1, hy - doorH, wallT), Vector3.new(cx, base + doorH + (hy - doorH) / 2, cz + hz / 2), color, Enum.Material.Brick)
+    local lamp = part(name .. "_Lamp", Vector3.new(2.2, 2.2, 2.2), Vector3.new(cx, base + hy - 4, cz), theme.accent, Enum.Material.Neon); lamp.Shape = Enum.PartType.Ball; lamp.CanCollide = false
+    local pl = Instance.new("PointLight"); pl.Color = theme.accent; pl.Brightness = 1.6; pl.Range = math.max(hx, hz); pl.Parent = lamp
+    local board = part(name .. "_Sign", Vector3.new(hx * 0.7, 4, 0.5), Vector3.new(cx, base + hy + 0.5, cz + hz / 2 + 0.4), theme.accent, Enum.Material.SmoothPlastic); board.CanCollide = false
     local sg = Instance.new("SurfaceGui"); sg.Face = Enum.NormalId.Back; sg.Adornee = board; sg.LightInfluence = 0; sg.PixelsPerStud = 50; sg.Parent = board
     local st = Instance.new("TextLabel"); st.Size = UDim2.new(1, 0, 1, 0); st.BackgroundTransparency = 1; st.TextColor3 = Color3.fromRGB(25, 25, 32); st.TextScaled = true; st.Font = Enum.Font.GothamBlack; st.Text = sign; st.Parent = sg
-    return body
 end
 
 local buildingDefs = {
@@ -10702,19 +10754,26 @@ RpAction.OnServerEvent:Connect(function(player, payload)
     end
 end)
 
+${humanoidNpcPreludeLua()}
 local NPCS = {
 ${npcsLua}
 }
 for _, n in ipairs(NPCS) do
-    local body = part("NPC_" .. n.name, Vector3.new(3, 7, 2), n.pos + Vector3.new(0, 4, 0), n.color, Enum.Material.SmoothPlastic)
-    local head = part("NPCHead_" .. n.name, Vector3.new(2, 2, 2), n.pos + Vector3.new(0, 8.5, 0), n.color:Lerp(Color3.new(1, 1, 1), 0.2), Enum.Material.SmoothPlastic); head.CanCollide = false
-    label3d(head, n.name, 2.2, Color3.fromRGB(255, 255, 255))
-    if n.face and n.face > 0 then
-        local fb = Instance.new("BillboardGui"); fb.Size = UDim2.new(0, 80, 0, 80); fb.StudsOffset = Vector3.new(0, 5, 0); fb.AlwaysOnTop = false; fb.MaxDistance = 70; fb.LightInfluence = 0; fb.Parent = head
-        local fi = Instance.new("ImageLabel"); fi.Size = UDim2.new(1, 0, 1, 0); fi.BackgroundTransparency = 1; fi.Image = "rbxthumb://type=Asset&id=" .. n.face .. "&w=420&h=420"; fi.Parent = fb
+    -- Session 414g: real R15 humanoid NPC (not a block stack). Anchored root so it
+    -- stands still; keeps name label + (meme) face + Talk prompt.
+    local npc, hum, hrp = makeHumanoidNpc(world, CFrame.new(n.pos + Vector3.new(0, 3.5, 0)), {name = n.name, color = n.color, health = 100})
+    if npc and hrp then
+        hrp.Anchored = true
+        local anchor = hrp
+        local head = npc:FindFirstChild("Head")
+        label3d(head or anchor, n.name, head and 2.4 or 4, Color3.fromRGB(255, 255, 255))
+        if n.face and n.face > 0 and head then
+            local fb = Instance.new("BillboardGui"); fb.Size = UDim2.new(0, 72, 0, 72); fb.StudsOffset = Vector3.new(0, 4.2, 0); fb.AlwaysOnTop = false; fb.MaxDistance = 70; fb.LightInfluence = 0; fb.Parent = head
+            local fi = Instance.new("ImageLabel"); fi.Size = UDim2.new(1, 0, 1, 0); fi.BackgroundTransparency = 1; fi.Image = "rbxthumb://type=Asset&id=" .. n.face .. "&w=420&h=420"; fi.Parent = fb
+        end
+        local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 12; pr.RequiresLineOfSight = false; pr.Parent = anchor
+        pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
     end
-    local pr = Instance.new("ProximityPrompt"); pr.ActionText = "Talk"; pr.ObjectText = n.name; pr.HoldDuration = 0; pr.MaxActivationDistance = 12; pr.RequiresLineOfSight = false; pr.Parent = body
-    pr.Triggered:Connect(function(player) RpEvent:FireClient(player, {kind="toast", text=n.name .. ": " .. n.line}) end)
 end
 
 local function saveData(player)
