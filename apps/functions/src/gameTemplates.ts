@@ -9464,7 +9464,9 @@ function safeLuaString(value: unknown, fallback: string): string {
 function meme3dPreludeLua(): string {
   return `
 local MEME_NPC_FALLBACK_SCALE = 2.6
+local _MEME3D_NO_IDLE = false
 local function _memeNpcIdle(model, primary)
+    if _MEME3D_NO_IDLE then return end
     if not model or not primary then return end
     local baseCF = primary.CFrame; local t0 = tick()
     task.spawn(function()
@@ -9532,6 +9534,17 @@ local _meme3dOrder = {"tralalero","bombardiro","skibidi","sigma"}
 local function buildMeme3dFigure(key, position, idx)
     local b = _meme3dBuilders[key] or _meme3dBuilders[_meme3dOrder[((idx - 1) % 4) + 1]]
     return b(position, idx)
+end
+-- Session 417b: moving variant for TD enemies. Same geometry, but the idle bob
+-- loop is suppressed (the wave loop pivots the figure along its lane) and every
+-- part is anchored so the rigid PivotTo never jitters. Returns model + PrimaryPart.
+local function buildMeme3dFigureMoving(key, position, idx)
+    _MEME3D_NO_IDLE = true
+    local ok, m = pcall(buildMeme3dFigure, key, position, idx)
+    _MEME3D_NO_IDLE = false
+    if not ok or not m or not m.PrimaryPart then return nil end
+    for _, d in ipairs(m:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.CastShadow = false end end
+    return m, m.PrimaryPart
 end
 `;
 }
@@ -10102,8 +10115,19 @@ function buildTowerDefenseScript(params: GameTemplateParams): MultiScriptResult 
   const tdMap = deriveTdMap(tdVibe, String(params.title || 'Tower Defense'));
   const tdMapLuaBlock = tdMapLua(tdMap);
   const tdKindLua = safeLuaString(tdPack.kind, 'blob');
+  // Session 417b: map a meme enemy name to a real 3D figure builder key so TD
+  // enemies become actual creatures (Tralalero shark / Bombardiro croc-plane /
+  // Skibidi) instead of a flat box with a face picture. Empty → composite body.
+  const tdFigForName = (name: string): string => {
+    const n = String(name).toLowerCase();
+    if (/tralalero|shark|maw/.test(n)) return 'tralalero';
+    if (/bombardiro|crocodil/.test(n)) return 'bombardiro';
+    if (/skibidi|toilet/.test(n)) return 'skibidi';
+    if (/sigma/.test(n)) return 'sigma';
+    return '';
+  };
   const tdRosterEntryLua = (e: { name: string; color: number[]; decalId?: number }) =>
-    `{name=${safeLuaString(e.name, 'Enemy')}, r=${Math.round(e.color[0])}, g=${Math.round(e.color[1])}, b=${Math.round(e.color[2])}, face=${Math.max(0, Math.floor(Number(e.decalId) || 0))}}`;
+    `{name=${safeLuaString(e.name, 'Enemy')}, r=${Math.round(e.color[0])}, g=${Math.round(e.color[1])}, b=${Math.round(e.color[2])}, face=${Math.max(0, Math.floor(Number(e.decalId) || 0))}, fig=${safeLuaString(tdFigForName(e.name), '')}}`;
   const tdPackRosterLua = `{ ${tdPack.enemies.map(tdRosterEntryLua).join(', ')} }`;
   const tdBossLua = tdRosterEntryLua(tdPack.boss);
   // Themed base landmark — pure 3D geometry near `LM` (a point just behind the
@@ -10260,6 +10284,9 @@ do
     end
 end
 
+${meme3dPreludeLua()}
+local container = world
+
 -- Session 417: themed enemy assembly — a multi-part 3D silhouette per "kind".
 -- The meme face decal is WRAPPED on the body via a SurfaceGui (never a floating
 -- billboard, per user requirement). All parts anchored; the round loop pivots the
@@ -10280,7 +10307,7 @@ local function _eFace(core, faceId, faces)
         img.Image = "rbxthumb://type=Asset&id=" .. faceId .. "&w=420&h=420"; img.Parent = sg
     end
 end
-local function spawnEnemyAssembly(kind, color, faceId, scale, pos)
+local function spawnEnemyAssembly(kind, color, faceId, scale, pos, figKey, idx)
     scale = scale or 1
     local model = Instance.new("Model"); model.Name = "Enemy"
     local core = Instance.new("Part"); core.Anchored = true; core.CanCollide = false; core.CastShadow = false
@@ -10335,6 +10362,16 @@ local function spawnEnemyAssembly(kind, color, faceId, scale, pos)
         _eAcc(model, core, Vector3.new(2.2, 2.2, 2.2) * scale, Vector3.new(0, 3.6, 0) * scale, accent)
         _eAcc(model, core, Vector3.new(1.6, 1.6, 0.4) * scale, Vector3.new(0, 0.4, -1.2) * scale, Color3.fromRGB(70, 210, 90), Enum.Material.Neon)
     elseif kind == "meme" then
+        -- Real 3D meme creature (shark/croc/skibidi) when the name maps to a
+        -- figure key; otherwise a composite body with the face on its surface.
+        if figKey and figKey ~= "" then
+            local fm, fcore = buildMeme3dFigureMoving(figKey, pos, idx or 1)
+            if fm and fcore then
+                pcall(function() fm:ScaleTo(scale * 1.45) end)
+                model:Destroy()
+                return fm, fcore, true
+            end
+        end
         core.Size = Vector3.new(3.0, 2.8, 6.2) * scale
         _eAcc(model, core, Vector3.new(1.2, 2.2, 2.2) * scale, Vector3.new(0, 2.0, 0.6) * scale, color)
         _eAcc(model, core, Vector3.new(1.0, 0.6, 1.8) * scale, Vector3.new(-1.0, -1.4, 2.6) * scale, Color3.fromRGB(240, 240, 240))
@@ -10355,6 +10392,7 @@ local currentWave = 0
 local phase = "idle"
 local gameOver = false
 local coopScale = 1
+local enemySpawnCount = 0
 local enemies = {}
 local towers = {}
 local slots = {}
@@ -10454,8 +10492,18 @@ local function spawnEnemy(wave, isBoss, laneIdx)
     local scale = isBoss and 2.6 or 1.0
     local ec = isBoss and ENEMY_BOSS or (ENEMY_ROSTER[((wave - 1) % #ENEMY_ROSTER) + 1] or ENEMY_BOSS)
     local ecol = Color3.fromRGB(ec.r, ec.g, ec.b)
-    local model, core = spawnEnemyAssembly(ENEMY_KIND, ecol, ec.face or 0, scale, lane[1] + Vector3.new(0, scale * 2, 0))
-    local topY = core.Size.Y / 2 + 1.6
+    enemySpawnCount += 1
+    local model, core, isFigure = spawnEnemyAssembly(ENEMY_KIND, ecol, ec.face or 0, scale, lane[1] + Vector3.new(0, scale * 2, 0), ec.fig or "", enemySpawnCount)
+    local footOffset, topY
+    if isFigure then
+        local bcf, bsz = model:GetBoundingBox()
+        local primY = model.PrimaryPart.Position.Y
+        footOffset = primY - (bcf.Position.Y - bsz.Y / 2)
+        topY = (bcf.Position.Y + bsz.Y / 2) - primY + 1.2
+    else
+        footOffset = core.Size.Y / 2
+        topY = core.Size.Y / 2 + 1.6
+    end
     local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 58, 0, 8); bb.StudsOffset = Vector3.new(0, topY, 0); bb.AlwaysOnTop = true; bb.Parent = core
     local bg = Instance.new("Frame"); bg.Size = UDim2.new(1, 0, 1, 0); bg.BackgroundColor3 = Color3.fromRGB(25, 25, 30); bg.BorderSizePixel = 0; bg.Parent = bb
     local fill = Instance.new("Frame"); fill.Size = UDim2.new(1, 0, 1, 0); fill.BackgroundColor3 = isBoss and Color3.fromRGB(255, 90, 90) or Color3.fromRGB(90, 220, 90); fill.BorderSizePixel = 0; fill.Parent = bg
@@ -10463,7 +10511,7 @@ local function spawnEnemy(wave, isBoss, laneIdx)
         local nb = Instance.new("BillboardGui"); nb.Size = UDim2.new(0, 160, 0, 24); nb.StudsOffset = Vector3.new(0, topY + 2.6, 0); nb.AlwaysOnTop = true; nb.Parent = core
         local nt = Instance.new("TextLabel"); nt.Size = UDim2.new(1, 0, 1, 0); nt.BackgroundTransparency = 1; nt.TextColor3 = Color3.fromRGB(255, 210, 120); nt.TextStrokeTransparency = 0.3; nt.TextScaled = true; nt.Font = Enum.Font.GothamBlack; nt.Text = "★ " .. (ec.name or "BOSS"); nt.Parent = nb
     end
-    table.insert(enemies, {model=model, core=core, health=hp, maxHealth=hp, lane=laneIdx, segment=1, t=0, speed=speed, baseSpeed=speed, reward=reward, damage=dmg, fill=fill, boss=isBoss, slowUntil=0, slowMul=1})
+    table.insert(enemies, {model=model, core=core, health=hp, maxHealth=hp, lane=laneIdx, segment=1, t=0, speed=speed, baseSpeed=speed, reward=reward, damage=dmg, fill=fill, boss=isBoss, slowUntil=0, slowMul=1, footOffset=footOffset, noFaceTravel=isFigure})
 end
 
 local function broadcast(phaseName, timeLeft)
@@ -10504,9 +10552,9 @@ RunService.Heartbeat:Connect(function(dt)
             e.t += (dt * sp) / math.max(1, (b - a).Magnitude)
             if e.t >= 1 then e.segment += 1; e.t = 0 end
             if e.model and e.model.PrimaryPart then
-                local pos = a:Lerp(b, math.clamp(e.t, 0, 1)) + Vector3.new(0, e.core.Size.Y / 2, 0)
+                local pos = a:Lerp(b, math.clamp(e.t, 0, 1)) + Vector3.new(0, e.footOffset or 2, 0)
                 local dir = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
-                if dir.Magnitude > 0.05 then e.model:PivotTo(CFrame.lookAt(pos, pos + dir)) else e.model:PivotTo(CFrame.new(pos)) end
+                if e.noFaceTravel or dir.Magnitude <= 0.05 then e.model:PivotTo(CFrame.new(pos)) else e.model:PivotTo(CFrame.lookAt(pos, pos + dir)) end
             end
         end
     end
