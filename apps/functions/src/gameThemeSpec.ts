@@ -84,6 +84,8 @@ export interface GameVisualSpec {
   atmosphere: GameAtmosphere;
   /** 3 themed NPC characters (real meme faces where available). */
   characters: GameCharacter[];
+  /** Themed enemy roster for TD/survival/fighting (meme army, wolves, animatronics...). */
+  enemies: GameCharacter[];
   /** Real catalog decal id for the plaza hero centerpiece (0 = coloured monument). */
   heroDecalId: number;
   /** 6 themed buildings — town-like genres use name+sign; other genres ignore. */
@@ -391,6 +393,71 @@ function charactersForVibe(vibeKey: string): GameCharacter[] {
   return CHARACTERS_BY_VIBE[vibeKey] ?? NEUTRAL_CHARACTERS;
 }
 
+// Themed enemy rosters (the THREAT) for TD/survival/fighting. The last entry is
+// treated as the boss flavour. `line` is unused for enemies.
+const ENEMIES_BY_VIBE: Record<string, GameCharacter[]> = {
+  brainrot: [
+    { name: 'Tralalero', decalId: DECAL_TRALALERO, color: [60, 120, 220], line: '' },
+    { name: 'Bombardiro', decalId: DECAL_BOMBARDIRO, color: [90, 150, 80], line: '' },
+    { name: 'Tung Tung', decalId: DECAL_TUNG, color: [180, 130, 80], line: '' },
+  ],
+  tropical: [
+    { name: 'Bananita', color: [255, 210, 60], line: '' },
+    { name: 'Coconut Crab', color: [150, 90, 60], line: '' },
+    { name: 'Tralalero', decalId: DECAL_TRALALERO, color: [60, 120, 220], line: '' },
+  ],
+  night: [
+    { name: 'Wolf', color: [70, 74, 86], line: '' },
+    { name: 'Night Stalker', color: [50, 60, 90], line: '' },
+    { name: 'Shadow Beast', color: [30, 30, 42], line: '' },
+  ],
+  monster: [
+    { name: 'Animatronic', decalId: DECAL_BOMBARDIRO, color: [120, 90, 80], line: '' },
+    { name: 'Mutant', color: [110, 150, 80], line: '' },
+    { name: 'Titan', color: [150, 70, 200], line: '' },
+  ],
+  inferno: [
+    { name: 'Lava Beast', color: [255, 110, 40], line: '' },
+    { name: 'Ember Imp', color: [255, 80, 50], line: '' },
+    { name: 'Magma Hulk', color: [120, 60, 50], line: '' },
+  ],
+  money: [
+    { name: 'Rival', color: [220, 70, 70], line: '' },
+    { name: 'Saboteur', color: [80, 80, 92], line: '' },
+    { name: 'Cheater', color: [200, 60, 120], line: '' },
+  ],
+  spy: [
+    { name: 'Operative', color: [60, 60, 72], line: '' },
+    { name: 'Drone', color: [150, 160, 175], line: '' },
+    { name: 'Enforcer', color: [220, 70, 70], line: '' },
+  ],
+  hero: [
+    { name: 'Minion', color: [90, 90, 110], line: '' },
+    { name: 'Brute', color: [180, 90, 90], line: '' },
+    { name: 'Villain', color: [150, 70, 200], line: '' },
+  ],
+  pets: [
+    { name: 'Wild Beast', color: [120, 90, 60], line: '' },
+    { name: 'Stray', color: [150, 140, 120], line: '' },
+    { name: 'Rogue Dragon', color: [90, 180, 120], line: '' },
+  ],
+  lab: [
+    { name: 'Toy Mutant', color: [230, 120, 120], line: '' },
+    { name: 'Glitch', color: [120, 255, 160], line: '' },
+    { name: 'Prototype', color: [120, 90, 110], line: '' },
+  ],
+};
+
+const NEUTRAL_ENEMIES: GameCharacter[] = [
+  { name: 'Invader', color: [220, 90, 80], line: '' },
+  { name: 'Raider', color: [200, 70, 90], line: '' },
+  { name: 'Warlord', color: [180, 40, 60], line: '' },
+];
+
+function enemiesForVibe(vibeKey: string): GameCharacter[] {
+  return ENEMIES_BY_VIBE[vibeKey] ?? NEUTRAL_ENEMIES;
+}
+
 // ─── Derivation ──────────────────────────────────────────────────────────────
 
 function cleanTitle(title: string): string {
@@ -436,6 +503,7 @@ export function deriveGameVisualSpec(genre: string, brief: string, title: string
     palette: vibe.palette,
     atmosphere: atmosphereForVibe(vibe.key),
     characters,
+    enemies: enemiesForVibe(vibe.key),
     heroDecalId,
     structures,
     jobs: setting.jobs,
@@ -572,6 +640,7 @@ export function healGameVisualSpec(spec: GameVisualSpec, reasons: string[]): Gam
     palette,
     atmosphere: atmosphereForVibe(vibeKey),
     characters: healedCharacters,
+    enemies: enemiesForVibe(vibeKey),
     heroDecalId: healedCharacters.find((c) => c.decalId)?.decalId ?? 0,
     flavorLines: flavorLines.length >= 3 ? flavorLines : NEUTRAL_VIBE.flavor,
     heroPropKeyword: heroPropKeyword || 'trophy',

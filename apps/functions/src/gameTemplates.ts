@@ -9948,6 +9948,9 @@ function buildTowerDefenseScript(params: GameTemplateParams): MultiScriptResult 
   // (99 Nights = dark pine forest at night + campfire), not a sunny meadow.
   const specAtmoLua = spec ? atmosphereOptsLua(spec) : '';
   const tdAtmo = (spec && spec.vibe !== 'neutral') ? spec.atmosphere : undefined;
+  const tdEnemyRosterLua = (spec && spec.vibe !== 'neutral' && spec.enemies && spec.enemies.length)
+    ? `{ ${spec.enemies.map((e) => `{r=${Math.round(e.color[0])}, g=${Math.round(e.color[1])}, b=${Math.round(e.color[2])}, face=${Math.max(0, Math.floor(Number(e.decalId) || 0))}}`).join(', ')} }`
+    : 'nil';
   const tdTreeKindLua = safeLuaString(tdAtmo?.treeKind || 'round', 'round');
   const tdTreeTrunkLua = tdAtmo ? rgbLua(tdAtmo.treeTrunk) : 'Color3.fromRGB(112, 80, 52)';
   const tdTreeLeafLua = tdAtmo ? rgbLua(tdAtmo.treeLeaf) : 'Color3.fromRGB(78, 142, 70)';
@@ -9986,6 +9989,7 @@ local THEMES = {
 local theme = THEMES[Config.MapTheme] or THEMES.meadow
 local SPEC_THEME = ${specThemeLua}
 if SPEC_THEME then theme = SPEC_THEME end
+local ENEMY_ROSTER = ${tdEnemyRosterLua}
 local diffMult = Config.Difficulty == "hard" and 1.5 or (Config.Difficulty == "casual" and 0.7 or 1.0)
 
 local dataStore
@@ -10123,8 +10127,18 @@ local function spawnEnemy(wave, isBoss)
     local reward = math.floor((10 + wave * 1.5) * (isBoss and 8 or 1))
     local dmg = isBoss and 5 or 1
     local sz = isBoss and 9 or 4
-    local body = part("Enemy", Vector3.new(sz, sz, sz), waypoints[1] + Vector3.new(0, 1, 0), isBoss and Color3.fromRGB(180, 40, 60) or Color3.fromRGB(220, 90, 80), Enum.Material.SmoothPlastic)
+    local ecol = isBoss and Color3.fromRGB(180, 40, 60) or Color3.fromRGB(220, 90, 80)
+    local eface = 0
+    if ENEMY_ROSTER then
+        local ec = isBoss and ENEMY_ROSTER[#ENEMY_ROSTER] or ENEMY_ROSTER[((wave - 1) % #ENEMY_ROSTER) + 1]
+        if ec then ecol = Color3.fromRGB(ec.r, ec.g, ec.b); eface = ec.face or 0 end
+    end
+    local body = part("Enemy", Vector3.new(sz, sz, sz), waypoints[1] + Vector3.new(0, 1, 0), ecol, Enum.Material.SmoothPlastic)
     body.CanCollide = false
+    if eface > 0 then
+        local efb = Instance.new("BillboardGui"); efb.Size = UDim2.new(0, sz * 18, 0, sz * 18); efb.StudsOffset = Vector3.new(0, sz * 0.15, 0); efb.Parent = body
+        local efi = Instance.new("ImageLabel"); efi.Size = UDim2.new(1, 0, 1, 0); efi.BackgroundTransparency = 1; efi.Image = "rbxthumb://type=Asset&id=" .. eface .. "&w=420&h=420"; efi.Parent = efb
+    end
     local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 56, 0, 7); bb.StudsOffset = Vector3.new(0, sz * 0.8, 0); bb.AlwaysOnTop = true; bb.Parent = body
     local bg = Instance.new("Frame"); bg.Size = UDim2.new(1, 0, 1, 0); bg.BackgroundColor3 = Color3.fromRGB(25, 25, 30); bg.BorderSizePixel = 0; bg.Parent = bb
     local fill = Instance.new("Frame"); fill.Size = UDim2.new(1, 0, 1, 0); fill.BackgroundColor3 = Color3.fromRGB(90, 220, 90); fill.BorderSizePixel = 0; fill.Parent = bg
