@@ -29,7 +29,8 @@
 import { logger } from 'firebase-functions/v2';
 import { getFirestore } from 'firebase-admin/firestore';
 
-import { runMeshy } from './providers.js';
+import { runMeshy, runGeminiVision } from './providers.js';
+import { getImageModerationSystemPrompt } from './promptCatalog.js';
 import { uploadAssetToRoblox } from './robloxWorker.js';
 import { extractMeshIdFromModel } from './extractMeshIdFromModel.js';
 import { getRobloxOpenCloudApiKey, getRobloxCreatorId } from './config.js';
@@ -184,6 +185,27 @@ export async function getOrCreateDisasterMesh(args: {
   if (typeof glbUrl !== 'string' || !glbUrl.startsWith('http')) {
     logger.warn('[disasterMeshFactory] no glb URL from Meshy', { keyword });
     return null;
+  }
+
+  // Content-safety gate: disaster meshes upload to the APP account (mishgan5),
+  // and userBrief is user-supplied → moderate the generated mesh preview BEFORE
+  // upload so an adversarial brief can't get the app account banned. Self-contained
+  // Gemini Vision call (no index.ts dependency). Fail-open on a Vision error.
+  const disasterThumb = (meshyResult as { thumbnailUrl?: string }).thumbnailUrl;
+  if (disasterThumb && disasterThumb.startsWith('http')) {
+    try {
+      const vision = await runGeminiVision(getImageModerationSystemPrompt(), disasterThumb);
+      if (vision.severity === 'blocked') {
+        logger.warn('[disasterMeshFactory] BLOCKED by content moderation — not uploading to app account', {
+          keyword, reason: vision.reason, category: vision.category,
+        });
+        return null;
+      }
+    } catch (modErr) {
+      logger.warn('[disasterMeshFactory] moderation check threw (fail-open)', {
+        keyword, err: modErr instanceof Error ? modErr.message : String(modErr),
+      });
+    }
   }
 
   // Step 2 — Download .glb.

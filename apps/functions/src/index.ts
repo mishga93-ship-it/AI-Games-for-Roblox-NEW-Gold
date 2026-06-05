@@ -11340,8 +11340,12 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
     // 2026-05-20: "дракона нет ни до ни после Play").
     await beginStage('convert_pet_fbx' as GenerationStageId, ['Uploading meshes to Roblox Open Cloud so MeshPart actually renders']);
     const conversionNotes: string[] = [];
-    const ocApiKey = getRobloxOpenCloudApiKey();
-    const ocCreatorId = getRobloxCreatorId();
+    // Per-user OAuth: pets upload to the REQUESTING USER's own Roblox account so
+    // each user is responsible for their own content. The old shared uploader
+    // account was permanently banned 2026-06-05 carrying everyone's content. If
+    // the user hasn't linked Roblox we skip upload + ask them to connect — NO
+    // fallback to a shared account. getRobloxUserToken auto-refreshes the token.
+    const petUploaderToken = await getRobloxUserToken(currentJob.userId);
     for (let i = 0; i < stageBundles.length; i += 1) {
       const b = stageBundles[i];
       const sourceUrl = b.fbxUrl ?? b.meshUrl;
@@ -11349,9 +11353,20 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         conversionNotes.push(`Stage ${i + 1}: no mesh URL — skipped`);
         continue;
       }
-      if (!ocApiKey || !ocCreatorId) {
-        conversionNotes.push(`Stage ${i + 1}: Open Cloud not configured — mesh ships as raw URL (MeshPart will not render until user re-uploads via Studio 3D Importer)`);
+      if (!petUploaderToken) {
+        conversionNotes.push(`Stage ${i + 1}: Roblox account not linked — connect your Roblox account in Profile to upload this pet to your own account (not shipped to a shared account)`);
         continue;
+      }
+      // Content-safety gate: moderate the stage concept image (what the mesh looks
+      // like) BEFORE uploading to the user's Roblox account — blocks policy
+      // violations from reaching Roblox (protects the user from a ban + the app's
+      // OAuth standing). moderateImageUrls fails open on a Vision error.
+      if (b.conceptUrl) {
+        const mod = await moderateImageUrls(currentJob.userId, [b.conceptUrl], 'artifact', jobId);
+        if (!mod.allowed) {
+          conversionNotes.push(`Stage ${i + 1}: blocked by content moderation (${mod.reason ?? mod.severity}) — not uploaded`);
+          continue;
+        }
       }
       try {
         const resp = await fetch(sourceUrl);
@@ -11362,8 +11377,8 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         const fileBuf = Buffer.from(await resp.arrayBuffer());
         const contentType = b.fbxUrl ? 'model/fbx' : 'model/gltf-binary';
         const upload = await uploadAssetToRoblox({
-          apiKey: ocApiKey,
-          creatorId: ocCreatorId,
+          bearerToken: petUploaderToken.accessToken,
+          creatorId: petUploaderToken.robloxUserId,
           creatorType: 'User',
           assetType: 'Model',
           name: `Pet ${classification.baseName} Stage ${i + 1}`.slice(0, 50),
@@ -11384,7 +11399,7 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
         // → manifest wrote rbxassetid://0 → dragon was invisible.
         let resolvedModelAssetId = upload.assetId;
         if ((!resolvedModelAssetId || resolvedModelAssetId <= 0) && upload.operationId) {
-          const polled = await pollRobloxOperation(ocApiKey, upload.operationId, 'api-key');
+          const polled = await pollRobloxOperation(petUploaderToken.accessToken, upload.operationId, 'bearer');
           if (polled && polled > 0) {
             resolvedModelAssetId = polled;
           }
@@ -11429,8 +11444,8 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
             if (glbResp.ok) {
               const glbBuf = Buffer.from(await glbResp.arrayBuffer());
               const glbUpload = await uploadAssetToRoblox({
-                apiKey: ocApiKey,
-                creatorId: ocCreatorId,
+                bearerToken: petUploaderToken.accessToken,
+                creatorId: petUploaderToken.robloxUserId,
                 creatorType: 'User',
                 assetType: 'Model',
                 name: `Pet ${classification.baseName} Stage ${i + 1} TexSrc`.slice(0, 50),
@@ -11442,7 +11457,7 @@ async function processPet3DJob(jobId: string, job: GenerationJob): Promise<Gener
               if (glbUpload) {
                 let glbModelId = glbUpload.assetId;
                 if ((!glbModelId || glbModelId <= 0) && glbUpload.operationId) {
-                  const polled = await pollRobloxOperation(ocApiKey, glbUpload.operationId, 'api-key');
+                  const polled = await pollRobloxOperation(petUploaderToken.accessToken, glbUpload.operationId, 'bearer');
                   if (polled && polled > 0) glbModelId = polled;
                 }
                 if (glbModelId && glbModelId > 0) {

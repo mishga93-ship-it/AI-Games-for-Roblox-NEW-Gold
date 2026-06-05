@@ -12,7 +12,7 @@ import { logger } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { generatePreviewTexture, runChatProvider, runMeshy } from './providers.js';
-import { getRobloxOpenCloudApiKey, getRobloxCreatorId } from './config.js';
+import { getRobloxUserToken } from './robloxOAuth.js';
 import { extractMeshIdFromModel } from './extractMeshIdFromModel.js';
 import type { RobloxBuildManifest } from './types.js';
 // Session 390 round 11 — Blender mesh re-export. Raw Meshy v6 GLBs don't
@@ -172,10 +172,12 @@ async function buildCursedItemRbxmUrl(args: {
   title: string;
   firebaseUid: string;
 }): Promise<string | undefined> {
-  const apiKey = getRobloxOpenCloudApiKey();
-  const creatorId = getRobloxCreatorId();
-  if (!apiKey || !creatorId) {
-    logger.info('[cursedUgcGenerator] .rbxm skipped — Open Cloud not configured');
+  // Per-user OAuth: cursed UGC items upload to the REQUESTING USER's own Roblox
+  // account (each user owns/answers for their content). No shared-account fallback
+  // — if Roblox isn't linked we skip the .rbxm (the GLB still ships, as before).
+  const cursedUploaderToken = await getRobloxUserToken(args.firebaseUid);
+  if (!cursedUploaderToken) {
+    logger.info('[cursedUgcGenerator] .rbxm skipped — user has not linked Roblox (connect in Profile)');
     return undefined;
   }
   try {
@@ -189,8 +191,8 @@ async function buildCursedItemRbxmUrl(args: {
 
     // 2. Upload to Open Cloud as a Model (openUse so non-owner Studios load it).
     const upload = await uploadAssetToRoblox({
-      apiKey,
-      creatorId,
+      bearerToken: cursedUploaderToken.accessToken,
+      creatorId: cursedUploaderToken.robloxUserId,
       creatorType: 'User',
       assetType: 'Model',
       name: `Cursed ${args.title}`.slice(0, 50),
@@ -205,7 +207,7 @@ async function buildCursedItemRbxmUrl(args: {
     }
     let modelAssetId = upload.assetId;
     if ((!modelAssetId || modelAssetId <= 0) && upload.operationId) {
-      const polled = await pollRobloxOperation(apiKey, upload.operationId, 'api-key', 30, 2000);
+      const polled = await pollRobloxOperation(cursedUploaderToken.accessToken, upload.operationId, 'bearer', 30, 2000);
       if (polled && polled > 0) modelAssetId = polled;
     }
     if (!modelAssetId || modelAssetId <= 0) {
