@@ -183,9 +183,9 @@ export function themeAssetScatterLua(brief: string, genre: string): string {
   };
   const pl = PLACEMENT[genre] || { n: 7, rx: 110, rz: 110, y: 8, target: 16 };
   const ptsLua = genre === 'story_game' ? corridorLua(pl.n) : ringLua(pl.n, pl.rx, pl.rz, pl.y);
-  const target = pl.target;
+  const target = Math.min(pl.target, 14);
   return `
--- ===== REAL CATALOG THEME ASSETS (keyword-matched: thumbnail posters + bonus 3D) =====
+-- ===== REAL CATALOG THEME ASSETS — 3D MODELS via InsertService (keyword-matched) =====
 do
     local _af = Instance.new("Folder"); _af.Name = "ThemeAssets"; _af.Parent = workspace
     local _ip = game:GetService("InsertService")
@@ -195,40 +195,32 @@ do
     end
     local function _prep(inst)
         if inst:IsA("Model") and not inst.PrimaryPart then local bp = inst:FindFirstChildWhichIsA("BasePart", true); if bp then inst.PrimaryPart = bp end end
-        for _, d in ipairs(inst:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false end end
+        for _, d in ipairs(inst:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.Massless = true end end
     end
-    -- Thumbnail poster on a ground pedestal: ALWAYS renders the real catalog image
-    -- of the asset (rbxthumb) so the theme is recognizable even where LoadAsset is
-    -- not permitted for that id. Board faces the track/spawn from both sides.
-    local function _poster(id, x, z, h, t)
-        local col = Instance.new("Part"); col.Anchored = true; col.CanCollide = false; col.Size = Vector3.new(2.5, h, 2.5); col.Position = Vector3.new(x, h / 2, z); col.Color = Color3.fromRGB(44, 46, 58); col.Material = Enum.Material.Metal; col.Parent = _af
-        local plat = Instance.new("Part"); plat.Anchored = true; plat.CanCollide = false; plat.Size = Vector3.new(t + 3, 1, t + 3); plat.Position = Vector3.new(x, h + 0.5, z); plat.Color = Color3.fromRGB(60, 62, 76); plat.Material = Enum.Material.SmoothPlastic; plat.Parent = _af
-        local board = Instance.new("Part"); board.Anchored = true; board.CanCollide = false; board.Size = Vector3.new(t, t, 0.5); board.Position = Vector3.new(x, h + 1 + t / 2, z - t * 0.4); board.Color = Color3.fromRGB(16, 18, 26); board.Material = Enum.Material.SmoothPlastic; board.Parent = _af
-        for _, fc in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
-            local sg = Instance.new("SurfaceGui"); sg.Adornee = board; sg.Face = fc; sg.LightInfluence = 0; sg.Parent = board
-            local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. id .. "&w=420&h=420"; img.Parent = sg
-        end
-    end
-    -- Bonus: real 3D model via InsertService, on the pedestal in front of the
-    -- poster. Silently skipped where LoadAsset isn't allowed (poster still shows).
-    local function _insert3d(id, x, z, h, t)
-        task.spawn(function()
-            local ok, m = pcall(function() return _ip:LoadAsset(id) end)
-            if not ok or typeof(m) ~= "Instance" then return end
-            for _, d in ipairs(m:GetDescendants()) do if d:IsA("LuaSourceContainer") then pcall(function() d:Destroy() end) end end
-            if not m:FindFirstChildWhichIsA("BasePart", true) then pcall(function() m:Destroy() end); return end
-            _prep(m); _scaleTo(m, t)
-            pcall(function() m:PivotTo(CFrame.new(x, h + 1 + t * 0.5, z + t * 0.25)) end)
-            m.Parent = _af
-        end)
+    -- drop the model so its BASE rests on top of the pedestal (no floating)
+    local function _ground(m, x, baseY, z)
+        local ok, _cf, sz = pcall(function() return m:GetBoundingBox() end)
+        local lift = (ok and sz) and (sz.Y * 0.5) or 4
+        pcall(function() m:PivotTo(CFrame.new(x, baseY + lift, z)) end)
     end
     local _ids = {${ids.join(', ')}}
     local _pts = ${ptsLua}
+    local _loaded, _failed = 0, 0
     for i = 1, math.min(#_ids, #_pts) do
-        local p = _pts[i]
-        local h = math.max(p.Y, 6)
-        _poster(_ids[i], p.X, p.Z, h, ${target})
-        _insert3d(_ids[i], p.X, p.Z, h, ${target})
+        local p = _pts[i]; local id = _ids[i]; local x, z = p.X, p.Z
+        local pod = Instance.new("Part"); pod.Name = "ThemePedestal_" .. i; pod.Anchored = true; pod.CanCollide = false
+        pod.Size = Vector3.new(${target} * 0.7, 2, ${target} * 0.7); pod.Position = Vector3.new(x, 1, z); pod.Color = Color3.fromRGB(52, 54, 68); pod.Material = Enum.Material.Marble; pod.Parent = _af
+        task.spawn(function()
+            local ok, m = pcall(function() return _ip:LoadAsset(id) end)
+            if not ok or typeof(m) ~= "Instance" then _failed += 1; warn("[ThemeAsset] LoadAsset BLOCKED id=" .. id .. " — asset is not free/owned or not a Model. Enable Studio API access, or swap the id."); return end
+            for _, d in ipairs(m:GetDescendants()) do if d:IsA("LuaSourceContainer") then pcall(function() d:Destroy() end) end end
+            if not m:FindFirstChildWhichIsA("BasePart", true) then _failed += 1; warn("[ThemeAsset] id=" .. id .. " has no parts (decal/animation?) — skipped."); pcall(function() m:Destroy() end); return end
+            _prep(m); _scaleTo(m, ${target})
+            _ground(m, x, 2, z)
+            m.Name = "ThemeAsset_" .. id; m.Parent = _af
+            _loaded += 1
+        end)
     end
+    task.delay(10, function() print("[ThemeAsset] 3D figures loaded=" .. _loaded .. " / " .. math.min(#_ids, #_pts) .. " (failed=" .. _failed .. "). If 0 loaded: Studio > Game Settings > Security > enable API access, or the ids aren't free models.") end)
 end`;
 }
