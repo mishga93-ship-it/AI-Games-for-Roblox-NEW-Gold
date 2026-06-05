@@ -400,7 +400,13 @@ do
                 for _, c in ipairs(container:GetChildren()) do c.Parent = wrap end
                 container:Destroy()
                 local hasPart = false
-                for _, d in ipairs(wrap:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.CastShadow = false; hasPart = true end end
+                -- Anchor every part AND strip the asset's own Scripts/Humanoid so a
+                -- "working" model can't un-anchor, walk, or animate itself away from
+                -- where we placed it (that was the "props drift while I move" bug).
+                for _, d in ipairs(wrap:GetDescendants()) do
+                    if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.CastShadow = false; hasPart = true
+                    elseif d:IsA("Script") or d:IsA("LocalScript") or d:IsA("Humanoid") then d:Destroy() end
+                end
                 if hasPart then
                     local oks, sz = pcall(function() return wrap:GetExtentsSize() end)
                     if oks and sz and sz.Y > 0.1 then pcall(function() wrap:ScaleTo(math.clamp(${targetH} / sz.Y, 0.03, 18)) end) end
@@ -409,9 +415,17 @@ do
                 end
                 wrap:Destroy()
             end
-            local post = Instance.new("Part"); post.Name = "AssetTotem"; post.Anchored = true; post.CanCollide = false; post.Size = Vector3.new(1.6, 10, 1.6); post.Position = pos + Vector3.new(0, 5, 0); post.Color = Color3.fromRGB(58, 58, 70); post.Material = Enum.Material.WoodPlanks; post.Parent = _aFolder
-            local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 120, 0, 120); bb.StudsOffset = Vector3.new(0, 7, 0); bb.Adornee = post; bb.Parent = post
-            local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. assetId .. "&w=420&h=420"; img.Parent = bb
+            -- fallback when LoadAsset is refused: a real WORLD-FIXED standee
+            -- (SurfaceGui on an anchored board), NOT a BillboardGui. Billboards keep
+            -- a constant screen size, so they appear to drift toward/away from you
+            -- as you walk or drive; a standee scales with perspective like the rest
+            -- of the world and stays put.
+            local stand = Instance.new("Part"); stand.Name = "StandeePost"; stand.Anchored = true; stand.CanCollide = false; stand.CastShadow = false; stand.Size = Vector3.new(1, 8, 1); stand.Position = pos + Vector3.new(0, 4, 0); stand.Color = Color3.fromRGB(38, 40, 48); stand.Material = Enum.Material.Metal; stand.Parent = _aFolder
+            local board = Instance.new("Part"); board.Name = "AssetStandee"; board.Anchored = true; board.CanCollide = false; board.CastShadow = false; board.Size = Vector3.new(13, 16, 0.5); board.Position = pos + Vector3.new(0, 16, 0); board.Color = Color3.fromRGB(28, 30, 38); board.Material = Enum.Material.SmoothPlastic; board.Parent = _aFolder
+            for _, face in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
+                local sg = Instance.new("SurfaceGui"); sg.Adornee = board; sg.Face = face; sg.CanvasSize = Vector2.new(420, 520); sg.LightInfluence = 0; sg.Parent = board
+                local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. assetId .. "&w=420&h=420"; img.Parent = sg
+            end
         end
         for i, id in ipairs(_aIds) do
             local ang = (i / #_aIds) * math.pi * 2

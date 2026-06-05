@@ -17816,32 +17816,45 @@ function trendingShowcaseOptsFor(genreKey: string): TrendingShowcaseOpts {
   }
 }
 
+// Session 420: append the shared themed catalog-asset scatter (keyword → real 3D
+// Models, world-fixed standee fallback) to ANY genre's serverScript. Self-
+// contained Lua → safe to concat at the end of any builder's server source.
+// Returns the result unchanged when the title/brief matches no themed pack.
+// (racing + parkour wire their own tuned placement; tower_defense has its own
+// asset system, so the dispatch leaves those three unwrapped.)
+function appendThemedAssets(result: string | MultiScriptResult, params: GameTemplateParams): string | MultiScriptResult {
+  const lua = themedAssetScatterLua(themedAssetsFor(params.title || '', String(params.summary || '')), { center: 'Vector3.new(0, 0, 0)', ring: 72, groundY: 3 });
+  if (!lua) return result;
+  if (typeof result === 'string') return `${result}\n${lua}`;
+  return { ...result, serverScript: `${result.serverScript || ''}\n${lua}` };
+}
+
 export function buildGameplayScript(params: GameTemplateParams): string | MultiScriptResult {
   // Session #179: every generated game ships with CinematicCameraController so
   // any player can toggle 9:16 letterbox + REC HUD for One-Tap TikTok capture.
   // withCinematicCamera() is idempotent and safe to wrap any return path.
   // Session #149: brainrot_sim Steal-a-Brainrot conveyor takes precedence over genre-based dispatch.
   if (params.gameKind === 'brainrot_sim' || (params.systems && params.systems.includes('conveyor') && params.brainrotPool)) {
-    return withCinematicCamera(withTrendingShowcase(buildBrainrotConveyorScript(params), params, trendingShowcaseOptsFor('brainrot_sim')));
+    return withCinematicCamera(withTrendingShowcase(appendThemedAssets(buildBrainrotConveyorScript(params), params), params, trendingShowcaseOptsFor('brainrot_sim')));
   }
   // Session #175: obby_troll Trap Maker — fully owns layout via runtime Lua.
   // Session 223 (revised): TrendingShowcase отключён для obby_troll — path-based
   // жанры с per-stage decorations конкурируют с trending wall, юзер путается
   // что gameplay vs декор. Tycoon/sim/RPG/PvP/generic — wall остаётся.
   if (params.gameKind === 'obby_troll') {
-    return withCinematicCamera(buildTrollObbyScript(params));
+    return withCinematicCamera(appendThemedAssets(buildTrollObbyScript(params), params));
   }
   // Session #185: new playable genres are runtime-owned templates like
   // brainrot_sim/obby_troll, not generic scene overlays.
   if (params.gameKind === 'rpg_adventure') {
-    return withCinematicCamera(withTrendingShowcase(buildRpgAdventureScript(params), params, trendingShowcaseOptsFor('rpg_adventure')));
+    return withCinematicCamera(withTrendingShowcase(appendThemedAssets(buildRpgAdventureScript(params), params), params, trendingShowcaseOptsFor('rpg_adventure')));
   }
   // Session 223 (revised): horror_escape — same reason as obby_troll.
   if (params.gameKind === 'horror_escape') {
-    return withCinematicCamera(buildHorrorEscapeScript(params));
+    return withCinematicCamera(appendThemedAssets(buildHorrorEscapeScript(params), params));
   }
   if (params.gameKind === 'pvp_arena') {
-    return withCinematicCamera(withTrendingShowcase(buildPvpArenaScript(params), params, trendingShowcaseOptsFor('pvp_arena')));
+    return withCinematicCamera(withTrendingShowcase(appendThemedAssets(buildPvpArenaScript(params), params), params, trendingShowcaseOptsFor('pvp_arena')));
   }
   // Session 399: tower_defense — runtime-owned wave/tower world (like rpg/pvp).
   if (params.gameKind === 'tower_defense') {
@@ -17849,7 +17862,7 @@ export function buildGameplayScript(params: GameTemplateParams): string | MultiS
   }
   // Session 399 (cont.): roleplay_town — persistent social town world.
   if (params.gameKind === 'roleplay_town') {
-    return withCinematicCamera(buildRoleplayTownScript(params));
+    return withCinematicCamera(appendThemedAssets(buildRoleplayTownScript(params), params));
   }
   // Session 399 (cont.): racing — closed-loop foot race with laps + round loop.
   if (params.gameKind === 'racing') {
@@ -17861,23 +17874,23 @@ export function buildGameplayScript(params: GameTemplateParams): string | MultiS
   }
   // Session 399 (cont.): story_game — linear narrative chapter walk.
   if (params.gameKind === 'story_game') {
-    return withCinematicCamera(buildStoryGameScript(params));
+    return withCinematicCamera(appendThemedAssets(buildStoryGameScript(params), params));
   }
   // Session 399 (cont.): survival — resource gathering + day/night enemy nights.
   if (params.gameKind === 'survival') {
-    return withCinematicCamera(buildSurvivalScript(params));
+    return withCinematicCamera(appendThemedAssets(buildSurvivalScript(params), params));
   }
   // Session 399 (cont.): minigame_hub — lobby + rotating tile-arena minigames.
   if (params.gameKind === 'minigame_hub') {
-    return withCinematicCamera(buildMinigameHubScript(params));
+    return withCinematicCamera(appendThemedAssets(buildMinigameHubScript(params), params));
   }
   // Session 399 (cont.): fighting_arena — melee ring brawl with rounds.
   if (params.gameKind === 'fighting_arena') {
-    return withCinematicCamera(buildFightingScript(params));
+    return withCinematicCamera(appendThemedAssets(buildFightingScript(params), params));
   }
   // Session 399 (cont.): custom_game — flexible playable sandbox scaffold.
   if (params.gameKind === 'custom_game') {
-    return withCinematicCamera(buildCustomGameScript(params));
+    return withCinematicCamera(appendThemedAssets(buildCustomGameScript(params), params));
   }
   const simulatorKind = String(params.simulatorKind || '').toLowerCase();
   if (
@@ -17887,7 +17900,7 @@ export function buildGameplayScript(params: GameTemplateParams): string | MultiS
     params.gameKind === 'clicker_sim' ||
     (params.gameKind === 'simulator' && ['mining', 'fighting', 'muscle', 'clicker'].includes(simulatorKind))
   ) {
-    return withCinematicCamera(withTrendingShowcase(buildTrainingSimulatorScript(params), params, trendingShowcaseOptsFor(params.gameKind || 'simulator')));
+    return withCinematicCamera(withTrendingShowcase(appendThemedAssets(buildTrainingSimulatorScript(params), params), params, trendingShowcaseOptsFor(params.gameKind || 'simulator')));
   }
   const genre = (params.genre || '').toLowerCase();
   if (genre.includes('obby') || genre.includes('parkour') || genre.includes('obstacle')) {
@@ -17905,16 +17918,16 @@ export function buildGameplayScript(params: GameTemplateParams): string | MultiS
     // с per-stage decorations (NPC'ами/decals/табличками), юзер не понимал
     // что gameplay vs декор. Tycoon/sim/RPG/PvP/generic — wall остаётся, у них
     // статичный мир и trending billboard органично вписывается.
-    return withCinematicCamera(buildObbyScript({ ...params, obbyThemeKey: obbyKey, memeSubTheme, hasObbyShop }));
+    return withCinematicCamera(appendThemedAssets(buildObbyScript({ ...params, obbyThemeKey: obbyKey, memeSubTheme, hasObbyShop }), params));
   }
   if (genre.includes('tycoon') || genre.includes('factory') || genre.includes('business')) {
     const themeKey = params.tycoonThemeKey || detectTycoonThemeKey(`${params.summary || ''} ${params.title || ''}`);
-    return withCinematicCamera(withTrendingShowcase(buildTycoonScript({ ...params, tycoonThemeKey: themeKey }), params, trendingShowcaseOptsFor('tycoon')));
+    return withCinematicCamera(withTrendingShowcase(appendThemedAssets(buildTycoonScript({ ...params, tycoonThemeKey: themeKey }), params), params, trendingShowcaseOptsFor('tycoon')));
   }
   if (genre.includes('simulator') || genre.includes('collect') || genre.includes('clicker')) {
-    return withCinematicCamera(withTrendingShowcase(buildSimulatorScript(params), params, trendingShowcaseOptsFor('simulator')));
+    return withCinematicCamera(withTrendingShowcase(appendThemedAssets(buildSimulatorScript(params), params), params, trendingShowcaseOptsFor('simulator')));
   }
-  return withCinematicCamera(withTrendingShowcase(buildDefaultScript(params), params, trendingShowcaseOptsFor('default')));
+  return withCinematicCamera(withTrendingShowcase(appendThemedAssets(buildDefaultScript(params), params), params, trendingShowcaseOptsFor('default')));
 }
 
 // ── Deterministic Scene Templates for Tycoon & Simulator ──
