@@ -43,3 +43,10 @@ apps/ios/AIGoldRoblox/Resources/Models/StreetViewExplorer 2026-03-23 14-30-56/
 
 # Локальные тест-дампы
 _test_*.json
+
+# Backups & local artifacts (store-prep cleanup)
+*.bak
+*.backup-*
+
+# Local MCP / runtime state store
+data/
