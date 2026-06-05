@@ -321,6 +321,107 @@ export function atmosphereOptsLua(spec: GameVisualSpec): string {
     + `bloom = ${night ? 0.3 : 0.6}, cloudCover = ${night ? 0.85 : 0.5}`;
 }
 
+// ─── Themed catalog-asset packs (keyword → real public Roblox 3D Models) ─────
+// Session 420: user-curated public Creator-Store Models, keyed by a keyword regex
+// matched against `${title} ${brief}`. Any genre builder splices
+// `themedAssetScatterLua(themedAssetsFor(title, brief), {...})` near its spawn to
+// drop up to 10 real 3D props (InsertService:LoadAsset, 3D), size-normalized to
+// `targetHeight`, with an rbxthumb totem fallback. All ids verified renderable
+// (thumbnails API → type=Model). Maps/buildings/multi-figure "packs" were left
+// out on purpose — they normalize badly (a 150-figure pack shrunk to 8 studs).
+export interface ThemedAssetPack {
+  key: string;
+  match: RegExp;
+  assets: number[];      // ≤10 single-prop Model ids
+  targetHeight: number;  // ScaleTo target (studs) so a titan & a coin both fit
+  sign?: number;         // optional banner/sign thumbnail id
+}
+
+// Ordered most-specific → most-generic (first match wins).
+export const THEMED_ASSET_PACKS: ThemedAssetPack[] = [
+  { key: 'prototype', match: /\b(prototype|piggy)/i, targetHeight: 9, sign: 134680675084292,
+    assets: [134680675084292, 103027373132884] },
+  { key: 'fnaf', match: /\b(fnaf|freddy|fazbear|animatronic|five\s*nights|bonnie|chica|foxy|springtrap)/i, targetHeight: 8, sign: 131366436943647,
+    assets: [131366436943647, 91663076384784, 4939881709, 18940321829] },
+  { key: 'titan', match: /\b(titan|titans|attack\s*on\s*titan|colossal|colossus|aot|shingeki)/i, targetHeight: 20, sign: 93391943138398,
+    assets: [93391943138398, 102294740472495, 137513549278657, 124804442364855, 3985586979, 84810142609594, 108752898811395] },
+  { key: 'mrbeast', match: /\b(mr\.?\s*beast|mrbeast)/i, targetHeight: 7, sign: 8326979870,
+    assets: [8326979870, 16964451942, 12249777065, 16516661547, 6792417671, 139125404596764, 131041182908984] },
+  { key: 'dragon', match: /\b(dragon|hydra|wyvern|serpent)/i, targetHeight: 14, sign: 87633792676253,
+    assets: [140259666865834, 87633792676253, 2888641064] },
+  { key: 'monster_school', match: /\b(monster\s*school|high\s*school\s*monster)/i, targetHeight: 9, sign: 121811208548619,
+    assets: [121811208548619, 6233502884, 2981123852, 5563492545] },
+  { key: 'bananita', match: /\b(banan|bananita|dolphinita|peanut\s*butter|jelly)/i, targetHeight: 9, sign: 136122396955192,
+    assets: [136122396955192, 28423195] },
+  { key: 'trapped', match: /\b(trapped|bear\s*trap|spike\s*trap|hazard)/i, targetHeight: 5, sign: 9615431080,
+    assets: [9615431080, 189960819, 120602053699409, 11465147915] },
+  { key: 'night', match: /\b(99\s*night|nights|midnight|wolves?|survive\s*the\s*night|after\s*dark)/i, targetHeight: 9, sign: 136689985623077,
+    assets: [136689985623077, 112465932068951, 82325268253970, 89097886898916, 105990008575555, 113480154894240, 82051509034737] },
+  { key: 'brainrot', match: /\b(brainrot|tralalero|tralala|tralaleritos|bombardiro|skibidi|tung\s*tung|sahur|sigma|mexico)/i, targetHeight: 8, sign: 117702698985688,
+    assets: [122979917244614, 131938063150331, 108399116162473, 117702698985688, 128200107909985, 101873079352198, 142464521] },
+  { key: 'money', match: /\b(money|cash|billion|million|dollar|riches|wealth|bank|tycoon)/i, targetHeight: 6, sign: 9057118396,
+    assets: [9057118396, 13570813273, 116442182546675, 378721929, 1042207059, 42890986] },
+];
+
+/** First themed asset pack whose keyword regex matches the title+brief, else
+ * undefined (builder then scatters nothing). */
+export function themedAssetsFor(title: string, brief: string): ThemedAssetPack | undefined {
+  const hay = `${title || ''} ${brief || ''}`;
+  return THEMED_ASSET_PACKS.find((p) => p.match.test(hay));
+}
+
+/** Self-contained Lua that async-loads a pack's real 3D Models in a ring around
+ * `opts.center` (a Lua Vector3 expression), normalizes each to `targetHeight`,
+ * and falls back to an rbxthumb totem when LoadAsset is refused (private/owned-
+ * only in a published place). Depends on NOTHING in the host builder's scope
+ * except `workspace`, so it splices into any genre. Caps at 10. */
+export function themedAssetScatterLua(
+  pack: ThemedAssetPack | undefined,
+  opts: { center?: string; ring?: number; groundY?: number; count?: number } = {},
+): string {
+  if (!pack || !pack.assets.length) return '';
+  const ids = pack.assets.slice(0, Math.min(10, opts.count ?? 8));
+  const center = opts.center ?? 'Vector3.new(0, 0, 0)';
+  const ring = opts.ring ?? 48;
+  const groundY = opts.groundY ?? 1.5;
+  const targetH = pack.targetHeight || 9;
+  return `
+-- ===== Session 420: themed catalog-asset scatter (key="${pack.key}", ${ids.length} props) =====
+do
+    local _aCenter = ${center}
+    local _aIds = {${ids.join(', ')}}
+    local _aFolder = Instance.new("Folder"); _aFolder.Name = "ThemedAssets"; _aFolder.Parent = workspace
+    task.spawn(function()
+        local InsertService = game:GetService("InsertService")
+        local function place(assetId, pos)
+            local ok, container = pcall(function() return InsertService:LoadAsset(assetId) end)
+            if ok and container then
+                local wrap = Instance.new("Model"); wrap.Name = "Asset_" .. assetId; wrap.Parent = _aFolder
+                for _, c in ipairs(container:GetChildren()) do c.Parent = wrap end
+                container:Destroy()
+                local hasPart = false
+                for _, d in ipairs(wrap:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.CastShadow = false; hasPart = true end end
+                if hasPart then
+                    local oks, sz = pcall(function() return wrap:GetExtentsSize() end)
+                    if oks and sz and sz.Y > 0.1 then pcall(function() wrap:ScaleTo(math.clamp(${targetH} / sz.Y, 0.03, 18)) end) end
+                    pcall(function() wrap:PivotTo(CFrame.new(pos) * CFrame.Angles(0, math.random() * 6.283, 0)) end)
+                    return
+                end
+                wrap:Destroy()
+            end
+            local post = Instance.new("Part"); post.Name = "AssetTotem"; post.Anchored = true; post.CanCollide = false; post.Size = Vector3.new(1.6, 10, 1.6); post.Position = pos + Vector3.new(0, 5, 0); post.Color = Color3.fromRGB(58, 58, 70); post.Material = Enum.Material.WoodPlanks; post.Parent = _aFolder
+            local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 120, 0, 120); bb.StudsOffset = Vector3.new(0, 7, 0); bb.Adornee = post; bb.Parent = post
+            local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. assetId .. "&w=420&h=420"; img.Parent = bb
+        end
+        for i, id in ipairs(_aIds) do
+            local ang = (i / #_aIds) * math.pi * 2
+            local pos = _aCenter + Vector3.new(math.cos(ang) * ${ring}, ${groundY}, math.sin(ang) * ${ring})
+            place(id, pos)
+        end
+    end)
+end`;
+}
+
 // ─── Themed characters per vibe (real meme decal ids reused from the pool) ──
 
 // Real public Roblox catalog decal ids (mirrors the ASSET_* constants in

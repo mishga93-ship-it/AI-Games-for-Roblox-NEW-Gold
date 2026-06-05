@@ -1,7 +1,7 @@
 import type { SimulatorSceneSpec, HeroAssetResult } from './types.js';
 import { withCinematicCamera } from './cinematicCamera.js';
 import type { TrendingShowcaseItem } from './generationEnrichment.js';
-import { rgbLua, atmosphereOptsLua, deriveTdPack, deriveTdMap, tdMapLua, type GameVisualSpec } from './gameThemeSpec.js';
+import { rgbLua, atmosphereOptsLua, deriveTdPack, deriveTdMap, tdMapLua, themedAssetsFor, themedAssetScatterLua, type GameVisualSpec } from './gameThemeSpec.js';
 import { pickThemeAssets } from './data/themeAssetPacks.js';
 
 export type MemeSubTheme = 'skibidi' | 'bombardir' | 'tralalero' | 'sigma' | 'generic';
@@ -11836,6 +11836,11 @@ for _, wi in ipairs({2, 5, 8, 11}) do
     table.insert(boostPads, pad)
 end
 
+-- Session 420: themed real 3D props scattered in the oval infield (the centre is
+-- empty), keyword-matched to the title — a "Billion Dollars" race shows money, a
+-- "Dragon Highway" shows dragons, etc. CanCollide off → never blocks the track.
+${themedAssetScatterLua(themedAssetsFor(params.title, String(params.summary || '')), { center: 'Vector3.new(0, 0, 0)', ring: 70, groundY: 2 })}
+
 ${(() => {
   // Session 418b: recognizable roadside crowd — real 3D meme figures (Tralalero
   // shark, Bombardiro croc, Skibidi, Sigma) on stands ringing the track, so a
@@ -12234,32 +12239,12 @@ end)
   };
 }
 
-// Session 419: real, user-verified "99 Nights in the Forest" catalog Models
-// (all confirmed renderable via the thumbnails API) keyed by spec vibe so only
-// the night/99-Nights parkour preset gets bears/owl/deer/ram + the Fire Morsel
-// campfire. Other vibes fall back to procedural trees. Every load is pcall'd and
-// runs in task.spawn, so a restricted/removed asset never breaks the course.
-const PARKOUR_VIBE_ASSETS: Record<string, { fire?: number; creatures: number[]; sign?: number }> = {
-  night: {
-    fire: 82051509034737, // 99 Nights — Initial Fire Morsel (campfire)
-    creatures: [
-      136689985623077, // Bear
-      112465932068951, // Polar bear
-      82325268253970,  // Owl
-      89097886898916,  // Ram Monster
-      105990008575555, // Deer rig
-      113480154894240, // forest creature
-    ],
-    sign: 136689985623077, // Bear thumbnail for the start banner
-  },
-};
-
-// Session 419: themed base environment spliced into the parkour serverScript
-// after the start banner. Builds (a) a dark forest ring of procedural trees
-// outside the jump radius, (b) a watchtower beacon flanking the start, (c) an
-// always-on part campfire at the clearing centre (guaranteed light), then (d)
-// async-loads the real 99 Nights Models around the clearing with a rbxthumb
-// totem fallback. Lua scope at the splice point already has world/part/makeTree/
+// Session 419/420: themed base environment spliced into the parkour serverScript
+// after the start banner — (a) a dark forest ring of procedural trees outside the
+// jump radius, (b) a watchtower beacon flanking the start, (c) an always-on part
+// campfire at the clearing centre (guaranteed light). The real 3D theme props
+// (99 Nights bears/owl, money stacks, titans, …) are added separately by the
+// shared themedAssetScatterLua. Lua scope here already has world/part/makeTree/
 // theme/radius (worldVisualsLua + the course header run earlier).
 function parkourThemeEnvLua(spec: GameVisualSpec | undefined): string {
   if (!spec || spec.vibe === 'neutral') return '';
@@ -12267,9 +12252,6 @@ function parkourThemeEnvLua(spec: GameVisualSpec | undefined): string {
   const treeKind = safeLuaString(a.treeKind || 'pine', 'pine');
   const leaf = rgbLua(a.treeLeaf);
   const trunk = rgbLua(a.treeTrunk);
-  const assets = PARKOUR_VIBE_ASSETS[spec.vibe];
-  const creaturesLua = assets ? `{${assets.creatures.join(', ')}}` : '{}';
-  const fireLua = assets && assets.fire ? String(assets.fire) : '0';
   return `
 -- ===== Session 419: themed base environment (recognizability) =====
 do
@@ -12297,37 +12279,6 @@ do
         local pl = Instance.new("PointLight"); pl.Color = Color3.fromRGB(255, 150, 70); pl.Brightness = 4.5; pl.Range = 74; pl.Parent = em
     end
     buildPartCampfire(Vector3.new(0, 1, 0))
-    -- (d) real 99 Nights Models, async + non-blocking, with rbxthumb fallback
-    local CREATURES = ${creaturesLua}
-    local FIRE_ID = ${fireLua}
-    task.spawn(function()
-        local InsertService = game:GetService("InsertService")
-        local function loadModel(assetId, pos, targetH)
-            local ok, container = pcall(function() return InsertService:LoadAsset(assetId) end)
-            if not ok or not container then return nil end
-            local wrap = Instance.new("Model"); wrap.Name = "Asset_" .. assetId; wrap.Parent = world
-            for _, c in ipairs(container:GetChildren()) do c.Parent = wrap end
-            container:Destroy()
-            local hasPart = false
-            for _, d in ipairs(wrap:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; hasPart = true end end
-            if not hasPart then wrap:Destroy(); return nil end
-            local oks, sz = pcall(function() return wrap:GetExtentsSize() end)
-            if oks and sz and sz.Y > 0.1 then pcall(function() wrap:ScaleTo(math.clamp((targetH or 9) / sz.Y, 0.04, 16)) end) end
-            pcall(function() wrap:PivotTo(CFrame.new(pos) * CFrame.Angles(0, math.random() * 6.283, 0)) end)
-            return wrap
-        end
-        if FIRE_ID > 0 then loadModel(FIRE_ID, Vector3.new(0, 0.5, 0), 7) end
-        for idx, id in ipairs(CREATURES) do
-            local ang = (idx / math.max(1, #CREATURES)) * math.pi * 2
-            local r = 30 + (idx % 3) * 9
-            local pos = Vector3.new(math.cos(ang) * r, 1.5, math.sin(ang) * r)
-            if not loadModel(id, pos, 9) then
-                local post = part("CreaturePost", Vector3.new(1.5, 9, 1.5), pos + Vector3.new(0, 4.5, 0), theme.platform, Enum.Material.Wood)
-                local bb = Instance.new("BillboardGui"); bb.Size = UDim2.new(0, 90, 0, 90); bb.StudsOffset = Vector3.new(0, 6, 0); bb.Adornee = post; bb.Parent = post
-                local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. id .. "&w=150&h=150"; img.Parent = bb
-            end
-        end
-    end)
 end`;
 }
 
@@ -12418,7 +12369,8 @@ ${(() => {
   // Session 418: grounded start banner (posts + board) instead of a floating
   // AlwaysOnTop billboard — the hero decal/title wraps a real structure.
   if (!spec || spec.vibe === 'neutral') return '';
-  const d = Math.max(0, Math.floor(Number((PARKOUR_VIBE_ASSETS[spec.vibe] && PARKOUR_VIBE_ASSETS[spec.vibe].sign) || spec.heroDecalId) || 0));
+  const _pkPack = themedAssetsFor(params.title, String(params.summary || ''));
+  const d = Math.max(0, Math.floor(Number((_pkPack && _pkPack.sign) || spec.heroDecalId) || 0));
   const img = d > 0
     ? `local img = Instance.new("ImageLabel"); img.Size = UDim2.new(0.3, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=${d}&w=420&h=420"; img.Parent = sg
         local tl = Instance.new("TextLabel"); tl.Size = UDim2.new(0.67, 0, 1, 0); tl.Position = UDim2.new(0.32, 0, 0, 0)`
@@ -12437,6 +12389,7 @@ do
 end`;
 })()}
 ${parkourThemeEnvLua(spec)}
+${themedAssetScatterLua(themedAssetsFor(params.title, String(params.summary || '')), { center: 'Vector3.new(0, 1.5, 0)', ring: 42 })}
 
 local checkpointPos = {}
 local runState = {}
