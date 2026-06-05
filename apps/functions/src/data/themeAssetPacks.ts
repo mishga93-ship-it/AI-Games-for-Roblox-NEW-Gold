@@ -184,16 +184,11 @@ export function themeAssetScatterLua(brief: string, genre: string): string {
   const pl = PLACEMENT[genre] || { n: 7, rx: 110, rz: 110, y: 8, target: 16 };
   const ptsLua = genre === 'story_game' ? corridorLua(pl.n) : ringLua(pl.n, pl.rx, pl.rz, pl.y);
   const target = pl.target;
-  const pad = target;
-  const half = (target / 2 + 1).toFixed(1);
-  // Which of the selected ids are multi-model packs → exploded child-by-child.
-  const packsLua = ids.filter((id) => PACK_IDS.has(id)).map((id) => `[${id}]=true`).join(', ');
   return `
--- ===== REAL CATALOG THEME ASSETS (keyword-matched, InsertService, scaled) =====
+-- ===== REAL CATALOG THEME ASSETS (keyword-matched: thumbnail posters + bonus 3D) =====
 do
     local _af = Instance.new("Folder"); _af.Name = "ThemeAssets"; _af.Parent = workspace
     local _ip = game:GetService("InsertService")
-    local _packs = {${packsLua}}
     local function _scaleTo(m, t)
         local ok, _cf, sz = pcall(function() return m:GetBoundingBox() end)
         if ok and sz then local d = math.max(sz.X, sz.Y, sz.Z); if d > 0.1 then pcall(function() m:ScaleTo(t / d) end) end end
@@ -202,50 +197,38 @@ do
         if inst:IsA("Model") and not inst.PrimaryPart then local bp = inst:FindFirstChildWhichIsA("BasePart", true); if bp then inst.PrimaryPart = bp end end
         for _, d in ipairs(inst:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false end end
     end
-    local function _insert(id, cf, t)
+    -- Thumbnail poster on a ground pedestal: ALWAYS renders the real catalog image
+    -- of the asset (rbxthumb) so the theme is recognizable even where LoadAsset is
+    -- not permitted for that id. Board faces the track/spawn from both sides.
+    local function _poster(id, x, z, h, t)
+        local col = Instance.new("Part"); col.Anchored = true; col.CanCollide = false; col.Size = Vector3.new(2.5, h, 2.5); col.Position = Vector3.new(x, h / 2, z); col.Color = Color3.fromRGB(44, 46, 58); col.Material = Enum.Material.Metal; col.Parent = _af
+        local plat = Instance.new("Part"); plat.Anchored = true; plat.CanCollide = false; plat.Size = Vector3.new(t + 3, 1, t + 3); plat.Position = Vector3.new(x, h + 0.5, z); plat.Color = Color3.fromRGB(60, 62, 76); plat.Material = Enum.Material.SmoothPlastic; plat.Parent = _af
+        local board = Instance.new("Part"); board.Anchored = true; board.CanCollide = false; board.Size = Vector3.new(t, t, 0.5); board.Position = Vector3.new(x, h + 1 + t / 2, z - t * 0.4); board.Color = Color3.fromRGB(16, 18, 26); board.Material = Enum.Material.SmoothPlastic; board.Parent = _af
+        for _, fc in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
+            local sg = Instance.new("SurfaceGui"); sg.Adornee = board; sg.Face = fc; sg.LightInfluence = 0; sg.Parent = board
+            local img = Instance.new("ImageLabel"); img.Size = UDim2.new(1, 0, 1, 0); img.BackgroundTransparency = 1; img.Image = "rbxthumb://type=Asset&id=" .. id .. "&w=420&h=420"; img.Parent = sg
+        end
+    end
+    -- Bonus: real 3D model via InsertService, on the pedestal in front of the
+    -- poster. Silently skipped where LoadAsset isn't allowed (poster still shows).
+    local function _insert3d(id, x, z, h, t)
         task.spawn(function()
             local ok, m = pcall(function() return _ip:LoadAsset(id) end)
             if not ok or typeof(m) ~= "Instance" then return end
             for _, d in ipairs(m:GetDescendants()) do if d:IsA("LuaSourceContainer") then pcall(function() d:Destroy() end) end end
             if not m:FindFirstChildWhichIsA("BasePart", true) then pcall(function() m:Destroy() end); return end
-            -- A "pack" asset holds several character/prop Models. Lay them out
-            -- individually so each reads clearly instead of one squished clump.
-            local items = {}
-            if _packs[id] then
-                for _, c in ipairs(m:GetChildren()) do
-                    if c:IsA("Model") and c:FindFirstChildWhichIsA("BasePart", true) then table.insert(items, c) end
-                end
-            end
-            if #items >= 2 then
-                local maxN = math.min(#items, 4)
-                local GP = {Vector3.new(-1, 0, -1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, 1)}
-                for i = 1, maxN do
-                    local it = items[i]
-                    _prep(it)
-                    _scaleTo(it, t * 0.5)
-                    local g = GP[i]
-                    pcall(function() it:PivotTo(cf * CFrame.new(g.X * (t * 0.38), 0, g.Z * (t * 0.38))) end)
-                    it.Parent = _af
-                end
-                pcall(function() m:Destroy() end)
-            else
-                _prep(m)
-                _scaleTo(m, t)
-                pcall(function() m:PivotTo(cf) end)
-                m.Parent = _af
-            end
+            _prep(m); _scaleTo(m, t)
+            pcall(function() m:PivotTo(CFrame.new(x, h + 1 + t * 0.5, z + t * 0.25)) end)
+            m.Parent = _af
         end)
-    end
-    local function _stand(name, size, pos)
-        local p = Instance.new("Part"); p.Name = name; p.Size = size; p.Position = pos; p.Anchored = true; p.CanCollide = false
-        p.Color = Color3.fromRGB(56, 56, 68); p.Material = Enum.Material.SmoothPlastic; p.Parent = _af; return p
     end
     local _ids = {${ids.join(', ')}}
     local _pts = ${ptsLua}
     for i = 1, math.min(#_ids, #_pts) do
         local p = _pts[i]
-        _stand("ThemeStand_" .. i, Vector3.new(${pad}, 2, ${pad}), p - Vector3.new(0, ${half}, 0))
-        _insert(_ids[i], CFrame.new(p), ${target})
+        local h = math.max(p.Y, 6)
+        _poster(_ids[i], p.X, p.Z, h, ${target})
+        _insert3d(_ids[i], p.X, p.Z, h, ${target})
     end
 end`;
 }
