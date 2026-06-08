@@ -28558,6 +28558,9 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
               ...(currentJob.metadata ?? {}),
               ...prep.templateMetadata,
               ...prep.modularMetadata,
+              // Session 425 — brainrot fields (last, so vehicleType='car' +
+              // empty template filename win → procedural novelty-body path).
+              ...(prep.brainrotMetadata ?? {}),
             },
           };
           // R12: fetch + composit preview NOW so the iOS chat card shows
@@ -29205,10 +29208,18 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         && (currentJob.metadata.vehicleTemplateAssetId as number) > 0)
         || (typeof currentJob.metadata?.vehicleTemplateRbxmFilename === 'string'
             && (currentJob.metadata.vehicleTemplateRbxmFilename as string).length > 0);
-      if (templateAlreadyPicked) {
-        await beginStage('generate_vehicle_mesh', 'Skipping AI mesh — Roblox template will load at runtime');
+      // Session 425 — brainrot vehicles build a PROCEDURAL novelty body (no
+      // template, no paid Meshy). Skip the AI-mesh stage via the flag, NOT via
+      // template presence (brainrot deliberately clears the template filename).
+      const brainrotProcedural = currentJob.metadata?.vehicleBrainrot === true;
+      if (templateAlreadyPicked || brainrotProcedural) {
+        await beginStage('generate_vehicle_mesh', brainrotProcedural
+          ? 'Skipping AI mesh — brainrot uses a procedural novelty body'
+          : 'Skipping AI mesh — Roblox template will load at runtime');
         await finishStage('generate_vehicle_mesh', 'completed', [], [
-          `Template ${currentJob.metadata?.vehicleTemplateLabel ?? '?'} selected — AI mesh stage skipped.`,
+          brainrotProcedural
+            ? `Brainrot procedural body (${currentJob.metadata?.vehicleNoveltyBodyType || 'plain car'}) — AI mesh stage skipped.`
+            : `Template ${currentJob.metadata?.vehicleTemplateLabel ?? '?'} selected — AI mesh stage skipped.`,
         ]);
       } else {
       await beginStage('generate_vehicle_mesh', 'Meshy 6 is generating a 3D vehicle body');

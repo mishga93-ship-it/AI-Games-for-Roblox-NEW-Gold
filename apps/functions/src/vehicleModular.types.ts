@@ -131,7 +131,90 @@ export interface VehicleConfig {
   rarity?: VehicleRarity;
   /** Session 387 Round 4 — viral one-liner for share UX. AI-generated. */
   personalityCaption?: string;
+  /** Session 425 — optional Brainrot slot layer (Variant 3). Present only when
+   *  the prompt is routed as absurd/brainrot. Drives the novelty body shell,
+   *  head topper, wheel/engine/effect/sound slots on top of the base config. */
+  brainrot?: BrainrotSlots;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Session 425 — Brainrot Vehicle slots (Variant 3).
+//
+// A slot layer the LLM fills for "максимально абсурдный TikTok Brainrot"
+// vehicles. `body`/`head` are free strings (sanitized) so they can route to a
+// Tier-1 procedural generator when known, or Tier-2 Meshy-cache for any other
+// noun. `wheels`/`engine`/`effects`/`sound` are strict enums — always built
+// procedurally in Lua (no paid calls), so they stay a fixed vocabulary.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Wheel style slot — all procedural (Lua), no asset sourcing. */
+export type BrainrotWheelStyle =
+  | 'normal'
+  | 'monster_truck'
+  | 'tiny'
+  | 'tank_tracks'
+  | 'hover'
+  | 'rocket';
+
+/** Engine style slot — drives boost VFX + a visible engine part. */
+export type BrainrotEngineStyle =
+  | 'normal'
+  | 'jet'
+  | 'rocket'
+  | 'nuclear'
+  | 'propeller';
+
+/** Ambient effect slot — extends the style-ambient Lua. */
+export type BrainrotEffectId =
+  | 'rainbow'
+  | 'fire'
+  | 'lightning'
+  | 'confetti'
+  | 'sparkles'
+  | 'smoke';
+
+/** Soundtrack slot — engine/idle Sound assetId pick. */
+export type BrainrotSoundId =
+  | 'phonk'
+  | 'brainrot'
+  | 'meme_horn'
+  | 'epic'
+  | 'chaos';
+
+/** Full brainrot slot config the router emits. */
+export interface BrainrotSlots {
+  /** Viral display name, e.g. "Skibidi Banana Hovercart 9000". */
+  vehicleName: string;
+  /** Novelty body keyword ("banana", "toilet", "fridge", …) or "car" for the
+   *  plain drivable chassis with no novelty shell. Free string — Tier-1 if it
+   *  has a procedural generator, else Tier-2 Meshy-cache. */
+  body: string;
+  /** Animal/meme head topper keyword ("capybara", "shark", …) or "" for none. */
+  head: string;
+  wheels: BrainrotWheelStyle;
+  engine: BrainrotEngineStyle;
+  /** 0-4 ambient effects. */
+  effects: BrainrotEffectId[];
+  sound: BrainrotSoundId;
+  /** Visual scale multiplier 1-5 (size_multiplier). */
+  sizeMultiplier: number;
+  /** 1-10, drives rarity/caption flavour. */
+  chaosLevel: number;
+  /** 1-10, drives rarity/caption flavour. */
+  brainrotLevel: number;
+}
+
+/** Body keywords that have a Tier-1 procedural shell (built from primitives,
+ *  free). Anything not in this set routes to Tier-2 Meshy-cache (Phase B).
+ *  "car" is special — it means "no novelty body, keep the plain chassis". */
+export const BRAINROT_PROCEDURAL_BODIES: ReadonlyArray<string> = [
+  'banana', 'toilet', 'fridge', 'pizza', 'shopping_cart', 'duck',
+];
+
+/** Head keywords that have a Tier-1 procedural topper. */
+export const BRAINROT_PROCEDURAL_HEADS: ReadonlyArray<string> = [
+  'capybara', 'cat', 'shark', 'doge', 'frog', 'chicken', 'gorilla', 'alien',
+];
 
 /** Preset → underlying .rbxm template mapping. Lets the modular builder
  *  reuse all the loader/recolor work the template-embed path already does. */

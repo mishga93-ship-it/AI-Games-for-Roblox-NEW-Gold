@@ -16,10 +16,11 @@
 
 import { logger } from 'firebase-functions/v2';
 import type { VehicleConfig, VehiclePresetId } from './vehicleModular.types.js';
-import { VEHICLE_PRESETS, buildAddonsLuaBlock, buildTuningLuaBlock, resolveAddons } from './vehicleModular.library.js';
+import { BRAINROT_PROCEDURAL_BODIES } from './vehicleModular.types.js';
+import { VEHICLE_PRESETS, buildAddonsLuaBlock, buildBrainrotLuaBlock, buildTuningLuaBlock, resolveAddons } from './vehicleModular.library.js';
 import { buildStyleAmbientLuaBlock, stylePaletteHint } from './vehicleModular.styles.js';
 import { computeRarity, describeRarity, generatePersonalityCaption } from './vehicleModular.rarity.js';
-import { routeVehicleConfig } from './vehicleModular.router.js';
+import { isBrainrotIntent, routeBrainrotSlots, routeVehicleConfig } from './vehicleModular.router.js';
 
 /** Result of the prep stage. Caller stuffs these into job metadata. */
 export interface ModularPrepResult {
@@ -64,6 +65,10 @@ export interface ModularPrepResult {
   };
   /** Notes for the stage log (shown in iOS pipeline UI). */
   stageNotes: string[];
+  /** Session 425 — brainrot metadata to merge into job.metadata. Present only
+   *  when the prompt routed as brainrot. Drives the procedural novelty-body
+   *  path + the AI-mesh-skip guard in index.ts. */
+  brainrotMetadata?: Record<string, unknown>;
 }
 
 /** preset → template metadata snapshot. Maps to one of the existing
@@ -255,6 +260,54 @@ export async function prepareModularVehicle(args: {
   config.rarity = computeRarity(config);
   config.personalityCaption = await generatePersonalityCaption(config);
 
+  // Session 425 — Brainrot slot layer (Variant 3). Only when the prompt reads
+  // as absurd/brainrot. Forces the PROCEDURAL chassis path (empty template
+  // filename → useTemplateEmbed=false) so the novelty body shell can replace
+  // the visible body, and appends the brainrot head/engine/effects Lua to the
+  // addons block (the procedural path injects metadata.vehicleAddonsLuaBlock).
+  let brainrotMetadata: Record<string, unknown> | undefined;
+  let brainrotAddonsLua = '';
+  const brainrotStageNotes: string[] = [];
+  if (isBrainrotIntent(args.prompt ?? '', args.title)) {
+    try {
+      const slots = await routeBrainrotSlots({ prompt: args.prompt ?? '', title: args.title });
+      config.brainrot = slots;
+      const noveltyBody = slots.body !== 'car' && BRAINROT_PROCEDURAL_BODIES.includes(slots.body)
+        ? slots.body : '';
+      brainrotAddonsLua = buildBrainrotLuaBlock({
+        head: slots.head, engine: slots.engine, wheels: slots.wheels,
+        effects: slots.effects, sizeMultiplier: slots.sizeMultiplier,
+      });
+      // Force procedural path: clear embedded-template hints. The AI-mesh stage
+      // in index.ts is skipped via the vehicleBrainrot flag (NOT by template
+      // presence), so no paid Meshy call fires in Phase A.
+      templateMetadata.vehicleTemplateRbxmFilename = '';
+      templateMetadata.vehicleTemplateAssetId = 0;
+      brainrotMetadata = {
+        vehicleBrainrot: true,
+        vehicleBrainrotName: slots.vehicleName,
+        vehicleBrainrotSlots: slots,
+        vehicleNoveltyBodyType: noveltyBody,
+        vehicleType: 'car',
+        vehicleBrainrotSound: slots.sound,
+      };
+      brainrotStageNotes.push(
+        `BRAINROT MODE: ${slots.vehicleName}`,
+        `Body: ${slots.body}${noveltyBody ? ' (Tier-1 procedural shell)' : ' (plain car — Tier-2 deferred to Phase B)'}`,
+        `Head: ${slots.head || 'none'} · wheels: ${slots.wheels} · engine: ${slots.engine}`,
+        `Effects: ${slots.effects.join(', ') || 'none'} · sound: ${slots.sound}`,
+        `Chaos ${slots.chaosLevel}/10 · Brainrot ${slots.brainrotLevel}/10`,
+      );
+    } catch (brErr) {
+      logger.warn('[ModularBuilder] brainrot routing failed — plain modular vehicle', {
+        error: brErr instanceof Error ? brErr.message : String(brErr),
+      });
+    }
+  }
+  const finalAddonsLuaBlock = brainrotAddonsLua
+    ? `${addonsLuaBlock}\n\n${brainrotAddonsLua}`
+    : addonsLuaBlock;
+
   const stageNotes = [
     `Modular pipeline: preset=${config.preset} (${VEHICLE_PRESETS[config.preset].label})`,
     `Style: ${config.style}`,
@@ -266,13 +319,15 @@ export async function prepareModularVehicle(args: {
     `Rarity: ${config.rarity?.label ?? 'COMMON'} — ${describeRarity(config.rarity!)}`,
     `Caption: ${config.personalityCaption ?? '(none)'}`,
   ];
+  if (brainrotStageNotes.length > 0) stageNotes.push('— Brainrot —', ...brainrotStageNotes);
   return {
     config,
     templateMetadata,
+    brainrotMetadata,
     modularMetadata: {
       vehiclePipeline: 'modular_builder',
       vehicleConfig: config,
-      vehicleAddonsLuaBlock: addonsLuaBlock,
+      vehicleAddonsLuaBlock: finalAddonsLuaBlock,
       vehicleAddonIds: [...config.addons],
       vehicleTuningLuaBlock: tuningLuaBlock,
       vehicleStyleLuaBlock: styleLuaBlock,

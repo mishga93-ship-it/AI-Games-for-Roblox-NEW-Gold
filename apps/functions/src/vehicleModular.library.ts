@@ -1100,3 +1100,187 @@ export function buildAddonsLuaBlock(
   }
   return lines.join('\n\n');
 }
+
+// ─── SESSION 425: BRAINROT SLOT LUA ─────────────────────────────────────────
+// One self-contained do-block that adds the brainrot head topper, engine VFX,
+// wheel/effects VFX on top of any chassis. Everything is mounted via the shared
+// mount() helper (CanCollide=false, Massless=true, welded to the VehicleSeat),
+// so NONE of it touches the drivetrain — drivability is unaffected.
+
+/** Per-head procedural topper. Lua statements that build the head relative to
+ *  the `headCF` defined by the outer block. `P(...)` and `mount(...)` and `S`
+ *  (size scale) are in scope. Returns '' for unknown heads (Tier-2 handles
+ *  those via a Meshy topper in Phase B). */
+const BRAINROT_HEAD_BUILDERS: Record<string, string> = {
+  capybara: `
+    local h = P("Head_Capybara", 2.2*S, 1.7*S, 2.6*S, Color3.fromRGB(150,110,80)); h.CFrame = headCF; mount(h)
+    local snout = P("Snout", 1.3*S, 1.0*S, 1.0*S, Color3.fromRGB(120,88,64)); snout.CFrame = h.CFrame * CFrame.new(0,-0.2*S,-1.45*S); mount(snout)
+    for _,sx in ipairs({-1,1}) do
+      local ear = P("Ear", 0.5*S,0.5*S,0.3*S, Color3.fromRGB(120,88,64)); ear.CFrame = h.CFrame * CFrame.new(sx*0.55*S,0.95*S,0.4*S); mount(ear)
+      local eye = P("Eye", 0.34*S,0.34*S,0.22*S, Color3.fromRGB(20,20,20)); eye.Shape = Enum.PartType.Ball; eye.CFrame = h.CFrame * CFrame.new(sx*0.6*S,0.3*S,-1.3*S); mount(eye)
+    end`,
+  cat: `
+    local h = P("Head_Cat", 2.0*S, 1.8*S, 2.0*S, Color3.fromRGB(120,120,128)); h.CFrame = headCF; mount(h)
+    for _,sx in ipairs({-1,1}) do
+      local ear = P("CatEar", 0.6*S,0.8*S,0.2*S, Color3.fromRGB(120,120,128)); ear.CFrame = h.CFrame * CFrame.new(sx*0.6*S,1.1*S,0) * CFrame.Angles(0,0,sx*0.3); mount(ear)
+      local eye = P("Eye", 0.34*S,0.5*S,0.2*S, Color3.fromRGB(70,220,90)); eye.Material = Enum.Material.Neon; eye.CFrame = h.CFrame * CFrame.new(sx*0.5*S,0.1*S,-1.05*S); mount(eye)
+    end
+    local nose = P("Nose", 0.3*S,0.25*S,0.2*S, Color3.fromRGB(230,120,150)); nose.CFrame = h.CFrame * CFrame.new(0,-0.3*S,-1.05*S); mount(nose)`,
+  shark: `
+    local h = P("Head_Shark", 2.2*S, 1.9*S, 3.0*S, Color3.fromRGB(96,118,140)); h.CFrame = headCF; mount(h)
+    local snout = P("SharkSnout", 1.6*S,1.2*S,1.4*S, Color3.fromRGB(110,132,152)); snout.CFrame = h.CFrame * CFrame.new(0,-0.2*S,-1.7*S); mount(snout)
+    local fin = P("DorsalFin", 0.3*S,1.4*S,1.3*S, Color3.fromRGB(80,100,120)); fin.CFrame = h.CFrame * CFrame.new(0,1.4*S,0.4*S); mount(fin)
+    for _,sx in ipairs({-1,1}) do
+      local eye = P("Eye", 0.3*S,0.3*S,0.2*S, Color3.fromRGB(10,10,10)); eye.Shape = Enum.PartType.Ball; eye.CFrame = h.CFrame * CFrame.new(sx*0.8*S,0.4*S,-1.2*S); mount(eye)
+    end
+    local mouth = P("Teeth", 1.5*S,0.25*S,0.1*S, Color3.fromRGB(245,245,245)); mouth.CFrame = h.CFrame * CFrame.new(0,-0.85*S,-1.7*S); mount(mouth)`,
+  doge: `
+    local h = P("Head_Doge", 2.1*S, 1.9*S, 2.3*S, Color3.fromRGB(214,170,90)); h.CFrame = headCF; mount(h)
+    local snout = P("Snout", 1.2*S,0.9*S,0.9*S, Color3.fromRGB(236,210,160)); snout.CFrame = h.CFrame * CFrame.new(0,-0.3*S,-1.3*S); mount(snout)
+    for _,sx in ipairs({-1,1}) do
+      local ear = P("DogeEar", 0.55*S,0.9*S,0.25*S, Color3.fromRGB(196,150,74)); ear.CFrame = h.CFrame * CFrame.new(sx*0.7*S,1.0*S,0.2*S); mount(ear)
+      local eye = P("Eye", 0.3*S,0.3*S,0.2*S, Color3.fromRGB(20,20,20)); eye.Shape = Enum.PartType.Ball; eye.CFrame = h.CFrame * CFrame.new(sx*0.55*S,0.35*S,-1.15*S); mount(eye)
+    end`,
+  frog: `
+    local h = P("Head_Frog", 2.4*S, 1.4*S, 2.2*S, Color3.fromRGB(90,190,80)); h.CFrame = headCF; mount(h)
+    for _,sx in ipairs({-1,1}) do
+      local bulge = P("EyeBulge", 0.8*S,0.8*S,0.8*S, Color3.fromRGB(90,190,80)); bulge.Shape = Enum.PartType.Ball; bulge.CFrame = h.CFrame * CFrame.new(sx*0.7*S,0.95*S,-0.3*S); mount(bulge)
+      local eye = P("Eye", 0.45*S,0.45*S,0.45*S, Color3.fromRGB(250,250,250)); eye.Shape = Enum.PartType.Ball; eye.CFrame = bulge.CFrame * CFrame.new(0,0,-0.4*S); mount(eye)
+      local pupil = P("Pupil", 0.2*S,0.2*S,0.2*S, Color3.fromRGB(10,10,10)); pupil.Shape = Enum.PartType.Ball; pupil.CFrame = eye.CFrame * CFrame.new(0,0,-0.25*S); mount(pupil)
+    end`,
+  chicken: `
+    local h = P("Head_Chicken", 1.7*S, 1.8*S, 1.7*S, Color3.fromRGB(245,245,240)); h.CFrame = headCF; mount(h)
+    local comb = P("Comb", 0.3*S,0.6*S,1.2*S, Color3.fromRGB(220,40,40)); comb.CFrame = h.CFrame * CFrame.new(0,1.05*S,0); mount(comb)
+    local beak = P("Beak", 0.5*S,0.5*S,0.7*S, Color3.fromRGB(240,170,30)); beak.CFrame = h.CFrame * CFrame.new(0,-0.2*S,-1.05*S); mount(beak)
+    for _,sx in ipairs({-1,1}) do
+      local eye = P("Eye", 0.3*S,0.3*S,0.2*S, Color3.fromRGB(15,15,15)); eye.Shape = Enum.PartType.Ball; eye.CFrame = h.CFrame * CFrame.new(sx*0.55*S,0.25*S,-0.9*S); mount(eye)
+    end`,
+  gorilla: `
+    local h = P("Head_Gorilla", 2.4*S, 2.2*S, 2.2*S, Color3.fromRGB(40,40,46)); h.CFrame = headCF; mount(h)
+    local brow = P("Brow", 2.2*S,0.4*S,0.4*S, Color3.fromRGB(28,28,32)); brow.CFrame = h.CFrame * CFrame.new(0,0.5*S,-1.0*S); mount(brow)
+    local muzzle = P("Muzzle", 1.6*S,1.1*S,0.9*S, Color3.fromRGB(30,30,34)); muzzle.CFrame = h.CFrame * CFrame.new(0,-0.5*S,-1.1*S); mount(muzzle)
+    for _,sx in ipairs({-1,1}) do
+      local eye = P("Eye", 0.3*S,0.3*S,0.2*S, Color3.fromRGB(120,80,30)); eye.Shape = Enum.PartType.Ball; eye.CFrame = h.CFrame * CFrame.new(sx*0.55*S,0.15*S,-1.05*S); mount(eye)
+    end`,
+  alien: `
+    local h = P("Head_Alien", 1.9*S, 2.2*S, 1.9*S, Color3.fromRGB(120,235,150)); h.Material = Enum.Material.Neon; h.CFrame = headCF; mount(h)
+    for _,sx in ipairs({-1,1}) do
+      local eye = P("Eye", 0.6*S,0.9*S,0.3*S, Color3.fromRGB(10,10,10)); eye.Shape = Enum.PartType.Ball; eye.CFrame = h.CFrame * CFrame.new(sx*0.5*S,0.2*S,-0.95*S) * CFrame.Angles(0,0,sx*0.35); mount(eye)
+    end
+    local ant = P("Antenna", 0.12*S,1.0*S,0.12*S, Color3.fromRGB(120,235,150)); ant.Material = Enum.Material.Neon; ant.CFrame = h.CFrame * CFrame.new(0,1.5*S,0); mount(ant)
+    local bulb = P("AntBulb", 0.35*S,0.35*S,0.35*S, Color3.fromRGB(255,80,255)); bulb.Shape = Enum.PartType.Ball; bulb.Material = Enum.Material.Neon; bulb.CFrame = ant.CFrame * CFrame.new(0,0.6*S,0); mount(bulb)`,
+};
+
+/** Engine VFX (rear). Statements run with `rearCF`, `P`, `mount`, `accent` in scope. */
+function brainrotEngineLua(engine: string): string {
+  switch (engine) {
+    case 'jet': return `
+    local jet = P("JetEngine", 1.0,1.0,1.6, Color3.fromRGB(60,60,68), Enum.Material.Metal); jet.Shape = Enum.PartType.Cylinder; jet.CFrame = rearCF * CFrame.Angles(0,math.rad(90),0); mount(jet)
+    local att = Instance.new("Attachment", jet)
+    local flame = Instance.new("ParticleEmitter", jet); flame.Color = ColorSequence.new(Color3.fromRGB(120,180,255), Color3.fromRGB(255,255,255)); flame.Texture = "rbxasset://textures/particles/fire_main.dds"; flame.Rate = 60; flame.Lifetime = NumberRange.new(0.2,0.4); flame.Speed = NumberRange.new(14,22); flame.SpreadAngle = Vector2.new(8,8)
+    local pl = Instance.new("PointLight", jet); pl.Color = Color3.fromRGB(120,180,255); pl.Brightness = 4; pl.Range = 14`;
+    case 'rocket': return `
+    local noz = P("RocketNozzle", 1.2,1.2,1.4, Color3.fromRGB(40,40,44), Enum.Material.Metal); noz.Shape = Enum.PartType.Cylinder; noz.CFrame = rearCF * CFrame.Angles(0,math.rad(90),0); mount(noz)
+    local flame = Instance.new("ParticleEmitter", noz); flame.Color = ColorSequence.new(Color3.fromRGB(255,160,30), Color3.fromRGB(255,40,20)); flame.Texture = "rbxasset://textures/particles/fire_main.dds"; flame.Rate = 90; flame.Lifetime = NumberRange.new(0.3,0.6); flame.Speed = NumberRange.new(20,34); flame.SpreadAngle = Vector2.new(10,10)
+    local smoke = Instance.new("ParticleEmitter", noz); smoke.Color = ColorSequence.new(Color3.fromRGB(120,120,120)); smoke.Texture = "rbxasset://textures/particles/smoke_main.dds"; smoke.Rate = 30; smoke.Lifetime = NumberRange.new(0.6,1.0); smoke.Speed = NumberRange.new(4,8)
+    local pl = Instance.new("PointLight", noz); pl.Color = Color3.fromRGB(255,140,40); pl.Brightness = 5; pl.Range = 16`;
+    case 'nuclear': return `
+    local core = P("NuclearCore", 1.3,1.3,1.3, Color3.fromRGB(90,255,120)); core.Shape = Enum.PartType.Ball; core.Material = Enum.Material.Neon; core.CFrame = rearCF; mount(core)
+    local rad = Instance.new("ParticleEmitter", core); rad.Color = ColorSequence.new(Color3.fromRGB(120,255,140)); rad.Texture = "rbxasset://textures/particles/sparkles_main.dds"; rad.Rate = 50; rad.Lifetime = NumberRange.new(0.4,0.8); rad.Speed = NumberRange.new(2,6); rad.SpreadAngle = Vector2.new(180,180)
+    local pl = Instance.new("PointLight", core); pl.Color = Color3.fromRGB(90,255,120); pl.Brightness = 6; pl.Range = 18`;
+    case 'propeller': return `
+    local hub = P("PropHub", 0.5,0.5,0.6, Color3.fromRGB(50,50,55), Enum.Material.Metal); hub.CFrame = rearCF * CFrame.new(0, 1.4, 0); mount(hub)
+    for i=0,2 do
+      local blade = P("PropBlade"..i, 0.25,3.4,0.5, Color3.fromRGB(35,35,40), Enum.Material.Metal); blade.CFrame = hub.CFrame * CFrame.Angles(0,0,math.rad(i*120)); mount(blade)
+    end`;
+    default: return '';
+  }
+}
+
+/** Wheel-style VFX (cosmetic only — real wheel geometry is Phase B). */
+function brainrotWheelsLua(wheels: string): string {
+  switch (wheels) {
+    case 'hover': return `
+    local ring = P("HoverRing", bbSize.X*1.05, 0.25, bbSize.Z*1.05, Color3.fromRGB(80,200,255)); ring.Material = Enum.Material.Neon; ring.CFrame = seatCF * (bbLocal * CFrame.new(0, -bbSize.Y/2 + 0.1, 0)); mount(ring)
+    local glow = Instance.new("PointLight", ring); glow.Color = Color3.fromRGB(80,200,255); glow.Brightness = 4; glow.Range = 16
+    local hp = Instance.new("ParticleEmitter", ring); hp.Color = ColorSequence.new(Color3.fromRGB(80,200,255)); hp.Texture = "rbxasset://textures/particles/sparkles_main.dds"; hp.Rate = 40; hp.Lifetime = NumberRange.new(0.3,0.6); hp.Speed = NumberRange.new(1,3); hp.Acceleration = Vector3.new(0,-6,0)`;
+    case 'rocket': return `
+    for _,sx in ipairs({-1,1}) do
+      local jet = P("WheelJet", 0.4,0.4,0.8, Color3.fromRGB(40,40,44), Enum.Material.Metal); jet.CFrame = seatCF * (bbLocal * CFrame.new(sx*bbSize.X*0.42, -bbSize.Y*0.3, bbSize.Z*0.42)); mount(jet)
+      local f = Instance.new("ParticleEmitter", jet); f.Color = ColorSequence.new(Color3.fromRGB(255,160,40), Color3.fromRGB(255,40,20)); f.Texture = "rbxasset://textures/particles/fire_main.dds"; f.Rate = 40; f.Lifetime = NumberRange.new(0.2,0.4); f.Speed = NumberRange.new(8,14)
+    end`;
+    default: return ''; // monster_truck / tank_tracks / tiny: real geometry deferred to Phase B
+  }
+}
+
+/** Ambient effect emitters attached to the chassis (the VehicleSeat). */
+function brainrotEffectsLua(effects: string[]): string {
+  const parts: string[] = [];
+  for (const e of effects) {
+    if (e === 'rainbow') parts.push(`
+    do
+      local a0 = Instance.new("Attachment", seat); a0.Position = Vector3.new(0,0,-2)
+      local a1 = Instance.new("Attachment", seat); a1.Position = Vector3.new(0,0,2)
+      local tr = Instance.new("Trail", seat); tr.Attachment0 = a0; tr.Attachment1 = a1; tr.Lifetime = 0.8; tr.WidthScale = NumberSequence.new(1)
+      tr.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255,0,0)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0,255,0)), ColorSequenceKeypoint.new(1, Color3.fromRGB(0,80,255)) })
+    end`);
+    else if (e === 'fire') parts.push(`
+    do local fp = P("FireFX", 0.5,0.5,0.5, Color3.fromRGB(255,120,30)); fp.Transparency = 1; fp.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2, 0)); mount(fp); local fr = Instance.new("Fire", fp); fr.Size = 8; fr.Heat = 12 end`);
+    else if (e === 'lightning') parts.push(`
+    do
+      local lp = P("BoltFX", 0.5,0.5,0.5, Color3.fromRGB(140,200,255)); lp.Transparency = 1; lp.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 0.5, 0)); mount(lp)
+      local sp = Instance.new("ParticleEmitter", lp); sp.Color = ColorSequence.new(Color3.fromRGB(170,210,255)); sp.Texture = "rbxasset://textures/particles/sparkles_main.dds"; sp.Rate = 30; sp.Lifetime = NumberRange.new(0.1,0.25); sp.Speed = NumberRange.new(6,12); sp.SpreadAngle = Vector2.new(180,180)
+      local pl = Instance.new("PointLight", lp); pl.Color = Color3.fromRGB(150,200,255); task.spawn(function() while lp.Parent do pl.Brightness = math.random(0,6); task.wait(math.random(4,16)/100) end end)
+    end`);
+    else if (e === 'confetti') parts.push(`
+    do
+      local cp = P("ConfettiFX", 0.5,0.5,0.5, Color3.fromRGB(255,255,255)); cp.Transparency = 1; cp.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 1.0, 0)); mount(cp)
+      local em = Instance.new("ParticleEmitter", cp); em.Texture = "rbxasset://textures/particles/sparkles_main.dds"; em.Rate = 50; em.Lifetime = NumberRange.new(1.0,1.6); em.Speed = NumberRange.new(8,14); em.SpreadAngle = Vector2.new(70,70); em.Acceleration = Vector3.new(0,-10,0)
+      em.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255,80,80)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(80,255,120)), ColorSequenceKeypoint.new(1, Color3.fromRGB(120,120,255)) })
+    end`);
+    else if (e === 'sparkles') parts.push(`
+    do local spp = P("SparkleFX", 0.5,0.5,0.5, Color3.fromRGB(255,255,200)); spp.Transparency = 1; spp.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2, 0)); mount(spp); local s = Instance.new("Sparkles", spp); s.SparkleColor = Color3.fromRGB(255,240,140) end`);
+    else if (e === 'smoke') parts.push(`
+    do local smp = P("SmokeFX", 0.5,0.5,0.5, Color3.fromRGB(120,120,120)); smp.Transparency = 1; smp.CFrame = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2, 0)); mount(smp); local sm = Instance.new("Smoke", smp); sm.Size = 6; sm.Opacity = 0.5; sm.RiseVelocity = 4 end`);
+  }
+  return parts.join('\n');
+}
+
+/** Build the full brainrot extras Lua block. Cosmetic-only; safe vs drivetrain.
+ *  Runs in the loader after `vehicleModel` is in workspace. */
+export function buildBrainrotLuaBlock(args: {
+  head: string;
+  engine: string;
+  wheels: string;
+  effects: string[];
+  sizeMultiplier: number;
+}): string {
+  const sm = Math.max(1, Math.min(5, args.sizeMultiplier || 1));
+  const headScale = (1 + (sm - 1) * 0.25).toFixed(2); // 1.0 .. 2.0
+  const headBuilder = BRAINROT_HEAD_BUILDERS[args.head] ?? '';
+  const engineLua = brainrotEngineLua(args.engine);
+  const wheelsLua = brainrotWheelsLua(args.wheels);
+  const effectsLua = brainrotEffectsLua(args.effects);
+  if (!headBuilder && !engineLua && !wheelsLua && !effectsLua) return '';
+  return `
+-- [brainrot extras: head=${args.head || 'none'} engine=${args.engine} wheels=${args.wheels} fx=${args.effects.join('+') || 'none'}]
+do
+${PROLOGUE_LUA}
+  local S = ${headScale}
+  local function P(name, sx, sy, sz, color, mat)
+    local p = Instance.new("Part")
+    p.Name = name
+    p.Size = Vector3.new(sx, sy, sz)
+    p.Color = color
+    p.Material = mat or Enum.Material.SmoothPlastic
+    return p
+  end
+  -- head sits on the hood/front-top; engine at the rear-top
+  local headCF = seatCF * (bbLocal * CFrame.new(0, bbSize.Y/2 + 1.0*S, -bbSize.Z*0.34))
+  local rearCF = seatCF * (bbLocal * CFrame.new(0, bbSize.Y*0.1, bbSize.Z*0.52))
+${headBuilder}
+${engineLua}
+${wheelsLua}
+${effectsLua}
+end`.trim();
+}

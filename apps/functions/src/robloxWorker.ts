@@ -2210,6 +2210,13 @@ function buildVehicleModelManifest(
   const silver = color3(0.82, 0.84, 0.86);
   const repairBoost = metadata.repairMode === 'vehicle_quality_review_retry'
     || (typeof metadata.vehicleQualityAttempt === 'number' && metadata.vehicleQualityAttempt > 1);
+  // Session 425 — user-owned mesh body via runtime LoadAsset (per-user OAuth
+  // world). When set, a VehicleBodyLoader script loads + welds the asset as the
+  // body, and the procedural body is skipped.
+  const vehicleBodyLoadAssetIdRaw = metadata.vehicleBodyLoadAssetId;
+  const vehicleBodyLoadAssetId = typeof vehicleBodyLoadAssetIdRaw === 'number' && vehicleBodyLoadAssetIdRaw > 0
+    ? vehicleBodyLoadAssetIdRaw
+    : (typeof vehicleBodyLoadAssetIdRaw === 'string' && /^\d+$/.test(vehicleBodyLoadAssetIdRaw) ? parseInt(vehicleBodyLoadAssetIdRaw, 10) : 0);
   const scene: RobloxBuildSceneNode[] = [];
   const folders = {
     config: uuidv4(),
@@ -2583,8 +2590,21 @@ function buildVehicleModelManifest(
     // dropped because the LLM repeatedly emitted flat boxes that overrode
     // the proper baseline. Marker is added unconditionally so downstream
     // QA can detect "LLM contributed accents".
-    addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass, silver, repairBoost });
-    if (vehicleScene) {
+    // Session 425 — brainrot "кузов = объект": when a novelty body type is set,
+    // build it from primitives INSTEAD of the sedan baseline. Wheels/seat/
+    // controller still weld to ChassisRoot below → stays drivable.
+    const noveltyBodyType = typeof metadata.vehicleNoveltyBodyType === 'string' && metadata.vehicleNoveltyBodyType.length > 0
+      ? metadata.vehicleNoveltyBodyType
+      : undefined;
+    const noveltyEmitted = (!vehicleBodyLoadAssetId && noveltyBodyType)
+      ? addNoveltyBodyShell(noveltyBodyType, { addBodyPart, width, height, length, rootY, primary, accent, dark, glass, silver })
+      : false;
+    // Session 425 — when a user-owned mesh asset id is provided, the runtime
+    // VehicleBodyLoader script supplies the body; skip the procedural body.
+    if (!vehicleBodyLoadAssetId && !noveltyEmitted) {
+      addVehicleBodyShell(vehicleType, profile, { addBodyPart, width, height, length, rootY, primary, accent, glow, dark, glass, silver, repairBoost });
+    }
+    if (vehicleScene && !noveltyEmitted && !vehicleBodyLoadAssetId) {
       const ACCENT_ROLES = new Set(['trim', 'spoiler', 'mirror', 'headlight', 'taillight']);
       for (const p of vehicleScene.parts) {
         if (typeof p.role !== 'string' || !ACCENT_ROLES.has(p.role)) continue;
@@ -2696,6 +2716,47 @@ function buildVehicleModelManifest(
       container: 'WorkspaceRoot',
       source: buildVehicleControllerScript(),
     });
+    // Session 425 — user-owned mesh body: a runtime loader pulls the asset
+    // (LoadAsset works for the owner) and welds it on as the body.
+    if (vehicleBodyLoadAssetId) {
+      builtScripts.push({
+        id: uuidv4(),
+        name: 'VehicleBodyLoader',
+        scriptType: 'Script',
+        container: 'WorkspaceRoot',
+        source: buildVehicleBodyLoadAssetScript({ assetId: vehicleBodyLoadAssetId }),
+      });
+    }
+    // Session 425 — the modular/brainrot injector (VehicleBootstrapper) was
+    // previously only emitted on the template-embed path below. Brainrot
+    // vehicles use the PROCEDURAL path, and their head/engine/effects live in
+    // metadata.vehicleAddonsLuaBlock — so the bootstrapper must run here too.
+    // The bootstrapper finds the vehicle by VehicleSeat (works without a
+    // template). We pass ONLY the addons block; the base modular tuning patches
+    // VehicleSeat.MaxSpeed/SpringConstraints which would fight our procedural
+    // VehicleController (session 397 shake bug), so it's intentionally skipped.
+    const procAddonsLua = typeof metadata.vehicleAddonsLuaBlock === 'string'
+      ? metadata.vehicleAddonsLuaBlock : '';
+    if (procAddonsLua.trim().length > 0) {
+      const procWrapperName = typeof metadata.vehicleBrainrotName === 'string' && metadata.vehicleBrainrotName.length > 0
+        ? metadata.vehicleBrainrotName
+        : title;
+      const procBootstrap = buildVehicleBootstrapperScript({
+        vehicleWrapperName: procWrapperName,
+        addonsLuaBlock: procAddonsLua,
+        tuningLuaBlock: '',
+        styleLuaBlock: '',
+      });
+      if (procBootstrap.length > 0) {
+        builtScripts.push({
+          id: uuidv4(),
+          name: 'VehicleBootstrapper',
+          scriptType: 'Script',
+          container: 'WorkspaceRoot',
+          source: procBootstrap,
+        });
+      }
+    }
   }
   const embeddedModels: RobloxBuildManifest['embeddedModels'] = [];
   // Round 20L v15-fix4: gate on bytes presence, not assetId. Phenom 100
@@ -2895,6 +2956,83 @@ function defaultVehiclePalette(type: VehicleModelType): {
     case 'car':
     default:
       return { primary: { r: 0.88, g: 0.10, b: 0.12 }, accent: { r: 0.04, g: 0.045, b: 0.05 }, glow: { r: 0.15, g: 0.75, b: 1.0 } };
+  }
+}
+
+// Session 425 — Brainrot "кузов = объект". Builds a recognizable novelty body
+// (banana/toilet/fridge/pizza/shopping_cart/duck) from primitives, welded to
+// ChassisRoot via addBodyPart. Replaces the sedan baseline; wheels/seat/
+// controller still weld to ChassisRoot so the vehicle stays drivable. The
+// shell fills the chassis envelope (w×h×l) so wheels line up. Forward = -Z.
+// Returns true if the type was recognized (caller skips the sedan baseline).
+function addNoveltyBodyShell(
+  noveltyType: string,
+  ctx: {
+    addBodyPart: (name: string, size: [number, number, number], pos: [number, number, number], color: Record<string, unknown>, options?: {
+      className?: string; material?: string; shape?: 'Block' | 'Cylinder' | 'Ball'; rot?: [number, number, number]; canCollide?: boolean; transparency?: number; massless?: boolean; anchored?: boolean; extra?: Record<string, unknown>;
+    }) => string;
+    width: number; height: number; length: number; rootY: number;
+    primary: Record<string, unknown>; accent: Record<string, unknown>; dark: Record<string, unknown>; glass: Record<string, unknown>; silver: Record<string, unknown>;
+  },
+): boolean {
+  const { addBodyPart, width: w, height: h, length: l, rootY } = ctx;
+  const C = (r: number, g: number, b: number): Record<string, unknown> => color3(r / 255, g / 255, b / 255);
+  switch (noveltyType) {
+    case 'banana': {
+      const y = C(245, 210, 40), tip = C(120, 80, 40);
+      addBodyPart('BananaMid', [w * 0.55, h * 0.62, l * 0.5], [0, rootY + 0.2, 0], y, { material: 'SmoothPlastic' });
+      addBodyPart('BananaFront', [w * 0.5, h * 0.52, l * 0.32], [0, rootY + 0.0, -l * 0.36], y, { material: 'SmoothPlastic' });
+      addBodyPart('BananaRear', [w * 0.5, h * 0.52, l * 0.32], [0, rootY + 0.0, l * 0.36], y, { material: 'SmoothPlastic' });
+      addBodyPart('BananaTipFront', [w * 0.3, h * 0.34, l * 0.14], [0, rootY - 0.12, -l * 0.54], tip, { material: 'SmoothPlastic' });
+      addBodyPart('BananaTipRear', [w * 0.3, h * 0.34, l * 0.14], [0, rootY - 0.12, l * 0.54], tip, { material: 'SmoothPlastic' });
+      return true;
+    }
+    case 'toilet': {
+      const white = C(245, 248, 250), seatC = C(228, 231, 235), water = C(120, 190, 235);
+      addBodyPart('ToiletBowl', [w * 0.62, h * 0.6, l * 0.55], [0, rootY, -l * 0.06], white, { material: 'SmoothPlastic' });
+      addBodyPart('ToiletWater', [w * 0.42, 0.12, l * 0.36], [0, rootY + h * 0.28, -l * 0.06], water, { material: 'Glass', transparency: 0.2 });
+      addBodyPart('ToiletSeat', [w * 0.66, h * 0.12, l * 0.6], [0, rootY + h * 0.32, -l * 0.05], seatC, { material: 'SmoothPlastic' });
+      addBodyPart('ToiletTank', [w * 0.6, h * 0.72, l * 0.22], [0, rootY + h * 0.28, l * 0.4], white, { material: 'SmoothPlastic' });
+      addBodyPart('ToiletLid', [w * 0.6, h * 0.12, l * 0.5], [0, rootY + h * 0.5, l * 0.05], white, { material: 'SmoothPlastic', rot: [-22, 0, 0] });
+      return true;
+    }
+    case 'fridge': {
+      const fw = C(235, 238, 242), line = C(180, 185, 190), handle = C(150, 155, 160);
+      addBodyPart('FridgeBody', [w * 0.72, h * 1.35, l * 0.72], [0, rootY + h * 0.42, 0], fw, { material: 'SmoothPlastic' });
+      addBodyPart('FridgeDoorLine', [w * 0.74, 0.12, l * 0.06], [0, rootY + h * 0.62, -l * 0.36], line, { material: 'Metal' });
+      addBodyPart('FridgeHandleMain', [0.18, h * 0.55, 0.18], [w * 0.28, rootY + h * 0.45, -l * 0.37], handle, { material: 'Metal' });
+      addBodyPart('FridgeHandleFreezer', [0.18, h * 0.28, 0.18], [w * 0.28, rootY + h * 0.95, -l * 0.37], handle, { material: 'Metal' });
+      return true;
+    }
+    case 'pizza': {
+      const crust = C(220, 170, 90), sauce = C(205, 60, 40), pep = C(150, 30, 25);
+      addBodyPart('PizzaBase', [w * 0.95, h * 0.18, l * 0.95], [0, rootY, 0], crust, { material: 'SmoothPlastic' });
+      addBodyPart('PizzaSauce', [w * 0.82, 0.12, l * 0.82], [0, rootY + h * 0.12, 0], sauce, { material: 'SmoothPlastic' });
+      addBodyPart('Pep1', [0.6, 0.12, 0.6], [w * 0.2, rootY + h * 0.18, l * 0.18], pep, { material: 'SmoothPlastic' });
+      addBodyPart('Pep2', [0.6, 0.12, 0.6], [-w * 0.22, rootY + h * 0.18, -l * 0.1], pep, { material: 'SmoothPlastic' });
+      addBodyPart('Pep3', [0.6, 0.12, 0.6], [w * 0.05, rootY + h * 0.18, -l * 0.28], pep, { material: 'SmoothPlastic' });
+      return true;
+    }
+    case 'shopping_cart': {
+      const metal = C(195, 200, 206), red = C(220, 60, 60);
+      addBodyPart('CartBasket', [w * 0.72, h * 0.72, l * 0.82], [0, rootY + h * 0.12, 0], metal, { material: 'DiamondPlate' });
+      addBodyPart('CartFront', [w * 0.72, h * 0.55, 0.12], [0, rootY + h * 0.05, -l * 0.4], metal, { material: 'DiamondPlate', rot: [18, 0, 0] });
+      addBodyPart('CartHandle', [w * 0.74, 0.16, 0.16], [0, rootY + h * 0.52, l * 0.42], red, { material: 'SmoothPlastic' });
+      return true;
+    }
+    case 'duck': {
+      const dy = C(245, 215, 50), beak = C(240, 150, 20), eye = C(15, 15, 15);
+      addBodyPart('DuckBody', [w * 0.72, h * 0.72, l * 0.7], [0, rootY + 0.1, l * 0.05], dy, { material: 'SmoothPlastic' });
+      addBodyPart('DuckTail', [w * 0.42, h * 0.4, l * 0.22], [0, rootY + h * 0.32, l * 0.42], dy, { material: 'SmoothPlastic', rot: [28, 0, 0] });
+      addBodyPart('DuckNeck', [w * 0.32, h * 0.6, l * 0.3], [0, rootY + h * 0.5, -l * 0.3], dy, { material: 'SmoothPlastic' });
+      addBodyPart('DuckHead', [w * 0.44, h * 0.5, l * 0.42], [0, rootY + h * 0.85, -l * 0.42], dy, { shape: 'Ball', material: 'SmoothPlastic' });
+      addBodyPart('DuckBeak', [w * 0.26, h * 0.18, l * 0.26], [0, rootY + h * 0.8, -l * 0.6], beak, { material: 'SmoothPlastic' });
+      addBodyPart('DuckEyeL', [0.18, 0.18, 0.18], [-w * 0.14, rootY + h * 0.96, -l * 0.5], eye, { shape: 'Ball', material: 'SmoothPlastic' });
+      addBodyPart('DuckEyeR', [0.18, 0.18, 0.18], [w * 0.14, rootY + h * 0.96, -l * 0.5], eye, { shape: 'Ball', material: 'SmoothPlastic' });
+      return true;
+    }
+    default:
+      return false;
   }
 }
 
@@ -4014,6 +4152,117 @@ print("[VehicleTemplateLoader] Done — wrapper destroyed, template now lives at
  *
  * Skipped entirely when all 3 blocks are empty (non-modular path).
  */
+// Session 425 — VehicleBodyLoader. Loads a user-owned mesh/model asset at
+// runtime (InsertService:LoadAsset — works in the owner's Studio/place) and
+// welds it onto the chassis as the visual body. Pure-visual (CanCollide=false,
+// Massless) so drivability is unaffected. All risky steps pcall-guarded so a
+// load failure leaves a drivable (bodyless) car rather than erroring.
+function buildVehicleBodyLoadAssetScript(args: { assetId: number }): string {
+  const assetId = Math.floor(args.assetId);
+  return `
+-- VehicleBodyLoader (session 425) — diagnostic build
+local InsertService = game:GetService("InsertService")
+local ASSET_ID = ${assetId}
+
+local function hasSeat(m) return m:IsA("Model") and m:FindFirstChildWhichIsA("VehicleSeat", true) ~= nil end
+local function findVehicle()
+\tlocal up = script.Parent
+\twhile up do if hasSeat(up) then return up end; up = up.Parent end
+\tfor _, c in workspace:GetChildren() do if hasSeat(c) then return c end end
+\treturn nil
+end
+
+task.wait(0.5)
+local vehicleModel = findVehicle()
+if not vehicleModel then warn("[BodyLoader] no vehicle (VehicleSeat) found"); return end
+local seat = vehicleModel:FindFirstChildWhichIsA("VehicleSeat", true)
+local bbCF, bbSize = vehicleModel:GetBoundingBox()
+print("[BodyLoader] vehicle=", vehicleModel.Name, " chassis size=", bbSize, " center=", bbCF.Position)
+
+local ok, container = pcall(function() return InsertService:LoadAsset(ASSET_ID) end)
+if not ok or not container then warn("[BodyLoader] LoadAsset FAILED:", tostring(container)); return end
+local asset = container:GetChildren()[1]
+if not asset then warn("[BodyLoader] asset empty"); container:Destroy(); return end
+print("[BodyLoader] loaded child=", asset.ClassName, asset.Name)
+
+local bodyModel
+if asset:IsA("Model") then
+\tasset.Parent = vehicleModel
+\tbodyModel = asset
+else
+\tbodyModel = Instance.new("Model")
+\tasset.Parent = bodyModel
+\tif asset:IsA("BasePart") then bodyModel.PrimaryPart = asset end
+\tbodyModel.Parent = vehicleModel
+end
+container:Destroy()
+
+local function bsize() local _, s = bodyModel:GetBoundingBox(); return s end
+local function bcenter() local c = bodyModel:GetBoundingBox(); return c.Position end
+print("[BodyLoader] bodyModel=", bodyModel.ClassName, " raw size=", bsize())
+
+-- Canonicalize FIRST (on the raw mesh). Includes 45° de-skew options because
+-- meshes are often authored DIAGONALLY (bbox big on two axes). Pick the rotation
+-- that makes the box most "long + thin", longest extent along Z (car length),
+-- shortest pointing up (Y).
+pcall(function()
+\tlocal origPivot = bodyModel:GetPivot()
+\tlocal base = { CFrame.new(), CFrame.Angles(0, 0, math.rad(45)), CFrame.Angles(0, 0, math.rad(-45)) }
+\tlocal swaps = { CFrame.new(), CFrame.Angles(0, math.rad(90), 0), CFrame.Angles(math.rad(90), 0, 0), CFrame.Angles(0, 0, math.rad(90)) }
+\tlocal cands = {}
+\tfor _, b in base do for _, sw in swaps do table.insert(cands, sw * b) end end
+\tlocal bestRot, bestScore, bestIdx = CFrame.new(), -1, 0
+\tfor i, r in cands do
+\t\tbodyModel:PivotTo(origPivot * r)
+\t\tlocal s = bsize()
+\t\tlocal mx = math.max(s.X, s.Y, s.Z)
+\t\tlocal mn = math.min(s.X, s.Y, s.Z)
+\t\tlocal score = (mx / math.max(mn, 0.01)) * 0.05
+\t\tif s.Z >= mx - 0.001 then score = score + 2 end
+\t\tif s.Y <= mn + 0.001 then score = score + 1 end
+\t\tif score > bestScore then bestScore = score; bestRot = r; bestIdx = i end
+\tend
+\tbodyModel:PivotTo(origPivot * bestRot)
+\tprint("[BodyLoader] canon #", bestIdx, " score=", string.format("%.2f", bestScore), " -> size=", bsize())
+end)
+
+-- scale so the (now lengthwise) longest axis ≈ chassis length
+do
+\tlocal s = bsize()
+\tlocal maxDim = math.max(s.X, s.Y, s.Z, 0.01)
+\tlocal factor = (math.max(bbSize.X, bbSize.Z) * 1.0) / maxDim
+\tpcall(function() bodyModel:ScaleTo(factor) end)
+\tprint("[BodyLoader] scaled x", string.format("%.3f", factor), " -> size=", bsize())
+end
+
+-- place: centre X/Z on the chassis, sit just above the chassis centre (small
+-- lift vs the now-modest height → no sinking, no floating).
+do
+\tlocal s = bsize()
+\tlocal targetPos = Vector3.new(bbCF.Position.X, bbCF.Position.Y + s.Y * 0.25, bbCF.Position.Z)
+\tlocal cur = bcenter()
+\tpcall(function() bodyModel:PivotTo(bodyModel:GetPivot() + (targetPos - cur)) end)
+\tprint("[BodyLoader] placed center=", bcenter())
+end
+
+-- weld every part to the seat as a pure visual shell
+local welded = 0
+for _, p in bodyModel:GetDescendants() do
+\tif p:IsA("BasePart") then
+\t\tp.Anchored = false; p.CanCollide = false; p.Massless = true
+\t\tlocal w = Instance.new("WeldConstraint"); w.Part0 = p; w.Part1 = seat; w.Parent = p
+\t\twelded = welded + 1
+\tend
+end
+if bodyModel:IsA("BasePart") then
+\tbodyModel.Anchored = false; bodyModel.CanCollide = false; bodyModel.Massless = true
+\tlocal w = Instance.new("WeldConstraint"); w.Part0 = bodyModel; w.Part1 = seat; w.Parent = bodyModel
+\twelded = welded + 1
+end
+print("[BodyLoader] DONE — welded", welded, "parts")
+`;
+}
+
 function buildVehicleBootstrapperScript(args: {
   vehicleWrapperName: string;
   addonsLuaBlock: string;

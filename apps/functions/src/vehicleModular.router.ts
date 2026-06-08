@@ -9,11 +9,17 @@
 import { logger } from 'firebase-functions/v2';
 import { defineSecret } from 'firebase-functions/params';
 import type {
+  BrainrotSlots,
+  BrainrotEffectId,
+  BrainrotEngineStyle,
+  BrainrotSoundId,
+  BrainrotWheelStyle,
   VehicleAddonId,
   VehicleConfig,
   VehiclePresetId,
   VehicleStyleId,
 } from './vehicleModular.types.js';
+import { BRAINROT_PROCEDURAL_BODIES, BRAINROT_PROCEDURAL_HEADS } from './vehicleModular.types.js';
 import { VEHICLE_PRESETS, addonsForPreset, VEHICLE_ADDONS } from './vehicleModular.library.js';
 import { pickVehicleTemplate } from './vehicleTemplateRouter.js';
 
@@ -246,6 +252,145 @@ export async function routeVehicleConfig(args: {
       error: err instanceof Error ? err.message : String(err),
     });
     return fallbackConfig({ prompt: promptText, title });
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Session 425 — Brainrot slot router (Variant 3).
+//
+// When the prompt reads as absurd/brainrot/meme, this produces a BrainrotSlots
+// JSON (body/head/wheels/engine/effects/sound + chaos/brainrot levels). body &
+// head are free keywords (Tier-1 procedural if known, else Tier-2 Meshy-cache
+// in Phase B). wheels/engine/effects/sound are strict enums — always Tier-1.
+// ───────────────────────────────────────────────────────────────────────────
+
+const BRAINROT_WHEELS: ReadonlyArray<BrainrotWheelStyle> = ['normal', 'monster_truck', 'tiny', 'tank_tracks', 'hover', 'rocket'];
+const BRAINROT_ENGINES: ReadonlyArray<BrainrotEngineStyle> = ['normal', 'jet', 'rocket', 'nuclear', 'propeller'];
+const BRAINROT_EFFECTS: ReadonlyArray<BrainrotEffectId> = ['rainbow', 'fire', 'lightning', 'confetti', 'sparkles', 'smoke'];
+const BRAINROT_SOUNDS: ReadonlyArray<BrainrotSoundId> = ['phonk', 'brainrot', 'meme_horn', 'epic', 'chaos'];
+const BRAINROT_BODY_MENU: ReadonlyArray<string> = ['car', ...BRAINROT_PROCEDURAL_BODIES];
+const BRAINROT_HEAD_MENU: ReadonlyArray<string> = ['', ...BRAINROT_PROCEDURAL_HEADS];
+
+/** Heuristic: does the user want an absurd / brainrot / meme vehicle?
+ *  No \b (doesn't work across Cyrillic) — distinctive substrings only. */
+export function isBrainrotIntent(prompt: string, title?: string): boolean {
+  const lc = `${prompt} ${title ?? ''}`.toLowerCase();
+  return /(brain ?rot|brainrot|мем|meme|absurd|абсурд|funny|смешн|весёл|весел|viral|вирус|tiktok|тикток|тик ?ток|skibidi|скибиди|sigma|сигма|rizz|gyatt|ohio|chaos|хаос|рандомн|cursed|проклят|tralalero|bombardiro|tung ?tung|капибар|capybara)/.test(lc);
+}
+
+function buildBrainrotPrompt(args: { userPrompt: string; title: string }): string {
+  return `You are a Roblox TikTok Brainrot vehicle generator. Turn the user's idea into ONE absurd, funny, viral, DRIVABLE vehicle.
+
+Rules:
+- Return ONLY valid JSON. No markdown, no explanation.
+- Make combinations funny and unexpected. Prioritize memes, animals, food, household objects, internet culture.
+- Avoid realistic/boring designs.
+
+USER PROMPT: "${args.userPrompt}"
+USER TITLE: "${args.title || '(none)'}"
+
+Allowed slot values (use EXACTLY these strings; lowercase):
+- body: ${JSON.stringify([...BRAINROT_BODY_MENU])} — OR any other single funny object noun ("washing_machine"). "car" = plain chassis, no novelty shell.
+- head: ${JSON.stringify([...BRAINROT_HEAD_MENU])} — OR any other single animal/meme noun. "" = no head.
+- wheels: ${JSON.stringify([...BRAINROT_WHEELS])}
+- engine: ${JSON.stringify([...BRAINROT_ENGINES])}
+- effects: subset (0-4) of ${JSON.stringify([...BRAINROT_EFFECTS])}
+- sound: one of ${JSON.stringify([...BRAINROT_SOUNDS])}
+
+OUTPUT — JSON only:
+{
+  "vehicle_name": "<short viral name, <=40 chars>",
+  "body": "<body>",
+  "head": "<head or empty>",
+  "wheels": "<wheels>",
+  "engine": "<engine>",
+  "effects": ["<effect>", ...],
+  "sound": "<sound>",
+  "size_multiplier": <1-5>,
+  "chaos_level": <1-10>,
+  "brainrot_level": <1-10>
+}`;
+}
+
+function sanitizeEnumSlot<T extends string>(v: unknown, allowed: ReadonlyArray<T>, fallback: T): T {
+  return typeof v === 'string' && (allowed as ReadonlyArray<string>).includes(v) ? (v as T) : fallback;
+}
+
+/** Lowercase, strip junk, snake_case, cap length. For free body/head keywords. */
+function sanitizeKeyword(v: unknown, fallback: string): string {
+  if (typeof v !== 'string') return fallback;
+  const k = v.toLowerCase().replace(/[^a-z0-9_ ]/g, '').trim().replace(/\s+/g, '_').slice(0, 32);
+  return k || fallback;
+}
+
+function sanitizeBrainrotSlots(raw: unknown): BrainrotSlots {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const effects: BrainrotEffectId[] = [];
+  for (const e of (Array.isArray(o.effects) ? o.effects : [])) {
+    if (typeof e !== 'string' || !(BRAINROT_EFFECTS as ReadonlyArray<string>).includes(e)) continue;
+    const eid = e as BrainrotEffectId;
+    if (!effects.includes(eid)) effects.push(eid);
+    if (effects.length >= 4) break;
+  }
+  const headRaw = typeof o.head === 'string' ? o.head : '';
+  return {
+    vehicleName: typeof o.vehicle_name === 'string' && o.vehicle_name.trim().length > 0
+      ? o.vehicle_name.slice(0, 40) : 'Brainrot Machine',
+    body: sanitizeKeyword(o.body, 'banana'),
+    head: headRaw.trim() === '' ? '' : sanitizeKeyword(headRaw, 'capybara'),
+    wheels: sanitizeEnumSlot(o.wheels, BRAINROT_WHEELS, 'monster_truck'),
+    engine: sanitizeEnumSlot(o.engine, BRAINROT_ENGINES, 'jet'),
+    effects: effects.length > 0 ? effects : ['rainbow'],
+    sound: sanitizeEnumSlot(o.sound, BRAINROT_SOUNDS, 'phonk'),
+    sizeMultiplier: clamp(o.size_multiplier, 1, 5, 2),
+    chaosLevel: Math.round(clamp(o.chaos_level, 1, 10, 7)),
+    brainrotLevel: Math.round(clamp(o.brainrot_level, 1, 10, 8)),
+  };
+}
+
+/** Deterministic fallback when Gemini is unavailable: keyword-match the menus. */
+function fallbackBrainrotSlots(prompt: string): BrainrotSlots {
+  const lc = prompt.toLowerCase();
+  const pick = (menu: ReadonlyArray<string>, fallback: string): string => {
+    for (const m of menu) { if (m && lc.includes(m.replace(/_/g, ' '))) return m; }
+    return fallback;
+  };
+  return {
+    vehicleName: 'Brainrot Machine',
+    body: pick(BRAINROT_PROCEDURAL_BODIES, 'banana'),
+    head: pick(BRAINROT_PROCEDURAL_HEADS, 'capybara'),
+    wheels: 'monster_truck', engine: 'jet',
+    effects: ['rainbow', 'confetti'], sound: 'phonk',
+    sizeMultiplier: 2, chaosLevel: 8, brainrotLevel: 9,
+  };
+}
+
+/** Main brainrot slot router — Gemini Flash with deterministic fallback. */
+export async function routeBrainrotSlots(args: { prompt: string; title?: string }): Promise<BrainrotSlots> {
+  const prompt = args.prompt ?? '';
+  const title = args.title ?? '';
+  if (!prompt.trim()) return fallbackBrainrotSlots('');
+  try {
+    const rawJson = await callGeminiForConfig(buildBrainrotPrompt({ userPrompt: prompt, title }));
+    let parsed: unknown;
+    try { parsed = JSON.parse(rawJson); }
+    catch {
+      const s = rawJson.indexOf('{');
+      const e = rawJson.lastIndexOf('}');
+      if (s >= 0 && e > s) parsed = JSON.parse(rawJson.slice(s, e + 1));
+      else throw new Error('no JSON object in response');
+    }
+    const slots = sanitizeBrainrotSlots(parsed);
+    logger.info('[BrainrotRouter] Gemini slots OK', {
+      body: slots.body, head: slots.head, wheels: slots.wheels,
+      engine: slots.engine, effects: slots.effects.length,
+    });
+    return slots;
+  } catch (err) {
+    logger.warn('[BrainrotRouter] Gemini failed — deterministic fallback', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return fallbackBrainrotSlots(prompt);
   }
 }
 
