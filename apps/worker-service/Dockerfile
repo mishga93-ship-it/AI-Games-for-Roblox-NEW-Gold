@@ -13,7 +13,13 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # ── Lune CLI ──────────────────────────────────────────────────────────
-RUN curl -L "https://github.com/lune-org/lune/releases/download/v0.10.4/lune-0.10.4-linux-x86_64.zip" -o /tmp/lune.zip \
+# Harden the download: -f fails on HTTP errors (so a garbage/redirect body is
+# never written), --retry survives transient GitHub release-assets hiccups, and
+# `unzip -t` validates the archive before extracting (previously a flaky 92-byte
+# download silently produced a confusing "cannot find zipfile directory" error).
+RUN curl -fSL --retry 5 --retry-delay 3 --retry-all-errors \
+      "https://github.com/lune-org/lune/releases/download/v0.10.4/lune-0.10.4-linux-x86_64.zip" -o /tmp/lune.zip \
+  && unzip -t /tmp/lune.zip >/dev/null \
   && unzip /tmp/lune.zip -d /usr/local/bin \
   && chmod +x /usr/local/bin/lune \
   && rm /tmp/lune.zip
