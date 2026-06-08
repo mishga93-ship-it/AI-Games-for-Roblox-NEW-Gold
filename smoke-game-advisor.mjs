@@ -155,5 +155,25 @@ if (intOk) {
   }
 }
 
+// ── generation manifest self-check (changelog-432) ──────────────────────────
+console.log('=== generation manifest self-check ===');
+const bareManifest = {
+  scene: [{ className: 'SpawnLocation', name: 'Spawn' }, { className: 'Part', name: 'Lava' }],
+  scripts: [{ scriptType: 'Script', name: 'Kill', source: 'x.Humanoid.Health = 0' }],
+};
+const richManifest = {
+  scene: [{ className: 'SpawnLocation', name: 'Spawn' }, { className: 'Part', name: 'Floor' }],
+  scripts: [{ scriptType: 'Script', name: 'Econ', source: "local DSS = game:GetService('DataStoreService')\nlocal mps = game:GetService('MarketplaceService')\n-- leaderstats\nmps.ProcessReceipt = function(i) end" }],
+};
+const qaBare = A.qaCheckGeneratedManifest(bareManifest);
+const qaRich = A.qaCheckGeneratedManifest(richManifest);
+check('manifest summarize: bare has spawn', qaBare.signals.hasSpawnLocation === true);
+check('manifest QA: bare flags high data-persistence + monetization',
+  qaBare.issues.some((i) => i.severity === 'high' && /persist|datastore/i.test(i.title + i.detail)) &&
+  qaBare.issues.some((i) => i.severity === 'high' && i.category === 'monetization'));
+check('manifest QA: rich detects datastore + marketplace', qaRich.signals.hasDataStore && qaRich.signals.hasMarketplace);
+check('manifest QA: rich has NO high monetization-surface issue',
+  !qaRich.issues.some((i) => i.severity === 'high' && i.category === 'monetization'));
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAIL`);
 process.exit(fails === 0 ? 0 : 1);

@@ -508,3 +508,40 @@ export function parseMonetizationResponse(raw: string): MonetizationPlan {
     : [];
   return { items, notes };
 }
+
+// ── Generation self-check (Release 4 / changelog-432) ────────────────────────
+// Adapter so the SAME heuristics can review a freshly-built generation manifest
+// (RobloxBuildManifest-shaped). Used by an optional, flag-gated, log-only
+// self-check in the generation pipeline to surface retention/economy/
+// monetization gaps WITHOUT changing export output.
+export interface BuildManifestLike {
+  scene?: Array<{ className?: string; name?: string }>;
+  scripts?: Array<{ name?: string; scriptType?: string; source?: string; content?: string; lua?: string }>;
+}
+
+export function summarizeManifestStructure(manifest: BuildManifestLike): GameStructureSummary {
+  const classCounts: Record<string, number> = {};
+  const tree: AnalyzedInstance[] = [];
+  for (const node of manifest.scene ?? []) {
+    const cn = node.className ?? 'Instance';
+    classCounts[cn] = (classCounts[cn] ?? 0) + 1;
+    tree.push({ className: cn, name: node.name });
+  }
+  for (const s of manifest.scripts ?? []) {
+    const cn = s.scriptType ?? 'Script';
+    classCounts[cn] = (classCounts[cn] ?? 0) + 1;
+    tree.push({ className: cn, name: s.name, source: s.source ?? s.content ?? s.lua });
+  }
+  return summarizeGameStructure({ classCounts, tree, totalInstances: tree.length });
+}
+
+export interface GameQAReport {
+  signals: GameStructureSignals;
+  issues: Suggestion[];
+}
+
+/** Reuse the analyst heuristics to review a just-built generation manifest. */
+export function qaCheckGeneratedManifest(manifest: BuildManifestLike): GameQAReport {
+  const summary = summarizeManifestStructure(manifest);
+  return { signals: summary.signals, issues: analyzeGameHeuristics(summary) };
+}

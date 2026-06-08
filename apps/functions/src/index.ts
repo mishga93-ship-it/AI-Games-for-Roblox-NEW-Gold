@@ -236,7 +236,7 @@ import {
   type EditTarget,
   type EditServiceDeps,
 } from './robloxEditService.js';
-import { listStarterTemplates } from './gameAdvisor.js';
+import { listStarterTemplates, qaCheckGeneratedManifest } from './gameAdvisor.js';
 import { exchangeRobloxCode, disconnectRoblox, getRobloxUserToken } from './robloxOAuth.js';
 import { extractMeshIdFromModel } from './extractMeshIdFromModel.js';
 import {
@@ -30712,6 +30712,26 @@ async function processCharacter3DJob(jobId: string, job: GenerationJob, resumePh
         metadata: manifestMetadata,
         criteria: acceptanceCriteria,
       });
+      // Optional generation self-check (changelog-432): flag-gated, log-only.
+      // Surfaces retention/economy/monetization gaps in the built manifest via
+      // the gameAdvisor heuristics (complements the visual/marker acceptance gate
+      // above). Default OFF — never alters export output or blocks the job.
+      if (process.env.GENERATION_QA_SELFCHECK === '1') {
+        try {
+          const genQa = qaCheckGeneratedManifest(manifest);
+          if (genQa.issues.length > 0) {
+            logger.info('[GenerationQA] self-check findings', {
+              jobId,
+              issues: genQa.issues.map((i) => `[${i.severity}/${i.category}] ${i.title}`),
+            });
+          }
+        } catch (genQaErr) {
+          logger.warn('[GenerationQA] self-check failed (non-blocking)', {
+            jobId,
+            error: genQaErr instanceof Error ? genQaErr.message : String(genQaErr),
+          });
+        }
+      }
       exportMetadata = {
         ...exportMetadata,
         generationAcceptanceQualityGate: acceptanceQualityGate,
