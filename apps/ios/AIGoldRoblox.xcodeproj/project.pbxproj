@@ -46,6 +46,7 @@
 		B0010003 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010003 /* AppState.swift */; };
 		B0010004 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010004 /* APIClient.swift */; };
 		B0010051 /* RobloxEditAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010051 /* RobloxEditAPIClient.swift */; };
+		B0010052 /* RobloxEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010052 /* RobloxEditView.swift */; };
 		B0010005 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010005 /* AuthService.swift */; };
 		B0010006 /* View+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010006 /* View+Extensions.swift */; };
 		B0010007 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010007 /* Colors.swift */; };
@@ -185,6 +186,7 @@
 		F0010003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		F0010004 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		F0010051 /* RobloxEditAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobloxEditAPIClient.swift; sourceTree = "<group>"; };
+		F0010052 /* RobloxEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobloxEditView.swift; sourceTree = "<group>"; };
 		F0010005 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		F0010006 /* View+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Extensions.swift"; sourceTree = "<group>"; };
 		F0010007 /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
@@ -479,6 +481,7 @@
 			children = (
 				F0010004 /* APIClient.swift */,
 				F0010051 /* RobloxEditAPIClient.swift */,
+				F0010052 /* RobloxEditView.swift */,
 				F0010048 /* AIWorkspaceAPI.swift */,
 			);
 			path = API;
@@ -836,6 +839,7 @@
 				B0010003 /* AppState.swift in Sources */,
 				B0010004 /* APIClient.swift in Sources */,
 				B0010051 /* RobloxEditAPIClient.swift in Sources */,
+				B0010052 /* RobloxEditView.swift in Sources */,
 				B0010047 /* AIWorkspaceAPI.swift in Sources */,
 				B0010005 /* AuthService.swift in Sources */,
 				B00100A0 /* RobloxAuthService.swift in Sources */,

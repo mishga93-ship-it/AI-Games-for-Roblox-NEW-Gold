@@ -130,6 +130,8 @@ struct ForgeView: View {
     @State private var isShowingFittingRoom = false
     // Session 387 — Disaster Spawner.
     @State private var isShowingDisasterSpawner = false
+    // Release 4 — AI Model/Place Editor (Fix category `roblox_edit` tile).
+    @State private var isShowingRobloxEditStudio = false
     // Session 385 round 6 — Recents/Library was a parallel grid for viral
     // generations. Session 391 round 4 — entry UI removed; viral chats now
     // appear in the standard Forge Chat History list (same as every other
@@ -240,6 +242,9 @@ struct ForgeView: View {
         }
         .fullScreenCover(isPresented: $isShowingDisasterSpawner) {
             NavigationStack { DisasterSpawnerStudioView() }
+        }
+        .fullScreenCover(isPresented: $isShowingRobloxEditStudio) {
+            NavigationStack { RobloxEditView() }
         }
         // Session 391 round 4 — ViralLibrary fullScreenCover + toolbar
         // sparkles button removed. Viral chats now appear in the same Forge
@@ -1558,6 +1563,13 @@ private extension ForgeView {
             isShowingTikTokStudio = true
             return
         }
+        // Release 4 — AI Model/Place Editor pivots to its dedicated tool screen
+        // (upload .rbxm/.rbxl → describe → edit), like tiktok_export above.
+        if selectedOption.id == "roblox_edit" {
+            isShowingProjectPicker = false
+            isShowingRobloxEditStudio = true
+            return
+        }
         // Session 395 — Avatar Glow-Up (fake_limited) + 1-Click Outfit Generator
         // (outfit_generator) migrated off their dedicated full-screen pickers
         // (GlowupStudioView / OutfitStudioView) onto the standard ChatView
@@ -1656,6 +1668,15 @@ private extension ForgeView {
                     ? "Загрузи описание игры (📎) или опиши её голосом/текстом — AI разберёт ретеншн, луп, монетизацию, онбординг и предложит конкретные улучшения."
                     : "Upload a game description (📎) or describe it by voice/text — AI audits retention, loop, monetization, onboarding, and suggests concrete improvements.",
                 kind: .analyze,
+                tags: ["new", "ai"]
+            ),
+            ProjectOption(
+                id: "roblox_edit",
+                title: "AI Model / Place Editor",
+                details: isRussianInterface
+                    ? "Загрузи свой .rbxm (модель) или .rbxl (место) и опиши правку — AI отредактирует и вернёт готовый файл (перекрасить, изменить размер, добавить/удалить части)."
+                    : "Upload your .rbxm (model) or .rbxl (place) and describe the change — AI edits it and returns the file (recolor, resize, add/remove parts).",
+                kind: .fix,
                 tags: ["new", "ai"]
             )
         ]
