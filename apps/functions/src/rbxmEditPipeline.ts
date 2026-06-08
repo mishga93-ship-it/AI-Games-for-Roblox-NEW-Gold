@@ -46,6 +46,8 @@ export interface DeepAnalysis {
   tree?: DeepAnalysisNode[];
   classCounts?: Record<string, number>;
   truncated?: { tree?: boolean; source?: boolean };
+  // Phase 2: present when a deep dump was scoped to a subtree of a place.
+  scope?: { kind: string; value: string; matched: number };
 }
 
 // ── Property JSON convention (mirror of build_roblox/apply_edits coercion) ────
@@ -303,4 +305,125 @@ export async function applyEditsViaWorker(args: {
     throw new Error(`apply-edits worker call failed (${resp.status}): ${detail.slice(0, 300)}`);
   }
   return (await resp.json()) as ApplyEditsWorkerResult;
+}
+
+// ── Phase 2 (.rbxl places): outline + scope selection ────────────────────────
+// A whole place is too big for one deep dump, so editing a place is a 2-pass
+// flow: (1) analyze `outline` -> pick a subtree scope (LLM or heuristic);
+// (2) analyze `deep` with that scope -> edit-ops -> apply over the WHOLE place
+// (refs are global, so scoped refs stay valid).
+
+export interface OutlineNode {
+  ref: number;
+  parentRef?: number | null;
+  name: string;
+  className: string;
+  path: string;
+  childCount?: number;
+}
+
+export interface PlaceOutline {
+  target: 'place' | 'model';
+  totalInstances: number;
+  mode?: string;
+  outline?: OutlineNode[];
+  depthCap?: number;
+  classCounts?: Record<string, number>;
+  truncated?: { outline?: boolean };
+}
+
+function depthOfPath(p: string): number {
+  // path "/game/Workspace/Town" -> ['','game','Workspace','Town'] -> depth 2
+  return Math.max(0, p.split('/').length - 2);
+}
+
+/** Indented, ref-prefixed map of the place for the scope-selection pass. */
+export function summarizeOutlineForPrompt(outline: PlaceOutline, opts?: { maxNodes?: number }): string {
+  const maxNodes = opts?.maxNodes ?? 600;
+  const nodes = outline.outline ?? [];
+  const lines: string[] = [];
+  lines.push(`# ${outline.target} — ${outline.totalInstances} instances (outline depth<=${outline.depthCap ?? '?'})`);
+  for (const n of nodes.slice(0, maxNodes)) {
+    const indent = '  '.repeat(Math.min(depthOfPath(n.path), 8));
+    const kids = n.childCount ? ` (${n.childCount} children)` : '';
+    lines.push(`${indent}${n.ref} ${n.name} [${n.className}]${kids}`);
+  }
+  if (nodes.length > maxNodes) {
+    lines.push(`# … ${nodes.length - maxNodes} more omitted`);
+  }
+  return lines.join('\n');
+}
+
+export const SCOPE_SELECTION_SYSTEM_PROMPT = [
+  'You pick which subtree of a Roblox place to edit, given the place outline and a user request.',
+  'The outline lists instances as "<ref> <Name> [ClassName]", indented by depth.',
+  'Choose the SMALLEST subtree that fully contains everything the request needs to change.',
+  'Output ONLY JSON: {"scope":"ref:<N>"} where N is the ref of that subtree root.',
+  'If the whole place is genuinely needed, return {"scope":""}.',
+].join('\n');
+
+export function buildScopeSelectionPrompt(outline: PlaceOutline, userRequest: string): string {
+  return [
+    'PLACE OUTLINE:',
+    summarizeOutlineForPrompt(outline),
+    '',
+    'USER REQUEST:',
+    userRequest.trim(),
+    '',
+    'Return {"scope":"ref:N"} now.',
+  ].join('\n');
+}
+
+/** Returns a scope spec ("ref:N" | "path:/..." | "") or null if unparseable. */
+export function parseScopeSelectionResponse(raw: string): string | null {
+  const text = stripFences(raw);
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (isRecord(parsed) && typeof parsed.scope === 'string') {
+      const s = parsed.scope.trim();
+      if (s === '' || /^ref:\d+$/.test(s) || /^path:\//.test(s)) {
+        return s;
+      }
+    }
+  } catch {
+    // unparseable -> null (caller falls back to heuristic)
+  }
+  return null;
+}
+
+/**
+ * Deterministic fallback scope picker (no LLM needed): score outline nodes by
+ * keyword overlap with the request, prefer a container (Model/Folder) and the
+ * shallowest match. Returns "ref:N", or "" (whole place) when nothing matches.
+ */
+export function pickScopeHeuristic(outline: PlaceOutline, userRequest: string): string {
+  const nodes = outline.outline ?? [];
+  const words = userRequest.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  if (words.length === 0 || nodes.length === 0) {
+    return '';
+  }
+  let best: { ref: number; score: number; depth: number; container: boolean } | null = null;
+  for (const n of nodes) {
+    const hay = `${n.name} ${n.path}`.toLowerCase();
+    let score = 0;
+    for (const w of words) {
+      if (w.length >= 3 && hay.includes(w)) {
+        score += 1;
+      }
+    }
+    if (score === 0) {
+      continue;
+    }
+    const depth = depthOfPath(n.path);
+    const container = n.className === 'Model' || n.className === 'Folder';
+    const better =
+      best === null ||
+      score > best.score ||
+      (score === best.score && container && !best.container) ||
+      (score === best.score && container === best.container && depth < best.depth);
+    if (better) {
+      best = { ref: n.ref, score, depth, container };
+    }
+  }
+  return best ? `ref:${best.ref}` : '';
 }

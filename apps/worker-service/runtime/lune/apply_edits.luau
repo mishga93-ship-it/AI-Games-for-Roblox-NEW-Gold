@@ -293,14 +293,22 @@ local contents = fs.readFile(inputPath)
 local roots = {}
 local isPlace = target == "place"
 
-if isPlace then
-	local game = roblox.deserializePlace(contents)
-	table.insert(roots, game)
-else
-	local instances = roblox.deserializeModel(contents)
-	for _, inst in instances do
-		table.insert(roots, inst)
+-- Defensive deserialize: a real-world place/model may use properties/enums newer
+-- than this Lune's reflection DB (lune issue #266). Surface a clear error rather
+-- than a raw crash so the caller can tell the user the file can't be parsed yet.
+local okDeser, derr = pcall(function()
+	if isPlace then
+		local game = roblox.deserializePlace(contents)
+		table.insert(roots, game)
+	else
+		local instances = roblox.deserializeModel(contents)
+		for _, inst in instances do
+			table.insert(roots, inst)
+		end
 	end
+end)
+if not okDeser then
+	error("apply_edits: failed to deserialize " .. target .. ": " .. tostring(derr))
 end
 
 local refCounter = 0

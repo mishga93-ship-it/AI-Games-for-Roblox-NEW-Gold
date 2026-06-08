@@ -21,11 +21,13 @@ async function main(): Promise<void> {
     return;
   }
   if (args[0] === 'analyze-roblox') {
+    const cliMode = args[4] === 'deep' ? 'deep' : args[4] === 'outline' ? 'outline' : 'summary';
     await analyzeRoblox(
       args[1],
       args[2],
       args[3] === 'model' ? 'model' : 'place',
-      args[4] === 'deep' ? 'deep' : 'summary',
+      cliMode,
+      args[5] ?? '',
     );
     return;
   }
@@ -78,11 +80,18 @@ async function main(): Promise<void> {
         const body = await readJsonBody(req);
         const inputBase64 = typeof body.inputBase64 === 'string' ? body.inputBase64 : '';
         const target = body.target === 'model' ? 'model' : 'place';
-        const deep = body.deep === true || body.mode === 'deep';
+        const mode = body.mode === 'deep'
+          ? 'deep'
+          : body.mode === 'outline'
+            ? 'outline'
+            : body.deep === true
+              ? 'deep'
+              : 'summary';
+        const scope = typeof body.scope === 'string' ? body.scope : '';
         if (!inputBase64) {
           throw new Error('inputBase64 is required');
         }
-        const result = await analyzeRobloxBase64(inputBase64, target, deep);
+        const result = await analyzeRobloxBase64(inputBase64, target, mode, scope);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (error) {
@@ -469,13 +478,15 @@ async function analyzeRoblox(
   inputPath: string,
   outputPath: string,
   target: 'place' | 'model',
-  mode: 'summary' | 'deep' = 'summary',
+  mode: 'summary' | 'deep' | 'outline' = 'summary',
+  scope = '',
 ): Promise<void> {
   if (!inputPath || !outputPath) {
     throw new Error('analyze-roblox requires inputPath and outputPath');
   }
   await mkdir(path.dirname(outputPath), { recursive: true });
-  await runLune('analyze_roblox', [inputPath, outputPath, target, mode]);
+  // scope is deep-only: "" | "ref:N" | "path:/Workspace/Town"
+  await runLune('analyze_roblox', [inputPath, outputPath, target, mode, scope]);
 }
 
 // Session 427 (Release 4 / Phase 1): inverse of build_roblox — apply structured
@@ -541,7 +552,8 @@ async function buildRobloxFromManifest(
 async function analyzeRobloxBase64(
   inputBase64: string,
   target: 'place' | 'model',
-  deep = false,
+  mode: 'summary' | 'deep' | 'outline' = 'summary',
+  scope = '',
 ): Promise<Record<string, unknown>> {
   const tempDir = path.resolve(process.cwd(), '.worker-tmp', `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(tempDir, { recursive: true });
@@ -550,7 +562,7 @@ async function analyzeRobloxBase64(
   const fs = await import('node:fs/promises');
   try {
     await fs.writeFile(inputPath, Buffer.from(inputBase64, 'base64'));
-    await analyzeRoblox(inputPath, outputPath, target, deep ? 'deep' : 'summary');
+    await analyzeRoblox(inputPath, outputPath, target, mode, scope);
     return JSON.parse(await fs.readFile(outputPath, 'utf8')) as Record<string, unknown>;
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
