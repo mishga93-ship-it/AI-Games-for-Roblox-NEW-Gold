@@ -21,7 +21,22 @@ async function main(): Promise<void> {
     return;
   }
   if (args[0] === 'analyze-roblox') {
-    await analyzeRoblox(args[1], args[2], args[3] === 'model' ? 'model' : 'place');
+    await analyzeRoblox(
+      args[1],
+      args[2],
+      args[3] === 'model' ? 'model' : 'place',
+      args[4] === 'deep' ? 'deep' : 'summary',
+    );
+    return;
+  }
+  if (args[0] === 'apply-edits') {
+    await applyEdits(
+      args[1],
+      args[2],
+      args[3],
+      args[4] === 'place' ? 'place' : 'model',
+      args[5],
+    );
     return;
   }
   if (args[0] === 'build-animation') {
@@ -63,10 +78,37 @@ async function main(): Promise<void> {
         const body = await readJsonBody(req);
         const inputBase64 = typeof body.inputBase64 === 'string' ? body.inputBase64 : '';
         const target = body.target === 'model' ? 'model' : 'place';
+        const deep = body.deep === true || body.mode === 'deep';
         if (!inputBase64) {
           throw new Error('inputBase64 is required');
         }
-        const result = await analyzeRobloxBase64(inputBase64, target);
+        const result = await analyzeRobloxBase64(inputBase64, target, deep);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (error) {
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      }
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/apply-edits') {
+      try {
+        const body = await readJsonBody(req);
+        const inputBase64 = typeof body.inputBase64 === 'string' ? body.inputBase64 : '';
+        const target = body.target === 'place' ? 'place' : 'model';
+        const opsDoc = body.opsDoc as Record<string, unknown> | undefined;
+        const ops = Array.isArray(body.ops)
+          ? (body.ops as unknown[])
+          : Array.isArray(opsDoc?.ops)
+            ? (opsDoc!.ops as unknown[])
+            : [];
+        if (!inputBase64) {
+          throw new Error('inputBase64 is required');
+        }
+        if (!Array.isArray(ops) || ops.length === 0) {
+          throw new Error('ops[] is required');
+        }
+        const result = await applyEditsBase64(inputBase64, ops, target);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (error) {
@@ -423,12 +465,38 @@ async function buildRoblox(manifestPath: string, outputPath: string, target: 'pl
   await runLune('build_roblox', [manifestPath, outputPath, target]);
 }
 
-async function analyzeRoblox(inputPath: string, outputPath: string, target: 'place' | 'model'): Promise<void> {
+async function analyzeRoblox(
+  inputPath: string,
+  outputPath: string,
+  target: 'place' | 'model',
+  mode: 'summary' | 'deep' = 'summary',
+): Promise<void> {
   if (!inputPath || !outputPath) {
     throw new Error('analyze-roblox requires inputPath and outputPath');
   }
   await mkdir(path.dirname(outputPath), { recursive: true });
-  await runLune('analyze_roblox', [inputPath, outputPath, target]);
+  await runLune('analyze_roblox', [inputPath, outputPath, target, mode]);
+}
+
+// Session 427 (Release 4 / Phase 1): inverse of build_roblox — apply structured
+// edit-ops to an existing .rbxm/.rbxl and re-serialize. Lune deserializes the
+// binary, mutates by `ref` (analyze --deep pre-order index), re-serializes.
+async function applyEdits(
+  inputPath: string,
+  opsPath: string,
+  outputPath: string,
+  target: 'place' | 'model',
+  resultsPath?: string,
+): Promise<void> {
+  if (!inputPath || !opsPath || !outputPath) {
+    throw new Error('apply-edits requires inputPath, opsPath and outputPath');
+  }
+  await mkdir(path.dirname(outputPath), { recursive: true });
+  const luneArgs = [inputPath, opsPath, outputPath, target];
+  if (resultsPath) {
+    luneArgs.push(resultsPath);
+  }
+  await runLune('apply_edits', luneArgs);
 }
 
 async function buildRobloxFromManifest(
@@ -473,6 +541,7 @@ async function buildRobloxFromManifest(
 async function analyzeRobloxBase64(
   inputBase64: string,
   target: 'place' | 'model',
+  deep = false,
 ): Promise<Record<string, unknown>> {
   const tempDir = path.resolve(process.cwd(), '.worker-tmp', `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(tempDir, { recursive: true });
@@ -481,8 +550,37 @@ async function analyzeRobloxBase64(
   const fs = await import('node:fs/promises');
   try {
     await fs.writeFile(inputPath, Buffer.from(inputBase64, 'base64'));
-    await analyzeRoblox(inputPath, outputPath, target);
+    await analyzeRoblox(inputPath, outputPath, target, deep ? 'deep' : 'summary');
     return JSON.parse(await fs.readFile(outputPath, 'utf8')) as Record<string, unknown>;
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function applyEditsBase64(
+  inputBase64: string,
+  ops: unknown[],
+  target: 'place' | 'model',
+): Promise<{ outputBase64: string; target: 'place' | 'model'; results: Record<string, unknown> }> {
+  const tempDir = path.resolve(process.cwd(), '.worker-tmp', `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  await mkdir(tempDir, { recursive: true });
+  const inputPath = path.join(tempDir, target === 'place' ? 'input.rbxl' : 'input.rbxm');
+  const opsPath = path.join(tempDir, 'ops.json');
+  const outputPath = path.join(tempDir, target === 'place' ? 'output.rbxl' : 'output.rbxm');
+  const resultsPath = path.join(tempDir, 'results.json');
+  const fs = await import('node:fs/promises');
+  try {
+    await fs.writeFile(inputPath, Buffer.from(inputBase64, 'base64'));
+    await fs.writeFile(opsPath, JSON.stringify({ ops }, null, 2), 'utf8');
+    await applyEdits(inputPath, opsPath, outputPath, target, resultsPath);
+    const bytes = await fs.readFile(outputPath);
+    let results: Record<string, unknown> = {};
+    try {
+      results = JSON.parse(await fs.readFile(resultsPath, 'utf8')) as Record<string, unknown>;
+    } catch {
+      // results sidecar is best-effort; binary output is the source of truth.
+    }
+    return { outputBase64: bytes.toString('base64'), target, results };
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
