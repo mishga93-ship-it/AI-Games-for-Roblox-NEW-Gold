@@ -1089,6 +1089,32 @@ enum AIWorkspaceAPI {
         )
     }
 
+    /// Permanently deletes a thread server-side so it can't resurface via
+    /// `fetchThreads()` after a reinstall. A purely-local session id that was
+    /// never synced returns 404 — callers treat that as success (nothing to
+    /// delete remotely).
+    static func deleteThread(threadId: String) async throws {
+        struct DeleteThreadResponse: Decodable { let deleted: Bool }
+        let _: DeleteThreadResponse = try await APIClient.request(
+            "api/chat/threads/\(threadId)",
+            method: "DELETE"
+        )
+    }
+
+    /// Deletes many threads in ONE request. Deleting chats one-by-one fired a
+    /// burst of DELETEs that tripped the server's 30-req/60s rate limiter — the
+    /// 429'd ones silently survived and reappeared after a reinstall. A single
+    /// bulk call consumes one rate-limit token regardless of batch size.
+    static func deleteThreads(ids: [String]) async throws {
+        struct BulkDeleteRequest: Encodable { let ids: [String] }
+        struct BulkDeleteResponse: Decodable { let count: Int }
+        let _: BulkDeleteResponse = try await APIClient.request(
+            "api/chat/threads/bulk-delete",
+            method: "POST",
+            body: BulkDeleteRequest(ids: ids)
+        )
+    }
+
     static func fetchThreadMessages(threadId: String, limit: Int = 200, before: String? = nil) async throws -> ThreadMessagesResponse {
         var path = "api/chat/threads/\(threadId)/messages?limit=\(limit)"
         if let before { path += "&before=\(before)" }
@@ -1692,8 +1718,15 @@ enum AIWorkspaceAPI {
             case "rpg": return "shield.fill"
             case "horror": return "eye.fill"
             case "pvp": return "bolt.fill"
-            case "td": return "tower.cell.broadcast.fill"
+            case "td", "tower_defense": return "tower.cell.broadcast.fill"
             case "racing": return "car.fill"
+            case "roleplay", "roleplay_town": return "building.2.fill"
+            case "parkour": return "figure.gymnastics"
+            case "story", "story_game": return "book.fill"
+            case "mini-games", "minigame_hub": return "die.face.5.fill"
+            case "survival": return "flame.fill"
+            case "fighting", "fighting_arena": return "figure.boxing"
+            case "custom", "custom_game": return "sparkles"
             default: return "gamecontroller.fill"
             }
         }
@@ -1743,7 +1776,71 @@ enum AIWorkspaceAPI {
     ) async throws -> RobloxTrendingResponse {
         let safeLimit = max(1, min(20, limit))
         let path = "api/roblox/trending?category=\(category)&sort=\(sort)&period=\(period)&limit=\(safeLimit)"
-        return try await APIClient.request(path, timeout: 15)
+        do {
+            return try await APIClient.request(path, timeout: 15)
+        } catch {
+            // Trending assets are global data — fall back to the token-free
+            // `-public` endpoint when the authed call fails (e.g. no Firebase
+            // token at launch → 401).
+            return try await fetchRobloxTrendingPublic(category: category, sort: sort, period: period, limit: safeLimit)
+        }
+    }
+
+    // The `-public` trending endpoint returns a slim shape (no thumbnailUrl/url,
+    // and the wrapper omits cached/sort/period), so it can't decode straight
+    // into RobloxTrendingResponse. Decode leniently and rebuild the full model:
+    // synthesize the catalog URL from id+itemType; leave thumbnail to the card
+    // placeholder.
+    private struct PublicTrendingItem: Decodable {
+        let id: Int
+        let name: String
+        let itemType: String
+        let creatorName: String?
+        let price: Int?
+        let favoriteCount: Int?
+    }
+    private struct PublicTrendingResponse: Decodable {
+        let category: String?
+        let items: [PublicTrendingItem]
+        let fetchedAt: Double?
+        let source: String?
+    }
+
+    private static func fetchRobloxTrendingPublic(
+        category: String,
+        sort: String,
+        period: String,
+        limit: Int
+    ) async throws -> RobloxTrendingResponse {
+        let resp: PublicTrendingResponse = try await APIClient.request(
+            "api/roblox/trending-public?category=\(category)&limit=\(min(10, limit))",
+            timeout: 15,
+            requiresAuth: false
+        )
+        let items = resp.items.map { item -> RobloxCatalogItem in
+            let base = item.itemType == "Bundle" ? "bundles" : "catalog"
+            return RobloxCatalogItem(
+                id: item.id,
+                name: item.name,
+                itemType: item.itemType,
+                assetType: nil,
+                creatorName: item.creatorName ?? "Roblox",
+                creatorType: nil,
+                price: item.price,
+                favoriteCount: item.favoriteCount ?? 0,
+                thumbnailUrl: nil,
+                url: "https://www.roblox.com/\(base)/\(item.id)/--"
+            )
+        }
+        return RobloxTrendingResponse(
+            source: resp.source ?? "public",
+            fetchedAt: resp.fetchedAt ?? Date().timeIntervalSince1970 * 1000,
+            cached: true,
+            category: resp.category ?? category,
+            sort: sort,
+            period: period,
+            items: items
+        )
     }
 
     // MARK: - Roblox Trending GAMES (Phase B, session 226)
@@ -1765,10 +1862,20 @@ enum AIWorkspaceAPI {
     }
 
     /// Fetches top trending Roblox games (Rolimons-backed). `limit` clamped 1-100.
+    /// Top games are global, non-user-specific data. If the authed call fails
+    /// (e.g. Firebase token not yet available at launch → 401), fall back to the
+    /// `-public` endpoint, which returns the same shape and needs no token.
     static func fetchRobloxTrendingGames(limit: Int = 20) async throws -> RobloxTrendingGamesResponse {
         let safeLimit = max(1, min(100, limit))
-        let path = "api/roblox/trending-games?limit=\(safeLimit)"
-        return try await APIClient.request(path, timeout: 15)
+        do {
+            return try await APIClient.request("api/roblox/trending-games?limit=\(safeLimit)", timeout: 15)
+        } catch {
+            return try await APIClient.request(
+                "api/roblox/trending-games-public?limit=\(min(20, safeLimit))",
+                timeout: 15,
+                requiresAuth: false
+            )
+        }
     }
 
     // MARK: - Push Notifications

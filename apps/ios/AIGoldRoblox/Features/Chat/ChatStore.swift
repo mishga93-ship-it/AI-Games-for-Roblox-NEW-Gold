@@ -63,6 +63,12 @@ final class ChatStore: ObservableObject {
     @Published var voiceStatusText: String?
     @Published var voicePhase: VoicePhase = .idle
     @Published var voiceErrorAlert: String?
+    // Per-user upload gate: set true from send() when a generation is attempted
+    // without a linked Roblox account → ChatView shows a Connect/Cancel alert.
+    @Published var showRobloxConnectAlert = false
+    // Game Pass needs the user's game Universe ID (moved off the connect screen):
+    // set true to prompt for it inline in the Game Pass flow.
+    @Published var showUniverseIdPrompt = false
     @Published var systemToast: SystemToast?
     @Published var pendingVoiceTranscript: String?
     /// Pending image attachment shown as a preview chip above the input bar.
@@ -1628,22 +1634,41 @@ final class ChatStore: ObservableObject {
             case "👗 3d dress", "3d dress", "dress":
                 draft.clothingType = "layered_dress"
                 draft.clothingMode = "layered_3d"
-            case "2d classic (fast)", "2d classic", "2д классик",
-                 "✨ generate as 2d classic", "generate as 2d classic":
-                // Final 2D pick — promote layered_* types back to classic_*.
+            // Backend clothing-interview mode answer ("2D Classic (fast)" / "3D Layered
+            // (premium)" — Turn 1 of smartInterviewClothing). Set the mode, then FALL
+            // THROUGH so the reply is forwarded to the backend and the design interview
+            // continues (fit → print → colours → brief). Generating on this answer was
+            // skipping the whole interview — user: "tap preset → 2D/3D → generation, no
+            // interview". Real generation comes from "Generate!" (Turn 5) or the
+            // end-of-interview mode gate below ("Generate as …").
+            case "2d classic (fast)", "2d classic", "2д классик":
                 if let ct = draft.clothingType, ct.hasPrefix("layered_") {
                     let kind = String(ct.dropFirst("layered_".count))
                     draft.clothingType = (kind == "jacket" || kind == "sweater" || kind == "dress")
-                        ? "classic_shirt"  // jackets/sweaters/dresses → fall back to closest classic
-                        : "classic_\(kind)"
+                        ? "classic_shirt" : "classic_\(kind)"
+                }
+                draft.clothingMode = "classic_2d"
+                // no return → forwarded to backend interview at end of sendQuickReply
+            case "3d layered (premium)", "3d layered":
+                if let ct = draft.clothingType, ct.hasPrefix("classic_") {
+                    let kind = String(ct.dropFirst("classic_".count))
+                    draft.clothingType = "layered_\(kind == "outfit" ? "shirt" : kind)"
+                }
+                draft.clothingMode = "layered_3d"
+                // no return → forwarded to backend interview at end of sendQuickReply
+            // iOS end-of-interview mode gate (appendClothingModeChoiceMessage). Distinct
+            // "Generate as …" strings — the FINAL pick → kick off generation.
+            case "✨ generate as 2d classic", "generate as 2d classic":
+                if let ct = draft.clothingType, ct.hasPrefix("layered_") {
+                    let kind = String(ct.dropFirst("layered_".count))
+                    draft.clothingType = (kind == "jacket" || kind == "sweater" || kind == "dress")
+                        ? "classic_shirt" : "classic_\(kind)"
                 }
                 if draft.clothingType == nil { draft.clothingType = "classic_outfit" }
                 draft.clothingMode = "classic_2d"
                 generateFromCurrentPlan()
                 return
-            case "3d layered (premium)", "3d layered",
-                 "🧥 generate as 3d layered", "generate as 3d layered":
-                // Final 3D pick — promote classic_* types up to layered_*.
+            case "🧥 generate as 3d layered", "generate as 3d layered":
                 if let ct = draft.clothingType, ct.hasPrefix("classic_") {
                     let kind = String(ct.dropFirst("classic_".count))
                     draft.clothingType = "layered_\(kind == "outfit" ? "shirt" : kind)"
@@ -1652,13 +1677,19 @@ final class ChatStore: ObservableObject {
                 generateFromCurrentPlan()
                 return
             case "decide for me":
+                // "Decide for me" appears in EVERY backend interview turn (mode, fit,
+                // print, colours) meaning "pick a sensible default for THIS question" —
+                // so it must NOT generate. Record a default mode if none yet, then fall
+                // through to forward the reply so the interview continues. Generating
+                // here was cutting the interview short. Real generation comes from
+                // "Generate!" (Turn 5) or the end-of-interview mode gate.
                 if draft.clothingType == nil { draft.clothingType = "classic_shirt" }
-                if draft.clothingMode == nil { draft.clothingMode = "classic_2d" }
-                // If user has been through clothing interview, default-pick fires generation.
-                if contentSubcategory == "clothing" {
-                    generateFromCurrentPlan()
-                    return
+                if draft.clothingMode == nil {
+                    draft.clothingMode = (draft.clothingType?.hasPrefix("layered_") == true)
+                        ? "layered_3d"
+                        : "classic_2d"
                 }
+                // no return → forwarded to backend interview at end of sendQuickReply
             case "got it":
                 // Compliance banner dismiss — persist so future clothing chats don't repeat it
                 UserDefaults.standard.set(true, forKey: "clothing.compliance.dismissed")
@@ -1858,11 +1889,27 @@ final class ChatStore: ObservableObject {
         guard contentSubcategory == "clothing" else { return false }
         guard (draft.clothingMode ?? "").isEmpty else { return false }
         let ct = draft.clothingType ?? ""
-        // Only Shirt / Pants / Outfit have both 2D classic AND 3D layered
-        // variants worth choosing between. T-Shirt is always classic_2d, and
-        // jackets/sweaters/dresses are layered-only (Roblox has no 2D versions
-        // of those AccessoryTypes).
-        return ct == "classic_shirt" || ct == "classic_pants" || ct == "classic_outfit"
+        // T-Shirt is the only 2D-only garment (Roblox has no layered T-Shirt
+        // AccessoryType), so it never needs the picker. EVERY other garment can
+        // be produced both ways, so always offer the 2D/3D choice:
+        //   • classic_shirt/pants/outfit → 2D keeps them; 3D promotes to layered_*
+        //   • layered_jacket/sweater/dress → 3D keeps them; 2D maps to a flat
+        //     shirt-style texture (handled in the "2D Classic" quick-reply branch).
+        // Before 2026-06-02 jacket/sweater/dress skipped this gate and were
+        // silently forced to 3D, so the welcome promised a 2D/3D choice that never
+        // actually appeared for them — the user's "no 2D/3D choice" complaint.
+        if ct == "t_shirt" { return false }
+        return ct.hasPrefix("classic_") || ct.hasPrefix("layered_")
+    }
+
+    /// True when the current / just-generated clothing result is the 3D layered
+    /// path (Meshy mesh + wrap cages → Studio Accessory). The export UI uses this
+    /// to show layered-clothing Accessory import steps instead of the full-avatar
+    /// "Import 3D → auto-rig R15" FBX flow, which mangles a garment into a body.
+    var isLayeredClothingResult: Bool {
+        guard contentSubcategory == "clothing" else { return false }
+        if draft.clothingMode == "layered_3d" { return true }
+        return draft.clothingType?.hasPrefix("layered_") ?? false
     }
 
     private func appendClothingModeChoiceMessage() {
@@ -1871,7 +1918,12 @@ final class ChatStore: ObservableObject {
                 id: UUID().uuidString,
                 role: .assistant,
                 content: "How should I produce it?\n\n• **2D Classic** — flat 585×559 wrap template, uploads to Roblox in seconds via web Marketplace. Works today.\n• **3D Layered** — real 3D mesh accessory, 2-5 min via Meshy, finished in Studio Accessory Fitting Tool. Needs UGC Program approval to publish.",
-                quickReplies: ["✨ Generate as 2D Classic", "🧥 Generate as 3D Layered", "Decide for me"],
+                // Distinct "Generate as …" strings (not the backend interview's "2D
+                // Classic (fast)" / "Decide for me") so sendQuickReply can tell the
+                // FINAL pick (→ generate) apart from a mid-interview mode answer
+                // (→ continue interview). No "Decide for me" here — this gate is the
+                // explicit final choice right before generation.
+                quickReplies: ["✨ Generate as 2D Classic", "🧥 Generate as 3D Layered"],
                 gddRows: nil,
                 createdAt: Date()
             )
@@ -2310,8 +2362,18 @@ final class ChatStore: ObservableObject {
         updatedAt: Date
     ) -> ChatHistoryStore.GenerationStatus {
         let isRu = preferredResponseLanguageCode() == "ru"
-        let completed = stages.filter(\.isComplete).count
-        let total = stages.count
+        // Total: at least 1 so a job with no stage list still reads "1/1"
+        // when done (viral chats ship 1-3 stages; the backend may not mark
+        // them complete since handleCursedUGC/etc set status=completed
+        // without touching job.stages).
+        let total = max(stages.count, 1)
+        // Session 391 round 7 — when the job reached a terminal SUCCESS state,
+        // force the progress to total/total. Viral handlers complete the job
+        // (status=completed) but never flip their stages to "completed", so
+        // the raw filter gave 0/1 next to a "Ready to export" badge (user:
+        // «если реди то полюбому 1/1»). Treat completed as all-done.
+        let rawCompleted = stages.filter(\.isComplete).count
+        let completed: Int = (status == "completed") ? total : min(rawCompleted, total)
         let currentStep = stages.first(where: { $0.status == "processing" })?.title
             ?? stages.first(where: { $0.status == "pending" })?.title
             ?? stages.last?.title
@@ -2411,6 +2473,8 @@ final class ChatStore: ObservableObject {
                 )
             }
             if lower.contains("failed") || lower.contains("stopped before export") || lower.contains("did not finish")
+                || lower.contains("connection error") || lower.contains("session expired")
+                || lower.contains("fake result") || lower.contains("temporarily unavailable")
                 || lower.contains("не заверш") || lower.contains("ошибка") {
                 return GenerationStatusSnapshot(
                     title: title,
@@ -2472,8 +2536,14 @@ final class ChatStore: ObservableObject {
         }
         applyLatestJobId(job.id)
         if let preview = job.preview {
-            activePreview = preview
-            lastPreview = preview
+            // Pin the result preview's id per job. The push/banner open flow
+            // sets activePreview more than once (hydrate + restorePreviewFromJob,
+            // both bypassing the openWhenReady de-dup guard) — with a fresh
+            // UUID each time `.sheet(item: $activePreview)` re-keys and the
+            // result screen flaps open/closed. A stable id makes repeats no-ops.
+            let stablePreview = preview.withId("background-result-\(job.id)")
+            activePreview = stablePreview
+            lastPreview = stablePreview
             notifyGenerationRouteReady()
             return
         }
@@ -2680,7 +2750,7 @@ final class ChatStore: ObservableObject {
                 job = try await AIWorkspaceAPI.fetchJob(jobId: jobId)
                 consecutiveTransientFailures = 0
             } catch {
-                if Self.isTransientNetworkError(error) {
+                if Self.isRetryablePollingError(error) {
                     consecutiveTransientFailures += 1
                     if consecutiveTransientFailures >= maxConsecutiveTransientFailures {
                         throw error
@@ -3635,23 +3705,13 @@ final class ChatStore: ObservableObject {
             return
         }
 
-        // Warn user if generating game passes without Universe ID
-        if contentSubcategory == "passes" {
-            let hasUniverseId = !(RobloxAuthService.shared.universeId ?? "").isEmpty
-            let hasRobloxAccount = RobloxAuthService.shared.isConnected
-            if !hasUniverseId || !hasRobloxAccount {
-                let warning = !hasRobloxAccount
-                    ? "⚠️ Connect your game account and set Universe ID in Profile to auto-create Game Passes with real IDs. Without it, IDs will be 0 (placeholder)."
-                    : "⚠️ Set your Universe ID in Profile → Game Account to auto-create Game Passes with real IDs. Find it in Creator Dashboard → Experience → Overview. Without it, IDs will be 0."
-                messages.append(ChatMessage(
-                    id: UUID().uuidString,
-                    role: .assistant,
-                    content: warning,
-                    quickReplies: nil,
-                    gddRows: nil,
-                    createdAt: Date()
-                ))
-            }
+        // Game Pass needs the user's game Universe ID (passes attach to a specific
+        // experience). The field was moved off the connect screen — ask for it
+        // inline here. If missing, prompt; ChatView's Save resumes via
+        // generateFromCurrentPlan() with the Universe ID now set.
+        if contentSubcategory == "passes", (RobloxAuthService.shared.universeId ?? "").isEmpty {
+            showUniverseIdPrompt = true
+            return
         }
 
         ChallengeRetentionNotifications.recordGenerationStarted()
@@ -3673,9 +3733,11 @@ final class ChatStore: ObservableObject {
         } else if contentSubcategory == "animations" {
             generatingMessage = isRu ? "Генерирую ключевые кадры анимации..." : "Generating your animation keyframes now..."
         } else {
-            generatingMessage = isRu
-                ? "Зафиксировал. Генерирую \(localizedProjectPackageName()) сейчас."
-                : "Locked. I’m generating the \(projectKind.rawValue.lowercased()) package now."
+            // Marketing 2026-06-03 (Zero-Read): the chat read like a system log
+            // («Locked. I'm generating the content package now.»). Trim to a
+            // short, non-jargon status — the progress sheet + result already
+            // show what's being built.
+            generatingMessage = isRu ? "Генерирую…" : "Generating now…"
         }
 
         messages.append(
@@ -4378,6 +4440,16 @@ final class ChatStore: ObservableObject {
             persistMessagesToHistoryIfNeeded()
         }
 
+        // Per-user upload gate (2026-06-05): generated assets upload to the user's
+        // OWN Roblox account, so a linked account is required. If not connected,
+        // surface a Connect/Cancel alert (ChatView) and don't start a generation
+        // that can't upload.
+        if !RobloxAuthService.shared.isConnected {
+            isGenerating = false
+            showRobloxConnectAlert = true
+            return
+        }
+
         // Session 382 — Fake Headless & Korblox AI Crafter intercept.
         // For .fakeLimited the chat doesn't go through the heavy
         // generationJobs pipeline; we hit /api/fake-limited/recipe directly
@@ -4830,11 +4902,14 @@ final class ChatStore: ObservableObject {
                 consecutiveTransientFailures = 0
             } catch {
                 // Transient network errors (connection lost, timeout, DNS flap, offline)
-                // must NOT kill a long-running job that's still processing on the server.
+                // AND transient HTTP errors (404 = job doc not queryable yet right
+                // after creation, 429 rate-limit, 5xx cold start) must NOT kill a
+                // long-running job that's still processing on the server. A real
+                // failure comes back as status=="failed" (200), not an HTTP error.
                 // Retry with the same polling cadence; only bail after many consecutive failures.
-                if Self.isTransientNetworkError(error) {
+                if Self.isRetryablePollingError(error) {
                     consecutiveTransientFailures += 1
-                    print("[pollJob] transient network error (\(consecutiveTransientFailures)/\(maxConsecutiveTransientFailures)): \(error.localizedDescription)")
+                    print("[pollJob] transient polling error (\(consecutiveTransientFailures)/\(maxConsecutiveTransientFailures)): \(error.localizedDescription)")
                     if consecutiveTransientFailures >= maxConsecutiveTransientFailures {
                         throw error
                     }
@@ -4976,6 +5051,26 @@ final class ChatStore: ObservableObject {
             default:
                 return false
             }
+        }
+        return false
+    }
+
+    /// Session 396 round 2 — classifies an error thrown WHILE POLLING a job's
+    /// status as retryable. A genuine generation failure arrives as a 200 with
+    /// `job.status == "failed"` (caught by `isTerminalJobStatus`), NEVER as an
+    /// HTTP error — so an HTTP error mid-poll only means "couldn't read the
+    /// status this attempt," which is always worth retrying up to the
+    /// consecutive-failure cap. This removes the spurious "Connection error /
+    /// I stopped generation before export" message that ALWAYS appeared on the
+    /// first poll right after a job was created (the job doc isn't queryable
+    /// yet → 404, or a cold-start 5xx / 429 burst) even though the job kept
+    /// running and a "Ready to export" result arrived moments later. Auth
+    /// failures (401/403) stay fatal so the sign-in path surfaces immediately.
+    private static func isRetryablePollingError(_ error: Error) -> Bool {
+        if isTransientNetworkError(error) { return true }
+        if case APIError.httpError(let statusCode) = error {
+            if statusCode == 404 || statusCode == 429 { return true }
+            if (500...599).contains(statusCode) { return true }
         }
         return false
     }
@@ -6957,10 +7052,14 @@ final class ChatStore: ObservableObject {
         "pvp_arena": "PvP-арена",
         "racing": "Гонки",
         "tower defense": "Tower Defense",
+        "tower_defense": "Tower Defense",
         "roleplay": "Ролевая",
+        "roleplay_town": "Ролевая / Город",
         "parkour": "Паркур",
         "story": "Сюжетная",
+        "story_game": "Сюжетная",
         "mini-games": "Мини-игры",
+        "minigame_hub": "Мини-игры",
         "survival": "Выживание",
         "fighting": "Файтинг",
         "custom": "Кастомная",
@@ -7138,7 +7237,7 @@ final class ChatStore: ObservableObject {
             guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return }
             rows.append((key, value))
         }
-        let gameSubcategories: Set<String> = ["brainrot_sim", "obby_troll", "rpg", "horror", "pvp", "pvp_arena", "simulator"]
+        let gameSubcategories: Set<String> = ["brainrot_sim", "obby_troll", "rpg", "horror", "pvp", "pvp_arena", "tower_defense", "roleplay_town", "racing", "parkour", "story_game", "minigame_hub", "survival", "fighting", "custom", "simulator"]
         let genreLower = gdd.genre.lowercased()
         let isGameBrief = projectKind == .game
             || projectKind == .clone
@@ -7319,6 +7418,110 @@ final class ChatStore: ObservableObject {
             return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
         }
 
+        // Session 399: Tower Defense generator welcome. Three tower types
+        // (Cannon/Sniper/Splash), waypoint enemy waves, boss every 5th wave.
+        if contentSubcategory == "tower_defense" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Tower Defense generator is live. Pick the map theme, difficulty, and wave count; I will build the enemy path, Cannon/Sniper/Splash towers, upgrades, base health, cash economy, and boss waves."
+                replies = ["Meadow 15 waves", "Sci-fi lane defense", "Desert siege hard", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build the defense around one strong map. Should the lane feel like a green meadow, a neon sci-fi corridor, a desert siege, or my best pick?"
+                replies = compactSmartInterviewReplies(from: towerDefenseStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+
+        // Session 399 (cont.): remaining playable genres — each opens its generator welcome.
+        if contentSubcategory == "roleplay_town" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Roleplay/Town generator is live. Pick a town theme and I will build named buildings, job pads that pay cash, a role shop, NPCs, and a day/night cycle."
+                replies = ["Suburb town", "City roleplay", "Medieval village", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build your town. Should it feel like a cozy suburb, a busy city, a medieval village, or my best pick?"
+                replies = compactSmartInterviewReplies(from: roleplayTownStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+        if contentSubcategory == "racing" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Racing generator is live. Pick a track theme and laps; I will build a closed-loop track with ordered checkpoints, lap counting, a timer, and best-time records."
+                replies = ["City 3 laps", "Desert hard", "Winter 5 laps", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build your race. Should the track be a neon city, a desert rally, a winter circuit, or my best pick?"
+                replies = compactSmartInterviewReplies(from: racingStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+        if contentSubcategory == "parkour" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Parkour generator is live. Pick a theme and stage count; I will build an ascending platform course with checkpoints, void respawn, and a best-time finish."
+                replies = ["Neon 15 stages", "Jungle course", "Lava hard", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build your parkour. Neon towers, a jungle climb, lava leaps, or my best pick?"
+                replies = compactSmartInterviewReplies(from: parkourStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+        if contentSubcategory == "story_game" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Story Game generator is live. Pick a theme and chapter count; I will build themed chapter zones, narrative beats, narrator NPCs, and a final ending."
+                replies = ["Fantasy quest", "Sci-fi escape", "Mystery 5 chapters", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build your story. Fantasy, sci-fi, mystery, horror — or my best pick?"
+                replies = compactSmartInterviewReplies(from: storyGameStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+        if contentSubcategory == "minigame_hub" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Mini-games Hub generator is live. Pick a hub theme; I will build a lobby + tile arena that rotates 3 elimination modes (Tile Drop, Color Call, Edge Collapse) with survivor scoring."
+                replies = ["Party hub", "Neon hub", "Classic hub", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build your party hub. Party vibe, neon, classic — or my best pick?"
+                replies = compactSmartInterviewReplies(from: minigameHubStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+        if contentSubcategory == "survival" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Survival generator is live. Pick a biome and difficulty; I will build resource nodes, a campfire heal zone, a day/night cycle, and night enemy waves."
+                replies = ["Island survival", "Forest hard", "Zombie nights", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build your survival world. Island, forest, winter, zombie — or my best pick?"
+                replies = compactSmartInterviewReplies(from: survivalStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+        if contentSubcategory == "fighting" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Fighting generator is live. Pick an arena theme; I will build a raised ring with melee punches (server damage + knockback), ring-outs, KOs, and last-standing rounds."
+                replies = ["Dojo brawl", "Street fight", "Arena hard", "Switch to Interview"]
+            case .smartInterview:
+                content = "Let's build your fighting arena. Dojo, street, arena, space — or my best pick?"
+                replies = compactSmartInterviewReplies(from: fightingStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+        if contentSubcategory == "custom" {
+            switch preferredFlow {
+            case .quickGenerate:
+                content = "Custom generator is live. Describe any idea and I will build a playable sandbox: a title monument, a coin economy, Speed/Jump upgrade pads, platforms, and a guide NPC."
+                replies = ["Neon sandbox", "Grass sandbox", "Space sandbox", "Switch to Interview"]
+            case .smartInterview:
+                content = "Tell me your idea — I'll turn it into a playable sandbox. What's the vibe: neon, grass, space, or my best pick?"
+                replies = compactSmartInterviewReplies(from: customGameStarterReplies())
+            }
+            return ChatMessage(id: "welcome", role: .assistant, content: content, quickReplies: replies, gddRows: nil, createdAt: Date())
+        }
+
         // Session 001 (Track 1): clothing subcategory opens with a clothing-type
         // picker. User picks T-Shirt / Shirt / Pants / Outfit BEFORE describing
         // the design — that routes the backend to the right pipeline (T-Shirt =
@@ -7438,6 +7641,17 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "pvp" {
             return pvpArenaStarterReplies()
         }
+        if contentSubcategory == "tower_defense" {
+            return towerDefenseStarterReplies()
+        }
+        if contentSubcategory == "roleplay_town" { return roleplayTownStarterReplies() }
+        if contentSubcategory == "racing" { return racingStarterReplies() }
+        if contentSubcategory == "parkour" { return parkourStarterReplies() }
+        if contentSubcategory == "story_game" { return storyGameStarterReplies() }
+        if contentSubcategory == "minigame_hub" { return minigameHubStarterReplies() }
+        if contentSubcategory == "survival" { return survivalStarterReplies() }
+        if contentSubcategory == "fighting" { return fightingStarterReplies() }
+        if contentSubcategory == "custom" { return customGameStarterReplies() }
         switch projectKind {
         case .game, .clone:
             return ["Obby", "Tycoon", "Simulator", "Decide for me", "Start over"]
@@ -7770,6 +7984,46 @@ final class ChatStore: ObservableObject {
             "Decide for me",
             "Start over"
         ]
+    }
+
+    private func towerDefenseStarterReplies() -> [String] {
+        return [
+            "Meadow path",
+            "Desert siege",
+            "Candy lane",
+            "Sci-fi corridor",
+            "Casual",
+            "Hard",
+            "15 waves",
+            "Decide for me",
+            "Start over"
+        ]
+    }
+
+    // Session 399 (cont.): starter replies for the remaining playable genres.
+    private func roleplayTownStarterReplies() -> [String] {
+        return ["Suburb", "City", "Medieval", "Modern", "Lots of jobs", "Rich start", "Decide for me", "Start over"]
+    }
+    private func racingStarterReplies() -> [String] {
+        return ["City", "Desert", "Winter", "Space", "3 laps", "5 laps", "Hard", "Decide for me", "Start over"]
+    }
+    private func parkourStarterReplies() -> [String] {
+        return ["Neon", "Jungle", "Lava", "Ice", "15 stages", "20 stages", "Hard", "Decide for me", "Start over"]
+    }
+    private func storyGameStarterReplies() -> [String] {
+        return ["Fantasy", "Sci-fi", "Mystery", "Horror", "5 chapters", "8 chapters", "Decide for me", "Start over"]
+    }
+    private func minigameHubStarterReplies() -> [String] {
+        return ["Party", "Neon", "Classic", "More chaotic", "Decide for me", "Start over"]
+    }
+    private func survivalStarterReplies() -> [String] {
+        return ["Island", "Forest", "Winter", "Zombie", "Casual", "Hard", "Long days", "Decide for me", "Start over"]
+    }
+    private func fightingStarterReplies() -> [String] {
+        return ["Dojo", "Street", "Arena", "Space", "Short rounds", "Hard", "Decide for me", "Start over"]
+    }
+    private func customGameStarterReplies() -> [String] {
+        return ["Neon", "Grass", "Space", "Collecting", "Climbing", "Upgrades", "Decide for me", "Start over"]
     }
 
     private var preferredProvider: String {
@@ -8129,6 +8383,33 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "pvp" {
             return preferredFlow == .quickGenerate ? "pvp_arena_generation" : "pvp_arena_interview"
         }
+        if contentSubcategory == "tower_defense" {
+            return preferredFlow == .quickGenerate ? "tower_defense_generation" : "tower_defense_interview"
+        }
+        if contentSubcategory == "roleplay_town" {
+            return preferredFlow == .quickGenerate ? "roleplay_town_generation" : "roleplay_town_interview"
+        }
+        if contentSubcategory == "racing" {
+            return preferredFlow == .quickGenerate ? "racing_generation" : "racing_interview"
+        }
+        if contentSubcategory == "parkour" {
+            return preferredFlow == .quickGenerate ? "parkour_generation" : "parkour_interview"
+        }
+        if contentSubcategory == "story_game" {
+            return preferredFlow == .quickGenerate ? "story_game_generation" : "story_game_interview"
+        }
+        if contentSubcategory == "minigame_hub" {
+            return preferredFlow == .quickGenerate ? "minigame_hub_generation" : "minigame_hub_interview"
+        }
+        if contentSubcategory == "survival" {
+            return preferredFlow == .quickGenerate ? "survival_generation" : "survival_interview"
+        }
+        if contentSubcategory == "fighting" {
+            return preferredFlow == .quickGenerate ? "fighting_generation" : "fighting_interview"
+        }
+        if contentSubcategory == "custom" {
+            return preferredFlow == .quickGenerate ? "custom_game_generation" : "custom_game_interview"
+        }
         if contentSubcategory == "simulator" {
             return preferredFlow == .quickGenerate ? "simulator_generation" : "simulator_interview"
         }
@@ -8188,6 +8469,15 @@ final class ChatStore: ObservableObject {
         if contentSubcategory == "rpg" { return "rpg_generation" }
         if contentSubcategory == "horror" { return "horror_generation" }
         if contentSubcategory == "pvp" { return "pvp_arena_generation" }
+        if contentSubcategory == "tower_defense" { return "tower_defense_generation" }
+        if contentSubcategory == "roleplay_town" { return "roleplay_town_generation" }
+        if contentSubcategory == "racing" { return "racing_generation" }
+        if contentSubcategory == "parkour" { return "parkour_generation" }
+        if contentSubcategory == "story_game" { return "story_game_generation" }
+        if contentSubcategory == "minigame_hub" { return "minigame_hub_generation" }
+        if contentSubcategory == "survival" { return "survival_generation" }
+        if contentSubcategory == "fighting" { return "fighting_generation" }
+        if contentSubcategory == "custom" { return "custom_game_generation" }
         if contentSubcategory == "simulator" { return "simulator_generation" }
         if contentSubcategory == "ui" { return "ui_generation" }
         if contentSubcategory == "weapons" { return "weapon_generation" }

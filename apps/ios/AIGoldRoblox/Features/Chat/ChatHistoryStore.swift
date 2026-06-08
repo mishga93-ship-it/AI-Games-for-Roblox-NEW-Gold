@@ -92,7 +92,13 @@ final class ChatHistoryStore: ObservableObject {
 
         var progressLabel: String? {
             guard totalStageCount > 0 else { return nil }
-            return "\(completedStageCount)/\(totalStageCount)"
+            // Session 391 round 7 — a "Ready to export" (completed) row must
+            // read N/N even if the persisted completedStageCount is 0. Viral
+            // chat handlers finish the job without marking their stages
+            // complete, and old rows were persisted as 0/1. Render-side clamp
+            // so both new and already-saved completed rows show full progress.
+            let shown = (status == "completed") ? totalStageCount : min(completedStageCount, totalStageCount)
+            return "\(shown)/\(totalStageCount)"
         }
 
         var digest: String {
@@ -275,6 +281,47 @@ final class ChatHistoryStore: ObservableObject {
         deleteMessages(for: session.id)
         persist()
         persistArchivedIds()
+        Self.deleteRemote(ids: [session.id])
+    }
+
+    /// Session 391 round 8 — bulk delete for multi-select in the Forge chat
+    /// history list. Removes all sessions whose id is in `ids`, wipes their
+    /// per-session message files + archived flags, then persists once (not
+    /// per-row) so the list updates in a single pass.
+    func delete(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        sessions.removeAll { ids.contains($0.id) }
+        for id in ids {
+            archivedIds.remove(id)
+            deleteMessages(for: id)
+        }
+        persist()
+        persistArchivedIds()
+        Self.deleteRemote(ids: ids)
+    }
+
+    /// Fire-and-forget server-side deletion so a deleted chat can't resurrect
+    /// from `syncFromRemote()` after the local store empties (e.g. a reinstall
+    /// wipes UserDefaults, then the empty-store path re-fetches threads). The
+    /// local removal above is the source of truth.
+    ///
+    /// Sends the whole batch in ONE bulk request. The previous per-id loop fired
+    /// a burst of DELETEs that tripped the server's 30-req/60s rate limiter —
+    /// the 429'd ones silently survived and reappeared on reinstall. One request
+    /// also completes faster, which matters because users often delete-then-
+    /// reinstall before slow background traffic finishes.
+    private static func deleteRemote(ids: Set<String>) {
+        let ids = Array(ids).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !ids.isEmpty else { return }
+        print("[ChatHistoryStore][deleteRemote] bulk-deleting \(ids.count) thread(s)")
+        Task.detached {
+            do {
+                try await AIWorkspaceAPI.deleteThreads(ids: ids)
+                print("[ChatHistoryStore][deleteRemote] bulk OK (\(ids.count))")
+            } catch {
+                print("[ChatHistoryStore][deleteRemote] bulk FAIL error=\(error)")
+            }
+        }
     }
 
     // MARK: - Message persistence (file-based)

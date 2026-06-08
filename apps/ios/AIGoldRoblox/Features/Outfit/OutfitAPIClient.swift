@@ -124,11 +124,17 @@ struct OutfitGenerationResponse: Codable {
     /// AI-rendered hero preview of an avatar in this outfit (optional —
     /// flux call may fail and the response still carries the item list).
     let heroPreviewUrl: String?
-    /// Session 390 round 16 — rotatable 3D GLB of the outfit avatar
-    /// (Meshy v6 + Blender). When present, OutfitResultView renders it via
-    /// WebGLBViewer (model-viewer); else falls back to heroPreviewUrl 2D.
+    /// Session 411 — REAL Roblox-composited 3D avatar wearing the EXACT picked
+    /// catalog items (POST /v1/avatar/render → OBJ+MTL+textures). Matches the
+    /// item list 1:1. OutfitResultView renders it via RobloxAvatar3DViewer
+    /// (SceneKit). nil on render failure → falls back to heroPreviewUrl 2D.
+    /// Reuses FittingRoomRender3D — identical wire shape (objUrl/mtlUrl/
+    /// textureUrls/camera/aabb).
+    let render3d: FittingRoomRender3D?
+    /// Deprecated (session 411): Meshy text-to-3D GLB no longer produced (it
+    /// invented an avatar that didn't match the items). Always nil now.
     let meshUrl: String?
-    /// Meshy thumbnail render of the 3D mesh (2D fallback).
+    /// Deprecated (session 411) — always nil now.
     let meshThumbnailUrl: String?
 
     var localizedPitch: String {
@@ -188,7 +194,11 @@ enum OutfitAPIClient {
                 "api/outfit/generate",
                 method: "POST",
                 body: body,
-                timeout: 30
+                // Session 411 — bumped 30→60: the synchronous endpoint now also
+                // waits for the real Roblox composited 3D render (~15-20s) on
+                // top of catalog search + flux hero. Render fails gracefully to
+                // the 2D hero, but allow it the time to complete first.
+                timeout: 60
             )
         } catch APIError.httpError(let code) where code == 429 {
             throw OutfitAPIError.rateLimited(retryAfterMs: nil)

@@ -34,7 +34,6 @@
 		7BBEB71B6524935845FB39A1 /* CursedUGCStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C720B42700C8494292C77F36 /* CursedUGCStudioView.swift */; };
 		7C3C377CD963C3C3F50400CF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FDC4623D53F133014DC5B8AE /* GoogleService-Info.plist */; };
 		84D9A5D8A68F34206816ABCE /* DisasterSpawnerSharePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7791B40F5B81DD8EA8D2384D /* DisasterSpawnerSharePoster.swift */; };
-		89035988E5CCC6A34689C4DA /* FakeLimitedRecipeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */; };
 		89184007676BFB4DCAC0E597 /* DisasterSpawnerAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C80E30CB0218ECF1C44336B /* DisasterSpawnerAPIClient.swift */; };
 		97C26B5DB939F5A66B123723 /* FittingRoomResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45354474DFD78C6A56B51118 /* FittingRoomResultView.swift */; };
 		97DB28E0992136B10E6B5069 /* DisasterSpawnerChatBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8A8F4D7D9B8748A4E6BE8D /* DisasterSpawnerChatBridge.swift */; };
@@ -165,7 +164,6 @@
 		9C8A8F4D7D9B8748A4E6BE8D /* DisasterSpawnerChatBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisasterSpawnerChatBridge.swift; sourceTree = "<group>"; };
 		A097B3CAAE71961C8905C460 /* FittingRoomStudioView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FittingRoomStudioView.swift; sourceTree = "<group>"; };
 		ACBFF49A8E26CF2719A9ADB8 /* OutfitStudio.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitStudio.swift; sourceTree = "<group>"; };
-		AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FakeLimitedRecipeCard.swift; sourceTree = "<group>"; };
 		AE5AD6306DB7FFD6BEFF02E0 /* OutfitAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitAPIClient.swift; sourceTree = "<group>"; };
 		AF4E508313D8D1C323688B4A /* OutfitSharePoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutfitSharePoster.swift; sourceTree = "<group>"; };
 		B12B4F6E7D8A511DE389D005 /* RobloxAvatar3DViewer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RobloxAvatar3DViewer.swift; sourceTree = "<group>"; };
@@ -324,15 +322,6 @@
 			path = Outfit;
 			sourceTree = "<group>";
 		};
-		3DBC8835015C219196E96B77 /* FakeLimited */ = {
-			isa = PBXGroup;
-			children = (
-				AD3421161985D7DA177610E8 /* FakeLimitedRecipeCard.swift */,
-			);
-			name = FakeLimited;
-			path = FakeLimited;
-			sourceTree = "<group>";
-		};
 		5A21117D858AEE907750603A /* Glowup */ = {
 			isa = PBXGroup;
 			children = (
@@ -465,7 +454,6 @@
 				G00100D5 /* Social */,
 				G0010017 /* Profile */,
 				5A21117D858AEE907750603A /* Glowup */,
-				3DBC8835015C219196E96B77 /* FakeLimited */,
 				2EFBF205CD2EE9163F774830 /* Outfit */,
 				09B4744579CDE9EDB179A3F9 /* CursedUGC */,
 				2BCB3319580DDE28D7A28888 /* VoiceAura */,
@@ -922,7 +910,6 @@
 				DC50831974D128D066E49DC0 /* GlowupStudio.swift in Sources */,
 				38D33571F10E8020727936A7 /* GlowupStudioView.swift in Sources */,
 				25890D9EE6A67CC7F950F596 /* GlowupResultView.swift in Sources */,
-				89035988E5CCC6A34689C4DA /* FakeLimitedRecipeCard.swift in Sources */,
 				A7F89BBBBC37FC75D4D9914B /* OutfitAPIClient.swift in Sources */,
 				3C888E647FA964F3BE0A2562 /* OutfitStudio.swift in Sources */,
 				DD8C3E25B616C916B6D3712E /* OutfitStudioView.swift in Sources */,

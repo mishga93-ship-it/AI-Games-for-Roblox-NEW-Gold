@@ -27,30 +27,21 @@ struct OutfitResultView: View {
 
     @ViewBuilder
     private var heroPreview: some View {
-        // Session 390 round 16 — prefer the rotatable 3D mesh (WebGLBViewer /
-        // <model-viewer>, same component as Cursed UGC + NPC) when the backend
-        // baked one; fall back to the 2D flux hero render, then a placeholder.
-        // WebGLBViewer renders GLB via WebGL (textures + drag-rotate + pinch-
-        // zoom), bypassing Apple ModelIO which can't import GLB on device.
-        if let meshString = response.meshUrl, let meshURL = URL(string: meshString) {
+        // Session 411 — prefer the REAL Roblox-composited 3D avatar: it wears
+        // the EXACT picked catalog items (server POST /v1/avatar/render →
+        // OBJ+MTL+textures), so the 3D matches the item list 1:1. Rendered via
+        // the SAME SceneKit viewer the Fitting Room uses. Falls back to the flux
+        // 2D hero, then a placeholder. (The old Meshy text-to-3D GLB branch is
+        // gone — it invented an avatar that didn't match the items, which is the
+        // exact mismatch this change fixes.)
+        if let urls = compositedAvatarURLs {
             ZStack(alignment: .bottomLeading) {
-                WebGLBViewer(modelURL: meshURL)
-                    .background(Color.cardBackground)
-                HStack(spacing: 5) {
-                    Image(systemName: "rotate.3d").font(.caption2.bold())
-                    Text(loc(en: "3D — drag to rotate, pinch to zoom",
-                             ru: "3D — крути и зумь пальцами"))
-                        .font(.caption2.bold())
-                }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.black.opacity(0.55))
-                .foregroundColor(.white)
-                .clipShape(Capsule())
-                .padding(8)
+                RobloxAvatar3DViewer(compositedOutfit: urls, key: response.rerollSeed)
+                hero3DBadge
             }
             .frame(maxWidth: .infinity, minHeight: 320, maxHeight: 440)
             .clipShape(RoundedRectangle(cornerRadius: 16))
-        } else if let urlString = (response.meshThumbnailUrl ?? response.heroPreviewUrl), let url = URL(string: urlString) {
+        } else if let urlString = response.heroPreviewUrl, let url = URL(string: urlString) {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let img):
@@ -71,6 +62,36 @@ struct OutfitResultView: View {
                 .aspectRatio(0.75, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+    }
+
+    /// Map the server render manifest (render3d) into the SceneKit viewer's
+    /// Avatar3DURLs. nil when no real render was produced (cookie missing /
+    /// render failed) → caller falls back to the 2D hero. `userId` is a
+    /// synthetic temp-dir key (the OBJ loader only uses it for caching).
+    private var compositedAvatarURLs: Avatar3DURLs? {
+        guard let r = response.render3d else { return nil }
+        return Avatar3DURLs(
+            userId: "outfit-\(response.aestheticId)-\(response.rerollSeed)",
+            objUrl: r.objUrl,
+            mtlUrl: r.mtlUrl,
+            textureUrls: r.textureUrls,
+            camera: r.camera,
+            aabb: r.aabb
+        )
+    }
+
+    private var hero3DBadge: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "rotate.3d").font(.caption2.bold())
+            Text(loc(en: "3D — drag to rotate, pinch to zoom",
+                     ru: "3D — крути и зумь пальцами"))
+                .font(.caption2.bold())
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Color.black.opacity(0.55))
+        .foregroundColor(.white)
+        .clipShape(Capsule())
+        .padding(8)
     }
 
     private var heroPlaceholder: some View {

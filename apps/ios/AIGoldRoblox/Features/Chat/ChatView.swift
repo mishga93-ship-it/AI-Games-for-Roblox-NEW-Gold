@@ -28,6 +28,7 @@ struct ChatView: View {
     private let isResuming: Bool
     @State private var inputText = ""
     @State private var linkInput = ""
+    @State private var universeIdInput = ""
     @State private var exportGuide: ExportGuide?
     @State private var isShowingLinkPrompt = false
     @State private var isImportingFile = false
@@ -198,6 +199,15 @@ struct ChatView: View {
         case "brainrot_sim": return "Brainrot Sim"
         case "obby_troll": return "Troll Obby"
         case "pvp": return "PvP Arena"
+        case "tower_defense": return "Tower Defense"
+        case "roleplay_town": return "Roleplay / Town"
+        case "racing": return "Racing"
+        case "parkour": return "Parkour"
+        case "story_game": return "Story Game"
+        case "minigame_hub": return "Mini-games Hub"
+        case "survival": return "Survival"
+        case "fighting": return "Fighting"
+        case "custom": return "Custom"
         case "items": return "Items"
         case "weapons": return "Weapons"
         case "buildings": return "Buildings"
@@ -380,6 +390,28 @@ struct ChatView: View {
 
     private var bodyWithVoiceAndRenameAlerts: some View {
         bodyWithSheetsAndLinkAlert
+            .alert("Connect your Roblox account", isPresented: $chatStore.showRobloxConnectAlert) {
+                Button("Connect") {
+                    RobloxAuthService.shared.startOAuthFlow()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Your generated creations upload to your own Roblox account. Connect it to start generating.")
+            }
+            .alert("Set your Game Universe ID", isPresented: $chatStore.showUniverseIdPrompt) {
+                TextField("e.g. 1234567890", text: $universeIdInput)
+                Button("Cancel", role: .cancel) {
+                    universeIdInput = ""
+                }
+                Button("Save") {
+                    let id = universeIdInput
+                    universeIdInput = ""
+                    RobloxAuthService.shared.setUniverseId(id)
+                    chatStore.generateFromCurrentPlan()
+                }
+            } message: {
+                Text("Game Passes attach to a specific game. Paste your game's Universe ID (Creator Dashboard → your Experience → Overview).")
+            }
             .alert("Voice Input Error", isPresented: Binding<Bool>(
                 get: { chatStore.voiceErrorAlert != nil },
                 set: { if !$0 { chatStore.voiceErrorAlert = nil } }
@@ -791,7 +823,7 @@ struct ChatView: View {
 
             generationStatusDock
         }
-        .background(topSurfaceHasContent ? Color.white.opacity(0.50) : Color.clear)
+        .background(topSurfaceHasContent ? Color.dockSurface : Color.clear)
         .overlay(alignment: .bottom) {
             if topSurfaceHasContent {
                 Rectangle()
@@ -1409,6 +1441,7 @@ struct ChatView: View {
                     isAnimation: guide.isAnimation,
                     jobId: guide.jobId,
                     generatedSystems: guide.generatedSystems,
+                    isLayeredClothing: guide.isLayeredClothing,
                     onDismiss: { exportGuide = nil }
                 )
             }
@@ -1547,7 +1580,7 @@ struct ChatView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 10)
-        .background(Color.white.opacity(0.66))
+        .background(Color.dockSurface)
     }
 
     private var voiceComposer: some View {
@@ -2080,7 +2113,8 @@ struct ChatView: View {
             downloadURL: preview.downloadURL,
             isAnimation: isAnim,
             jobId: chatStore.lastJobId,
-            generatedSystems: preview.notes
+            generatedSystems: preview.notes,
+            isLayeredClothing: chatStore.isLayeredClothingResult
         )
     }
 }
@@ -3218,8 +3252,9 @@ private struct ExportGuide: Identifiable {
     let isAnimation: Bool
     let jobId: String?
     let generatedSystems: [String]
+    let isLayeredClothing: Bool
 
-    init(fileName: String, fileType: String, downloadURL: URL?, clothingTexturePngURL: URL? = nil, isAnimation: Bool = false, jobId: String? = nil, generatedSystems: [String] = []) {
+    init(fileName: String, fileType: String, downloadURL: URL?, clothingTexturePngURL: URL? = nil, isAnimation: Bool = false, jobId: String? = nil, generatedSystems: [String] = [], isLayeredClothing: Bool = false) {
         self.fileName = fileName
         self.fileType = fileType
         self.downloadURL = downloadURL
@@ -3227,6 +3262,7 @@ private struct ExportGuide: Identifiable {
         self.clothingTexturePngURL = clothingTexturePngURL
         self.jobId = jobId
         self.generatedSystems = generatedSystems
+        self.isLayeredClothing = isLayeredClothing
     }
 }
 

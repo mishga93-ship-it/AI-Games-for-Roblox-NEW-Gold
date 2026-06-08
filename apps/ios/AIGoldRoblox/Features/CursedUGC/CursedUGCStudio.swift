@@ -31,6 +31,7 @@ final class CursedUGCStudio: ObservableObject {
     }
 
     @Published var step: Step = .categoryPicker
+    @Published var showRobloxConnectAlert = false
     @Published var intensity: CursedUGCIntensity = .strong
     @Published var userPrompt: String = ""
     @Published var transientToast: String?
@@ -80,6 +81,10 @@ final class CursedUGCStudio: ObservableObject {
         let effectiveIntensity: CursedUGCIntensity = forceMoreCursed
             ? (intensity == .mild ? .strong : .extreme)
             : intensity
+        if !RobloxAuthService.shared.isConnected {
+            showRobloxConnectAlert = true
+            return
+        }
         step = .loading
         do {
             let r = try await CursedUGCAPIClient.generate(

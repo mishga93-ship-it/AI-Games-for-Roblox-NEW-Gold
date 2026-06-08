@@ -30,6 +30,7 @@ private func iconForPortfolioPost(category: String?, projectKind: String) -> Str
 
 struct ProfileView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var themeManager: ThemeManager
     @State private var isShowingProfileEditor = false
     @State private var isShowingSocialLinksEditor = false
     @State private var remoteProfile: AIWorkspaceAPI.SocialProfile?
@@ -75,6 +76,8 @@ struct ProfileView: View {
                 actionsGrid
 
                 badgesCard
+
+                appearanceCard
 
                 VStack(spacing: 12) {
                     PrimaryButton(title: "Open Kami Studio") {
@@ -673,35 +676,7 @@ struct ProfileView: View {
                 .disabled(robloxAuth.isLoading)
             }
 
-            if robloxAuth.isConnected {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Universe ID")
-                            .font(.subheadline.weight(.medium))
-                        Spacer()
-                        if let uid = robloxAuth.universeId, !uid.isEmpty {
-                            Label("Set", systemImage: "checkmark.circle.fill")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.green)
-                        } else {
-                            Label("Required for Game Passes", systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(Color.accentPink)
-                        }
-                    }
-                    TextField("e.g. 1234567890", text: Binding(
-                        get: { robloxAuth.universeId ?? "" },
-                        set: { robloxAuth.setUniverseId($0) }
-                    ))
-                    .font(.subheadline.monospaced())
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
-                    Text("Creator Dashboard → Your Experience → Overview → Copy Universe ID")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.vertical, 4)
-            }
+            // Universe ID moved to the Game Pass flow (asked in-context when creating a pass) — off the connect screen to keep it simple.
 
             if let error = robloxAuth.errorMessage {
                 Text(error)
@@ -722,6 +697,101 @@ struct ProfileView: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(Color.accentPrimary.opacity(0.18), lineWidth: 1)
         )
+    }
+
+    // MARK: - Appearance / Theme Card
+
+    private var isRu: Bool { appState.appLanguage == .ru }
+
+    private var appearanceCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isRu ? "Внешний вид" : "Appearance")
+                    .font(.appHeadline)
+                    .foregroundColor(.textPrimary)
+                Text(isRu ? "Тёмная тема — выбери оформление" : "Dark mode — pick a look")
+                    .font(.appCaption)
+                    .foregroundColor(.textSecondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(AppTheme.allCases) { theme in
+                    themeRow(theme)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.accentPrimary.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func themeRow(_ theme: AppTheme) -> some View {
+        let isSelected = themeManager.theme == theme
+        let palette = theme.palette
+        return Button {
+            guard themeManager.theme != theme else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            themeManager.theme = theme
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [palette.gradientTop, palette.gradientBottom],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(palette.accentPrimary)
+                        .frame(width: 18, height: 18)
+                }
+                .frame(width: 46, height: 46)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Image(systemName: theme.symbolName)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.accentPrimary)
+                        Text(theme.displayName)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.textPrimary)
+                    }
+                    Text(theme.subtitle(isRu: isRu))
+                        .font(.appCaption)
+                        .foregroundColor(.textSecondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(isSelected ? .accentPrimary : .textTertiary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isSelected ? Color.accentPrimary.opacity(0.10) : Color.white.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        isSelected ? Color.accentPrimary.opacity(0.5) : Color.accentPrimary.opacity(0.10),
+                        lineWidth: isSelected ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Notifications Card

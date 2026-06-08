@@ -43,16 +43,22 @@ struct APIClient {
         method: String = "GET",
         body: Encodable? = nil,
         token: String? = nil,
-        timeout: TimeInterval? = nil
+        timeout: TimeInterval? = nil,
+        requiresAuth: Bool = true
     ) async throws -> T {
         let url = URL(string: path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(path)
         var request = URLRequest(url: url)
         request.httpMethod = method
         if let timeout { request.timeoutInterval = timeout }
         defaultHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-        let authToken = try await resolvedToken(explicitToken: token)
-        if let authToken {
-            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        // Public endpoints must skip token resolution: getIDToken() itself can
+        // throw (no session / refresh failure), which would otherwise also sink
+        // an unauthenticated fallback call.
+        if requiresAuth {
+            let authToken = try await resolvedToken(explicitToken: token)
+            if let authToken {
+                request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+            }
         }
         if let body = body {
             request.httpBody = try JSONEncoder().encode(AnyEncodable(body))

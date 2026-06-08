@@ -93,7 +93,7 @@ struct VoiceAuraResultView: View {
                     switch phase {
                     case .success(let img): img.resizable().scaledToFit()
                     case .failure: heroFallback
-                    case .empty: ZStack { heroFallback; ProgressView().tint(.white) }
+                    case .empty: AuraHeroLoadingView(accent: auraHex(currentStyleAccent))
                     @unknown default: heroFallback
                     }
                 }
@@ -381,5 +381,75 @@ private struct LuaCodeView: View {
             }
         }
         return s
+    }
+}
+
+// MARK: - Native hero loader (particle-engine style)
+
+/// Shown while the hero aura image is still downloading (the AsyncImage `.empty`
+/// phase). Replaces the old static "Aura preview unavailable" placeholder for the
+/// LOADING state so users see a live, on-brand animation instead of a screen that
+/// reads like an error. Pure SwiftUI (no asset dependency); tints itself with the
+/// aura's accent color so each style loads in its own palette.
+private struct AuraHeroLoadingView: View {
+    let accent: Color
+    @State private var spin = false
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [accent.opacity(0.55), .black],
+                           startPoint: .top, endPoint: .bottom)
+
+            // Soft breathing core glow.
+            Circle()
+                .fill(RadialGradient(colors: [accent.opacity(0.85), accent.opacity(0.0)],
+                                     center: .center, startRadius: 2, endRadius: 95))
+                .frame(width: 190, height: 190)
+                .scaleEffect(pulse ? 1.12 : 0.82)
+                .opacity(pulse ? 0.95 : 0.45)
+
+            // Expanding ring pulse.
+            Circle()
+                .stroke(accent.opacity(0.85), lineWidth: 3)
+                .frame(width: 110, height: 110)
+                .scaleEffect(pulse ? 1.25 : 0.65)
+                .opacity(pulse ? 0.0 : 0.9)
+
+            // Orbiting particles — the "particle engine".
+            ZStack {
+                ForEach(0..<8, id: \.self) { i in
+                    Circle()
+                        .fill(Color.white.opacity(0.9))
+                        .frame(width: 6, height: 6)
+                        .offset(y: -52)
+                        .rotationEffect(.degrees(Double(i) / 8 * 360))
+                }
+            }
+            .rotationEffect(.degrees(spin ? 360 : 0))
+
+            // Center sparkle.
+            Image(systemName: "sparkles")
+                .font(.system(size: 30))
+                .foregroundColor(.white.opacity(0.9))
+                .scaleEffect(pulse ? 1.1 : 0.9)
+
+            // Caption pinned to the bottom.
+            VStack {
+                Spacer()
+                Text(loc(en: "Loading aura preview…", ru: "Aura preview загружается…"))
+                    .font(.appCaption)
+                    .foregroundColor(.white.opacity(0.85))
+                    .padding(.bottom, 20)
+            }
+        }
+        .onAppear {
+            withAnimation(.linear(duration: 4.5).repeatForever(autoreverses: false)) {
+                spin = true
+            }
+            withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
     }
 }

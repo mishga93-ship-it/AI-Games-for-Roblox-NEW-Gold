@@ -22,6 +22,14 @@ struct OutfitStudioView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: studio.transientToast)
+        .alert("Connect your Roblox account", isPresented: $studio.showRobloxConnectAlert) {
+            Button("Connect") {
+                RobloxAuthService.shared.startOAuthFlow()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your generated creations upload to your own Roblox account. Connect it to start generating.")
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {

@@ -753,6 +753,7 @@ enum FirebaseBootstrap {
 struct AIGoldRobloxApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState: AppState
+    @StateObject private var themeManager = ThemeManager()
 
     init() {
         _ = FirebaseBootstrap.configureIfNeeded()
@@ -763,6 +764,7 @@ struct AIGoldRobloxApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .environmentObject(themeManager)
                 .onOpenURL { url in
                     appState.handleIncomingURL(url)
                 }

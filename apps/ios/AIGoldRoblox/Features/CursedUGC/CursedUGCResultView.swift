@@ -14,19 +14,30 @@ struct CursedUGCResultView: View {
     let response: CursedUGCResponse
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                marketplaceCard
-                variationsStrip
-                exportButton
-                makeMoreCursedButton
-                shareButton
-                tagsRow
-                footer
+        // Session 396 round 2 — pin the scroll content to the viewport width.
+        // A vertical SwiftUI ScrollView will ALSO pan horizontally the moment
+        // any child's intrinsic width exceeds the viewport (long AI-generated
+        // title, a wide stat pill, etc.) — which is why the whole result UI
+        // could be dragged left/right with the card cut off on the right.
+        // Locking the padded content to `geo.size.width` makes the content
+        // exactly viewport-wide, so the horizontal axis can never scroll while
+        // the vertical scroll is unaffected.
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 16) {
+                    marketplaceCard
+                    variationsStrip
+                    exportButton
+                    makeMoreCursedButton
+                    shareButton
+                    tagsRow
+                    footer
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 60)
+                .padding(.bottom, 30)
+                .frame(width: geo.size.width)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 60)
-            .padding(.bottom, 30)
         }
     }
 
@@ -243,37 +254,62 @@ struct CursedUGCResultView: View {
 
     // MARK: - Actions
 
-    // Session 396 — the headline deliverable: export the finished 3D item as
-    // a Roblox-ready .rbxm (single static MeshPart, imports straight into
-    // Studio). When the .rbxm pipeline is unavailable (no Open Cloud / Engine
-    // API creds) we fall back to the raw GLB so the user always gets a 3D
-    // file, never just the 2D concept.
+    private var hasFbxExport: Bool { !(response.fbxUrl ?? "").isEmpty }
+    private var hasRbxmExport: Bool { !(response.rbxmUrl ?? "").isEmpty }
+
+    // Session 406 — export the FINISHED 3D item. Priority:
+    //   .fbx  — the real Roblox UGC upload format (Studio → Avatar → Import 3D);
+    //           the deliverable promised to users, shown as the green headline.
+    //   .rbxm — finished Studio item (drop-in MeshPart); shown alongside .fbx
+    //           when both built so power users can open it directly in Studio.
+    //   .glb  — universal 3D fallback, only when neither Roblox format built, so
+    //           the user always gets a 3D file (never just the 2D concept).
     @ViewBuilder
     private var exportButton: some View {
-        if let rbxm = response.rbxmUrl, !rbxm.isEmpty {
-            Button(action: { studio.exportModelFile(urlString: rbxm, fileExtension: "rbxm") }) {
-                exportButtonLabel(
-                    title: loc(en: "Export .rbxm for Roblox Studio",
-                               ru: "Экспорт .rbxm для Roblox Studio"),
-                    subtitle: loc(en: "Finished 3D item — drop straight into Studio",
-                                  ru: "Готовый 3D-айтем — закинь прямо в Studio"),
-                    icon: "cube.transparent.fill"
-                )
-            }
-        } else if let glb = response.meshUrl, !glb.isEmpty {
-            Button(action: { studio.exportModelFile(urlString: glb, fileExtension: "glb") }) {
-                exportButtonLabel(
-                    title: loc(en: "Export 3D model (.glb)",
-                               ru: "Экспорт 3D-модели (.glb)"),
-                    subtitle: loc(en: "Open in any 3D tool or the Studio importer",
-                                  ru: "Открой в любом 3D-редакторе или импортёре Studio"),
-                    icon: "move.3d"
-                )
+        if hasFbxExport || hasRbxmExport || !(response.meshUrl ?? "").isEmpty {
+            VStack(spacing: 10) {
+                if let fbx = response.fbxUrl, !fbx.isEmpty {
+                    Button(action: { studio.exportModelFile(urlString: fbx, fileExtension: "fbx") }) {
+                        exportButtonLabel(
+                            title: loc(en: "Export .fbx for Roblox",
+                                       ru: "Экспорт .fbx для Roblox"),
+                            subtitle: loc(en: "Real 3D item — import in Studio (Avatar → Import 3D) to publish as UGC",
+                                          ru: "Настоящий 3D-айтем — импортни в Studio (Avatar → Import 3D) и публикуй как UGC"),
+                            icon: "arrow.up.doc.fill",
+                            primary: true
+                        )
+                    }
+                }
+                if let rbxm = response.rbxmUrl, !rbxm.isEmpty {
+                    Button(action: { studio.exportModelFile(urlString: rbxm, fileExtension: "rbxm") }) {
+                        exportButtonLabel(
+                            title: loc(en: "Export .rbxm for Roblox Studio",
+                                       ru: "Экспорт .rbxm для Roblox Studio"),
+                            subtitle: loc(en: "Finished 3D item — drop straight into Studio",
+                                          ru: "Готовый 3D-айтем — закинь прямо в Studio"),
+                            icon: "cube.transparent.fill",
+                            primary: !hasFbxExport
+                        )
+                    }
+                }
+                if !hasFbxExport, !hasRbxmExport, let glb = response.meshUrl, !glb.isEmpty {
+                    Button(action: { studio.exportModelFile(urlString: glb, fileExtension: "glb") }) {
+                        exportButtonLabel(
+                            title: loc(en: "Export 3D model (.glb)",
+                                       ru: "Экспорт 3D-модели (.glb)"),
+                            subtitle: loc(en: "Open in any 3D tool or the Studio importer",
+                                          ru: "Открой в любом 3D-редакторе или импортёре Studio"),
+                            icon: "move.3d",
+                            primary: true
+                        )
+                    }
+                }
             }
         }
     }
 
-    private func exportButtonLabel(title: String, subtitle: String, icon: String) -> some View {
+    @ViewBuilder
+    private func exportButtonLabel(title: String, subtitle: String, icon: String, primary: Bool = true) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon).font(.title3.bold())
             VStack(alignment: .leading, spacing: 2) {
@@ -285,8 +321,14 @@ struct CursedUGCResultView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 14).padding(.horizontal, 16)
-        .background(LinearGradient(colors: [.green, .accentPrimary], startPoint: .leading, endPoint: .trailing))
-        .foregroundColor(.white)
+        .background {
+            if primary {
+                LinearGradient(colors: [.green, .accentPrimary], startPoint: .leading, endPoint: .trailing)
+            } else {
+                Color.accentPrimary.opacity(0.12)
+            }
+        }
+        .foregroundColor(primary ? .white : .accentPrimary)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -371,8 +413,8 @@ struct CursedUGCResultView: View {
                 .tint(.accentPrimary)
             }
             Text(loc(
-                en: "Concept image generated by AI — NOT a real Roblox UGC item. Made for memes, not for upload.",
-                ru: "Концепт сгенерирован AI — это НЕ настоящий Roblox UGC. Для мемов, не для upload."
+                en: "AI-generated 3D item. Export the .fbx and import it in Roblox Studio (Avatar → Import 3D) to publish it as your own UGC. The price & stats above are a stylized preview.",
+                ru: "AI-сгенерированный 3D-айтем. Экспортни .fbx и импортни в Roblox Studio (Avatar → Import 3D), чтобы опубликовать как свой UGC. Цена и статы выше — стилизованное превью."
             ))
                 .font(.caption2)
                 .foregroundColor(.textSecondary.opacity(0.7))

@@ -102,6 +102,11 @@ struct ForgeView: View {
     }
 
     @StateObject private var history = ChatHistoryStore.shared
+    // Session 391 round 9 — observe scenePhase so we can close the open chat
+    // when the app is backgrounded; re-entering the app then lands on the
+    // main Forge screen instead of resuming inside the last chat (which
+    // SwiftUI @State would otherwise keep presented across warm resume).
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isShowingProjectPicker = false
     @State private var isShowingChatPicker = false
     @State private var selectedGroup: ProjectGroup = .games
@@ -138,6 +143,10 @@ struct ForgeView: View {
     //  APIClient.request to GET /api/viral-generations/:id).
     @State private var chatGrouping: ChatGrouping = .date
     @State private var chatSearchQuery = ""
+    // Session 391 round 8 — multi-select + bulk delete for the chat history.
+    @State private var isSelectingChats = false
+    @State private var selectedChatIds: Set<String> = []
+    @State private var showBulkDeleteConfirm = false
     @State private var templates: [AIWorkspaceAPI.GameTemplate] = []
     @State private var isLoadingTemplates = false
     @State private var hasCompletedInitialHistoryCheck = false
@@ -249,6 +258,21 @@ struct ForgeView: View {
         } message: {
             Text("This chat will be permanently deleted.")
         }
+        // Session 391 round 8 — bulk delete confirmation for multi-select.
+        .alert(
+            isRussianInterface ? "Удалить выбранные чаты?" : "Delete selected chats?",
+            isPresented: $showBulkDeleteConfirm
+        ) {
+            Button(isRussianInterface ? "Отмена" : "Cancel", role: .cancel) { }
+            Button(isRussianInterface ? "Удалить (\(selectedChatIds.count))" : "Delete (\(selectedChatIds.count))",
+                   role: .destructive) {
+                performBulkChatDelete()
+            }
+        } message: {
+            Text(isRussianInterface
+                 ? "\(selectedChatIds.count) чат(ов) будут удалены навсегда."
+                 : "\(selectedChatIds.count) chat(s) will be permanently deleted.")
+        }
         .alert("Rename Chat", isPresented: Binding<Bool>(
             get: { renameTarget != nil },
             set: { if !$0 { renameTarget = nil } }
@@ -273,6 +297,18 @@ struct ForgeView: View {
         }
         .onAppear {
             openPendingGenerationNotificationIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Session 391 round 9 — when the app is backgrounded, close the
+            // open chat so re-entering lands on the main Forge screen, not
+            // inside the last active chat. Only `.background` (app truly left)
+            // — `.inactive` (notification-center pull, share sheet, Face ID)
+            // is left alone so transient interruptions don't close the chat.
+            // A push-notification tap still re-opens the relevant chat via
+            // openPendingGenerationNotificationIfNeeded on the next appear.
+            if phase == .background {
+                launchConfig = nil
+            }
         }
     }
 
@@ -316,15 +352,37 @@ struct ForgeView: View {
 
                 Spacer()
 
-                if chatSearchQuery.isEmpty {
-                    Picker("Group by", selection: $chatGrouping) {
-                        ForEach(ChatGrouping.allCases, id: \.rawValue) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
+                if isSelectingChats {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { exitChatSelection() }
+                    } label: {
+                        Text(isRussianInterface ? "Готово" : "Done")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.accentPrimary)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 150)
+                } else {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isSelectingChats = true }
+                    } label: {
+                        Label(isRussianInterface ? "Выбрать" : "Select", systemImage: "checkmark.circle")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.accentPrimary)
+                    }
+
+                    if chatSearchQuery.isEmpty {
+                        Picker("Group by", selection: $chatGrouping) {
+                            ForEach(ChatGrouping.allCases, id: \.rawValue) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 130)
+                    }
                 }
+            }
+
+            if isSelectingChats {
+                chatSelectionActionBar
             }
 
             HStack(spacing: 10) {
@@ -377,6 +435,85 @@ struct ForgeView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Chat multi-select (session 391 round 8)
+
+    /// Sessions currently shown in the list (respects active search). Used by
+    /// "select all" so it only acts on what the user can actually see.
+    private var selectableSessions: [ChatHistoryStore.ChatSession] {
+        chatSearchQuery.isEmpty ? history.sortedSessions : filteredSessions
+    }
+
+    private var allVisibleSelected: Bool {
+        let ids = Set(selectableSessions.map(\.id))
+        return !ids.isEmpty && ids.isSubset(of: selectedChatIds)
+    }
+
+    private var chatSelectionActionBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { toggleSelectAllChats() }
+            } label: {
+                Label(
+                    allVisibleSelected
+                        ? (isRussianInterface ? "Снять все" : "Deselect all")
+                        : (isRussianInterface ? "Выбрать все" : "Select all"),
+                    systemImage: allVisibleSelected ? "circle" : "checkmark.circle.fill"
+                )
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(.accentPrimary)
+            }
+
+            Spacer()
+
+            Text(isRussianInterface
+                 ? "Выбрано: \(selectedChatIds.count)"
+                 : "\(selectedChatIds.count) selected")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(.textSecondary)
+
+            Spacer()
+
+            Button(role: .destructive) {
+                showBulkDeleteConfirm = true
+            } label: {
+                Label(isRussianInterface ? "Удалить" : "Delete", systemImage: "trash.fill")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(selectedChatIds.isEmpty ? .textTertiary : .red)
+            }
+            .disabled(selectedChatIds.isEmpty)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.cardBackground.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func exitChatSelection() {
+        isSelectingChats = false
+        selectedChatIds.removeAll()
+    }
+
+    private func toggleChatSelection(_ session: ChatHistoryStore.ChatSession) {
+        if selectedChatIds.contains(session.id) {
+            selectedChatIds.remove(session.id)
+        } else {
+            selectedChatIds.insert(session.id)
+        }
+    }
+
+    private func toggleSelectAllChats() {
+        if allVisibleSelected {
+            selectedChatIds.removeAll()
+        } else {
+            selectedChatIds = Set(selectableSessions.map(\.id))
+        }
+    }
+
+    private func performBulkChatDelete() {
+        history.delete(ids: selectedChatIds)
+        withAnimation(.easeInOut(duration: 0.2)) { exitChatSelection() }
     }
 
     private var chatHistoryLoadingState: some View {
@@ -573,9 +710,20 @@ struct ForgeView: View {
 
     private func chatHistoryRow(_ session: ChatHistoryStore.ChatSession) -> some View {
         Button {
-            resumeSession(session)
+            if isSelectingChats {
+                withAnimation(.easeInOut(duration: 0.12)) { toggleChatSelection(session) }
+            } else {
+                resumeSession(session)
+            }
         } label: {
             HStack(spacing: 12) {
+                if isSelectingChats {
+                    Image(systemName: selectedChatIds.contains(session.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(selectedChatIds.contains(session.id) ? .accentPrimary : .textTertiary)
+                        .frame(width: 28)
+                        .transition(.scale.combined(with: .opacity))
+                }
                 Image(systemName: session.chatMode == "voice" ? "waveform.badge.mic" : "text.bubble.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(session.isStarred ? .accentOrange : .accentPrimary)
@@ -614,16 +762,39 @@ struct ForgeView: View {
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.textTertiary)
+                if !isSelectingChats {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.textTertiary)
+                }
             }
             .padding(14)
-            .background(Color.cardBackground)
+            .background(
+                ZStack {
+                    Color.cardBackground
+                    if isSelectingChats && selectedChatIds.contains(session.id) {
+                        Color.accentPrimary.opacity(0.12)
+                    }
+                }
+            )
             .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.accentPrimary.opacity(
+                        isSelectingChats && selectedChatIds.contains(session.id) ? 0.55 : 0), lineWidth: 1.5)
+            )
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSelectingChats = true
+                    selectedChatIds.insert(session.id)
+                }
+            } label: {
+                Label(isRussianInterface ? "Выбрать несколько" : "Select multiple", systemImage: "checkmark.circle")
+            }
+
             Button {
                 renameText = session.title
                 renameTarget = session
@@ -815,7 +986,11 @@ struct ForgeView: View {
     }
 
     private func progressRatio(_ status: ChatHistoryStore.GenerationStatus) -> CGFloat {
-        guard status.totalStageCount > 0 else { return status.isReady ? 1 : 0 }
+        // Session 391 round 7 — a completed/ready job fills the bar fully even
+        // if completedStageCount wasn't flipped (viral handlers finish without
+        // marking stages). Matches the N/N progressLabel clamp.
+        if status.isReady { return 1 }
+        guard status.totalStageCount > 0 else { return 0 }
         let raw = CGFloat(status.completedStageCount) / CGFloat(status.totalStageCount)
         if status.needsAttention || status.isActive {
             return min(max(raw, 0.08), 0.96)
@@ -1101,7 +1276,7 @@ struct ForgeView: View {
 private extension ForgeView {
     var projectTypeModal: some View {
         NavigationStack {
-            ScrollView {
+            ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 14) {
                     BrandSegmentedControl(
                         items: ProjectGroup.allCases,
@@ -1124,6 +1299,12 @@ private extension ForgeView {
                     }
                 }
                 .padding(16)
+                // Session 399 fix: bound the content to the scroll container's width
+                // so cards (and their right-side badges) can never overflow past the
+                // viewport. Without this, the card row was wider than the screen and
+                // the whole Games list could be dragged sideways. Pins it to vertical
+                // scrolling only. (containerRelativeFrame is iOS 17+; target is 17.)
+                .containerRelativeFrame(.horizontal)
             }
             .background(
                 LinearGradient(colors: [.gradientTop, .gradientBottom], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -1244,6 +1425,12 @@ private extension ForgeView {
     var chipStrip: some View {
         let chips = chips(for: selectedGroup)
         let activeID = activeChipID(for: selectedGroup)
+        // Session 399 fix: the filter-chip row is the only horizontal scroller in
+        // the Project Type sheet. Without this, the horizontal ScrollView lets the
+        // whole strip be dragged/bounced sideways even when the few chips (e.g.
+        // All / Genre) already fit — user reported the Games block "moving left and
+        // right" when it should only scroll vertically. `.basedOnSize` makes it
+        // scroll/bounce ONLY when the chips actually overflow the width.
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(chips) { chip in
@@ -1270,6 +1457,7 @@ private extension ForgeView {
             }
             .padding(.vertical, 2)
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     var chipEmptyState: some View {
@@ -1341,16 +1529,21 @@ private extension ForgeView {
             ProjectOption(id: "rpg", title: "RPG Adventure", details: "NPC quests, classes, enemy camps, loot chests, boss fights, and leveling.", kind: .game, tags: ["genre", "new", "world"]),
             ProjectOption(id: "horror", title: "Horror Escape", details: "Flashlights, keys, locked doors, safe scares, monster chase AI, and escape objectives.", kind: .game, tags: ["genre", "new", "world"]),
             ProjectOption(id: "pvp", title: "PvP Arena", details: "FFA or team rounds, balanced weapons, respawns, cover, timer HUD, and scoreboard.", kind: .game, tags: ["genre", "new", "viral"]),
-            // MARK: - Hidden categories (will be restored later)
-            // ProjectOption(id: "roleplay", title: "Roleplay / Town", details: "City, jobs, homes, economy, and social systems.", kind: .game),
-            // ProjectOption(id: "td", title: "Tower Defense", details: "Enemy waves, tower placement, upgrades, bosses, and co-op.", kind: .game),
-            // ProjectOption(id: "racing", title: "Racing", details: "Tracks, vehicle stats, boosts, drift, and leaderboards.", kind: .game),
-            // ProjectOption(id: "parkour", title: "Parkour", details: "Wall-run/jump, dash, tricks, rankings, and challenge levels.", kind: .game),
-            // ProjectOption(id: "story", title: "Story Game", details: "Cutscenes, branching choices, consequences, and multiple endings.", kind: .game),
-            // ProjectOption(id: "minigames", title: "Mini-games Hub", details: "Multiple minigames, lobby flow, and voting systems.", kind: .game),
-            // ProjectOption(id: "survival", title: "Survival", details: "Crafting, resources, base building, enemies, and day/night cycle.", kind: .game),
-            // ProjectOption(id: "fighting", title: "Fighting", details: "Combo combat, block/dodge, tournaments, and PvP progression.", kind: .game),
-            // ProjectOption(id: "custom", title: "Custom", details: "Any genre from the user's custom description.", kind: .game)
+            // Session 399 — Tower Defense restored as a full playable genre backed by the
+            // deterministic buildTowerDefenseScript (wave manager, 3 upgradeable tower types,
+            // shared base HP, boss waves). id == backend contentSubcategory "tower_defense".
+            ProjectOption(id: "tower_defense", title: "Tower Defense", details: "Enemy waves, tower placement, upgrades, boss waves, and co-op base defense.", kind: .game, tags: ["genre", "new", "world"]),
+            // Session 399 (cont.) — remaining genres restored as full deterministic
+            // builders. Each id == backend contentSubcategory token (default
+            // mappedSubcategory = selectedOption.id routes straight through).
+            ProjectOption(id: "roleplay_town", title: "Roleplay / Town", details: "Named buildings, job pads that pay cash, a role shop, NPCs, and day/night.", kind: .game, tags: ["genre", "new", "world"]),
+            ProjectOption(id: "racing", title: "Racing", details: "Closed-loop track, ordered checkpoints, laps, a timer, and best-time records.", kind: .game, tags: ["genre", "new", "world"]),
+            ProjectOption(id: "parkour", title: "Parkour", details: "Ascending platform course, checkpoints, void respawn, and best-time finish.", kind: .game, tags: ["genre", "new", "world"]),
+            ProjectOption(id: "story_game", title: "Story Game", details: "Themed chapter zones, narrative beats, narrator NPCs, and a final ending.", kind: .game, tags: ["genre", "new", "world"]),
+            ProjectOption(id: "minigame_hub", title: "Mini-games Hub", details: "Lobby + tile arena rotating 3 elimination modes with survivor scoring.", kind: .game, tags: ["genre", "new", "viral"]),
+            ProjectOption(id: "survival", title: "Survival", details: "Gather wood/stone, heal at the campfire, and survive night enemy waves.", kind: .game, tags: ["genre", "new", "world"]),
+            ProjectOption(id: "fighting", title: "Fighting", details: "Raised ring, melee punches with knockback, ring-outs, KOs, and rounds.", kind: .game, tags: ["genre", "new", "viral"]),
+            ProjectOption(id: "custom", title: "Custom", details: "Any genre from your description — sandbox with coins, upgrades, and platforms.", kind: .game, tags: ["genre", "new"])
         ]
     }
 
@@ -1548,8 +1741,8 @@ private extension ForgeView {
                 id: "fake_limited",
                 title: "Fake Headless & Korblox",
                 details: isRussianInterface
-                    ? "Соберём иллюзию дорогих лимиток за 0 Robux. AI подбирает бесплатные и дешёвые Catalog-аксессуары, которые визуально имитируют Headless Horseman (31 000 R$) и Korblox Deathspeaker (17 000 R$) — рецепт, превью аватара и инструкция по сборке в Avatar Editor."
-                    : "Build the illusion of expensive limiteds for 0 Robux. AI picks free + cheap Catalog accessories that mimic Headless Horseman (31,000 R$) and Korblox Deathspeaker (17,000 R$) — recipe, avatar preview, and Avatar Editor steps.",
+                    ? "Соберём стиль дорогих лимиток за пару десятков Robux. AI подбирает дешёвые Catalog-аксессуары, которые визуально напоминают образы Headless Horseman и Korblox Deathspeaker — рецепт, превью аватара и инструкция по сборке в Avatar Editor."
+                    : "Build a look inspired by expensive limiteds for just a few Robux. AI picks cheap Catalog accessories that resemble the Headless Horseman and Korblox Deathspeaker styles — recipe, avatar preview, and Avatar Editor steps.",
                 kind: .fakeLimited,
                 tags: ["new", "viral", "ai", "tiktok", "economy"]
             ),

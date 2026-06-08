@@ -16,16 +16,24 @@ struct ExportView: View {
     var jobId: String? = nil
     /// List of generated systems/scripts shown as a "What's Inside" preview
     var generatedSystems: [String] = []
+    /// 3D layered clothing result → show Accessory import steps instead of the
+    /// full-avatar "Import 3D → auto-rig R15" FBX flow, which mangles a garment
+    /// into a body and is why the clothing didn't sit on the character in Studio.
+    var isLayeredClothing: Bool = false
     let onDismiss: () -> Void
 
     @State private var showQRCode = false
     @State private var isPreparingDownload = false
     @State private var downloadedFileURL: URL?
-    @State private var showShareSheet = false
     @State private var showFilesPicker = false
     @State private var downloadErrorMessage: String?
     @State private var isPreparingPng = false
     @State private var isPreparingZip = false
+    @State private var editableFileName: String = ""
+    /// Holds the share-sheet's temporary file URL while UIActivityViewController is presented
+    /// outside SwiftUI's sheet machinery — we still need a strong reference so the file
+    /// isn't reclaimed mid-share.
+    @State private var pendingShareURL: URL?
 
     var body: some View {
         ZStack {
@@ -36,21 +44,36 @@ struct ExportView: View {
                 VStack(spacing: 20) {
                     RoundedRectangle(cornerRadius: 28)
                         .fill(Color.cardBackground)
-                        .frame(height: 180)
+                        .frame(minHeight: 200)
                         .overlay {
-                            VStack(spacing: 14) {
+                            VStack(spacing: 12) {
                                 Image(systemName: "square.and.arrow.up.fill")
-                                    .font(.system(size: 48, weight: .semibold))
+                                    .font(.system(size: 40, weight: .semibold))
                                     .foregroundColor(.accentPrimary)
-                                Text("\(fileName).\(fileType)")
-                                    .font(.appHeadline)
-                                    .foregroundColor(.textPrimary)
+                                HStack(spacing: 4) {
+                                    TextField("file name", text: $editableFileName)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled(true)
+                                        .submitLabel(.done)
+                                        .multilineTextAlignment(.trailing)
+                                        .font(.appHeadline)
+                                        .foregroundColor(.textPrimary)
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 10)
+                                        .background(Color.gradientTop.opacity(0.45))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    Text(".\(fileType)")
+                                        .font(.appHeadline)
+                                        .foregroundColor(.textSecondary)
+                                }
+                                .padding(.horizontal, 20)
                                 Text(destinationSummary)
                                     .font(.appCaption)
                                     .foregroundColor(.textSecondary)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 20)
                             }
+                            .padding(.vertical, 12)
                         }
 
                     if clothingTexturePngURL != nil {
@@ -111,15 +134,16 @@ struct ExportView: View {
                 }
                 .padding(20)
             }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .onAppear {
+            if editableFileName.isEmpty {
+                editableFileName = makeUniqueDefaultName()
+            }
         }
         .sheet(isPresented: $showQRCode) {
             if let url = downloadURL {
                 QRCodeSheet(url: url, title: "\(fileName).\(fileType)")
-            }
-        }
-        .sheet(isPresented: $showShareSheet) {
-            if let localFileURL = downloadedFileURL {
-                FileShareSheet(items: [localFileURL])
             }
         }
         .sheet(isPresented: $showFilesPicker) {
@@ -138,6 +162,9 @@ struct ExportView: View {
     }
 
     private var destinationSummary: String {
+        if isLayeredClothing {
+            return "3D clothing mesh, pre-sized (~2.6 studs) to fit the avatar. Open Studio's Accessory Fitting Tool (Avatar tab), import this .fbx as the garment, fit it inside the blue bounding box on the preview body, and the tool builds the wearable layered accessory."
+        }
         switch fileType.lowercased() {
         case "rbxl":
             return "Move this place file to desktop, open it in Studio and publish from there."
@@ -211,6 +238,16 @@ struct ExportView: View {
     }
 
     private var robloxFlow: [String] {
+        if isLayeredClothing {
+            return [
+                "Transfer the .fbx to your desktop and open Studio.",
+                "Avatar tab → Accessory Fitting Tool → start a new accessory and import this .fbx as the mesh.",
+                "The garment is pre-sized (~2.6 studs); on the preview avatar, scale / move / rotate it so it sits inside the blue bounding box.",
+                "Let the tool generate the cages and build the Accessory — this is what makes the clothing wrap onto any avatar body.",
+                "Drag the finished Accessory onto an R15 character to test the fit.",
+                "To publish: use the tool's Upload / Save to Roblox (needs UGC Program access).",
+            ]
+        }
         switch fileType.lowercased() {
         case "rbxl":
             return [
@@ -360,17 +397,18 @@ struct ExportView: View {
             downloadErrorMessage = "Missing texture PNG URL."
             return
         }
+        let textureName = "\(currentBaseName())-texture"
         isPreparingPng = true
         downloadErrorMessage = nil
         Task {
             do {
-                let localURL = try await downloadToTempFile(from: remoteURL, nameOverride: "\(fileName)-texture", extOverride: "png")
+                let localURL = try await downloadToTempFile(from: remoteURL, nameOverride: textureName, extOverride: "png")
                 await MainActor.run {
                     isPreparingPng = false
                     downloadedFileURL = localURL
                     switch destination {
                     case .share:
-                        showShareSheet = true
+                        presentShareSheet(for: localURL)
                     case .files:
                         showFilesPicker = true
                     }
@@ -395,17 +433,18 @@ struct ExportView: View {
             downloadErrorMessage = "Missing download URL."
             return
         }
+        let chosenName = currentBaseName()
         isPreparingDownload = true
         downloadErrorMessage = nil
         Task {
             do {
-                let localURL = try await downloadToTempFile(from: remoteURL)
+                let localURL = try await downloadToTempFile(from: remoteURL, nameOverride: chosenName)
                 await MainActor.run {
                     isPreparingDownload = false
                     downloadedFileURL = localURL
                     switch destination {
                     case .share:
-                        showShareSheet = true
+                        presentShareSheet(for: localURL)
                     case .files:
                         showFilesPicker = true
                     }
@@ -417,6 +456,60 @@ struct ExportView: View {
                 }
             }
         }
+    }
+
+    /// Default unique name = "<base>-<yyyyMMdd-HHmmss>". Stamped down to seconds so
+    /// two generations within the same minute still get distinct filenames in ~/Downloads.
+    private func makeUniqueDefaultName() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let stamp = formatter.string(from: Date())
+        let trimmedBase = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmedBase.isEmpty ? "export" : trimmedBase
+        return "\(base)-\(stamp)"
+    }
+
+    /// Editable name with a safe fallback if the user cleared the TextField.
+    private func currentBaseName() -> String {
+        let trimmed = editableFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? makeUniqueDefaultName() : trimmed
+    }
+
+    /// Present UIActivityViewController via UIKit, attached to the top-most presented
+    /// view controller of the foreground key window. Avoids stacking a third SwiftUI
+    /// `.sheet()` over the already-presented ExportView (which is itself a sheet inside
+    /// the preview sheet) — that three-deep stack is what made the first share tap hang
+    /// on iOS 17+ while the share-extension cache cold-loaded.
+    private func presentShareSheet(for url: URL) {
+        let foregroundScene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })
+        let anyScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        guard let scene = foregroundScene ?? anyScene else {
+            downloadErrorMessage = "Could not open the share sheet."
+            return
+        }
+        let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
+        guard let rootVC = window?.rootViewController else {
+            downloadErrorMessage = "Could not open the share sheet."
+            return
+        }
+        var top: UIViewController = rootVC
+        while let presented = top.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        pendingShareURL = url
+        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        activityVC.completionWithItemsHandler = { _, _, _, _ in
+            DispatchQueue.main.async { self.pendingShareURL = nil }
+        }
+        if let pop = activityVC.popoverPresentationController {
+            pop.sourceView = top.view
+            pop.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+            pop.permittedArrowDirections = []
+        }
+        top.present(activityVC, animated: true)
     }
 
     private func downloadToTempFile(from remoteURL: URL, nameOverride: String? = nil, extOverride: String? = nil) async throws -> URL {
@@ -459,6 +552,7 @@ struct ExportView: View {
 
     private func prepareZipDownload(jobId: String) {
         guard !isPreparingZip else { return }
+        let chosenName = currentBaseName()
         isPreparingZip = true
         downloadErrorMessage = nil
         Task {
@@ -467,11 +561,11 @@ struct ExportView: View {
                 guard let zipURL = URL(string: response.downloadUrl) else {
                     throw URLError(.badURL)
                 }
-                let localURL = try await downloadToTempFile(from: zipURL, nameOverride: response.fileName.replacingOccurrences(of: ".zip", with: ""), extOverride: "zip")
+                let localURL = try await downloadToTempFile(from: zipURL, nameOverride: chosenName, extOverride: "zip")
                 await MainActor.run {
                     isPreparingZip = false
                     downloadedFileURL = localURL
-                    showShareSheet = true
+                    presentShareSheet(for: localURL)
                 }
             } catch {
                 print("[ExportView.prepareZipDownload] jobId=\(jobId) error: \(error)")
@@ -482,16 +576,6 @@ struct ExportView: View {
             }
         }
     }
-}
-
-private struct FileShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private struct FilesExportPicker: UIViewControllerRepresentable {

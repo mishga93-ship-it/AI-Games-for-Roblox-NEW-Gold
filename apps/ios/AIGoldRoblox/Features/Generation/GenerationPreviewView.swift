@@ -3,6 +3,7 @@ import SceneKit
 import WebKit
 import AVFoundation
 import Combine
+import UIKit
 
 struct GenerationPreviewView: View {
     let title: String
@@ -43,6 +44,24 @@ struct GenerationPreviewView: View {
     @State private var heroFeedbackIndex: Int? = nil
     @State private var heroFeedbackText: String = ""
     @State private var showDecalApprovalSheet = false
+    /// Fires the "generation ready" haptic once per surfaced result.
+    @State private var didFireGenerationReadyHaptic = false
+
+    /// True once this result carries a downloadable .rbxm / .fbx deliverable
+    /// (the export closures are non-nil only when their URL exists). Intermediate
+    /// concept / hero / decal approval stages have neither, so they don't buzz.
+    private var hasModelDeliverable: Bool {
+        onExportRBXM != nil || onExportFBX != nil
+    }
+
+    /// "Zero-Read" feedback — the result is *felt* as ready without reading text.
+    private func fireGenerationReadyHapticIfNeeded() {
+        guard hasModelDeliverable, !didFireGenerationReadyHaptic else { return }
+        didFireGenerationReadyHaptic = true
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(.success)
+    }
 
     struct PublishContext {
         let description: String
@@ -168,8 +187,14 @@ struct GenerationPreviewView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { syncDecalSheetVisibility() }
+        .onAppear {
+            syncDecalSheetVisibility()
+            fireGenerationReadyHapticIfNeeded()
+        }
         .onChange(of: decalCandidates.count) { _, _ in syncDecalSheetVisibility() }
+        // Covers the concept→completed transition: the sheet keeps a stable id
+        // (ChatStore), so it updates in place without re-firing .onAppear.
+        .onChange(of: hasModelDeliverable) { _, _ in fireGenerationReadyHapticIfNeeded() }
         .sheet(isPresented: $showDecalApprovalSheet) {
             DecalApprovalSheet(
                 candidates: decalCandidates,

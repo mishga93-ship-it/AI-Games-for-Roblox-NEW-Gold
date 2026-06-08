@@ -153,6 +153,12 @@ struct CursedUGCResponse: Codable {
     /// configured; nil → the result view offers the GLB as a 3D fallback so
     /// the deliverable is never just a 2D image.
     let rbxmUrl: String?
+    /// Session 406 — real textured .fbx of the finished item (built from the
+    /// optimized GLB via the worker's /convert-to-fbx). This is the format the
+    /// user imports into Roblox Studio (Avatar → Import 3D) to publish their
+    /// own UGC item. nil when the FBX worker is unreachable → falls back to
+    /// the .rbxm / .glb export.
+    let fbxUrl: String?
     let variations: [CursedUGCVariation]
     let generationStatus: String
 
@@ -283,6 +289,7 @@ struct CursedUGCGenerationDoc: Codable {
             meshUrl: payload.meshUrl,
             meshThumbnailUrl: payload.meshThumbnailUrl,
             rbxmUrl: payload.rbxmUrl,
+            fbxUrl: payload.fbxUrl,
             variations: payload.variations ?? [],
             generationStatus: payload.generationStatus ?? "ready"
         )
@@ -297,6 +304,7 @@ struct CursedUGCGenerationPayload: Codable {
     let meshUrl: String?
     let meshThumbnailUrl: String?
     let rbxmUrl: String?
+    let fbxUrl: String?
     let variations: [CursedUGCVariation]?
     let titleEN: String?
     let titleRU: String?

@@ -7,6 +7,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -19,40 +20,27 @@ struct RootView: View {
                 }
             } else if appState.hasCompletedOnboarding, let user = appState.currentUser {
                 MainTabView()
-                    .id(user.id)
+                    // Theme suffix forces a clean re-theme of the whole tab tree
+                    // on switch; selected tab lives in AppState so it survives.
+                    .id("\(user.id)#\(themeManager.theme.rawValue)")
             } else {
                 OnboardingFlowView()
             }
         }
-        // Session 338 (round 7): reverted to the original RootView overlay.
-        // The window-level PassthroughWindow approach (rounds 4-6) was not
-        // tappable from inside sheets — instead we rely on the iOS system
-        // banner (willPresent returns `.banner` for generation events) to
-        // surface alerts above sheets/fullScreenCovers, and keep this in-app
-        // overlay for the main tabs where RootView is visible.
-        .overlay(alignment: .top) {
-            if !appState.isShowingLaunchScreen,
-               let notification = appState.foregroundGenerationNotification {
-                ForegroundGenerationNotificationBanner(
-                    notification: notification,
-                    onOpen: { appState.openForegroundGenerationNotification(notification) },
-                    onDismiss: { appState.clearForegroundGenerationNotification() }
-                )
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(80)
-            }
-        }
+        // Session 371: in-app banner overlay disabled — iOS system banner
+        // (returned via `willPresent`) is the single visual channel for
+        // generation pushes. Previously both showed at once and felt like
+        // duplicate notifications. State (`foregroundGenerationNotification`)
+        // is still posted so dedupe/route plumbing keeps working.
         .animation(.easeInOut(duration: 0.25), value: appState.hasCompletedOnboarding)
         .animation(.easeInOut(duration: 0.25), value: appState.currentUser?.id)
         .animation(.easeInOut(duration: 0.25), value: appState.activeBan?.banned)
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: appState.foregroundGenerationNotification?.id)
         // Bug 22: attach a window-level tap gesture that dismisses the keyboard on
         // every screen/sheet/modal. Idempotent — no duplicate recognizers.
         .installGlobalKeyboardDismiss()
-        // App palette is light-only — force light so system text doesn't go white + vanish in dark mode.
-        .preferredColorScheme(.light)
+        // Follow the selected theme so system chrome (status bar, keyboard,
+        // default text) matches. Light themes → .light; dark skins → .dark.
+        .preferredColorScheme(themeManager.colorScheme)
         .task {
             ChallengeRetentionNotifications.recordAppOpened()
             appState.startLaunchFlowIfNeeded()

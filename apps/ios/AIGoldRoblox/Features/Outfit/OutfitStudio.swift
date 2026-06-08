@@ -36,6 +36,7 @@ final class OutfitStudio: ObservableObject {
     }
 
     @Published var step: Step = .interview
+    @Published var showRobloxConnectAlert = false
     @Published var gender: OutfitGender = .neutral
     @Published var style: OutfitStyleMode = .dark
     @Published var transientToast: String? = nil
@@ -134,6 +135,10 @@ final class OutfitStudio: ObservableObject {
         } else if case let .result(r) = step, let a = OutfitAesthetic(rawValue: r.aestheticId) {
             aesthetic = a
         } else {
+            return
+        }
+        if !RobloxAuthService.shared.isConnected {
+            showRobloxConnectAlert = true
             return
         }
         step = .loading
