@@ -205,6 +205,8 @@ import {
   exportCharacterAsset,
   convertToFbx,
   maybeAnalyzeRobloxAsset,
+  analyzeRobloxAssetDeep,
+  applyRobloxEdits,
   maybeBuildRobloxBinary,
   buildAnimationBinary,
   buildAnimationFbx,
@@ -227,6 +229,14 @@ import {
   buildMonetizationManifest,
   downloadRobloxModelAssetBytes,
 } from './robloxWorker.js';
+import {
+  orchestrateEdit,
+  orchestrateAnalyst,
+  orchestrateMonetize,
+  type EditTarget,
+  type EditServiceDeps,
+} from './robloxEditService.js';
+import { listStarterTemplates } from './gameAdvisor.js';
 import { exchangeRobloxCode, disconnectRoblox, getRobloxUserToken } from './robloxOAuth.js';
 import { extractMeshIdFromModel } from './extractMeshIdFromModel.js';
 import {
@@ -1384,6 +1394,143 @@ app.post('/api/disaster-spawner/generate', async (req: AuthedRequest, res) => {
       });
     }
     return res.status(500).json({ error: 'Failed to generate disaster' });
+  }
+});
+
+
+// ─── Release 4: edit / analyze / advise on EXISTING Roblox content ───────────
+// Backed by Phase 1-3 modules (rbxmEditPipeline, gameAdvisor, robloxEditService)
+// + worker analyze --deep/outline/scope and /apply-edits.
+const robloxEditDeps: EditServiceDeps = {
+  analyze: (input, target, mode, scope) => analyzeRobloxAssetDeep(input, target, mode, scope),
+  applyEdits: async (input, ops, target) => {
+    const r = await applyRobloxEdits(input, ops, target);
+    return r ? { outputBase64: r.outputBase64, results: r.results } : null;
+  },
+  runChat: async (system, user) => {
+    const r = await runChatProvider('anthropic', `${system}\n\n${user}`);
+    return r.text ?? '';
+  },
+};
+
+app.get('/api/roblox/starter-templates', async (req, res) => {
+  const genre = typeof req.query.genre === 'string' ? req.query.genre : undefined;
+  return res.json({ templates: listStarterTemplates(genre) });
+});
+
+app.post('/api/roblox/analyze', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const body = (req.body ?? {}) as { inputBase64?: unknown; target?: unknown; mode?: unknown; scope?: unknown };
+    const inputBase64 = typeof body.inputBase64 === 'string' ? body.inputBase64 : '';
+    if (!inputBase64) {
+      return res.status(400).json({ error: 'inputBase64 required' });
+    }
+    const target: EditTarget = body.target === 'place' ? 'place' : 'model';
+    const mode = body.mode === 'deep' ? 'deep' : body.mode === 'outline' ? 'outline' : 'summary';
+    const scope = typeof body.scope === 'string' ? body.scope : '';
+    const analysis = await analyzeRobloxAssetDeep(Buffer.from(inputBase64, 'base64'), target, mode, scope);
+    if (!analysis) {
+      return res.status(503).json({ error: 'Roblox worker unavailable' });
+    }
+    return res.json(analysis);
+  } catch (err) {
+    logger.error('[roblox/analyze] failed', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'analyze failed' });
+  }
+});
+
+app.post('/api/roblox/edit', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/roblox/edit');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const body = (req.body ?? {}) as { inputBase64?: unknown; target?: unknown; request?: unknown; scope?: unknown };
+    const inputBase64 = typeof body.inputBase64 === 'string' ? body.inputBase64 : '';
+    const request = typeof body.request === 'string' ? body.request.trim() : '';
+    if (!inputBase64) {
+      return res.status(400).json({ error: 'inputBase64 required' });
+    }
+    if (!request) {
+      return res.status(400).json({ error: 'request (edit description) required' });
+    }
+    const target: EditTarget = body.target === 'place' ? 'place' : 'model';
+    const scope = typeof body.scope === 'string' ? body.scope : undefined;
+    const outcome = await orchestrateEdit(
+      { input: Buffer.from(inputBase64, 'base64'), target, request, scope },
+      robloxEditDeps,
+    );
+    return res.json({
+      outputBase64: outcome.outputBase64,
+      target: outcome.target,
+      opsApplied: outcome.ops.length,
+      dropped: outcome.dropped,
+      results: outcome.results,
+      scopeUsed: outcome.scopeUsed,
+    });
+  } catch (err) {
+    logger.error('[roblox/edit] failed', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'edit failed' });
+  }
+});
+
+app.post('/api/roblox/analyst', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/roblox/analyst');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const body = (req.body ?? {}) as { inputBase64?: unknown; target?: unknown; description?: unknown };
+    const inputBase64 = typeof body.inputBase64 === 'string' ? body.inputBase64 : '';
+    if (!inputBase64) {
+      return res.status(400).json({ error: 'inputBase64 required' });
+    }
+    const target: EditTarget = body.target === 'place' ? 'place' : 'model';
+    const description = typeof body.description === 'string' ? body.description : undefined;
+    const outcome = await orchestrateAnalyst(
+      { input: Buffer.from(inputBase64, 'base64'), target, description },
+      robloxEditDeps,
+    );
+    return res.json({ summary: outcome.summary, suggestions: outcome.suggestions, usedLlm: outcome.usedLlm });
+  } catch (err) {
+    logger.error('[roblox/analyst] failed', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'analyst failed' });
+  }
+});
+
+app.post('/api/roblox/monetize', async (req: AuthedRequest, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const ipVerdict = checkIpRateLimit(extractClientIp(req), '/roblox/monetize');
+    if (!ipVerdict.allowed) {
+      return res.status(429).json({ error: 'ip_rate_limited', retryAfterMs: ipVerdict.retryAfterMs });
+    }
+    const body = (req.body ?? {}) as { inputBase64?: unknown; target?: unknown; genre?: unknown };
+    const inputBase64 = typeof body.inputBase64 === 'string' ? body.inputBase64 : '';
+    if (!inputBase64) {
+      return res.status(400).json({ error: 'inputBase64 required' });
+    }
+    const target: EditTarget = body.target === 'place' ? 'place' : 'model';
+    const genre = typeof body.genre === 'string' ? body.genre : undefined;
+    const outcome = await orchestrateMonetize(
+      { input: Buffer.from(inputBase64, 'base64'), target, genre },
+      robloxEditDeps,
+    );
+    return res.json({ summary: outcome.summary, plan: outcome.plan, usedLlm: outcome.usedLlm });
+  } catch (err) {
+    logger.error('[roblox/monetize] failed', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'monetize failed' });
   }
 });
 

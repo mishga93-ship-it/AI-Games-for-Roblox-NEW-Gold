@@ -783,6 +783,90 @@ export async function maybeAnalyzeRobloxAsset(
   }
 }
 
+// Session 430 (Release 4 wiring): deep/outline/scope analyze + apply-edits over
+// an existing .rbxm/.rbxl. Mirror maybeAnalyzeRobloxAsset's dual path (HTTP
+// worker first, local CLI fallback). Used by robloxEditService orchestration.
+export async function analyzeRobloxAssetDeep(
+  input: Buffer,
+  target: RobloxBuildTarget,
+  mode: 'summary' | 'deep' | 'outline' = 'deep',
+  scope = '',
+): Promise<Record<string, unknown> | null> {
+  const workerUrl = getRobloxWorkerUrl();
+  if (workerUrl) {
+    const response = await fetchWorkerJson(`${workerUrl.replace(/\/$/, '')}/analyze-roblox`, {
+      method: 'POST',
+      headers: buildWorkerHeaders(),
+      body: JSON.stringify({ inputBase64: input.toString('base64'), target, mode, scope }),
+    });
+    return response as unknown as Record<string, unknown>;
+  }
+
+  const command = getRobloxWorkerCommand();
+  if (!command) {
+    return null;
+  }
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'roblox-worker-analyze-'));
+  const inputPath = path.join(tempDir, target === 'place' ? 'input.rbxl' : 'input.rbxm');
+  const outputPath = path.join(tempDir, 'analysis.json');
+  try {
+    await writeFile(inputPath, input);
+    const extraArgs = splitArgs(getRobloxWorkerArgs());
+    await runCommand(command, [...extraArgs, 'analyze-roblox', inputPath, outputPath, target, mode, scope]);
+    return JSON.parse(await readFile(outputPath, 'utf8')) as Record<string, unknown>;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+export interface ApplyRobloxEditsResult {
+  outputBase64: string;
+  target: RobloxBuildTarget;
+  results: { applied?: number; failed?: number; total?: number; results?: unknown[] };
+}
+
+export async function applyRobloxEdits(
+  input: Buffer,
+  ops: unknown[],
+  target: RobloxBuildTarget,
+): Promise<ApplyRobloxEditsResult | null> {
+  const workerUrl = getRobloxWorkerUrl();
+  if (workerUrl) {
+    const response = await fetchWorkerJson(`${workerUrl.replace(/\/$/, '')}/apply-edits`, {
+      method: 'POST',
+      headers: buildWorkerHeaders(),
+      body: JSON.stringify({ inputBase64: input.toString('base64'), ops, target }),
+    });
+    return response as unknown as ApplyRobloxEditsResult;
+  }
+
+  const command = getRobloxWorkerCommand();
+  if (!command) {
+    return null;
+  }
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'roblox-worker-edit-'));
+  const inputPath = path.join(tempDir, target === 'place' ? 'input.rbxl' : 'input.rbxm');
+  const opsPath = path.join(tempDir, 'ops.json');
+  const outputPath = path.join(tempDir, target === 'place' ? 'output.rbxl' : 'output.rbxm');
+  const resultsPath = path.join(tempDir, 'results.json');
+  try {
+    await writeFile(inputPath, input);
+    await writeFile(opsPath, JSON.stringify({ ops }));
+    const extraArgs = splitArgs(getRobloxWorkerArgs());
+    await runCommand(command, [...extraArgs, 'apply-edits', inputPath, opsPath, outputPath, target, resultsPath]);
+    const outBytes = await readFile(outputPath);
+    let results: ApplyRobloxEditsResult['results'] = {};
+    try {
+      results = JSON.parse(await readFile(resultsPath, 'utf8')) as ApplyRobloxEditsResult['results'];
+    } catch {
+      results = {};
+    }
+    return { outputBase64: outBytes.toString('base64'), target, results };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
 export async function optimizeMeshAsset(args: {
   sourceUrl: string;
   title: string;
