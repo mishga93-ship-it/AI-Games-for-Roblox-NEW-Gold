@@ -22,6 +22,9 @@ local function walk(instance)
 			shape = (instance:IsA("Part") and tostring(instance.Shape)) or "n/a",
 			material = tostring(instance.Material),
 			transparency = instance.Transparency,
+			canCollide = instance.CanCollide,
+			anchored = instance.Anchored,
+			massless = instance.Massless,
 			size = { x = instance.Size.X, y = instance.Size.Y, z = instance.Size.Z },
 		}
 		local okPos, cf = pcall(function() return instance.CFrame end)

@@ -71,6 +71,18 @@ console.log('\n=== Story theme-asset scatter: corridor placement + cap ===');
   console.log(`${ok ? 'OK ' : '***'} compile=${compileErr ? 'FAIL ' + compileErr : 'ok'} corridor=${onCorridor} ids=${idsList.length} (cap≤10)`);
 }
 
+console.log('\n=== Pack assets explode into individual child models ===');
+{
+  const fnafScatter = themeAssetScatterLua('The Last Night Guard survive until 6 AM', 'story_game');
+  const ce = compileOk('fnaf_scatter', fnafScatter);
+  const hasPacksTable = /_packs = \{[^}]*\[15313551841\]=true/.test(fnafScatter);
+  const hasExplode = fnafScatter.includes('#items >= 2') && fnafScatter.includes('it:PivotTo');
+  const singleUntouched = fnafScatter.includes('else') && fnafScatter.includes('m:PivotTo(cf)');
+  const ok = !ce && hasPacksTable && hasExplode && singleUntouched;
+  if (!ok) fails++;
+  console.log(`${ok ? 'OK ' : '***'} compile=${ce ? 'FAIL ' + ce : 'ok'} packsTable=${hasPacksTable} explode=${hasExplode} singlePathKept=${singleUntouched}`);
+}
+
 console.log('\n=== Story preset → theme-asset coverage audit ===');
 const STORY_PRESETS = [
   ['Trapped With Prototype', 'Escape before it is too late'],
